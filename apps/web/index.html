@@ -22,6 +22,8 @@
   <button data-transform="rotate">Girar</button>
   <button data-transform="scale">Escalar</button>
   <button id="space">Mundo</button>
+  <button id="multi-select">Seleção: única</button>
+  <button id="clear-selection">Selecionar ∅</button>
   <button id="add-box">Caixa</button>
   <button id="undo" disabled>Desfazer local</button>
   <button id="redo" disabled>Refazer local</button>
@@ -29,6 +31,11 @@
   <button id="structure">Estrutura</button>
   <span id="status">Inicializando…</span>
 </header>
+
+<aside id="selection-panel">
+  <strong>Seleção do editor</strong>
+  <div id="selection-content">∅</div>
+</aside>
 
 <aside id="outline" hidden>
   <header><strong>Estado regional</strong><button id="close-outline">×</button></header>
@@ -40,7 +47,7 @@
     <strong>Confirmar alterações do sandbox</strong>
     <button id="close-review">×</button>
   </header>
-  <p>A região autoritativa ainda não será alterada. Esta confirmação gera uma proposta auditável.</p>
+  <p>A confirmação publica a proposta na região autoritativa.</p>
   <pre id="review-content"></pre>
   <div class="actions">
     <button id="confirm-proposal">Confirmar proposta</button>
