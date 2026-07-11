@@ -86,3 +86,44 @@ button:disabled{opacity:.35}
 #inspector-form input,#inspector-form select{width:100%;min-width:0;padding:.42rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff}
 .ins-vector{display:grid;grid-template-columns:8rem repeat(3,minmax(0,1fr));gap:.35rem;align-items:center;margin:.45rem 0}.ins-vector-2{grid-template-columns:8rem repeat(2,minmax(0,1fr))}
 @media(max-width:700px){#inspector-panel{top:auto;bottom:.55rem;max-height:72vh}}
+
+
+/* Texto isolado e copiável — update 0009 */
+html,body,canvas,button,select,header,legend,label{
+  -webkit-user-select:none;
+  user-select:none;
+}
+input,textarea,.component-text,.dev-card textarea{
+  -webkit-user-select:text;
+  user-select:text;
+}
+.component-text{
+  display:block;
+  width:100%;
+  min-height:9rem;
+  max-height:42vh;
+  overflow:auto;
+  padding:.65rem;
+  border:1px solid #ffffff18;
+  border-radius:10px;
+  background:#02060c;
+  color:#edf4ff;
+  font:.72rem monospace;
+  white-space:pre;
+  resize:vertical;
+}
+#developer-live .dev-card{
+  display:grid;
+  gap:.4rem;
+}
+#developer-live .dev-card textarea{
+  width:100%;
+  min-height:7rem;
+  padding:.45rem;
+  border:1px solid #ffffff14;
+  border-radius:8px;
+  background:#02060c;
+  color:#edf4ff;
+  font:.7rem monospace;
+  resize:vertical;
+}

@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="spatial-seed-build" content="20260711-0008">
+<meta name="spatial-seed-build" content="20260711-0009">
 <title>Spatial Seed Monorepo</title>
-<link rel="stylesheet" href="./style.css?build=20260711-0008">
+<link rel="stylesheet" href="./style.css?build=20260711-0009">
 <script type="importmap">
 {
   "imports": {
@@ -47,7 +47,7 @@
   <strong>Seleção do editor</strong>
   <div id="selection-content">∅</div>
   <div id="pivot-content">Pivô: mediana</div>
-  <div id="build-content">build 20260711-0008</div>
+  <div id="build-content">build 20260711-0009</div>
 </aside>
 
 <aside id="outline" hidden>
@@ -56,8 +56,8 @@
 </aside>
 
 <section id="diagnostic-panel" hidden>
-  <header><strong>Diagnóstico de execução</strong><button id="close-diagnostics">×</button></header>
-  <pre id="diagnostic-content"></pre>
+  <header><strong>Diagnóstico de execução</strong><button id="copy-diagnostics">Copiar</button><button id="close-diagnostics">×</button></header>
+  <textarea id="diagnostic-content" class="component-text" readonly aria-label="Diagnóstico de execução"></textarea>
 </section>
 
 <section id="developer-panel" hidden>
@@ -81,9 +81,12 @@
       <button id="console-run">Executar</button>
       <button id="console-help">Ajuda</button>
       <button id="console-clear">Limpar saída</button>
+      <button id="console-clear-input">Limpar entrada</button>
+      <button id="console-copy-all">Copiar saída</button>
+      <button id="console-copy-last">Copiar último</button>
     </div>
 
-    <pre id="console-output"></pre>
+    <textarea id="console-output" class="component-text" readonly aria-label="Saída do console"></textarea>
   </div>
 </section>
 <section id="inspector-panel" hidden>
@@ -122,6 +125,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./main.js?build=20260711-0008"></script>
+<script type="module" src="./main.js?build=20260711-0009"></script>
 </body>
 </html>

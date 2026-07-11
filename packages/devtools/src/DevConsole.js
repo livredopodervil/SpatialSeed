@@ -1,14 +1,12 @@
 export class DevConsole {
-  static apiVersion = "dev-console-v1";
+  static apiVersion = "dev-console-v2";
 
-  constructor({
-    editor,
-    sandbox,
-    region,
-    renderer,
-    getDiagnostics,
-    onOutput
-  }) {
+  static commandNames = new Set([
+    "help", "inspect", "list", "select", "clear",
+    "pivot", "move", "undo", "redo"
+  ]);
+
+  constructor({ editor, sandbox, region, renderer, getDiagnostics, onOutput }) {
     this.editor = editor;
     this.sandbox = sandbox;
     this.region = region;
@@ -20,30 +18,47 @@ export class DevConsole {
 
   execute(source) {
     const input = String(source ?? "").trim();
-    if (!input) return null;
+    if (!input) return [];
 
     const lines = input
-      .split(";")
+      .split(/[;\n]+/)
       .map(line => line.trim())
       .filter(Boolean);
 
-    let result = null;
+    const results = [];
 
     for (const line of lines) {
-      result = this.#executeLine(line);
-      this.history.push({
-        timestamp: new Date().toISOString(),
-        input: line,
-        result
-      });
-      this.onOutput?.({
-        type: "result",
-        input: line,
-        result
-      });
+      try {
+        const result = this.#executeLine(line);
+        const entry = {
+          timestamp: new Date().toISOString(),
+          input: line,
+          ok: true,
+          result
+        };
+
+        this.history.push(entry);
+        results.push(entry);
+        this.onOutput?.({ type: "result", input: line, result });
+      } catch (error) {
+        const entry = {
+          timestamp: new Date().toISOString(),
+          input: line,
+          ok: false,
+          error: error?.message ?? String(error)
+        };
+
+        this.history.push(entry);
+        results.push(entry);
+        this.onOutput?.({
+          type: "error",
+          input: line,
+          error: entry.error
+        });
+      }
     }
 
-    return result;
+    return results;
   }
 
   #executeLine(line) {
@@ -52,28 +67,30 @@ export class DevConsole {
 
     switch (command) {
       case "help":
+        this.#expectMaximum(tokens, 0, "help");
         return this.#help();
 
       case "inspect":
+        this.#expectMaximum(tokens, 1, "inspect");
         return this.#inspect(tokens[0]);
 
       case "list":
-        if (tokens[0] === "objects") {
-          return this.sandbox.getState().objects.map(object => ({
-            id: object.id,
-            kind: object.kind,
-            name: object.name,
-            position: object.position,
-            rotation: object.rotation,
-            scale: object.scale
-          }));
-        }
-        throw new Error("Uso: list objects");
+        this.#expectExact(tokens, 1, "list objects");
+        if (tokens[0] !== "objects") throw new Error("Uso: list objects");
+        return this.sandbox.getState().objects.map(object => ({
+          id: object.id,
+          kind: object.kind,
+          name: object.name,
+          position: object.position,
+          rotation: object.rotation,
+          scale: object.scale
+        }));
 
       case "select":
         return this.#select(tokens);
 
       case "clear":
+        this.#expectMaximum(tokens, 0, "clear");
         this.editor.selection.clear();
         return { selection: [] };
 
@@ -84,9 +101,11 @@ export class DevConsole {
         return this.#move(tokens);
 
       case "undo":
+        this.#expectMaximum(tokens, 0, "undo");
         return { changed: this.sandbox.undo() };
 
       case "redo":
+        this.#expectMaximum(tokens, 0, "redo");
         return { changed: this.sandbox.redo() };
 
       default:
@@ -98,6 +117,7 @@ export class DevConsole {
 
   #help() {
     return {
+      syntax: "Separe comandos por ponto e vírgula ou por quebra de linha.",
       commands: [
         "help",
         "inspect selection",
@@ -118,24 +138,21 @@ export class DevConsole {
         "undo",
         "redo"
       ],
-      note:
-        "Vários comandos podem ser separados por ponto e vírgula."
+      examples: [
+        "select box-1; inspect selection",
+        "select box-1 box-2\npivot bounds\nmove 1 0 0"
+      ]
     };
   }
 
   #inspect(target = "all") {
-    const diagnostics = this.getDiagnostics();
-
     switch (target) {
       case "selection":
         return this.editor.selection.snapshot();
-
       case "input":
         return this.renderer.getInputDiagnostics();
-
       case "editor":
         return this.editor.snapshot();
-
       case "sandbox":
         return {
           baseVersion: this.sandbox.baseVersion,
@@ -144,20 +161,17 @@ export class DevConsole {
           canRedo: this.sandbox.canRedo,
           state: this.sandbox.getState()
         };
-
       case "region":
         return {
           descriptor: this.region.descriptor,
           version: this.region.version,
           state: this.region.getState()
         };
-
       case "objects":
         return this.sandbox.getState().objects;
-
       case "all":
-        return diagnostics;
-
+      case undefined:
+        return this.getDiagnostics();
       default:
         throw new Error(
           "Uso: inspect selection|input|editor|sandbox|region|objects"
@@ -170,14 +184,23 @@ export class DevConsole {
       throw new Error("Uso: select object-id [object-id ...]");
     }
 
+    const accidentalCommand = ids.find(
+      id => DevConsole.commandNames.has(id.toLowerCase())
+    );
+
+    if (accidentalCommand) {
+      throw new Error(
+        `O comando "select" recebeu "${accidentalCommand}" como argumento. ` +
+        "Separe comandos por ponto e vírgula ou por quebra de linha."
+      );
+    }
+
     const known = new Set(
       this.sandbox.getState().objects.map(object => object.id)
     );
 
     for (const id of ids) {
-      if (!known.has(id)) {
-        throw new Error(`Objeto inexistente: ${id}`);
-      }
+      if (!known.has(id)) throw new Error(`Objeto inexistente: ${id}`);
     }
 
     this.editor.selection.replace({
@@ -200,35 +223,24 @@ export class DevConsole {
   #pivot(tokens) {
     const policy = tokens.shift();
 
-    if (!policy) {
-      return this.editor.snapshot().pivot;
-    }
+    if (!policy) return this.editor.snapshot().pivot;
 
     if (policy === "custom") {
-      if (tokens.length !== 3) {
-        throw new Error("Uso: pivot custom x y z");
-      }
-
+      this.#expectExact(tokens, 3, "pivot custom x y z");
       const position = tokens.map(value => this.#number(value));
       this.editor.setCustomPivot(position);
       this.editor.setPivotPolicy("custom");
-
-      return {
-        policy: "custom",
-        position
-      };
+      return { policy: "custom", position };
     }
 
+    this.#expectMaximum(tokens, 0, `pivot ${policy}`);
     this.editor.setPivotEditing(false);
     this.editor.setPivotPolicy(policy);
-
     return this.editor.snapshot().pivot;
   }
 
   #move(tokens) {
-    if (tokens.length !== 3) {
-      throw new Error("Uso: move dx dy dz");
-    }
+    this.#expectExact(tokens, 3, "move dx dy dz");
 
     const delta = tokens.map(value => this.#number(value));
     const selection = this.editor.selection.snapshot();
@@ -237,9 +249,8 @@ export class DevConsole {
       throw new Error("A seleção está vazia.");
     }
 
-    const state = this.sandbox.getState();
     const objects = new Map(
-      state.objects.map(object => [object.id, object])
+      this.sandbox.getState().objects.map(object => [object.id, object])
     );
 
     const transforms = selection.members.map(member => {
@@ -278,17 +289,28 @@ export class DevConsole {
 
   #tokenize(line) {
     return line.match(/"[^"]*"|'[^']*'|\S+/g)?.map(token =>
-      token.replace(/^["']|["']$/g, "")
+      token.replace(/^[\"']|[\"']$/g, "")
     ) ?? [];
   }
 
   #number(value) {
     const number = Number(value);
-
     if (!Number.isFinite(number)) {
       throw new Error(`Número inválido: ${value}`);
     }
-
     return number;
+  }
+
+  #expectExact(tokens, length, usage) {
+    if (tokens.length !== length) throw new Error(`Uso: ${usage}`);
+  }
+
+  #expectMaximum(tokens, length, usage) {
+    if (tokens.length > length) {
+      throw new Error(
+        `Argumentos inesperados. Uso: ${usage}. ` +
+        "Separe comandos por ponto e vírgula ou por quebra de linha."
+      );
+    }
   }
 }

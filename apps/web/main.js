@@ -1,15 +1,15 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0008";
-import { Region } from "../../packages/core/src/Region.js?build=20260711-0008";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0008";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0008";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0008";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0008";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0008";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0008";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0008";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0008";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0009";
+import { Region } from "../../packages/core/src/Region.js?build=20260711-0009";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0009";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0009";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0009";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0009";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0009";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0009";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0009";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0009";
 
-const BUILD = "20260711-0008";
+const BUILD = "20260711-0009";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -86,6 +86,9 @@ const renderer3d = new ThreeRegionRenderer($("world"), {
 const outline = new OutlineRenderer($("outline-content"));
 
 const consoleLines = [];
+const consoleInputHistory = [];
+let consoleHistoryIndex = 0;
+let lastConsoleText = "";
 
 function appendConsole(entry) {
   const line = {
@@ -102,12 +105,17 @@ function appendConsole(entry) {
   const output = $("console-output");
 
   if (output) {
-    output.textContent = consoleLines
+    output.value = consoleLines
       .map(item =>
         `[${item.time}] ${item.input ?? item.type}\n` +
         `${JSON.stringify(item.result ?? item.error, null, 2)}`
       )
       .join("\n\n");
+
+    lastConsoleText = consoleLines.length
+      ? `[${consoleLines.at(-1).time}] ${consoleLines.at(-1).input ?? consoleLines.at(-1).type}\n` +
+        `${JSON.stringify(consoleLines.at(-1).result ?? consoleLines.at(-1).error, null, 2)}`
+      : "";
 
     output.scrollTop = output.scrollHeight;
   }
@@ -258,7 +266,7 @@ $("diagnostics").addEventListener("click", () => {
     canRedo: sandbox.canRedo
   };
   diagnostics.input = renderer3d.getInputDiagnostics();
-  $("diagnostic-content").textContent = JSON.stringify(diagnostics, null, 2);
+  $("diagnostic-content").value = JSON.stringify(diagnostics, null, 2);
   $("diagnostic-panel").hidden = false;
 });
 $("close-diagnostics").addEventListener("click", () => $("diagnostic-panel").hidden = true);
@@ -279,18 +287,16 @@ $("close-developer").addEventListener("click", () => {
 });
 
 $("console-run").addEventListener("click", () => {
-  const input = $("console-input").value;
+  const input = $("console-input").value.trim();
 
-  try {
-    devConsole.execute(input);
-  } catch (error) {
-    appendConsole({
-      type: "error",
-      input,
-      error: error?.message ?? String(error)
-    });
+  if (!input) return;
+
+  if (consoleInputHistory.at(-1) !== input) {
+    consoleInputHistory.push(input);
   }
 
+  consoleHistoryIndex = consoleInputHistory.length;
+  devConsole.execute(input);
   refreshDeveloperPanel();
 });
 
@@ -301,13 +307,50 @@ $("console-help").addEventListener("click", () => {
 
 $("console-clear").addEventListener("click", () => {
   consoleLines.length = 0;
-  $("console-output").textContent = "";
+  lastConsoleText = "";
+  $("console-output").value = "";
+});
+
+$("console-clear-input").addEventListener("click", () => {
+  $("console-input").value = "";
+  $("console-input").focus();
+});
+
+$("console-copy-all").addEventListener("click", async () => {
+  await copyText($("console-output").value, $("console-copy-all"));
+});
+
+$("console-copy-last").addEventListener("click", async () => {
+  await copyText(lastConsoleText, $("console-copy-last"));
+});
+
+$("copy-diagnostics").addEventListener("click", async () => {
+  await copyText($("diagnostic-content").value, $("copy-diagnostics"));
 });
 
 $("console-input").addEventListener("keydown", event => {
   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
     event.preventDefault();
     $("console-run").click();
+    return;
+  }
+
+  if (event.key === "ArrowUp" && consoleInputHistory.length) {
+    event.preventDefault();
+    consoleHistoryIndex = Math.max(0, consoleHistoryIndex - 1);
+    $("console-input").value =
+      consoleInputHistory[consoleHistoryIndex] ?? "";
+    return;
+  }
+
+  if (event.key === "ArrowDown" && consoleInputHistory.length) {
+    event.preventDefault();
+    consoleHistoryIndex = Math.min(
+      consoleInputHistory.length,
+      consoleHistoryIndex + 1
+    );
+    $("console-input").value =
+      consoleInputHistory[consoleHistoryIndex] ?? "";
   }
 });
 
@@ -326,6 +369,31 @@ $("confirm-proposal").addEventListener("click", () => {
     $("review-panel").hidden = true;
   }
 });
+
+
+async function copyText(text, button) {
+  const value = String(text ?? "");
+
+  if (!value) return false;
+
+  try {
+    await navigator.clipboard.writeText(value);
+  } catch {
+    const temporary = document.createElement("textarea");
+    temporary.value = value;
+    temporary.style.position = "fixed";
+    temporary.style.opacity = "0";
+    document.body.appendChild(temporary);
+    temporary.select();
+    document.execCommand("copy");
+    temporary.remove();
+  }
+
+  const original = button.textContent;
+  button.textContent = "Copiado";
+  setTimeout(() => { button.textContent = original; }, 900);
+  return true;
+}
 
 window.__SPATIAL_SEED__ = {
   build: BUILD,
