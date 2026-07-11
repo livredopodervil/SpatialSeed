@@ -408,14 +408,23 @@ export class ThreeRegionRenderer {
     ];
     this.raycaster.setFromCamera(this.pointer, this.camera);
 
-    const gizmoHit = this.raycaster.intersectObject(this.transform.getHelper(), true)[0];
-    this.#inputDiagnostics.gizmoHits = gizmoHit ? 1 : 0;
-
     const hit = this.raycaster.intersectObjects([...this.#meshes.values()], false)[0];
     this.#inputDiagnostics.objectHits = hit ? 1 : 0;
 
-    if (gizmoHit) {
-      this.#inputDiagnostics.discardedReason = "gizmo-hit";
+    const hasSelection =
+      (this.#selectionSnapshot?.members?.length ?? 0) > 0;
+
+    const gizmoActive =
+      hasSelection &&
+      (
+        this.transform.axis !== null ||
+        this.transform.dragging
+      );
+
+    this.#inputDiagnostics.gizmoHits = gizmoActive ? 1 : 0;
+
+    if (gizmoActive) {
+      this.#inputDiagnostics.discardedReason = "gizmo-active";
       return;
     }
     const objectId = hit?.object?.userData?.objectId;
