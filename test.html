@@ -1,0 +1,12 @@
+<!doctype html>
+<html>
+<body>
+<pre id="out"></pre>
+<script>
+document.querySelector("#out").textContent =
+  "Import maps: " + HTMLScriptElement.supports("importmap") + "\n" +
+  "WebGL2: " + Boolean(document.createElement("canvas").getContext("webgl2")) + "\n" +
+  "WebGL1: " + Boolean(document.createElement("canvas").getContext("webgl"));
+</script>
+</body>
+</html>

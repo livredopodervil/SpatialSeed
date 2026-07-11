@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Spatial Seed WebGL Core</title>
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}
+</script>
+</head>
+<body>
+<canvas id="world"></canvas>
+<header id="toolbar">
+<button data-mode="translate">Mover</button>
+<button data-mode="rotate">Girar</button>
+<button data-mode="scale">Escalar</button>
+<button id="space">Mundo</button>
+<button id="add-box">Caixa</button>
+<button id="reset">Reiniciar</button>
+<span id="status">Carregando…</span>
+</header>
+<aside id="panel">
+<strong id="name">Nenhum objeto</strong>
+<div class="grid">
+<label>X<input id="px" type="number" step="0.1"></label>
+<label>Y<input id="py" type="number" step="0.1"></label>
+<label>Z<input id="pz" type="number" step="0.1"></label>
+</div>
+<button id="apply">Aplicar posição</button>
+</aside>
+<div id="hint">Um dedo: orbitar · dois dedos: pan e dolly · toque: selecionar</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

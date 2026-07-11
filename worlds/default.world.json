@@ -1,0 +1,19 @@
+{
+  "universe": {
+    "id": "local-universe",
+    "version": 1
+  },
+  "regions": [
+    {
+      "id": "region-main",
+      "name": "Região principal",
+      "type": "box-region",
+      "authority": "local",
+      "capabilities": [
+        "sandbox.local",
+        "renderer.webgl",
+        "renderer.outline"
+      ]
+    }
+  ]
+}
