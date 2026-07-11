@@ -15,75 +15,207 @@ export class Sandbox {
     this.#state = structuredClone(this.#baseState);
   }
 
-  get baseVersion() { return this.#baseVersion; }
-  get canUndo() { return this.#undo.length > 0; }
-  get canRedo() { return this.#redo.length > 0; }
-  get dirty() { return this.#commands.length > 0; }
-  getState() { return structuredClone(this.#state); }
+  get baseVersion() {
+    return this.#baseVersion;
+  }
+
+  get canUndo() {
+    return this.#undo.length > 0;
+  }
+
+  get canRedo() {
+    return this.#redo.length > 0;
+  }
+
+  get dirty() {
+    return this.#commands.length > 0;
+  }
+
+  getState() {
+    return structuredClone(this.#state);
+  }
 
   dispatch(command) {
     const before = this.#state;
-    const result = this.reducer(before, structuredClone(command));
-    if (!result || result.state === before) return false;
+    const result = this.reducer(
+      before,
+      structuredClone(command)
+    );
 
-    this.#undo.push({ state:before, command:structuredClone(command) });
+    if (!result || result.state === before) {
+      return false;
+    }
+
+    this.#undo.push({
+      state: before,
+      command: structuredClone(command)
+    });
+
     this.#redo.length = 0;
-    this.#commands.push(structuredClone(command));
+    this.#commands.push(
+      structuredClone(command)
+    );
     this.#state = result.state;
-    this.#notify(result.changes ?? []);
+
+    this.#notify(
+      result.changes ?? []
+    );
+
     return true;
   }
 
   undo() {
     const entry = this.#undo.pop();
-    if (!entry) return false;
-    this.#redo.push({ state:this.#state, command:entry.command });
+
+    if (!entry) {
+      return false;
+    }
+
+    this.#redo.push({
+      state: this.#state,
+      command: entry.command
+    });
+
     this.#state = entry.state;
     this.#commands.pop();
-    this.#notify([{type:"sandbox-undo"}]);
+
+    this.#notify([
+      {
+        type: "sandbox-undo"
+      }
+    ]);
+
     return true;
   }
 
   redo() {
     const entry = this.#redo.pop();
-    if (!entry) return false;
-    const result = this.reducer(this.#state, entry.command);
-    if (!result || result.state === this.#state) return false;
-    this.#undo.push({ state:this.#state, command:entry.command });
+
+    if (!entry) {
+      return false;
+    }
+
+    const result = this.reducer(
+      this.#state,
+      entry.command
+    );
+
+    if (
+      !result ||
+      result.state === this.#state
+    ) {
+      return false;
+    }
+
+    this.#undo.push({
+      state: this.#state,
+      command: entry.command
+    });
+
     this.#state = result.state;
-    this.#commands.push(structuredClone(entry.command));
-    this.#notify(result.changes ?? [{type:"sandbox-redo"}]);
+    this.#commands.push(
+      structuredClone(entry.command)
+    );
+
+    this.#notify(
+      result.changes ?? [
+        {
+          type: "sandbox-redo"
+        }
+      ]
+    );
+
     return true;
   }
 
   discard() {
-    this.#state = structuredClone(this.#baseState);
+    this.#state =
+      structuredClone(this.#baseState);
+
     this.#undo.length = 0;
     this.#redo.length = 0;
     this.#commands.length = 0;
-    this.#notify([{type:"sandbox-discard"}]);
+
+    this.#notify([
+      {
+        type: "sandbox-discard"
+      }
+    ]);
+  }
+
+  rebaseFromRegion() {
+    this.#baseVersion =
+      this.region.version;
+
+    this.#baseState =
+      this.region.getState();
+
+    this.#state =
+      structuredClone(this.#baseState);
+
+    this.#undo.length = 0;
+    this.#redo.length = 0;
+    this.#commands.length = 0;
+
+    this.#notify([
+      {
+        type: "sandbox-rebased",
+        baseVersion: this.#baseVersion
+      }
+    ]);
   }
 
   createProposal() {
     return Object.freeze({
-      regionId:this.region.descriptor.id,
-      baseVersion:this.#baseVersion,
-      commands:structuredClone(this.#commands),
-      proposedState:this.getState(),
-      createdAt:new Date().toISOString()
+      regionId:
+        this.region.descriptor.id,
+
+      baseVersion:
+        this.#baseVersion,
+
+      commands:
+        structuredClone(this.#commands),
+
+      proposedState:
+        this.getState(),
+
+      createdAt:
+        new Date().toISOString()
     });
   }
 
   subscribe(listener) {
     this.#subscribers.add(listener);
-    listener(this.getState(), [{type:"initial"}]);
-    return () => this.#subscribers.delete(listener);
+
+    listener(
+      this.getState(),
+      [
+        {
+          type: "initial"
+        }
+      ]
+    );
+
+    return () =>
+      this.#subscribers.delete(listener);
   }
 
   #notify(changes) {
-    for (const listener of this.#subscribers) {
-      try { listener(this.getState(), changes); }
-      catch (error) { console.error("Sandbox subscriber failed", error); }
+    for (
+      const listener
+      of this.#subscribers
+    ) {
+      try {
+        listener(
+          this.getState(),
+          changes
+        );
+      } catch (error) {
+        console.error(
+          "Sandbox subscriber failed",
+          error
+        );
+      }
     }
   }
 }

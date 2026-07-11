@@ -186,26 +186,20 @@ editor.selection.subscribe(
     $("selection-content").textContent =
       snapshot.members.length
         ? snapshot.members
-            .map(
-              member =>
-                member.objectId
-            )
+            .map(member => member.objectId)
             .join(", ")
         : "∅";
   }
 );
 
 document
-  .querySelectorAll(
-    "[data-transform]"
-  )
+  .querySelectorAll("[data-transform]")
   .forEach(button => {
     button.addEventListener(
       "click",
-      () =>
-        renderer3d?.setTransformMode(
-          button.dataset.transform
-        )
+      () => renderer3d?.setTransformMode(
+        button.dataset.transform
+      )
     );
   });
 
@@ -335,13 +329,9 @@ $("confirm-proposal").addEventListener(
       );
 
     if (result.accepted) {
-      sandbox.rebaseFromRegion();
-
       $("status").textContent =
         `proposta aceita · ` +
         `região ${region.version}`;
-
-      $("review-panel").hidden = true;
     }
   }
 );
