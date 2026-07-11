@@ -83,6 +83,27 @@ export function boxRegionReducer(state, command) {
       };
     }
 
+    case "object.update": {
+      const objects = updateById(state.objects, command.id, object => {
+        const patch = command.patch ?? {};
+        return {
+          ...object,
+          ...patch,
+          material: patch.material
+            ? {
+                ...(object.material ?? {}),
+                ...patch.material,
+                texture: patch.material.texture
+                  ? { ...((object.material ?? {}).texture ?? {}), ...patch.material.texture }
+                  : (object.material ?? {}).texture
+              }
+            : object.material
+        };
+      });
+      if (objects === state.objects) return { state, changes: [] };
+      return { state: Object.freeze({ ...state, objects }), changes: [{ type: "object-updated", objectId: command.id }] };
+    }
+
     case "selection.transform": {
       const objects = updateMany(
         state.objects,

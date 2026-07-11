@@ -1,14 +1,15 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0007";
-import { Region } from "../../packages/core/src/Region.js?build=20260711-0007";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0007";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0007";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0007";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0007";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0007";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0007";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0007";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0008";
+import { Region } from "../../packages/core/src/Region.js?build=20260711-0008";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0008";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0008";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0008";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0008";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0008";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0008";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0008";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0008";
 
-const BUILD = "20260711-0007";
+const BUILD = "20260711-0008";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -135,6 +136,13 @@ function collectDeveloperState() {
   };
 }
 
+const objectInspector = new ObjectInspector({
+  root: $("inspector-panel"),
+  editor,
+  sandbox,
+  dispatch: command => sandbox.dispatch(command)
+});
+
 const devConsole = new DevConsole({
   editor,
   sandbox,
@@ -255,6 +263,12 @@ $("diagnostics").addEventListener("click", () => {
 });
 $("close-diagnostics").addEventListener("click", () => $("diagnostic-panel").hidden = true);
 
+$("inspector").addEventListener("click", () => {
+  $("inspector-panel").hidden = false;
+  objectInspector.refresh();
+});
+$("close-inspector").addEventListener("click", () => { $("inspector-panel").hidden = true; });
+
 $("developer").addEventListener("click", () => {
   $("developer-panel").hidden = false;
   refreshDeveloperPanel();
@@ -321,5 +335,6 @@ window.__SPATIAL_SEED__ = {
   editor,
   renderer3d,
   devConsole,
-  collectDeveloperState
+  collectDeveloperState,
+  objectInspector
 };

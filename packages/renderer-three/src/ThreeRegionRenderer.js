@@ -8,6 +8,7 @@ export class ThreeRegionRenderer {
   #selectionSnapshot = null;
   #session = null;
   #tap = null;
+  #textureLoader = new THREE.TextureLoader();
   #inputDiagnostics = {
     pointerDown: 0,
     pointerUp: 0,
@@ -154,8 +155,16 @@ export class ThreeRegionRenderer {
           new THREE.MeshStandardMaterial({ color: object.material.color })
         );
         mesh.userData.objectId = object.id;
+        mesh.userData.sizeKey = object.size.join(",");
+        mesh.userData.textureSrc = null;
         this.#meshes.set(object.id, mesh);
         this.scene.add(mesh);
+      }
+      const sizeKey = object.size.join(",");
+      if (mesh.userData.sizeKey !== sizeKey) {
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.BoxGeometry(...object.size);
+        mesh.userData.sizeKey = sizeKey;
       }
 
       if (!this.#session) {
@@ -166,6 +175,7 @@ export class ThreeRegionRenderer {
       }
 
       mesh.material.color.set(object.material.color);
+      this.#applyTextureState(mesh, object.material?.texture);
     }
 
     for (const [id, mesh] of this.#meshes) {
@@ -179,6 +189,37 @@ export class ThreeRegionRenderer {
 
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
+  }
+
+  #applyTextureState(mesh, textureState = null) {
+    const source = textureState?.src || "";
+    if (!source) {
+      if (mesh.material.map) { mesh.material.map.dispose(); mesh.material.map = null; mesh.material.needsUpdate = true; }
+      mesh.userData.textureSrc = null;
+      return;
+    }
+    if (mesh.userData.textureSrc !== source) {
+      mesh.userData.textureSrc = source;
+      this.#textureLoader.load(source, texture => {
+        if (mesh.userData.textureSrc !== source) { texture.dispose(); return; }
+        if (mesh.material.map) mesh.material.map.dispose();
+        texture.colorSpace = THREE.SRGBColorSpace;
+        mesh.material.map = texture; mesh.material.needsUpdate = true;
+        this.#configureTexture(texture, textureState);
+      }, undefined, error => console.error("Falha ao carregar textura", source, error));
+      return;
+    }
+    if (mesh.material.map) this.#configureTexture(mesh.material.map, textureState);
+  }
+
+  #configureTexture(texture, textureState = {}) {
+    const wrapping = { repeat: THREE.RepeatWrapping, mirror: THREE.MirroredRepeatWrapping, clamp: THREE.ClampToEdgeWrapping }[textureState.wrap] ?? THREE.RepeatWrapping;
+    texture.wrapS = wrapping; texture.wrapT = wrapping;
+    texture.repeat.fromArray(textureState.repeat ?? [1, 1]);
+    texture.offset.fromArray(textureState.offset ?? [0, 0]);
+    texture.center.set(0.5, 0.5);
+    texture.rotation = Number(textureState.rotationDeg ?? 0) * Math.PI / 180;
+    texture.needsUpdate = true;
   }
 
   #configureTransformForEditor() {
