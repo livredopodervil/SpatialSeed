@@ -1,0 +1,294 @@
+export class DevConsole {
+  static apiVersion = "dev-console-v1";
+
+  constructor({
+    editor,
+    sandbox,
+    region,
+    renderer,
+    getDiagnostics,
+    onOutput
+  }) {
+    this.editor = editor;
+    this.sandbox = sandbox;
+    this.region = region;
+    this.renderer = renderer;
+    this.getDiagnostics = getDiagnostics;
+    this.onOutput = onOutput;
+    this.history = [];
+  }
+
+  execute(source) {
+    const input = String(source ?? "").trim();
+    if (!input) return null;
+
+    const lines = input
+      .split(";")
+      .map(line => line.trim())
+      .filter(Boolean);
+
+    let result = null;
+
+    for (const line of lines) {
+      result = this.#executeLine(line);
+      this.history.push({
+        timestamp: new Date().toISOString(),
+        input: line,
+        result
+      });
+      this.onOutput?.({
+        type: "result",
+        input: line,
+        result
+      });
+    }
+
+    return result;
+  }
+
+  #executeLine(line) {
+    const tokens = this.#tokenize(line);
+    const command = tokens.shift()?.toLowerCase();
+
+    switch (command) {
+      case "help":
+        return this.#help();
+
+      case "inspect":
+        return this.#inspect(tokens[0]);
+
+      case "list":
+        if (tokens[0] === "objects") {
+          return this.sandbox.getState().objects.map(object => ({
+            id: object.id,
+            kind: object.kind,
+            name: object.name,
+            position: object.position,
+            rotation: object.rotation,
+            scale: object.scale
+          }));
+        }
+        throw new Error("Uso: list objects");
+
+      case "select":
+        return this.#select(tokens);
+
+      case "clear":
+        this.editor.selection.clear();
+        return { selection: [] };
+
+      case "pivot":
+        return this.#pivot(tokens);
+
+      case "move":
+        return this.#move(tokens);
+
+      case "undo":
+        return { changed: this.sandbox.undo() };
+
+      case "redo":
+        return { changed: this.sandbox.redo() };
+
+      default:
+        throw new Error(
+          `Comando desconhecido: ${command || "(vazio)"}. Use help.`
+        );
+    }
+  }
+
+  #help() {
+    return {
+      commands: [
+        "help",
+        "inspect selection",
+        "inspect input",
+        "inspect editor",
+        "inspect sandbox",
+        "inspect region",
+        "inspect objects",
+        "list objects",
+        "select box-1",
+        "select box-1 box-2",
+        "clear",
+        "pivot median",
+        "pivot bounds",
+        "pivot active",
+        "pivot custom x y z",
+        "move dx dy dz",
+        "undo",
+        "redo"
+      ],
+      note:
+        "Vários comandos podem ser separados por ponto e vírgula."
+    };
+  }
+
+  #inspect(target = "all") {
+    const diagnostics = this.getDiagnostics();
+
+    switch (target) {
+      case "selection":
+        return this.editor.selection.snapshot();
+
+      case "input":
+        return this.renderer.getInputDiagnostics();
+
+      case "editor":
+        return this.editor.snapshot();
+
+      case "sandbox":
+        return {
+          baseVersion: this.sandbox.baseVersion,
+          dirty: this.sandbox.dirty,
+          canUndo: this.sandbox.canUndo,
+          canRedo: this.sandbox.canRedo,
+          state: this.sandbox.getState()
+        };
+
+      case "region":
+        return {
+          descriptor: this.region.descriptor,
+          version: this.region.version,
+          state: this.region.getState()
+        };
+
+      case "objects":
+        return this.sandbox.getState().objects;
+
+      case "all":
+        return diagnostics;
+
+      default:
+        throw new Error(
+          "Uso: inspect selection|input|editor|sandbox|region|objects"
+        );
+    }
+  }
+
+  #select(ids) {
+    if (!ids.length) {
+      throw new Error("Uso: select object-id [object-id ...]");
+    }
+
+    const known = new Set(
+      this.sandbox.getState().objects.map(object => object.id)
+    );
+
+    for (const id of ids) {
+      if (!known.has(id)) {
+        throw new Error(`Objeto inexistente: ${id}`);
+      }
+    }
+
+    this.editor.selection.replace({
+      kind: "object",
+      regionId: this.region.descriptor.id,
+      objectId: ids[0]
+    });
+
+    for (const id of ids.slice(1)) {
+      this.editor.selection.toggle({
+        kind: "object",
+        regionId: this.region.descriptor.id,
+        objectId: id
+      });
+    }
+
+    return this.editor.selection.snapshot();
+  }
+
+  #pivot(tokens) {
+    const policy = tokens.shift();
+
+    if (!policy) {
+      return this.editor.snapshot().pivot;
+    }
+
+    if (policy === "custom") {
+      if (tokens.length !== 3) {
+        throw new Error("Uso: pivot custom x y z");
+      }
+
+      const position = tokens.map(value => this.#number(value));
+      this.editor.setCustomPivot(position);
+      this.editor.setPivotPolicy("custom");
+
+      return {
+        policy: "custom",
+        position
+      };
+    }
+
+    this.editor.setPivotEditing(false);
+    this.editor.setPivotPolicy(policy);
+
+    return this.editor.snapshot().pivot;
+  }
+
+  #move(tokens) {
+    if (tokens.length !== 3) {
+      throw new Error("Uso: move dx dy dz");
+    }
+
+    const delta = tokens.map(value => this.#number(value));
+    const selection = this.editor.selection.snapshot();
+
+    if (!selection.members.length) {
+      throw new Error("A seleção está vazia.");
+    }
+
+    const state = this.sandbox.getState();
+    const objects = new Map(
+      state.objects.map(object => [object.id, object])
+    );
+
+    const transforms = selection.members.map(member => {
+      const object = objects.get(member.objectId);
+
+      if (!object) {
+        throw new Error(
+          `Objeto selecionado não resolvido: ${member.objectId}`
+        );
+      }
+
+      return {
+        id: object.id,
+        position: object.position.map(
+          (value, index) => value + delta[index]
+        ),
+        rotation: [...object.rotation],
+        scale: [...object.scale]
+      };
+    });
+
+    const changed = this.sandbox.dispatch({
+      type: "selection.transform",
+      source: "dev-console",
+      selection,
+      pivot: this.editor.snapshot().pivot,
+      transforms
+    });
+
+    return {
+      changed,
+      delta,
+      objects: transforms.map(transform => transform.id)
+    };
+  }
+
+  #tokenize(line) {
+    return line.match(/"[^"]*"|'[^']*'|\S+/g)?.map(token =>
+      token.replace(/^["']|["']$/g, "")
+    ) ?? [];
+  }
+
+  #number(value) {
+    const number = Number(value);
+
+    if (!Number.isFinite(number)) {
+      throw new Error(`Número inválido: ${value}`);
+    }
+
+    return number;
+  }
+}

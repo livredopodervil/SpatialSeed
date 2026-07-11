@@ -1,13 +1,14 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0005";
-import { Region } from "../../packages/core/src/Region.js?build=20260711-0005";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0005";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0005";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0005";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0005";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0005";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0005";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0007";
+import { Region } from "../../packages/core/src/Region.js?build=20260711-0007";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0007";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0007";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0007";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0007";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0007";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0007";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0007";
 
-const BUILD = "20260711-0005";
+const BUILD = "20260711-0007";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -82,6 +83,88 @@ const renderer3d = new ThreeRegionRenderer($("world"), {
 });
 
 const outline = new OutlineRenderer($("outline-content"));
+
+const consoleLines = [];
+
+function appendConsole(entry) {
+  const line = {
+    time: new Date().toLocaleTimeString(),
+    ...entry
+  };
+
+  consoleLines.push(line);
+
+  if (consoleLines.length > 100) {
+    consoleLines.splice(0, consoleLines.length - 100);
+  }
+
+  const output = $("console-output");
+
+  if (output) {
+    output.textContent = consoleLines
+      .map(item =>
+        `[${item.time}] ${item.input ?? item.type}\n` +
+        `${JSON.stringify(item.result ?? item.error, null, 2)}`
+      )
+      .join("\n\n");
+
+    output.scrollTop = output.scrollHeight;
+  }
+}
+
+function collectDeveloperState() {
+  return {
+    build: BUILD,
+    selection: editor.selection.snapshot(),
+    editor: editor.snapshot(),
+    input: renderer3d.getInputDiagnostics(),
+    transform: {
+      mode: renderer3d.transform?.mode ?? null,
+      space: renderer3d.transform?.space ?? null,
+      axis: renderer3d.transform?.axis ?? null,
+      dragging: renderer3d.transform?.dragging ?? false
+    },
+    sandbox: {
+      baseVersion: sandbox.baseVersion,
+      dirty: sandbox.dirty,
+      canUndo: sandbox.canUndo,
+      canRedo: sandbox.canRedo,
+      objectCount: sandbox.getState().objects.length
+    },
+    renderer: renderer3d.renderer?.info?.render ?? null
+  };
+}
+
+const devConsole = new DevConsole({
+  editor,
+  sandbox,
+  region,
+  renderer: renderer3d,
+  getDiagnostics: collectDeveloperState,
+  onOutput: appendConsole
+});
+
+function refreshDeveloperPanel() {
+  if ($("developer-panel").hidden) return;
+
+  const state = collectDeveloperState();
+
+  $("developer-live").innerHTML = Object.entries(state)
+    .map(([name, value]) =>
+      `<div class="dev-card"><strong>${name}</strong>\n` +
+      `${escapeHtml(JSON.stringify(value, null, 2))}</div>`
+    )
+    .join("");
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+setInterval(refreshDeveloperPanel, 400);
 
 function refresh(state = sandbox.getState()) {
   renderer3d.update(state);
@@ -172,6 +255,48 @@ $("diagnostics").addEventListener("click", () => {
 });
 $("close-diagnostics").addEventListener("click", () => $("diagnostic-panel").hidden = true);
 
+$("developer").addEventListener("click", () => {
+  $("developer-panel").hidden = false;
+  refreshDeveloperPanel();
+});
+
+$("close-developer").addEventListener("click", () => {
+  $("developer-panel").hidden = true;
+});
+
+$("console-run").addEventListener("click", () => {
+  const input = $("console-input").value;
+
+  try {
+    devConsole.execute(input);
+  } catch (error) {
+    appendConsole({
+      type: "error",
+      input,
+      error: error?.message ?? String(error)
+    });
+  }
+
+  refreshDeveloperPanel();
+});
+
+$("console-help").addEventListener("click", () => {
+  $("console-input").value = "help";
+  $("console-run").click();
+});
+
+$("console-clear").addEventListener("click", () => {
+  consoleLines.length = 0;
+  $("console-output").textContent = "";
+});
+
+$("console-input").addEventListener("keydown", event => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    $("console-run").click();
+  }
+});
+
 $("review").addEventListener("click", () => {
   $("review-content").textContent = JSON.stringify(sandbox.createProposal(), null, 2);
   $("review-panel").hidden = false;
@@ -194,5 +319,7 @@ window.__SPATIAL_SEED__ = {
   region,
   sandbox,
   editor,
-  renderer3d
+  renderer3d,
+  devConsole,
+  collectDeveloperState
 };

@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="spatial-seed-build" content="20260711-0005">
+<meta name="spatial-seed-build" content="20260711-0007">
 <title>Spatial Seed Monorepo</title>
-<link rel="stylesheet" href="./style.css?build=20260711-0005">
+<link rel="stylesheet" href="./style.css?build=20260711-0007">
 <script type="importmap">
 {
   "imports": {
@@ -38,6 +38,7 @@
   <button id="review" disabled>Revisar proposta</button>
   <button id="structure">Estrutura</button>
   <button id="diagnostics">Diagnóstico</button>
+  <button id="developer">Desenvolvedor</button>
   <span id="status">Inicializando…</span>
 </header>
 
@@ -45,7 +46,7 @@
   <strong>Seleção do editor</strong>
   <div id="selection-content">∅</div>
   <div id="pivot-content">Pivô: mediana</div>
-  <div id="build-content">build 20260711-0005</div>
+  <div id="build-content">build 20260711-0007</div>
 </aside>
 
 <aside id="outline" hidden>
@@ -58,6 +59,32 @@
   <pre id="diagnostic-content"></pre>
 </section>
 
+<section id="developer-panel" hidden>
+  <header>
+    <strong>Painel do desenvolvedor</strong>
+    <button id="close-developer">×</button>
+  </header>
+
+  <div id="developer-live"></div>
+
+  <div id="developer-console">
+    <label for="console-input">Console de operações</label>
+    <textarea
+      id="console-input"
+      rows="4"
+      spellcheck="false"
+      placeholder="help; inspect input; select box-1; move 1 0 0"
+    ></textarea>
+
+    <div class="actions">
+      <button id="console-run">Executar</button>
+      <button id="console-help">Ajuda</button>
+      <button id="console-clear">Limpar saída</button>
+    </div>
+
+    <pre id="console-output"></pre>
+  </div>
+</section>
 <section id="review-panel" hidden>
   <header>
     <strong>Confirmar alterações do sandbox</strong>
@@ -72,6 +99,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./main.js?build=20260711-0005"></script>
+<script type="module" src="./main.js?build=20260711-0007"></script>
 </body>
 </html>
