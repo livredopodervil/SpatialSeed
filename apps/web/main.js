@@ -166,6 +166,7 @@ $("diagnostics").addEventListener("click", () => {
     canUndo: sandbox.canUndo,
     canRedo: sandbox.canRedo
   };
+  diagnostics.input = renderer3d.getInputDiagnostics();
   $("diagnostic-content").textContent = JSON.stringify(diagnostics, null, 2);
   $("diagnostic-panel").hidden = false;
 });

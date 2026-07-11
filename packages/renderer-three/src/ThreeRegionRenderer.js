@@ -8,6 +8,20 @@ export class ThreeRegionRenderer {
   #selectionSnapshot = null;
   #session = null;
   #tap = null;
+  #inputDiagnostics = {
+    pointerDown: 0,
+    pointerUp: 0,
+    pointerCancel: 0,
+    lastPointerType: null,
+    lastDistance: null,
+    lastDuration: null,
+    discardedReason: null,
+    gizmoHits: 0,
+    objectHits: 0,
+    lastObjectId: null,
+    lastNdc: null,
+    selectionAction: null
+  };
 
   constructor(canvas, { dispatch, selection, editorState }) {
     if (typeof dispatch !== "function") throw new TypeError("dispatch must be a function");
@@ -74,6 +88,9 @@ export class ThreeRegionRenderer {
     this.transform.addEventListener("mouseUp", () => this.#commitSession());
 
     canvas.addEventListener("pointerdown", event => {
+      this.#inputDiagnostics.pointerDown += 1;
+      this.#inputDiagnostics.lastPointerType = event.pointerType || "mouse";
+      this.#inputDiagnostics.discardedReason = null;
       this.#tap = {
         id: event.pointerId,
         x: event.clientX,
@@ -83,7 +100,11 @@ export class ThreeRegionRenderer {
       };
     }, true);
 
-    canvas.addEventListener("pointercancel", () => { this.#tap = null; }, true);
+    canvas.addEventListener("pointercancel", () => {
+      this.#inputDiagnostics.pointerCancel += 1;
+      this.#inputDiagnostics.discardedReason = "pointercancel";
+      this.#tap = null;
+    }, true);
     canvas.addEventListener("pointerup", event => this.#selectAt(event), true);
     addEventListener("resize", () => this.resize());
 
@@ -339,35 +360,85 @@ export class ThreeRegionRenderer {
     }
   }
 
+  getInputDiagnostics() {
+    return structuredClone(this.#inputDiagnostics);
+  }
+
   #selectAt(event) {
-    if (!this.#tap || this.#tap.id !== event.pointerId || this.transform.dragging) return;
+    this.#inputDiagnostics.pointerUp += 1;
+
+    if (!this.#tap) {
+      this.#inputDiagnostics.discardedReason = "sem-pointerdown";
+      return;
+    }
+
+    if (this.#tap.id !== event.pointerId) {
+      this.#inputDiagnostics.discardedReason = "pointer-id-diferente";
+      return;
+    }
+
+    if (this.transform.dragging) {
+      this.#inputDiagnostics.discardedReason = "transform-dragging";
+      return;
+    }
 
     const tolerance = this.#tap.type === "touch" ? 28 : 8;
     const distance = Math.hypot(event.clientX - this.#tap.x, event.clientY - this.#tap.y);
     const duration = performance.now() - this.#tap.time;
+    this.#inputDiagnostics.lastDistance = Number(distance.toFixed(2));
+    this.#inputDiagnostics.lastDuration = Number(duration.toFixed(1));
     this.#tap = null;
-    if (distance > tolerance || duration > 650) return;
+
+    if (distance > tolerance) {
+      this.#inputDiagnostics.discardedReason = "movimento-excessivo";
+      return;
+    }
+
+    if (duration > 650) {
+      this.#inputDiagnostics.discardedReason = "toque-longo";
+      return;
+    }
 
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.#inputDiagnostics.lastNdc = [
+      Number(this.pointer.x.toFixed(3)),
+      Number(this.pointer.y.toFixed(3))
+    ];
     this.raycaster.setFromCamera(this.pointer, this.camera);
 
     const gizmoHit = this.raycaster.intersectObject(this.transform.getHelper(), true)[0];
-    if (gizmoHit) return;
+    this.#inputDiagnostics.gizmoHits = gizmoHit ? 1 : 0;
 
     const hit = this.raycaster.intersectObjects([...this.#meshes.values()], false)[0];
+    this.#inputDiagnostics.objectHits = hit ? 1 : 0;
+
+    if (gizmoHit) {
+      this.#inputDiagnostics.discardedReason = "gizmo-hit";
+      return;
+    }
     const objectId = hit?.object?.userData?.objectId;
+    this.#inputDiagnostics.lastObjectId = objectId ?? null;
 
     if (!objectId) {
+      this.#inputDiagnostics.selectionAction = "clear";
+      this.#inputDiagnostics.discardedReason = "nenhum-objeto";
       this.selection.clear();
       return;
     }
 
     const member = { kind: "object", regionId: "region-main", objectId };
 
-    if (this.editorState.multiSelect) this.selection.toggle(member);
-    else this.selection.replace(member);
+    if (this.editorState.multiSelect) {
+      this.#inputDiagnostics.selectionAction = "toggle";
+      this.selection.toggle(member);
+    } else {
+      this.#inputDiagnostics.selectionAction = "replace";
+      this.selection.replace(member);
+    }
+
+    this.#inputDiagnostics.discardedReason = null;
   }
 
   resize() {
