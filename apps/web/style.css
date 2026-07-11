@@ -127,3 +127,17 @@ input,textarea,.component-text,.dev-card textarea{
   font:.7rem monospace;
   resize:vertical;
 }
+
+
+/* Ferramentas de transformação — update 0010 */
+#transform-tools-panel{position:fixed;z-index:27;top:4rem;left:.55rem;width:min(410px,calc(100vw - 1.1rem));max-height:80vh;overflow:auto;border:1px solid #ffffff22;border-radius:14px;background:#08101af7}
+#transform-tools-panel>header{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:.5rem;padding:.65rem;border-bottom:1px solid #ffffff18;background:#08101af7}
+#transform-tools-panel>header strong{flex:1}
+.tt-content{padding:.7rem}
+.tt-content fieldset{margin:0 0 .7rem;border:1px solid #ffffff18;border-radius:10px}
+.tt-content label{display:grid;grid-template-columns:9rem 1fr;gap:.5rem;align-items:center;margin:.45rem 0}
+.tt-content input[type="number"]{width:100%;padding:.42rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff}
+.tt-checks{display:grid;grid-template-columns:repeat(3,1fr);gap:.35rem}
+.tt-checks label{display:flex;gap:.35rem}
+@media(max-width:700px){#transform-tools-panel{top:auto;bottom:.55rem;max-height:72vh}}
+

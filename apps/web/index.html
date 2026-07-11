@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="spatial-seed-build" content="20260711-0009">
+<meta name="spatial-seed-build" content="20260711-0010">
 <title>Spatial Seed Monorepo</title>
-<link rel="stylesheet" href="./style.css?build=20260711-0009">
+<link rel="stylesheet" href="./style.css?build=20260711-0010">
 <script type="importmap">
 {
   "imports": {
@@ -40,6 +40,7 @@
   <button id="diagnostics">Diagnóstico</button>
   <button id="developer">Desenvolvedor</button>
   <button id="inspector">Inspector</button>
+  <button id="transform-tools">Transformação</button>
   <span id="status">Inicializando…</span>
 </header>
 
@@ -47,7 +48,7 @@
   <strong>Seleção do editor</strong>
   <div id="selection-content">∅</div>
   <div id="pivot-content">Pivô: mediana</div>
-  <div id="build-content">build 20260711-0009</div>
+  <div id="build-content">build 20260711-0010</div>
 </aside>
 
 <aside id="outline" hidden>
@@ -111,6 +112,45 @@
 <button id="inspector-remove-texture" type="button">Remover textura</button>
 </fieldset><div class="actions"><button id="inspector-apply" type="button">Aplicar ao sandbox</button></div>
 </form></section>
+<section id="transform-tools-panel" hidden>
+  <header>
+    <strong>Ferramentas de transformação</strong>
+    <button id="close-transform-tools">×</button>
+  </header>
+
+  <div class="tt-content">
+    <fieldset>
+      <legend>Gizmo</legend>
+      <label>Tamanho <input id="tt-size" type="number" min="0.2" step="0.1"></label>
+      <div class="tt-checks">
+        <label><input id="tt-show-x" type="checkbox"> X</label>
+        <label><input id="tt-show-y" type="checkbox"> Y</label>
+        <label><input id="tt-show-z" type="checkbox"> Z</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Snapping</legend>
+      <label>Translação <input id="tt-translate-snap" type="number" min="0" step="0.1"></label>
+      <label>Rotação ° <input id="tt-rotate-snap" type="number" min="0" step="1"></label>
+      <label>Escala <input id="tt-scale-snap" type="number" min="0" step="0.05"></label>
+      <label><input id="tt-grid-lock" type="checkbox"> Bloquear posição na grade</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Visualização</legend>
+      <label><input id="tt-show-vertices" type="checkbox"> Mostrar vértices</label>
+    </fieldset>
+
+    <div class="actions">
+      <button id="tt-apply" type="button">Aplicar</button>
+      <button id="tt-refresh" type="button">Atualizar diagnóstico</button>
+    </div>
+
+    <textarea id="tt-diagnostics" class="component-text" readonly></textarea>
+  </div>
+</section>
+
 <section id="review-panel" hidden>
   <header>
     <strong>Confirmar alterações do sandbox</strong>
@@ -125,6 +165,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./main.js?build=20260711-0009"></script>
+<script type="module" src="./main.js?build=20260711-0010"></script>
 </body>
 </html>

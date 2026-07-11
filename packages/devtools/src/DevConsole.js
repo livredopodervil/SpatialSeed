@@ -3,7 +3,7 @@ export class DevConsole {
 
   static commandNames = new Set([
     "help", "inspect", "list", "select", "clear",
-    "pivot", "move", "undo", "redo"
+    "pivot", "move", "undo", "redo", "gizmo", "snap", "vertices"
   ]);
 
   constructor({ editor, sandbox, region, renderer, getDiagnostics, onOutput }) {
@@ -107,6 +107,16 @@ export class DevConsole {
       case "redo":
         this.#expectMaximum(tokens, 0, "redo");
         return { changed: this.sandbox.redo() };
+
+      case "gizmo":
+        this.#expectMaximum(tokens, 0, "gizmo");
+        return this.renderer.getTransformDiagnostics();
+
+      case "snap":
+        return this.#snap(tokens);
+
+      case "vertices":
+        return this.#vertices(tokens);
 
       default:
         throw new Error(
@@ -285,6 +295,49 @@ export class DevConsole {
       delta,
       objects: transforms.map(transform => transform.id)
     };
+  }
+
+  #snap(tokens) {
+    this.#expectExact(tokens, 2, "snap move|rotate|scale|grid valor");
+
+    const [kind, value] = tokens;
+
+    if (kind === "grid") {
+      if (!["on", "off"].includes(value)) {
+        throw new Error("Uso: snap grid on|off");
+      }
+
+      return this.renderer.setTransformConfig({
+        gridLock: value === "on"
+      });
+    }
+
+    const number = this.#number(value);
+
+    if (number < 0) {
+      throw new Error("O snapping não pode ser negativo.");
+    }
+
+    const patch = {};
+
+    if (kind === "move") patch.translationSnap = number || null;
+    else if (kind === "rotate") patch.rotationSnapDeg = number || null;
+    else if (kind === "scale") patch.scaleSnap = number || null;
+    else throw new Error("Uso: snap move|rotate|scale|grid valor");
+
+    return this.renderer.setTransformConfig(patch);
+  }
+
+  #vertices(tokens) {
+    this.#expectExact(tokens, 1, "vertices on|off");
+
+    if (!["on", "off"].includes(tokens[0])) {
+      throw new Error("Uso: vertices on|off");
+    }
+
+    return this.renderer.setTransformConfig({
+      showVertices: tokens[0] === "on"
+    });
   }
 
   #tokenize(line) {

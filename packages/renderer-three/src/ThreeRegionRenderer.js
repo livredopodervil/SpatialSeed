@@ -9,6 +9,18 @@ export class ThreeRegionRenderer {
   #session = null;
   #tap = null;
   #textureLoader = new THREE.TextureLoader();
+  #transformConfig = {
+    size: 1.25,
+    translationSnap: null,
+    rotationSnapDeg: null,
+    scaleSnap: null,
+    gridLock: false,
+    showX: true,
+    showY: true,
+    showZ: true,
+    showVertices: false
+  };
+  #vertexMarkers = null;
   #inputDiagnostics = {
     pointerDown: 0,
     pointerUp: 0,
@@ -55,8 +67,27 @@ export class ThreeRegionRenderer {
 
     this.transform = new TransformControls(this.camera, canvas);
     this.transform.setMode("translate");
-    this.transform.setSize(1.25);
+    this.transform.setSize(this.#transformConfig.size);
     this.scene.add(this.transform.getHelper());
+
+    const vertexGeometry = new THREE.BufferGeometry();
+    vertexGeometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute([], 3)
+    );
+
+    this.#vertexMarkers = new THREE.Points(
+      vertexGeometry,
+      new THREE.PointsMaterial({
+        size: 0.16,
+        sizeAttenuation: false,
+        depthTest: false
+      })
+    );
+
+    this.#vertexMarkers.renderOrder = 1000;
+    this.#vertexMarkers.visible = false;
+    this.scene.add(this.#vertexMarkers);
 
     this.scene.add(new THREE.HemisphereLight(0xaecbff, 0x182012, 2.2));
     const light = new THREE.DirectionalLight(0xffffff, 2.5);
@@ -74,6 +105,7 @@ export class ThreeRegionRenderer {
       this.#selectionSnapshot = snapshot;
       this.#rebuildAnchor();
       this.#updateSelectionAppearance();
+      this.#updateVertexMarkers();
     });
 
     this.editorState.subscribe(() => {
@@ -189,6 +221,7 @@ export class ThreeRegionRenderer {
 
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
   }
 
   #applyTextureState(mesh, textureState = null) {
@@ -315,6 +348,19 @@ export class ThreeRegionRenderer {
 
     this.#session = null;
 
+    if (
+      this.#transformConfig.gridLock &&
+      this.#transformConfig.translationSnap
+    ) {
+      const step = this.#transformConfig.translationSnap;
+
+      for (const transform of transforms) {
+        transform.position = transform.position.map(
+          value => Math.round(value / step) * step
+        );
+      }
+    }
+
     if (transforms.length) {
       this.dispatch({
         type: "selection.transform",
@@ -334,31 +380,47 @@ export class ThreeRegionRenderer {
 
   #calculatePivot() {
     const members = this.#selectionSnapshot?.members ?? [];
-    const meshes = members.map(member => this.#meshes.get(member.objectId)).filter(Boolean);
+    const meshes = members
+      .map(member => this.#meshes.get(member.objectId))
+      .filter(Boolean);
+
     if (!meshes.length) return null;
 
     const policy = this.editorState.pivot.policy;
 
     if (policy === "custom") {
-      return new THREE.Vector3().fromArray(this.editorState.pivot.customPosition);
+      return new THREE.Vector3().fromArray(
+        this.editorState.pivot.customPosition
+      );
     }
 
     if (policy === "active") {
-      const activeId = this.#selectionSnapshot?.activeMember?.objectId;
-      return (this.#meshes.get(activeId) ?? meshes[meshes.length - 1]).position.clone();
+      const activeId =
+        this.#selectionSnapshot?.activeMember?.objectId;
+
+      const activeMesh =
+        this.#meshes.get(activeId) ?? meshes.at(-1);
+
+      return activeMesh.getWorldPosition(new THREE.Vector3());
     }
 
     if (policy === "bounds") {
       const bounds = new THREE.Box3().makeEmpty();
+
       for (const mesh of meshes) {
         mesh.updateMatrixWorld(true);
         bounds.expandByObject(mesh, true);
       }
+
       return bounds.getCenter(new THREE.Vector3());
     }
 
     const median = new THREE.Vector3();
-    for (const mesh of meshes) median.add(mesh.position);
+
+    for (const mesh of meshes) {
+      median.add(mesh.getWorldPosition(new THREE.Vector3()));
+    }
+
     return median.multiplyScalar(1 / meshes.length);
   }
 
@@ -386,6 +448,95 @@ export class ThreeRegionRenderer {
     }
 
     this.transform.attach(this.transformAnchor);
+  }
+
+  #updateVertexMarkers() {
+    if (
+      !this.#transformConfig.showVertices ||
+      !this.#selectionSnapshot?.members?.length
+    ) {
+      this.#vertexMarkers.visible = false;
+      return;
+    }
+
+    const bounds = new THREE.Box3().makeEmpty();
+
+    for (const member of this.#selectionSnapshot.members) {
+      const mesh = this.#meshes.get(member.objectId);
+      if (!mesh) continue;
+
+      mesh.updateMatrixWorld(true);
+      bounds.expandByObject(mesh, true);
+    }
+
+    if (bounds.isEmpty()) {
+      this.#vertexMarkers.visible = false;
+      return;
+    }
+
+    const min = bounds.min;
+    const max = bounds.max;
+
+    const vertices = [
+      min.x, min.y, min.z,
+      max.x, min.y, min.z,
+      min.x, max.y, min.z,
+      max.x, max.y, min.z,
+      min.x, min.y, max.z,
+      max.x, min.y, max.z,
+      min.x, max.y, max.z,
+      max.x, max.y, max.z
+    ];
+
+    this.#vertexMarkers.geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(vertices, 3)
+    );
+
+    this.#vertexMarkers.visible = true;
+  }
+
+  setTransformConfig(patch = {}) {
+    this.#transformConfig = {
+      ...this.#transformConfig,
+      ...patch
+    };
+
+    const config = this.#transformConfig;
+
+    this.transform.setSize(config.size);
+    this.transform.setTranslationSnap(config.translationSnap);
+    this.transform.setRotationSnap(
+      config.rotationSnapDeg
+        ? config.rotationSnapDeg * Math.PI / 180
+        : null
+    );
+    this.transform.setScaleSnap(config.scaleSnap);
+
+    this.transform.showX = config.showX;
+    this.transform.showY = config.showY;
+    this.transform.showZ = config.showZ;
+
+    this.#updateVertexMarkers();
+
+    return this.getTransformConfig();
+  }
+
+  getTransformConfig() {
+    return structuredClone(this.#transformConfig);
+  }
+
+  getTransformDiagnostics() {
+    return {
+      config: this.getTransformConfig(),
+      mode: this.transform.mode,
+      space: this.transform.space,
+      axis: this.transform.axis,
+      dragging: this.transform.dragging,
+      pivotPolicy: this.editorState.pivot.policy,
+      pivotPosition: this.transformAnchor.position.toArray(),
+      selection: this.#selectionSnapshot
+    };
   }
 
   #updateSelectionAppearance() {
