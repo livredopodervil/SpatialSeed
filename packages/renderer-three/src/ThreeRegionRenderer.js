@@ -3,27 +3,23 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 
 export class ThreeRegionRenderer {
+  static apiVersion = "renderer-three-selection-pivot-v2";
   #meshes = new Map();
   #selectionSnapshot = null;
   #session = null;
   #tap = null;
-  #state = null;
 
-  constructor(canvas, {
-    dispatch,
-    selection,
-    editorState
-  }) {
+  constructor(canvas, { dispatch, selection, editorState }) {
+    if (typeof dispatch !== "function") throw new TypeError("dispatch must be a function");
+    if (!selection?.subscribe) throw new TypeError("selection object is incompatible");
+    if (!editorState?.subscribe) throw new TypeError("editorState object is incompatible");
+
     this.canvas = canvas;
     this.dispatch = dispatch;
     this.selection = selection;
     this.editorState = editorState;
 
-    this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      powerPreference: "high-performance"
-    });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -31,12 +27,7 @@ export class ThreeRegionRenderer {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x08101a);
 
-    this.camera = new THREE.PerspectiveCamera(
-      55,
-      innerWidth / innerHeight,
-      0.1,
-      1000
-    );
+    this.camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
     this.camera.position.set(10, 8, 14);
 
     this.orbit = new OrbitControls(this.camera, canvas);
@@ -52,20 +43,12 @@ export class ThreeRegionRenderer {
     this.transform.setSize(1.25);
     this.scene.add(this.transform.getHelper());
 
-    this.scene.add(
-      new THREE.HemisphereLight(0xaecbff, 0x182012, 2.2)
-    );
-
+    this.scene.add(new THREE.HemisphereLight(0xaecbff, 0x182012, 2.2));
     const light = new THREE.DirectionalLight(0xffffff, 2.5);
     light.position.set(8, 16, 10);
     this.scene.add(light);
 
-    const grid = new THREE.GridHelper(
-      200,
-      100,
-      0x6688aa,
-      0x243142
-    );
+    const grid = new THREE.GridHelper(200, 100, 0x6688aa, 0x243142);
     grid.position.y = 0.01;
     this.scene.add(grid);
 
@@ -83,57 +66,27 @@ export class ThreeRegionRenderer {
       this.#rebuildAnchor();
     });
 
-    this.transform.addEventListener(
-      "dragging-changed",
-      event => {
-        this.orbit.enabled = !event.value;
-      }
-    );
+    this.transform.addEventListener("dragging-changed", event => {
+      this.orbit.enabled = !event.value;
+    });
+    this.transform.addEventListener("mouseDown", () => this.#beginSession());
+    this.transform.addEventListener("objectChange", () => this.#previewSession());
+    this.transform.addEventListener("mouseUp", () => this.#commitSession());
 
-    this.transform.addEventListener(
-      "mouseDown",
-      () => this.#beginSession()
-    );
+    canvas.addEventListener("pointerdown", event => {
+      this.#tap = {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        time: performance.now(),
+        type: event.pointerType || "mouse"
+      };
+    }, true);
 
-    this.transform.addEventListener(
-      "objectChange",
-      () => this.#previewSession()
-    );
-
-    this.transform.addEventListener(
-      "mouseUp",
-      () => this.#commitSession()
-    );
-
-    canvas.addEventListener(
-      "pointerdown",
-      event => {
-        this.#tap = {
-          id: event.pointerId,
-          x: event.clientX,
-          y: event.clientY,
-          time: performance.now(),
-          type: event.pointerType || "mouse"
-        };
-      },
-      true
-    );
-
-    canvas.addEventListener(
-      "pointercancel",
-      () => {
-        this.#tap = null;
-      },
-      true
-    );
-
-    canvas.addEventListener(
-      "pointerup",
-      event => this.#selectAt(event),
-      true
-    );
-
+    canvas.addEventListener("pointercancel", () => { this.#tap = null; }, true);
+    canvas.addEventListener("pointerup", event => this.#selectAt(event), true);
     addEventListener("resize", () => this.resize());
+
     this.animate();
   }
 
@@ -149,9 +102,7 @@ export class ThreeRegionRenderer {
 
     if (enabled && this.editorState.pivot.policy !== "custom") {
       const pivot = this.#calculatePivot();
-      if (pivot) {
-        this.editorState.setCustomPivot(pivot.toArray());
-      }
+      if (pivot) this.editorState.setCustomPivot(pivot.toArray());
       this.editorState.setPivotPolicy("custom");
     }
 
@@ -162,10 +113,7 @@ export class ThreeRegionRenderer {
   }
 
   toggleSpace() {
-    const next = this.transform.space === "world"
-      ? "local"
-      : "world";
-
+    const next = this.transform.space === "world" ? "local" : "world";
     this.transform.setSpace(next);
     this.selection.orientationPolicy = next;
     this.selection.notifyContextChanged();
@@ -173,7 +121,6 @@ export class ThreeRegionRenderer {
   }
 
   update(state) {
-    this.#state = state;
     const seen = new Set();
 
     for (const object of state.objects) {
@@ -183,9 +130,7 @@ export class ThreeRegionRenderer {
       if (!mesh) {
         mesh = new THREE.Mesh(
           new THREE.BoxGeometry(...object.size),
-          new THREE.MeshStandardMaterial({
-            color: object.material.color
-          })
+          new THREE.MeshStandardMaterial({ color: object.material.color })
         );
         mesh.userData.objectId = object.id;
         this.#meshes.set(object.id, mesh);
@@ -219,23 +164,17 @@ export class ThreeRegionRenderer {
     if (this.editorState.pivot.editing) {
       this.transform.setMode("translate");
       this.transform.setSpace("world");
-      return;
+    } else {
+      this.transform.setMode(this.editorState.tool.mode);
+      this.transform.setSpace(
+        this.selection.orientationPolicy === "local" ? "local" : "world"
+      );
     }
-
-    this.transform.setMode(this.editorState.tool.mode);
-    this.transform.setSpace(
-      this.selection.orientationPolicy === "local"
-        ? "local"
-        : "world"
-    );
   }
 
   #beginSession() {
     if (this.editorState.pivot.editing) {
-      this.#session = {
-        kind: "pivot",
-        initialPosition: this.transformAnchor.position.clone()
-      };
+      this.#session = { kind: "pivot" };
       return;
     }
 
@@ -251,32 +190,21 @@ export class ThreeRegionRenderer {
     };
 
     const objects = new Map();
-
     for (const member of members) {
       const mesh = this.#meshes.get(member.objectId);
       if (!mesh) continue;
-
       mesh.updateMatrixWorld(true);
-
-      objects.set(member.objectId, {
-        matrixWorld: mesh.matrixWorld.clone()
-      });
+      objects.set(member.objectId, { matrixWorld: mesh.matrixWorld.clone() });
     }
 
-    this.#session = {
-      kind: "selection",
-      initialAnchor,
-      objects
-    };
+    this.#session = { kind: "selection", initialAnchor, objects };
   }
 
   #previewSession() {
     if (!this.#session) return;
 
     if (this.#session.kind === "pivot") {
-      this.editorState.setCustomPivot(
-        this.transformAnchor.position.toArray()
-      );
+      this.editorState.setCustomPivot(this.transformAnchor.position.toArray());
       return;
     }
 
@@ -285,31 +213,18 @@ export class ThreeRegionRenderer {
       this.#session.initialAnchor.quaternion,
       this.#session.initialAnchor.scale
     );
-
     const current = new THREE.Matrix4().compose(
       this.transformAnchor.position,
       this.transformAnchor.quaternion,
       this.transformAnchor.scale
     );
-
-    const delta = current
-      .clone()
-      .multiply(initial.clone().invert());
+    const delta = current.clone().multiply(initial.clone().invert());
 
     for (const [objectId, snapshot] of this.#session.objects) {
       const mesh = this.#meshes.get(objectId);
       if (!mesh) continue;
-
-      const result = delta
-        .clone()
-        .multiply(snapshot.matrixWorld);
-
-      result.decompose(
-        mesh.position,
-        mesh.quaternion,
-        mesh.scale
-      );
-
+      const result = delta.clone().multiply(snapshot.matrixWorld);
+      result.decompose(mesh.position, mesh.quaternion, mesh.scale);
       mesh.updateMatrixWorld(true);
     }
   }
@@ -318,20 +233,16 @@ export class ThreeRegionRenderer {
     if (!this.#session) return;
 
     if (this.#session.kind === "pivot") {
-      this.editorState.setCustomPivot(
-        this.transformAnchor.position.toArray()
-      );
+      this.editorState.setCustomPivot(this.transformAnchor.position.toArray());
       this.#session = null;
       this.#rebuildAnchor();
       return;
     }
 
     const transforms = [];
-
     for (const [objectId] of this.#session.objects) {
       const mesh = this.#meshes.get(objectId);
       if (!mesh) continue;
-
       transforms.push({
         id: objectId,
         position: mesh.position.toArray(),
@@ -354,58 +265,38 @@ export class ThreeRegionRenderer {
       });
     }
 
-    this.#resetAnchorTransform();
-    this.#rebuildAnchor();
-  }
-
-  #resetAnchorTransform() {
     this.transformAnchor.quaternion.identity();
     this.transformAnchor.scale.set(1, 1, 1);
+    this.#rebuildAnchor();
   }
 
   #calculatePivot() {
     const members = this.#selectionSnapshot?.members ?? [];
-    const meshes = members
-      .map(member => this.#meshes.get(member.objectId))
-      .filter(Boolean);
-
+    const meshes = members.map(member => this.#meshes.get(member.objectId)).filter(Boolean);
     if (!meshes.length) return null;
 
     const policy = this.editorState.pivot.policy;
 
     if (policy === "custom") {
-      return new THREE.Vector3().fromArray(
-        this.editorState.pivot.customPosition
-      );
+      return new THREE.Vector3().fromArray(this.editorState.pivot.customPosition);
     }
 
     if (policy === "active") {
-      const activeId =
-        this.#selectionSnapshot?.activeMember?.objectId;
-      const activeMesh = this.#meshes.get(activeId);
-      return activeMesh
-        ? activeMesh.position.clone()
-        : meshes[meshes.length - 1].position.clone();
+      const activeId = this.#selectionSnapshot?.activeMember?.objectId;
+      return (this.#meshes.get(activeId) ?? meshes[meshes.length - 1]).position.clone();
     }
 
     if (policy === "bounds") {
-      const bounds = new THREE.Box3();
-      bounds.makeEmpty();
-
+      const bounds = new THREE.Box3().makeEmpty();
       for (const mesh of meshes) {
         mesh.updateMatrixWorld(true);
         bounds.expandByObject(mesh, true);
       }
-
       return bounds.getCenter(new THREE.Vector3());
     }
 
     const median = new THREE.Vector3();
-
-    for (const mesh of meshes) {
-      median.add(mesh.position);
-    }
-
+    for (const mesh of meshes) median.add(mesh.position);
     return median.multiplyScalar(1 / meshes.length);
   }
 
@@ -413,7 +304,6 @@ export class ThreeRegionRenderer {
     if (this.#session) return;
 
     const pivot = this.#calculatePivot();
-
     if (!pivot) {
       this.transform.detach();
       return;
@@ -422,20 +312,13 @@ export class ThreeRegionRenderer {
     this.transformAnchor.position.copy(pivot);
     this.transformAnchor.scale.set(1, 1, 1);
 
-    const activeId =
-      this.#selectionSnapshot?.activeMember?.objectId;
+    const activeId = this.#selectionSnapshot?.activeMember?.objectId;
+    const activeMesh = this.#meshes.get(activeId);
 
-    const activeMesh =
-      this.#meshes.get(activeId);
-
-    if (
-      !this.editorState.pivot.editing &&
-      this.selection.orientationPolicy === "local" &&
-      activeMesh
-    ) {
-      this.transformAnchor.quaternion.copy(
-        activeMesh.quaternion
-      );
+    if (!this.editorState.pivot.editing &&
+        this.selection.orientationPolicy === "local" &&
+        activeMesh) {
+      this.transformAnchor.quaternion.copy(activeMesh.quaternion);
     } else {
       this.transformAnchor.quaternion.identity();
     }
@@ -445,94 +328,46 @@ export class ThreeRegionRenderer {
 
   #updateSelectionAppearance() {
     const selected = new Set(
-      (this.#selectionSnapshot?.members ?? [])
-        .map(member => member.objectId)
+      (this.#selectionSnapshot?.members ?? []).map(member => member.objectId)
     );
-
-    const activeId =
-      this.#selectionSnapshot?.activeMember?.objectId;
+    const activeId = this.#selectionSnapshot?.activeMember?.objectId;
 
     for (const [id, mesh] of this.#meshes) {
-      if (id === activeId) {
-        mesh.material.emissive.set(0x263d68);
-      } else if (selected.has(id)) {
-        mesh.material.emissive.set(0x162741);
-      } else {
-        mesh.material.emissive.set(0x000000);
-      }
+      if (id === activeId) mesh.material.emissive.set(0x263d68);
+      else if (selected.has(id)) mesh.material.emissive.set(0x162741);
+      else mesh.material.emissive.set(0x000000);
     }
-  }
-
-  #rayFromPointer(event) {
-    const rect = this.canvas.getBoundingClientRect();
-
-    this.pointer.x =
-      ((event.clientX - rect.left) / rect.width) * 2 - 1;
-
-    this.pointer.y =
-      -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-    this.raycaster.setFromCamera(
-      this.pointer,
-      this.camera
-    );
   }
 
   #selectAt(event) {
-    if (
-      !this.#tap ||
-      this.#tap.id !== event.pointerId ||
-      this.transform.dragging
-    ) {
-      return;
-    }
+    if (!this.#tap || this.#tap.id !== event.pointerId || this.transform.dragging) return;
 
-    const tolerance =
-      this.#tap.type === "touch" ? 28 : 8;
-
-    const distance = Math.hypot(
-      event.clientX - this.#tap.x,
-      event.clientY - this.#tap.y
-    );
-
+    const tolerance = this.#tap.type === "touch" ? 28 : 8;
+    const distance = Math.hypot(event.clientX - this.#tap.x, event.clientY - this.#tap.y);
     const duration = performance.now() - this.#tap.time;
     this.#tap = null;
-
     if (distance > tolerance || duration > 650) return;
 
-    this.#rayFromPointer(event);
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.pointer, this.camera);
 
-    const gizmoHit = this.raycaster.intersectObject(
-      this.transform.getHelper(),
-      true
-    )[0];
-
+    const gizmoHit = this.raycaster.intersectObject(this.transform.getHelper(), true)[0];
     if (gizmoHit) return;
 
-    const hit = this.raycaster.intersectObjects(
-      [...this.#meshes.values()],
-      false
-    )[0];
-
-    const objectId =
-      hit?.object?.userData?.objectId;
+    const hit = this.raycaster.intersectObjects([...this.#meshes.values()], false)[0];
+    const objectId = hit?.object?.userData?.objectId;
 
     if (!objectId) {
       this.selection.clear();
       return;
     }
 
-    const member = {
-      kind: "object",
-      regionId: "region-main",
-      objectId
-    };
+    const member = { kind: "object", regionId: "region-main", objectId };
 
-    if (this.editorState.multiSelect) {
-      this.selection.toggle(member);
-    } else {
-      this.selection.replace(member);
-    }
+    if (this.editorState.multiSelect) this.selection.toggle(member);
+    else this.selection.replace(member);
   }
 
   resize() {

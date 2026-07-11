@@ -1,14 +1,12 @@
-import { Selection } from "./Selection.js";
+import { Selection } from "./Selection.js?build=20260711-0005";
 
 export class EditorState {
+  static apiVersion = "editor-state-v2";
   #listeners = new Set();
 
   constructor() {
     this.selection = new Selection();
-    this.tool = {
-      type: "transform",
-      mode: "translate"
-    };
+    this.tool = { type: "transform", mode: "translate" };
     this.multiSelect = false;
     this.pivot = {
       policy: "median",
@@ -18,10 +16,7 @@ export class EditorState {
   }
 
   setToolMode(mode) {
-    this.tool = {
-      ...this.tool,
-      mode
-    };
+    this.tool = { ...this.tool, mode };
     this.#emit("tool");
   }
 
@@ -31,37 +26,21 @@ export class EditorState {
   }
 
   setPivotPolicy(policy) {
-    const allowed = new Set([
-      "median",
-      "bounds",
-      "active",
-      "custom"
-    ]);
-    if (!allowed.has(policy)) {
-      throw new RangeError(`Unknown pivot policy: ${policy}`);
-    }
-    this.pivot = {
-      ...this.pivot,
-      policy
-    };
+    const allowed = new Set(["median", "bounds", "active", "custom"]);
+    if (!allowed.has(policy)) throw new RangeError(`Unknown pivot policy: ${policy}`);
+    this.pivot = { ...this.pivot, policy };
     this.selection.pivotPolicy = policy;
     this.selection.notifyContextChanged();
     this.#emit("pivot-policy");
   }
 
   setPivotEditing(enabled) {
-    this.pivot = {
-      ...this.pivot,
-      editing: Boolean(enabled)
-    };
+    this.pivot = { ...this.pivot, editing: Boolean(enabled) };
     this.#emit("pivot-editing");
   }
 
   setCustomPivot(position) {
-    this.pivot = {
-      ...this.pivot,
-      customPosition: [...position]
-    };
+    this.pivot = { ...this.pivot, customPosition: [...position] };
     this.#emit("pivot-position");
   }
 
@@ -75,21 +54,15 @@ export class EditorState {
     return Object.freeze({
       tool: { ...this.tool },
       multiSelect: this.multiSelect,
-      pivot: {
-        ...this.pivot,
-        customPosition: [...this.pivot.customPosition]
-      }
+      pivot: { ...this.pivot, customPosition: [...this.pivot.customPosition] }
     });
   }
 
   #emit(type) {
     const snapshot = this.snapshot();
     for (const listener of this.#listeners) {
-      try {
-        listener(snapshot, { type });
-      } catch (error) {
-        console.error("EditorState subscriber failed", error);
-      }
+      try { listener(snapshot, { type }); }
+      catch (error) { console.error("EditorState subscriber failed", error); }
     }
   }
 }

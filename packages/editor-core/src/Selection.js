@@ -1,4 +1,5 @@
 export class Selection {
+  static apiVersion = "selection-v2";
   #members = [];
   #activeIndex = -1;
   #listeners = new Set();
@@ -15,23 +16,10 @@ export class Selection {
     this.transformPolicy = transformPolicy;
   }
 
-  get members() {
-    return this.#members.map(member => ({ ...member }));
-  }
-
-  get activeMember() {
-    return this.#activeIndex >= 0
-      ? { ...this.#members[this.#activeIndex] }
-      : null;
-  }
-
-  get size() {
-    return this.#members.length;
-  }
-
-  get empty() {
-    return this.#members.length === 0;
-  }
+  get members() { return this.#members.map(member => ({ ...member })); }
+  get activeMember() { return this.#activeIndex >= 0 ? { ...this.#members[this.#activeIndex] } : null; }
+  get size() { return this.#members.length; }
+  get empty() { return this.#members.length === 0; }
 
   contains(objectId) {
     return this.#members.some(member => member.objectId === objectId);
@@ -63,18 +51,11 @@ export class Selection {
     this.#emit("add");
   }
 
-  setActive(objectId) {
-    const index = this.#members.findIndex(
-      member => member.objectId === objectId
-    );
-    if (index < 0) return false;
-    this.#activeIndex = index;
-    this.#emit("active");
-    return true;
-  }
-
   clear() {
-    if (this.empty) return;
+    if (this.empty) {
+      this.#emit("clear");
+      return;
+    }
     this.#members = [];
     this.#activeIndex = -1;
     this.#emit("clear");
@@ -97,18 +78,13 @@ export class Selection {
     return () => this.#listeners.delete(listener);
   }
 
-  notifyContextChanged() {
-    this.#emit("context");
-  }
+  notifyContextChanged() { this.#emit("context"); }
 
   #emit(type) {
     const snapshot = this.snapshot();
     for (const listener of this.#listeners) {
-      try {
-        listener(snapshot, { type });
-      } catch (error) {
-        console.error("Selection subscriber failed", error);
-      }
+      try { listener(snapshot, { type }); }
+      catch (error) { console.error("Selection subscriber failed", error); }
     }
   }
 }

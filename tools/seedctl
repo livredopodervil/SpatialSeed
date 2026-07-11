@@ -1,0 +1,75 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+PROJECT="$HOME/SpatialSeed-monorepo"
+PUBLIC="$HOME/storage/shared/SpatialSeed-monorepo"
+PORT=8082
+
+command="${1:-help}"
+
+case "$command" in
+  status)
+    cd "$PROJECT"
+    echo "=== Git ==="
+    git status --short
+    echo
+    echo "=== Últimos commits ==="
+    git log --oneline -5
+    echo
+    echo "=== Build público ==="
+    grep -o 'spatial-seed-build" content="[^"]*' "$PUBLIC/apps/web/index.html" || true
+    ;;
+
+  sync)
+    cd "$PROJECT"
+    mkdir -p "$PUBLIC"
+    rsync -av --delete \
+      --exclude '.git/' \
+      --exclude '.backups/' \
+      "$PROJECT/" "$PUBLIC/"
+    echo "Sincronizado: $PROJECT -> $PUBLIC"
+    ;;
+
+  verify)
+    echo "=== Hashes repositório / público ==="
+    files=(
+      "apps/web/index.html"
+      "apps/web/main.js"
+      "apps/web/style.css"
+      "packages/editor-core/src/EditorState.js"
+      "packages/editor-core/src/Selection.js"
+      "packages/renderer-three/src/ThreeRegionRenderer.js"
+    )
+    for file in "${files[@]}"; do
+      a="$(sha256sum "$PROJECT/$file" | cut -d' ' -f1)"
+      b="$(sha256sum "$PUBLIC/$file" | cut -d' ' -f1)"
+      if [ "$a" = "$b" ]; then
+        printf 'OK   %s\n' "$file"
+      else
+        printf 'ERRO %s\n  repo: %s\n  pub:  %s\n' "$file" "$a" "$b"
+      fi
+    done
+    ;;
+
+  serve)
+    pkill -f "SpatialSeed-monorepo/tools/no_cache_server.py" 2>/dev/null || true
+    exec python "$PROJECT/tools/no_cache_server.py"
+    ;;
+
+  seed)
+    cd "$PROJECT"
+    bash tools/make-project-seed.sh
+    ;;
+
+  help|*)
+    cat <<'EOF'
+Uso: bash tools/seedctl COMANDO
+
+  status  mostra estado Git e build público
+  sync    sincroniza repositório com armazenamento público
+  verify  compara hashes entre repositório e cópia pública
+  serve   inicia servidor HTTP sem cache na porta 8082
+  seed    atualiza PROJECT_SEED.md para continuidade por outra LLM
+EOF
+    ;;
+esac
