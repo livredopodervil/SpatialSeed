@@ -19,7 +19,6 @@ function updateMany(objects, transforms) {
     if (!transform) return object;
 
     changed = true;
-
     return Object.freeze({
       ...object,
       position: [...transform.position],
@@ -52,12 +51,10 @@ export function boxRegionReducer(state, command) {
           ...state,
           objects: Object.freeze([...state.objects, object])
         }),
-        changes: [
-          {
-            type: "object-created",
-            objectId: object.id
-          }
-        ]
+        changes: [{
+          type: "object-created",
+          objectId: object.id
+        }]
       };
     }
 
@@ -78,16 +75,11 @@ export function boxRegionReducer(state, command) {
       }
 
       return {
-        state: Object.freeze({
-          ...state,
-          objects
-        }),
-        changes: [
-          {
-            type: "object-transform",
-            objectId: command.id
-          }
-        ]
+        state: Object.freeze({ ...state, objects }),
+        changes: [{
+          type: "object-transform",
+          objectId: command.id
+        }]
       };
     }
 
@@ -102,10 +94,7 @@ export function boxRegionReducer(state, command) {
       }
 
       return {
-        state: Object.freeze({
-          ...state,
-          objects
-        }),
+        state: Object.freeze({ ...state, objects }),
         changes: command.transforms.map(transform => ({
           type: "object-transform",
           objectId: transform.id,
@@ -115,9 +104,6 @@ export function boxRegionReducer(state, command) {
     }
 
     default:
-      return {
-        state,
-        changes: []
-      };
+      return { state, changes: [] };
   }
 }

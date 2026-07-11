@@ -24,6 +24,13 @@
   <button id="space">Mundo</button>
   <button id="multi-select">Seleção: única</button>
   <button id="clear-selection">Selecionar ∅</button>
+  <select id="pivot-policy" aria-label="Política do pivô">
+    <option value="median">Pivô: mediana</option>
+    <option value="bounds">Pivô: limites</option>
+    <option value="active">Pivô: ativo</option>
+    <option value="custom">Pivô: personalizado</option>
+  </select>
+  <button id="edit-pivot">Editar pivô</button>
   <button id="add-box">Caixa</button>
   <button id="undo" disabled>Desfazer local</button>
   <button id="redo" disabled>Refazer local</button>
@@ -35,6 +42,7 @@
 <aside id="selection-panel">
   <strong>Seleção do editor</strong>
   <div id="selection-content">∅</div>
+  <div id="pivot-content">Pivô: mediana</div>
 </aside>
 
 <aside id="outline" hidden>

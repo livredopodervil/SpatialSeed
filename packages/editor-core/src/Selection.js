@@ -44,10 +44,9 @@ export class Selection {
   }
 
   toggle(member) {
-    const index = this.#members.findIndex(
-      current =>
-        current.regionId === member.regionId &&
-        current.objectId === member.objectId
+    const index = this.#members.findIndex(current =>
+      current.regionId === member.regionId &&
+      current.objectId === member.objectId
     );
 
     if (index >= 0) {
@@ -62,6 +61,16 @@ export class Selection {
     this.#members.push({ ...member });
     this.#activeIndex = this.#members.length - 1;
     this.#emit("add");
+  }
+
+  setActive(objectId) {
+    const index = this.#members.findIndex(
+      member => member.objectId === objectId
+    );
+    if (index < 0) return false;
+    this.#activeIndex = index;
+    this.#emit("active");
+    return true;
   }
 
   clear() {
@@ -86,6 +95,10 @@ export class Selection {
     this.#listeners.add(listener);
     listener(this.snapshot(), { type: "initial" });
     return () => this.#listeners.delete(listener);
+  }
+
+  notifyContextChanged() {
+    this.#emit("context");
   }
 
   #emit(type) {
