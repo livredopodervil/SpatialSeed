@@ -56,7 +56,24 @@ export class ObjectInspector {
     return {changed,id:this.selectedId};
   }
   #bind(){
-    this.root.querySelector("#inspector-apply").addEventListener("click",()=>this.apply());
+    this.root
+      .querySelector("#inspector-apply")
+      .addEventListener("click", () => {
+        this.#clearValidation();
+
+        try {
+          const result = this.apply();
+          this.#clearValidation();
+          return result;
+        } catch (error) {
+          this.#showValidation(error);
+
+          return {
+            changed: false,
+            reason: "validation"
+          };
+        }
+      });
     this.root.querySelector("#inspector-remove-texture").addEventListener("click",()=>{this.pendingTextureDataUrl="";this.#set("ins-texture-src","");});
     this.root.querySelector("#ins-texture-file").addEventListener("change",e=>{
       const f=e.target.files?.[0]; if(!f)return;
@@ -66,7 +83,53 @@ export class ObjectInspector {
   #set(id,v){const e=this.root.querySelector(`#${id}`);if(e)e.value=v}
   #vec(p,v){v.forEach((x,i)=>this.#set(`${p}-${i}`,Number(x)))}
   #read(id){return this.root.querySelector(`#${id}`)?.value??""}
-  #num(id,min=null){const v=Number(this.#read(id));if(!Number.isFinite(v))throw new Error(`Valor inválido: ${id}`);if(min!==null&&v<min)throw new Error(`${id} deve ser ≥ ${min}`);return v}
+  #num(id, min = null) {
+    const value = Number(this.#read(id));
+
+    if (!Number.isFinite(value)) {
+      const error = new Error(`Valor inválido: ${id}`);
+      error.fieldId = id;
+      throw error;
+    }
+
+    if (min !== null && value < min) {
+      const error = new Error(`${id} deve ser ≥ ${min}`);
+      error.fieldId = id;
+      throw error;
+    }
+
+    return value;
+  }
+
+  #clearValidation() {
+    this.root
+      .querySelectorAll("input, select")
+      .forEach(element => {
+        element.setCustomValidity("");
+        element.removeAttribute("aria-invalid");
+      });
+  }
+
+  #showValidation(error) {
+    const field = error?.fieldId
+      ? this.root.querySelector(`#${error.fieldId}`)
+      : null;
+
+    if (field) {
+      field.setCustomValidity(error.message);
+      field.setAttribute("aria-invalid", "true");
+      field.focus();
+      field.reportValidity();
+      return;
+    }
+
+    const message =
+      this.root.querySelector("#inspector-empty");
+
+    message.hidden = false;
+    message.textContent =
+      error?.message ?? String(error);
+  }
   #readVec(p,n,min=null){return Array.from({length:n},(_,i)=>this.#num(`${p}-${i}`,min))}
 }
 function eulerToQuat([xd,yd,zd]){const x=xd*Math.PI/180,y=yd*Math.PI/180,z=zd*Math.PI/180,c1=Math.cos(x/2),c2=Math.cos(y/2),c3=Math.cos(z/2),s1=Math.sin(x/2),s2=Math.sin(y/2),s3=Math.sin(z/2);return[s1*c2*c3+c1*s2*s3,c1*s2*c3-s1*c2*s3,c1*c2*s3+s1*s2*c3,c1*c2*c3-s1*s2*s3]}

@@ -64,12 +64,34 @@ export class SelectionOperations {
 
   repeat() {
     if (!this.lastDuplicate?.deltaMatrix) {
-      throw new Error("Ainda não existe uma duplicação transformada para repetir.");
+      return {
+        changed: false,
+        reason: "no-repeat-history"
+      };
     }
 
-    const sourceObjects = this.#selectedObjects({
-      fallbackIds: this.lastDuplicate.duplicateIds
-    });
+    let sourceObjects;
+
+    try {
+      sourceObjects = this.#selectedObjects({
+        fallbackIds: this.lastDuplicate.duplicateIds
+      });
+    } catch (error) {
+      const message = error?.message ?? "";
+
+      if (message.includes("Objeto não encontrado")) {
+        this.pendingDuplicate = null;
+        this.lastDuplicate = null;
+        this.editor.selection.clear();
+
+        return {
+          changed: false,
+          reason: "stale-repeat-history"
+        };
+      }
+
+      throw error;
+    }
 
     const delta = new THREE.Matrix4().fromArray(this.lastDuplicate.deltaMatrix);
 
@@ -113,7 +135,13 @@ export class SelectionOperations {
 
   deleteSelection() {
     const ids = this.editor.selection.snapshot().members.map(member => member.objectId);
-    if (!ids.length) throw new Error("A seleção está vazia.");
+    if (!ids.length) {
+      return {
+        changed: false,
+        deletedIds: [],
+        reason: "selection-empty"
+      };
+    }
 
     const changed = this.sandbox.dispatch({
       type: "selection.delete",

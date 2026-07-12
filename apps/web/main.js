@@ -1,18 +1,18 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0014";
-import { Region } from "../../packages/core/src/Region.js?build=20260711-0014";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0014";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0014";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0014";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0014";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0014";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0014";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0014";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0014";
-import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0014";
-import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0014";
-import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260711-0014";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0015";
+import { Region } from "../../packages/core/src/Region.js?build=20260711-0015";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0015";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0015";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0015";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0015";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0015";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0015";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0015";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0015";
+import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0015";
+import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0015";
+import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260711-0015";
 
-const BUILD = "20260711-0014";
+const BUILD = "20260711-0015";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -49,8 +49,20 @@ function executeUiCommand(id, args = {}) {
   try {
     const result = editorCommands.execute(id, args);
 
-    if (result?.reason === "selection-empty") {
-      showNotice("Selecione ao menos um objeto.");
+    $("error-box").hidden = true;
+    $("error-box").textContent = "";
+
+    const notices = {
+      "selection-empty":
+        "Selecione ao menos um objeto.",
+      "no-repeat-history":
+        "Ainda não há uma duplicação transformada para repetir.",
+      "stale-repeat-history":
+        "O histórico de repetição ficou inválido e foi limpo."
+    };
+
+    if (result?.reason && notices[result.reason]) {
+      showNotice(notices[result.reason]);
     }
 
     return result;
