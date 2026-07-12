@@ -18,7 +18,8 @@ export class ThreeRegionRenderer {
     showX: true,
     showY: true,
     showZ: true,
-    showVertices: false
+    showVertices: false,
+    vertexSize: 5
   };
   #vertexMarkers = null;
   #inputDiagnostics = {
@@ -80,7 +81,7 @@ export class ThreeRegionRenderer {
       vertexGeometry,
       new THREE.PointsMaterial({
         color: 0xffffff,
-        size: 8,
+        size: this.#transformConfig.vertexSize,
         sizeAttenuation: false,
         depthTest: false,
         depthWrite: false
@@ -259,6 +260,33 @@ export class ThreeRegionRenderer {
     texture.needsUpdate = true;
   }
 
+  #storeEditedPivot(position) {
+    const world = position.toArray();
+
+    if (this.editorState.pivot.reference === "active-relative") {
+      const activeId =
+        this.#selectionSnapshot?.activeMember?.objectId;
+
+      const activeMesh = this.#meshes.get(activeId);
+
+      if (activeMesh) {
+        const center = activeMesh.getWorldPosition(
+          new THREE.Vector3()
+        );
+
+        const offset = new THREE.Vector3()
+          .fromArray(world)
+          .sub(center)
+          .toArray();
+
+        this.editorState.setRelativePivot(offset);
+        return;
+      }
+    }
+
+    this.editorState.setCustomPivot(world);
+  }
+
   #configureTransformForEditor() {
     if (this.editorState.pivot.editing) {
       this.transform.setMode("translate");
@@ -303,7 +331,7 @@ export class ThreeRegionRenderer {
     if (!this.#session) return;
 
     if (this.#session.kind === "pivot") {
-      this.editorState.setCustomPivot(this.transformAnchor.position.toArray());
+      this.#storeEditedPivot(this.transformAnchor.position);
       return;
     }
 
@@ -332,7 +360,7 @@ export class ThreeRegionRenderer {
     if (!this.#session) return;
 
     if (this.#session.kind === "pivot") {
-      this.editorState.setCustomPivot(this.transformAnchor.position.toArray());
+      this.#storeEditedPivot(this.transformAnchor.position);
       this.#session = null;
       this.#rebuildAnchor();
       return;
@@ -545,6 +573,8 @@ export class ThreeRegionRenderer {
     this.transform.showX = config.showX;
     this.transform.showY = config.showY;
     this.transform.showZ = config.showZ;
+    this.#vertexMarkers.material.size = config.vertexSize;
+    this.#vertexMarkers.material.needsUpdate = true;
 
     this.#updateVertexMarkers();
 

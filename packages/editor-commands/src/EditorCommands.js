@@ -8,6 +8,37 @@ export function createEditorCommands({
   const commands = new CommandRegistry();
 
   commands
+    .register("tool.set", ({ mode }) => {
+      renderer.setTransformMode(mode);
+      return editor.snapshot().tool;
+    })
+    .register("space.toggle", () => ({
+      space: renderer.toggleSpace()
+    }))
+    .register("selection.multi.toggle", () => {
+      editor.setMultiSelect(!editor.multiSelect);
+      return { multiSelect: editor.multiSelect };
+    })
+    .register("selection.clear", () => {
+      editor.selection.clear();
+      return editor.selection.snapshot();
+    })
+    .register("history.undo", () => ({
+      changed: selectionOperations.sandbox.undo()
+    }))
+    .register("history.redo", () => ({
+      changed: selectionOperations.sandbox.redo()
+    }))
+    .register("pivot.edit.toggle", () => {
+      const enabled = !editor.pivot.editing;
+      const changed = renderer.setPivotEditing(enabled);
+
+      return {
+        changed,
+        editing: changed ? enabled : editor.pivot.editing,
+        reason: changed ? null : "selection-empty"
+      };
+    })
     .register("object.create.box", args =>
       selectionOperations.createBox(args)
     )

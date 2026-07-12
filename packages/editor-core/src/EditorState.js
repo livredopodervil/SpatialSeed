@@ -1,4 +1,4 @@
-import { Selection } from "./Selection.js?build=20260711-0005";
+import { Selection } from "./Selection.js?build=20260711-0014";
 
 export class EditorState {
   static apiVersion = "editor-state-v2";
@@ -30,7 +30,11 @@ export class EditorState {
   setPivotPolicy(policy) {
     const allowed = new Set(["median", "bounds", "active", "custom"]);
     if (!allowed.has(policy)) throw new RangeError(`Unknown pivot policy: ${policy}`);
-    this.pivot = { ...this.pivot, policy };
+    this.pivot = {
+      ...this.pivot,
+      policy,
+      editing: false
+    };
     this.selection.pivotPolicy = policy;
     this.selection.notifyContextChanged();
     this.#emit("pivot-policy");

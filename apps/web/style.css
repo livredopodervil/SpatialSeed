@@ -141,3 +141,10 @@ input,textarea,.component-text,.dev-card textarea{
 .tt-checks label{display:flex;gap:.35rem}
 @media(max-width:700px){#transform-tools-panel{top:auto;bottom:.55rem;max-height:72vh}}
 
+
+
+/* Estado dos comandos da barra — update 0014 */
+[data-transform][data-active="true"]{
+  outline:2px solid #ffffff88;
+  background:#263a59ee;
+}

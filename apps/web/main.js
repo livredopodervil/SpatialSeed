@@ -1,18 +1,18 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0013";
-import { Region } from "../../packages/core/src/Region.js?build=20260711-0013";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0013";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0013";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0013";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0013";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0013";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0013";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0013";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0013";
-import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0013";
-import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0013";
-import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260711-0013";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0014";
+import { Region } from "../../packages/core/src/Region.js?build=20260711-0014";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0014";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0014";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0014";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0014";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0014";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0014";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0014";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0014";
+import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0014";
+import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0014";
+import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260711-0014";
 
-const BUILD = "20260711-0013";
+const BUILD = "20260711-0014";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -32,6 +32,41 @@ function showError(error) {
   $("status").textContent = "Falha parcial";
   console.error(error);
 }
+
+
+let statusTimer = null;
+
+function showNotice(message, duration = 2200) {
+  clearTimeout(statusTimer);
+  $("status").textContent = message;
+
+  statusTimer = setTimeout(() => {
+    refresh();
+  }, duration);
+}
+
+function executeUiCommand(id, args = {}) {
+  try {
+    const result = editorCommands.execute(id, args);
+
+    if (result?.reason === "selection-empty") {
+      showNotice("Selecione ao menos um objeto.");
+    }
+
+    return result;
+  } catch (error) {
+    const message = error?.message ?? String(error);
+
+    if (/seleção está vazia/i.test(message)) {
+      showNotice("Selecione ao menos um objeto.");
+      return { changed: false, reason: "selection-empty" };
+    }
+
+    showError(error);
+    return { changed: false, reason: "internal-error" };
+  }
+}
+
 
 addEventListener("error", event => showError(event.error || event.message));
 addEventListener("unhandledrejection", event => showError(event.reason));
@@ -223,12 +258,27 @@ editor.selection.subscribe(snapshot => {
       ).join(", ")
     : "∅";
   diagnostics.selection = snapshot;
+
+  const empty = snapshot.members.length === 0;
+
+  $("clear-selection").disabled = empty;
+  $("edit-pivot").disabled = empty;
+  $("duplicate-selection").disabled = empty;
+  $("delete-selection").disabled = empty;
+  $("inspector").disabled = empty;
 });
 
 editor.subscribe(snapshot => {
   $("multi-select").textContent = snapshot.multiSelect ? "Seleção: múltipla" : "Seleção: única";
   $("edit-pivot").textContent = snapshot.pivot.editing ? "Concluir pivô" : "Editar pivô";
   $("pivot-policy").value = snapshot.pivot.policy;
+
+  document.querySelectorAll("[data-transform]").forEach(button => {
+    button.dataset.active =
+      button.dataset.transform === snapshot.tool.mode
+        ? "true"
+        : "false";
+  });
   $("pivot-content").textContent = snapshot.pivot.policy === "custom"
     ? `Pivô personalizado: ${snapshot.pivot.customPosition.map(v => v.toFixed(2)).join(", ")}`
     : `Pivô: ${snapshot.pivot.policy}`;
@@ -237,44 +287,42 @@ editor.subscribe(snapshot => {
 
 document.querySelectorAll("[data-transform]").forEach(button => {
   button.addEventListener("click", () =>
-    renderer3d.setTransformMode(button.dataset.transform)
+    executeUiCommand("tool.set", {
+      mode: button.dataset.transform
+    })
   );
 });
 
 $("space").addEventListener("click", event => {
-  const next = renderer3d.toggleSpace();
-  event.currentTarget.textContent = next === "world" ? "Mundo" : "Local";
-});
+  const result = executeUiCommand("space.toggle");
 
-$("multi-select").addEventListener("click", () =>
-  editor.setMultiSelect(!editor.multiSelect)
-);
-$("clear-selection").addEventListener("click", () =>
-  editor.selection.clear()
-);
-$("pivot-policy").addEventListener("change", event => {
-  editor.setPivotEditing(false);
-  editor.setPivotPolicy(event.target.value);
-});
-$("edit-pivot").addEventListener("click", () => {
-  if (!renderer3d.setPivotEditing(!editor.pivot.editing)) {
-    $("status").textContent = "Selecione ao menos um objeto para editar o pivô";
+  if (result?.space) {
+    event.currentTarget.textContent =
+      result.space === "world" ? "Mundo" : "Local";
   }
 });
 
-$("add-box").addEventListener("click", () => {
-  const i = sandbox.getState().objects.length + 1;
-  sandbox.dispatch({
-    type: "object.create",
-    id: crypto.randomUUID(),
-    name: `Caixa ${i}`,
-    position: [0, 1, -i],
-    color: "#8a78d1"
+$("multi-select").addEventListener("click", () =>
+  executeUiCommand("selection.multi.toggle")
+);
+$("clear-selection").addEventListener("click", () =>
+  executeUiCommand("selection.clear")
+);
+$("pivot-policy").addEventListener("change", event => {
+  executeUiCommand("pivot.policy", {
+    policy: event.target.value
   });
 });
+$("edit-pivot").addEventListener("click", () => {
+  executeUiCommand("pivot.edit.toggle");
+});
 
-$("undo").addEventListener("click", () => sandbox.undo());
-$("redo").addEventListener("click", () => sandbox.redo());
+$("add-box").addEventListener("click", () => {
+  executeUiCommand("object.create.box");
+});
+
+$("undo").addEventListener("click", () => executeUiCommand("history.undo"));
+$("redo").addEventListener("click", () => executeUiCommand("history.redo"));
 $("structure").addEventListener("click", () => $("outline").hidden = !$("outline").hidden);
 $("close-outline").addEventListener("click", () => $("outline").hidden = true);
 
@@ -293,18 +341,15 @@ $("diagnostics").addEventListener("click", () => {
 $("close-diagnostics").addEventListener("click", () => $("diagnostic-panel").hidden = true);
 
 $("duplicate-selection").addEventListener("click", () => {
-  try { editorCommands.execute("selection.duplicate"); }
-  catch (error) { showError(error); }
+  executeUiCommand("selection.duplicate");
 });
 
 $("repeat-duplicate").addEventListener("click", () => {
-  try { editorCommands.execute("selection.repeat"); }
-  catch (error) { showError(error); }
+  executeUiCommand("selection.repeat");
 });
 
 $("delete-selection").addEventListener("click", () => {
-  try { editorCommands.execute("selection.delete"); }
-  catch (error) { showError(error); }
+  executeUiCommand("selection.delete");
 });
 
 $("transform-tools").addEventListener("click", () => {

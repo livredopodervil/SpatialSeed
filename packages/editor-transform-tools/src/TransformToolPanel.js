@@ -21,6 +21,7 @@ export class TransformToolPanel {
     this.#checked("tt-show-y", config.showY);
     this.#checked("tt-show-z", config.showZ);
     this.#checked("tt-show-vertices", config.showVertices);
+    this.#value("tt-vertex-size", config.vertexSize);
 
     this.root.querySelector("#tt-diagnostics").value =
       JSON.stringify(this.renderer.getTransformDiagnostics(), null, 2);
@@ -36,7 +37,8 @@ export class TransformToolPanel {
       showX: this.#isChecked("tt-show-x"),
       showY: this.#isChecked("tt-show-y"),
       showZ: this.#isChecked("tt-show-z"),
-      showVertices: this.#isChecked("tt-show-vertices")
+      showVertices: this.#isChecked("tt-show-vertices"),
+      vertexSize: this.#number("tt-vertex-size", 1)
     };
 
     this.renderer.setTransformConfig(config);
@@ -56,7 +58,8 @@ export class TransformToolPanel {
       "tt-show-x",
       "tt-show-y",
       "tt-show-z",
-      "tt-show-vertices"
+      "tt-show-vertices",
+      "tt-vertex-size"
     ]) {
       this.root.querySelector(`#${id}`)
         .addEventListener("change", () => this.apply());
