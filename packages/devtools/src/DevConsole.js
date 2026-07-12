@@ -1,12 +1,22 @@
 export class DevConsole {
-  static apiVersion = "dev-console-v2";
+  static apiVersion = "dev-console-v3";
 
   static commandNames = new Set([
     "help", "inspect", "list", "select", "clear",
-    "pivot", "move", "undo", "redo", "gizmo", "snap", "vertices", "duplicate", "repeat", "delete"
+    "pivot", "move", "position", "rotate", "scale",
+    "create", "undo", "redo", "gizmo", "snap",
+    "vertices", "duplicate", "repeat", "delete"
   ]);
 
-  constructor({ editor, sandbox, region, renderer, getDiagnostics, onOutput, selectionOperations }) {
+  constructor({
+    editor,
+    sandbox,
+    region,
+    renderer,
+    getDiagnostics,
+    onOutput,
+    selectionOperations
+  }) {
     this.editor = editor;
     this.sandbox = sandbox;
     this.region = region;
@@ -78,14 +88,7 @@ export class DevConsole {
       case "list":
         this.#expectExact(tokens, 1, "list objects");
         if (tokens[0] !== "objects") throw new Error("Uso: list objects");
-        return this.sandbox.getState().objects.map(object => ({
-          id: object.id,
-          kind: object.kind,
-          name: object.name,
-          position: object.position,
-          rotation: object.rotation,
-          scale: object.scale
-        }));
+        return this.sandbox.getState().objects;
 
       case "select":
         return this.#select(tokens);
@@ -95,11 +98,47 @@ export class DevConsole {
         this.editor.selection.clear();
         return { selection: [] };
 
+      case "create":
+        return this.#create(tokens);
+
+      case "position":
+        this.#expectExact(tokens, 3, "position x y z");
+        return this.selectionOperations.setSelectionPosition(
+          tokens.map(value => this.#number(value))
+        );
+
+      case "move":
+        this.#expectExact(tokens, 3, "move dx dy dz");
+        return this.selectionOperations.translate(
+          tokens.map(value => this.#number(value))
+        );
+
+      case "rotate":
+        this.#expectExact(tokens, 3, "rotate xDeg yDeg zDeg");
+        return this.selectionOperations.rotateEuler(
+          tokens.map(value => this.#number(value))
+        );
+
+      case "scale":
+        this.#expectExact(tokens, 3, "scale sx sy sz");
+        return this.selectionOperations.scaleBy(
+          tokens.map(value => this.#positive(value))
+        );
+
       case "pivot":
         return this.#pivot(tokens);
 
-      case "move":
-        return this.#move(tokens);
+      case "duplicate":
+        this.#expectMaximum(tokens, 0, "duplicate");
+        return this.selectionOperations.duplicate();
+
+      case "repeat":
+        this.#expectMaximum(tokens, 0, "repeat");
+        return this.selectionOperations.repeat();
+
+      case "delete":
+        this.#expectMaximum(tokens, 0, "delete");
+        return this.selectionOperations.deleteSelection();
 
       case "undo":
         this.#expectMaximum(tokens, 0, "undo");
@@ -119,18 +158,6 @@ export class DevConsole {
       case "vertices":
         return this.#vertices(tokens);
 
-      case "duplicate":
-        this.#expectMaximum(tokens, 0, "duplicate");
-        return this.selectionOperations.duplicate();
-
-      case "repeat":
-        this.#expectMaximum(tokens, 0, "repeat");
-        return this.selectionOperations.repeat();
-
-      case "delete":
-        this.#expectMaximum(tokens, 0, "delete");
-        return this.selectionOperations.deleteSelection();
-
       default:
         throw new Error(
           `Comando desconhecido: ${command || "(vazio)"}. Use help.`
@@ -140,32 +167,82 @@ export class DevConsole {
 
   #help() {
     return {
-      syntax: "Separe comandos por ponto e vírgula ou por quebra de linha.",
+      syntax:
+        "Separe comandos por ponto e vírgula ou por quebra de linha.",
       commands: [
-        "help",
-        "inspect selection",
-        "inspect input",
-        "inspect editor",
-        "inspect sandbox",
-        "inspect region",
-        "inspect objects",
-        "list objects",
-        "select box-1",
-        "select box-1 box-2",
-        "clear",
+        "create box",
+        "create box x y z",
+        "position x y z",
+        "move dx dy dz",
+        "rotate xDeg yDeg zDeg",
+        "scale sx sy sz",
+        "duplicate",
+        "repeat",
+        "delete",
         "pivot median",
         "pivot bounds",
         "pivot active",
-        "pivot custom x y z",
-        "move dx dy dz",
+        "pivot absolute x y z",
+        "pivot relative dx dy dz",
+        "select object-id [object-id ...]",
+        "clear",
+        "list objects",
+        "inspect selection|input|editor|sandbox|region|objects",
+        "snap move|rotate|scale valor",
+        "snap grid on|off",
+        "vertices on|off",
+        "gizmo",
         "undo",
         "redo"
-      ],
-      examples: [
-        "select box-1; inspect selection",
-        "select box-1 box-2\npivot bounds\nmove 1 0 0"
       ]
     };
+  }
+
+  #create(tokens) {
+    if (tokens.shift()?.toLowerCase() !== "box") {
+      throw new Error("Uso: create box [x y z]");
+    }
+
+    if (tokens.length === 0) {
+      return this.selectionOperations.createBox();
+    }
+
+    this.#expectExact(tokens, 3, "create box x y z");
+
+    return this.selectionOperations.createBox({
+      position: tokens.map(value => this.#number(value))
+    });
+  }
+
+  #pivot(tokens) {
+    const mode = tokens.shift();
+
+    if (!mode) return this.editor.snapshot().pivot;
+
+    if (["median", "bounds", "active"].includes(mode)) {
+      this.#expectMaximum(tokens, 0, `pivot ${mode}`);
+      this.editor.setPivotEditing(false);
+      this.editor.setPivotPolicy(mode);
+      return this.editor.snapshot().pivot;
+    }
+
+    if (mode === "absolute" || mode === "custom") {
+      this.#expectExact(tokens, 3, `pivot ${mode} x y z`);
+      return this.selectionOperations.setPivotAbsolute(
+        tokens.map(value => this.#number(value))
+      );
+    }
+
+    if (mode === "relative") {
+      this.#expectExact(tokens, 3, "pivot relative dx dy dz");
+      return this.selectionOperations.setPivotRelative(
+        tokens.map(value => this.#number(value))
+      );
+    }
+
+    throw new Error(
+      "Uso: pivot median|bounds|active|absolute|relative"
+    );
   }
 
   #inspect(target = "all") {
@@ -207,17 +284,6 @@ export class DevConsole {
       throw new Error("Uso: select object-id [object-id ...]");
     }
 
-    const accidentalCommand = ids.find(
-      id => DevConsole.commandNames.has(id.toLowerCase())
-    );
-
-    if (accidentalCommand) {
-      throw new Error(
-        `O comando "select" recebeu "${accidentalCommand}" como argumento. ` +
-        "Separe comandos por ponto e vírgula ou por quebra de linha."
-      );
-    }
-
     const known = new Set(
       this.sandbox.getState().objects.map(object => object.id)
     );
@@ -241,73 +307,6 @@ export class DevConsole {
     }
 
     return this.editor.selection.snapshot();
-  }
-
-  #pivot(tokens) {
-    const policy = tokens.shift();
-
-    if (!policy) return this.editor.snapshot().pivot;
-
-    if (policy === "custom") {
-      this.#expectExact(tokens, 3, "pivot custom x y z");
-      const position = tokens.map(value => this.#number(value));
-      this.editor.setCustomPivot(position);
-      this.editor.setPivotPolicy("custom");
-      return { policy: "custom", position };
-    }
-
-    this.#expectMaximum(tokens, 0, `pivot ${policy}`);
-    this.editor.setPivotEditing(false);
-    this.editor.setPivotPolicy(policy);
-    return this.editor.snapshot().pivot;
-  }
-
-  #move(tokens) {
-    this.#expectExact(tokens, 3, "move dx dy dz");
-
-    const delta = tokens.map(value => this.#number(value));
-    const selection = this.editor.selection.snapshot();
-
-    if (!selection.members.length) {
-      throw new Error("A seleção está vazia.");
-    }
-
-    const objects = new Map(
-      this.sandbox.getState().objects.map(object => [object.id, object])
-    );
-
-    const transforms = selection.members.map(member => {
-      const object = objects.get(member.objectId);
-
-      if (!object) {
-        throw new Error(
-          `Objeto selecionado não resolvido: ${member.objectId}`
-        );
-      }
-
-      return {
-        id: object.id,
-        position: object.position.map(
-          (value, index) => value + delta[index]
-        ),
-        rotation: [...object.rotation],
-        scale: [...object.scale]
-      };
-    });
-
-    const changed = this.sandbox.dispatch({
-      type: "selection.transform",
-      source: "dev-console",
-      selection,
-      pivot: this.editor.snapshot().pivot,
-      transforms
-    });
-
-    return {
-      changed,
-      delta,
-      objects: transforms.map(transform => transform.id)
-    };
   }
 
   #snap(tokens) {
@@ -355,15 +354,27 @@ export class DevConsole {
 
   #tokenize(line) {
     return line.match(/"[^"]*"|'[^']*'|\S+/g)?.map(token =>
-      token.replace(/^[\"']|[\"']$/g, "")
+      token.replace(/^["']|["']$/g, "")
     ) ?? [];
   }
 
   #number(value) {
     const number = Number(value);
+
     if (!Number.isFinite(number)) {
       throw new Error(`Número inválido: ${value}`);
     }
+
+    return number;
+  }
+
+  #positive(value) {
+    const number = this.#number(value);
+
+    if (number <= 0) {
+      throw new Error(`Valor deve ser positivo: ${value}`);
+    }
+
     return number;
   }
 
@@ -373,10 +384,7 @@ export class DevConsole {
 
   #expectMaximum(tokens, length, usage) {
     if (tokens.length > length) {
-      throw new Error(
-        `Argumentos inesperados. Uso: ${usage}. ` +
-        "Separe comandos por ponto e vírgula ou por quebra de linha."
-      );
+      throw new Error(`Argumentos inesperados. Uso: ${usage}.`);
     }
   }
 }
