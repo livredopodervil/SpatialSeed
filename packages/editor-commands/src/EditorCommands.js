@@ -4,7 +4,8 @@ export function createEditorCommands({
   editor,
   renderer,
   selectionOperations,
-  projectService
+  projectService,
+  benchmarkRunner
 }) {
   const commands = new CommandRegistry();
 
@@ -105,6 +106,23 @@ export function createEditorCommands({
     )
     .register("project.new", () =>
       projectService.newProject()
+    );
+
+  commands
+    .register("benchmark.help", () =>
+      benchmarkRunner.help()
+    )
+    .register("benchmark.scene", args =>
+      benchmarkRunner.runScene(args)
+    )
+    .register("benchmark.compare", () =>
+      benchmarkRunner.compare()
+    )
+    .register("benchmark.history", () =>
+      benchmarkRunner.list()
+    )
+    .register("benchmark.clear", () =>
+      benchmarkRunner.clear()
     );
 
   return commands;

@@ -153,6 +153,12 @@ export class DevConsole {
       case "vertices":
         return this.#vertices(tokens);
 
+      case "benchmark":
+        return this.#benchmark(tokens);
+
+      case "test":
+        return this.#test(tokens);
+
       default:
         throw new Error(
           `Comando desconhecido: ${command || "(vazio)"}. Use help.`
@@ -165,6 +171,10 @@ export class DevConsole {
       syntax: "Separe comandos por ponto e vírgula ou por quebra de linha.",
       commands: [
         "commands",
+        "benchmark help",
+        "benchmark scene 1000 5 100",
+        "benchmark compare|history|clear",
+        "test help|all|sandbox|reducer|commands|project",
         "create box [x y z]",
         "position x y z",
         "move dx dy dz",
@@ -321,6 +331,68 @@ export class DevConsole {
     }
 
     return this.editor.selection.snapshot();
+  }
+
+  #benchmark(tokens) {
+    const action = (tokens.shift() ?? "help").toLowerCase();
+
+    if (action === "help") {
+      this.#expectMaximum(tokens, 0, "benchmark help");
+      return this.commands.execute("benchmark.help");
+    }
+
+    if (action === "scene") {
+      const objectCount = tokens.length ? this.#integer(tokens.shift()) : 1000;
+      const samples = tokens.length ? this.#integer(tokens.shift()) : 5;
+      const transformCount = tokens.length
+        ? this.#integer(tokens.shift())
+        : Math.min(100, objectCount);
+
+      this.#expectMaximum(
+        tokens,
+        0,
+        "benchmark scene [objetos] [amostras] [transformados]"
+      );
+
+      return this.commands.execute("benchmark.scene", {
+        objectCount,
+        samples,
+        transformCount
+      });
+    }
+
+    const id = {
+      compare: "benchmark.compare",
+      history: "benchmark.history",
+      clear: "benchmark.clear"
+    }[action];
+
+    if (!id) {
+      throw new Error("Uso: benchmark help|scene|compare|history|clear");
+    }
+
+    this.#expectMaximum(tokens, 0, `benchmark ${action}`);
+    return this.commands.execute(id);
+  }
+
+  #test(tokens) {
+    const action = (tokens.shift() ?? "help").toLowerCase();
+
+    if (action === "help") {
+      this.#expectMaximum(tokens, 0, "test help");
+      return this.commands.execute("test.help");
+    }
+
+    this.#expectMaximum(tokens, 0, `test ${action}`);
+    return this.commands.execute("test.run", { suite: action });
+  }
+
+  #integer(value) {
+    const number = Number(value);
+    if (!Number.isInteger(number)) {
+      throw new Error(`Inteiro inválido: ${value}`);
+    }
+    return number;
   }
 
   #tokenize(line) {

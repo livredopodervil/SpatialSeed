@@ -1,19 +1,21 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0016";
-import { Region } from "../../packages/core/src/Region.js?build=20260711-0016";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0016";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0016";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0016";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0016";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0016";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0016";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0016";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0016";
-import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0016";
-import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0016";
-import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260711-0016";
-import { ProjectService } from "../../packages/project-files/src/ProjectService.js?build=20260711-0016";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0017";
+import { Region } from "../../packages/core/src/Region.js?build=20260711-0017";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0017";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0017";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0017";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0017";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0017";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0017";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0017";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0017";
+import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0017";
+import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0017";
+import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260711-0017";
+import { ProjectService } from "../../packages/project-files/src/ProjectService.js?build=20260711-0017";
+import { BenchmarkRunner } from "../../packages/benchmarks/src/BenchmarkRunner.js?build=20260711-0017";
+import { TestService } from "../../packages/tests/src/TestService.js?build=20260711-0017";
 
-const BUILD = "20260711-0016";
+const BUILD = "20260711-0017";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -208,12 +210,33 @@ const projectService = new ProjectService({
   region
 });
 
+const benchmarkRunner = new BenchmarkRunner({
+  reducer,
+  projectService
+});
+
 const editorCommands = createEditorCommands({
   editor,
   renderer: renderer3d,
   selectionOperations,
+  projectService,
+  benchmarkRunner
+});
+
+const testService = new TestService({
+  reducer,
+  commands: editorCommands,
   projectService
 });
+
+editorCommands
+  .register("test.help", () =>
+    testService.help()
+  )
+  .register("test.run", ({ suite }) =>
+    testService.run(suite)
+  );
+
 
 const transformToolPanel = new TransformToolPanel({
   root: $("transform-tools-panel"),
