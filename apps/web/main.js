@@ -1,18 +1,19 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0015";
-import { Region } from "../../packages/core/src/Region.js?build=20260711-0015";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0015";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0015";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0015";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0015";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0015";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0015";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0015";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0015";
-import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0015";
-import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0015";
-import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260711-0015";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0016";
+import { Region } from "../../packages/core/src/Region.js?build=20260711-0016";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0016";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0016";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0016";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0016";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0016";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0016";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0016";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0016";
+import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0016";
+import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0016";
+import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260711-0016";
+import { ProjectService } from "../../packages/project-files/src/ProjectService.js?build=20260711-0016";
 
-const BUILD = "20260711-0015";
+const BUILD = "20260711-0016";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -200,10 +201,18 @@ const selectionOperations = new SelectionOperations({
   regionId: region.descriptor.id
 });
 
+const projectService = new ProjectService({
+  sandbox,
+  editor,
+  renderer: renderer3d,
+  region
+});
+
 const editorCommands = createEditorCommands({
   editor,
   renderer: renderer3d,
-  selectionOperations
+  selectionOperations,
+  projectService
 });
 
 const transformToolPanel = new TransformToolPanel({
@@ -337,6 +346,45 @@ $("undo").addEventListener("click", () => executeUiCommand("history.undo"));
 $("redo").addEventListener("click", () => executeUiCommand("history.redo"));
 $("structure").addEventListener("click", () => $("outline").hidden = !$("outline").hidden);
 $("close-outline").addEventListener("click", () => $("outline").hidden = true);
+
+$("project-save").addEventListener("click", () => {
+  const result = executeUiCommand("project.save");
+  if (result?.downloaded) {
+    showNotice(`Projeto salvo: ${result.filename}`);
+  }
+});
+
+$("project-open").addEventListener("click", () => {
+  $("project-file-input").click();
+});
+
+$("project-file-input").addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const result = executeUiCommand("project.open", { text });
+    if (result?.loaded) {
+      showNotice(
+        `Projeto aberto: ${result.name} ` +
+        `(${result.objectCount} objetos)`
+      );
+    }
+  } finally {
+    event.target.value = "";
+  }
+});
+
+$("project-new").addEventListener("click", () => {
+  const confirmed = confirm(
+    "Criar um projeto vazio? Alterações não salvas serão descartadas."
+  );
+  if (!confirmed) return;
+
+  const result = executeUiCommand("project.new");
+  if (result?.created) showNotice("Novo projeto criado.");
+});
 
 $("diagnostics").addEventListener("click", () => {
   diagnostics.regionVersion = region.version;

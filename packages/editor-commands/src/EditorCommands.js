@@ -3,7 +3,8 @@ import { CommandRegistry } from "./CommandRegistry.js";
 export function createEditorCommands({
   editor,
   renderer,
-  selectionOperations
+  selectionOperations,
+  projectService
 }) {
   const commands = new CommandRegistry();
 
@@ -90,6 +91,20 @@ export function createEditorCommands({
     })
     .register("gizmo.inspect", () =>
       renderer.getTransformDiagnostics()
+    );
+
+  commands
+    .register("project.inspect", () =>
+      projectService.inspect()
+    )
+    .register("project.save", () =>
+      projectService.save()
+    )
+    .register("project.open", ({ text }) =>
+      projectService.openText(text)
+    )
+    .register("project.new", () =>
+      projectService.newProject()
     );
 
   return commands;

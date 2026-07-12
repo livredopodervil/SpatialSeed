@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="spatial-seed-build" content="20260711-0015">
+<meta name="spatial-seed-build" content="20260711-0016">
 <title>Spatial Seed Monorepo</title>
-<link rel="stylesheet" href="./style.css?build=20260711-0015">
+<link rel="stylesheet" href="./style.css?build=20260711-0016">
 <script type="importmap">
 {
   "imports": {
@@ -41,6 +41,11 @@
   <button id="developer">Desenvolvedor</button>
   <button id="inspector">Inspector</button>
   <button id="transform-tools">Transformação</button>
+  <button id="project-save">Salvar</button>
+  <button id="project-open">Abrir</button>
+  <button id="project-new">Novo</button>
+  <input id="project-file-input" type="file"
+    accept=".spatialseed,.json,application/json" hidden>
   <button id="duplicate-selection">Duplicar</button>
   <button id="repeat-duplicate">Repetir</button>
   <button id="delete-selection">Excluir</button>
@@ -51,7 +56,7 @@
   <strong>Seleção do editor</strong>
   <div id="selection-content">∅</div>
   <div id="pivot-content">Pivô: mediana</div>
-  <div id="build-content">build 20260711-0015</div>
+  <div id="build-content">build 20260711-0016</div>
 </aside>
 
 <aside id="outline" hidden>
@@ -169,6 +174,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./main.js?build=20260711-0015"></script>
+<script type="module" src="./main.js?build=20260711-0016"></script>
 </body>
 </html>
