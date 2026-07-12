@@ -11,7 +11,9 @@ export class EditorState {
     this.pivot = {
       policy: "median",
       editing: false,
-      customPosition: [0, 0, 0]
+      reference: "absolute",
+      customPosition: [0, 0, 0],
+      relativeOffset: [0, 0, 0]
     };
   }
 
@@ -40,8 +42,28 @@ export class EditorState {
   }
 
   setCustomPivot(position) {
-    this.pivot = { ...this.pivot, customPosition: [...position] };
+    this.pivot = {
+      ...this.pivot,
+      policy: "custom",
+      reference: "absolute",
+      customPosition: [...position],
+      relativeOffset: [0, 0, 0]
+    };
+    this.selection.pivotPolicy = "custom";
+    this.selection.notifyContextChanged();
     this.#emit("pivot-position");
+  }
+
+  setRelativePivot(offset) {
+    this.pivot = {
+      ...this.pivot,
+      policy: "custom",
+      reference: "active-relative",
+      relativeOffset: [...offset]
+    };
+    this.selection.pivotPolicy = "custom";
+    this.selection.notifyContextChanged();
+    this.#emit("pivot-relative");
   }
 
   subscribe(listener) {
@@ -54,7 +76,11 @@ export class EditorState {
     return Object.freeze({
       tool: { ...this.tool },
       multiSelect: this.multiSelect,
-      pivot: { ...this.pivot, customPosition: [...this.pivot.customPosition] }
+      pivot: {
+        ...this.pivot,
+        customPosition: [...this.pivot.customPosition],
+        relativeOffset: [...this.pivot.relativeOffset]
+      }
     });
   }
 

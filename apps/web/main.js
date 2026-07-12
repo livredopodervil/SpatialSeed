@@ -1,17 +1,18 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0012";
-import { Region } from "../../packages/core/src/Region.js?build=20260711-0012";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0012";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0012";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0012";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0012";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0012";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0012";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0012";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0012";
-import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0012";
-import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0012";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0013";
+import { Region } from "../../packages/core/src/Region.js?build=20260711-0013";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0013";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0013";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0013";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0013";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0013";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0013";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0013";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0013";
+import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0013";
+import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0013";
+import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260711-0013";
 
-const BUILD = "20260711-0012";
+const BUILD = "20260711-0013";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -152,6 +153,12 @@ const selectionOperations = new SelectionOperations({
   regionId: region.descriptor.id
 });
 
+const editorCommands = createEditorCommands({
+  editor,
+  renderer: renderer3d,
+  selectionOperations
+});
+
 const transformToolPanel = new TransformToolPanel({
   root: $("transform-tools-panel"),
   renderer: renderer3d
@@ -171,7 +178,7 @@ const devConsole = new DevConsole({
   renderer: renderer3d,
   getDiagnostics: collectDeveloperState,
   onOutput: appendConsole,
-  selectionOperations
+  commands: editorCommands
 });
 
 function refreshDeveloperPanel() {
@@ -286,17 +293,17 @@ $("diagnostics").addEventListener("click", () => {
 $("close-diagnostics").addEventListener("click", () => $("diagnostic-panel").hidden = true);
 
 $("duplicate-selection").addEventListener("click", () => {
-  try { selectionOperations.duplicate(); }
+  try { editorCommands.execute("selection.duplicate"); }
   catch (error) { showError(error); }
 });
 
 $("repeat-duplicate").addEventListener("click", () => {
-  try { selectionOperations.repeat(); }
+  try { editorCommands.execute("selection.repeat"); }
   catch (error) { showError(error); }
 });
 
 $("delete-selection").addEventListener("click", () => {
-  try { selectionOperations.deleteSelection(); }
+  try { editorCommands.execute("selection.delete"); }
   catch (error) { showError(error); }
 });
 
@@ -444,5 +451,6 @@ window.__SPATIAL_SEED__ = {
   collectDeveloperState,
   objectInspector,
   transformToolPanel,
-  selectionOperations
+  selectionOperations,
+  editorCommands
 };

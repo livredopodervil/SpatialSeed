@@ -4,6 +4,10 @@ set -euo pipefail
 PROJECT="$HOME/SpatialSeed-monorepo"
 PUBLIC="$HOME/storage/shared/SpatialSeed-monorepo"
 PORT=8082
+URL="http://127.0.0.1:${PORT}/apps/web/"
+SERVER_PATTERN="SpatialSeed-monorepo/tools/no_cache_server.py"
+SERVER_LOG="$PROJECT/.seed-server.log"
+SERVER_PID="$PROJECT/.seed-server.pid"
 
 command="${1:-help}"
 
@@ -23,10 +27,7 @@ case "$command" in
   sync)
     cd "$PROJECT"
     mkdir -p "$PUBLIC"
-    rsync -av --delete \
-      --exclude '.git/' \
-      --exclude '.backups/' \
-      "$PROJECT/" "$PUBLIC/"
+    rsync -av --delete --exclude '.git/' --exclude '.backups/' "$PROJECT/" "$PUBLIC/"
     echo "Sincronizado: $PROJECT -> $PUBLIC"
     ;;
 
@@ -38,22 +39,66 @@ case "$command" in
       "apps/web/style.css"
       "packages/editor-core/src/EditorState.js"
       "packages/editor-core/src/Selection.js"
+      "packages/editor-commands/src/CommandRegistry.js"
+      "packages/editor-commands/src/EditorCommands.js"
+      "packages/devtools/src/DevConsole.js"
+      "packages/selection-operations/src/SelectionOperations.js"
       "packages/renderer-three/src/ThreeRegionRenderer.js"
     )
+    failed=0
     for file in "${files[@]}"; do
+      if [ ! -f "$PROJECT/$file" ] || [ ! -f "$PUBLIC/$file" ]; then
+        printf 'ERRO %s\n  arquivo ausente\n' "$file"
+        failed=1
+        continue
+      fi
       a="$(sha256sum "$PROJECT/$file" | cut -d' ' -f1)"
       b="$(sha256sum "$PUBLIC/$file" | cut -d' ' -f1)"
       if [ "$a" = "$b" ]; then
         printf 'OK   %s\n' "$file"
       else
         printf 'ERRO %s\n  repo: %s\n  pub:  %s\n' "$file" "$a" "$b"
+        failed=1
       fi
     done
+    exit "$failed"
     ;;
 
   serve)
-    pkill -f "SpatialSeed-monorepo/tools/no_cache_server.py" 2>/dev/null || true
+    pkill -f "$SERVER_PATTERN" 2>/dev/null || true
     exec python "$PROJECT/tools/no_cache_server.py"
+    ;;
+
+  test)
+    "$0" sync
+    "$0" verify
+    pkill -f "$SERVER_PATTERN" 2>/dev/null || true
+    nohup python "$PROJECT/tools/no_cache_server.py" >"$SERVER_LOG" 2>&1 &
+    server_pid=$!
+    printf '%s\n' "$server_pid" > "$SERVER_PID"
+    ready=0
+    for _ in $(seq 1 40); do
+      if curl -fsS "$URL" >/dev/null 2>&1; then
+        ready=1
+        break
+      fi
+      sleep 0.25
+    done
+    if [ "$ready" -ne 1 ]; then
+      echo "ERRO: servidor não respondeu em $URL"
+      echo "Log: $SERVER_LOG"
+      exit 1
+    fi
+    echo "Servidor: PID $server_pid"
+    echo "URL: $URL"
+    echo "Log: $SERVER_LOG"
+    if command -v termux-open-url >/dev/null 2>&1; then
+      termux-open-url "$URL" >/dev/null 2>&1 || true
+    elif command -v am >/dev/null 2>&1; then
+      am start -a android.intent.action.VIEW -d "$URL" >/dev/null 2>&1 || true
+    else
+      echo "Abra manualmente: $URL"
+    fi
     ;;
 
   seed)
@@ -62,14 +107,15 @@ case "$command" in
     ;;
 
   help|*)
-    cat <<'EOF'
+    cat <<'HELP'
 Uso: bash tools/seedctl COMANDO
 
   status  mostra estado Git e build público
   sync    sincroniza repositório com armazenamento público
   verify  compara hashes entre repositório e cópia pública
-  serve   inicia servidor HTTP sem cache na porta 8082
+  serve   inicia servidor HTTP sem cache em primeiro plano
+  test    sincroniza, verifica, reinicia e abre a aplicação
   seed    atualiza PROJECT_SEED.md para continuidade por outra LLM
-EOF
+HELP
     ;;
 esac

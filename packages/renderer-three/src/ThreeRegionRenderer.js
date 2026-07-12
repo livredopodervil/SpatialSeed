@@ -79,13 +79,16 @@ export class ThreeRegionRenderer {
     this.#vertexMarkers = new THREE.Points(
       vertexGeometry,
       new THREE.PointsMaterial({
-        size: 0.16,
+        color: 0xffffff,
+        size: 8,
         sizeAttenuation: false,
-        depthTest: false
+        depthTest: false,
+        depthWrite: false
       })
     );
 
     this.#vertexMarkers.renderOrder = 1000;
+    this.#vertexMarkers.frustumCulled = false;
     this.#vertexMarkers.visible = false;
     this.scene.add(this.#vertexMarkers);
 
@@ -111,6 +114,7 @@ export class ThreeRegionRenderer {
     this.editorState.subscribe(() => {
       this.#configureTransformForEditor();
       this.#rebuildAnchor();
+      this.#updateVertexMarkers();
     });
 
     this.transform.addEventListener("dragging-changed", event => {
@@ -389,6 +393,26 @@ export class ThreeRegionRenderer {
     const policy = this.editorState.pivot.policy;
 
     if (policy === "custom") {
+      if (
+        this.editorState.pivot.reference ===
+        "active-relative"
+      ) {
+        const activeId =
+          this.#selectionSnapshot?.activeMember?.objectId;
+
+        const activeMesh = this.#meshes.get(activeId);
+
+        if (activeMesh) {
+          return activeMesh
+            .getWorldPosition(new THREE.Vector3())
+            .add(
+              new THREE.Vector3().fromArray(
+                this.editorState.pivot.relativeOffset
+              )
+            );
+        }
+      }
+
       return new THREE.Vector3().fromArray(
         this.editorState.pivot.customPosition
       );
@@ -493,6 +517,11 @@ export class ThreeRegionRenderer {
       new THREE.Float32BufferAttribute(vertices, 3)
     );
 
+    const attribute =
+      this.#vertexMarkers.geometry.getAttribute("position");
+
+    attribute.needsUpdate = true;
+    this.#vertexMarkers.geometry.computeBoundingSphere();
     this.#vertexMarkers.visible = true;
   }
 

@@ -187,10 +187,20 @@ export class SelectionOperations {
 
   setPivotRelative(offset) {
     const center = [...this.#activeObject().position];
-    const position = center.map((value, index) => value + offset[index]);
-    this.editor.setCustomPivot(position);
-    this.editor.setPivotPolicy("custom");
-    return { policy: "custom", center, offset: [...offset], position, mode: "relative" };
+    const position = center.map(
+      (value, index) => value + offset[index]
+    );
+
+    this.editor.setRelativePivot(offset);
+
+    return {
+      policy: "custom",
+      reference: "active-relative",
+      center,
+      offset: [...offset],
+      position,
+      mode: "relative"
+    };
   }
 
   getState() {
@@ -292,11 +302,31 @@ export class SelectionOperations {
 
   #effectivePivot(objects) {
     if (this.editor.pivot.policy === "custom") {
-      return [...this.editor.pivot.customPosition];
+      if (
+        this.editor.pivot.reference ===
+        "active-relative"
+      ) {
+        const center =
+          this.#activeObject().position;
+
+        return center.map(
+          (value, index) =>
+            value +
+            this.editor.pivot.relativeOffset[index]
+        );
+      }
+
+      return [
+        ...this.editor.pivot.customPosition
+      ];
     }
+
     if (this.editor.pivot.policy === "active") {
-      return [...this.#activeObject().position];
+      return [
+        ...this.#activeObject().position
+      ];
     }
+
     return this.#selectionPivot(objects);
   }
 

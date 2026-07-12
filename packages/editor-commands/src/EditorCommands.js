@@ -1,0 +1,65 @@
+import { CommandRegistry } from "./CommandRegistry.js";
+
+export function createEditorCommands({
+  editor,
+  renderer,
+  selectionOperations
+}) {
+  const commands = new CommandRegistry();
+
+  commands
+    .register("object.create.box", args =>
+      selectionOperations.createBox(args)
+    )
+    .register("selection.position", ({ position }) =>
+      selectionOperations.setSelectionPosition(position)
+    )
+    .register("selection.translate", ({ delta }) =>
+      selectionOperations.translate(delta)
+    )
+    .register("selection.rotate", ({ degrees }) =>
+      selectionOperations.rotateEuler(degrees)
+    )
+    .register("selection.scale", ({ factors }) =>
+      selectionOperations.scaleBy(factors)
+    )
+    .register("selection.duplicate", () =>
+      selectionOperations.duplicate()
+    )
+    .register("selection.repeat", () =>
+      selectionOperations.repeat()
+    )
+    .register("selection.delete", () =>
+      selectionOperations.deleteSelection()
+    )
+    .register("pivot.policy", ({ policy }) => {
+      editor.setPivotEditing(false);
+      editor.setPivotPolicy(policy);
+      return editor.snapshot().pivot;
+    })
+    .register("pivot.absolute", ({ position }) =>
+      selectionOperations.setPivotAbsolute(position)
+    )
+    .register("pivot.relative", ({ offset }) =>
+      selectionOperations.setPivotRelative(offset)
+    )
+    .register("vertices.set", ({ enabled }) =>
+      renderer.setTransformConfig({ showVertices: Boolean(enabled) })
+    )
+    .register("snap.set", ({ kind, value }) => {
+      if (kind === "grid") {
+        return renderer.setTransformConfig({ gridLock: Boolean(value) });
+      }
+      const patch = {};
+      if (kind === "move") patch.translationSnap = value || null;
+      else if (kind === "rotate") patch.rotationSnapDeg = value || null;
+      else if (kind === "scale") patch.scaleSnap = value || null;
+      else throw new Error(`Unknown snap kind: ${kind}`);
+      return renderer.setTransformConfig(patch);
+    })
+    .register("gizmo.inspect", () =>
+      renderer.getTransformDiagnostics()
+    );
+
+  return commands;
+}
