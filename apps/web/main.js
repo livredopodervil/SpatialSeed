@@ -1,16 +1,17 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0010";
-import { Region } from "../../packages/core/src/Region.js?build=20260711-0010";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0010";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0010";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0010";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0010";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0010";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0010";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0010";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0010";
-import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0010";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260711-0011";
+import { Region } from "../../packages/core/src/Region.js?build=20260711-0011";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260711-0011";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260711-0011";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260711-0011";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260711-0011";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260711-0011";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260711-0011";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260711-0011";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260711-0011";
+import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260711-0011";
+import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260711-0011";
 
-const BUILD = "20260711-0010";
+const BUILD = "20260711-0011";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -145,6 +146,12 @@ function collectDeveloperState() {
   };
 }
 
+const selectionOperations = new SelectionOperations({
+  editor,
+  sandbox,
+  regionId: region.descriptor.id
+});
+
 const transformToolPanel = new TransformToolPanel({
   root: $("transform-tools-panel"),
   renderer: renderer3d
@@ -163,7 +170,8 @@ const devConsole = new DevConsole({
   region,
   renderer: renderer3d,
   getDiagnostics: collectDeveloperState,
-  onOutput: appendConsole
+  onOutput: appendConsole,
+  selectionOperations
 });
 
 function refreshDeveloperPanel() {
@@ -276,6 +284,21 @@ $("diagnostics").addEventListener("click", () => {
   $("diagnostic-panel").hidden = false;
 });
 $("close-diagnostics").addEventListener("click", () => $("diagnostic-panel").hidden = true);
+
+$("duplicate-selection").addEventListener("click", () => {
+  try { selectionOperations.duplicate(); }
+  catch (error) { showError(error); }
+});
+
+$("repeat-duplicate").addEventListener("click", () => {
+  try { selectionOperations.repeat(); }
+  catch (error) { showError(error); }
+});
+
+$("delete-selection").addEventListener("click", () => {
+  try { selectionOperations.deleteSelection(); }
+  catch (error) { showError(error); }
+});
 
 $("transform-tools").addEventListener("click", () => {
   $("transform-tools-panel").hidden = false;
@@ -420,5 +443,6 @@ window.__SPATIAL_SEED__ = {
   devConsole,
   collectDeveloperState,
   objectInspector,
-  transformToolPanel
+  transformToolPanel,
+  selectionOperations
 };

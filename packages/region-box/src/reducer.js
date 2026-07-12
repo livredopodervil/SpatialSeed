@@ -104,6 +104,52 @@ export function boxRegionReducer(state, command) {
       return { state: Object.freeze({ ...state, objects }), changes: [{ type: "object-updated", objectId: command.id }] };
     }
 
+    case "selection.duplicate": {
+      const incoming = (command.objects ?? []).map(object =>
+        Object.freeze(structuredClone(object))
+      );
+      if (!incoming.length) return { state, changes: [] };
+
+      const existingIds = new Set(state.objects.map(object => object.id));
+      for (const object of incoming) {
+        if (existingIds.has(object.id)) {
+          throw new Error(`Duplicate object id: ${object.id}`);
+        }
+      }
+
+      return {
+        state: Object.freeze({
+          ...state,
+          objects: Object.freeze([...state.objects, ...incoming])
+        }),
+        changes: incoming.map(object => ({
+          type: "object-created",
+          objectId: object.id,
+          source: command.source ?? "selection.duplicate"
+        }))
+      };
+    }
+
+    case "selection.delete": {
+      const ids = new Set(command.ids ?? []);
+      if (!ids.size) return { state, changes: [] };
+
+      const removed = state.objects.filter(object => ids.has(object.id));
+      if (!removed.length) return { state, changes: [] };
+
+      return {
+        state: Object.freeze({
+          ...state,
+          objects: Object.freeze(state.objects.filter(object => !ids.has(object.id)))
+        }),
+        changes: removed.map(object => ({
+          type: "object-deleted",
+          objectId: object.id,
+          source: command.source ?? "selection.delete"
+        }))
+      };
+    }
+
     case "selection.transform": {
       const objects = updateMany(
         state.objects,

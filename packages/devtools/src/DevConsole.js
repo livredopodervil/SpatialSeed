@@ -3,16 +3,17 @@ export class DevConsole {
 
   static commandNames = new Set([
     "help", "inspect", "list", "select", "clear",
-    "pivot", "move", "undo", "redo", "gizmo", "snap", "vertices"
+    "pivot", "move", "undo", "redo", "gizmo", "snap", "vertices", "duplicate", "repeat", "delete"
   ]);
 
-  constructor({ editor, sandbox, region, renderer, getDiagnostics, onOutput }) {
+  constructor({ editor, sandbox, region, renderer, getDiagnostics, onOutput, selectionOperations }) {
     this.editor = editor;
     this.sandbox = sandbox;
     this.region = region;
     this.renderer = renderer;
     this.getDiagnostics = getDiagnostics;
     this.onOutput = onOutput;
+    this.selectionOperations = selectionOperations;
     this.history = [];
   }
 
@@ -117,6 +118,18 @@ export class DevConsole {
 
       case "vertices":
         return this.#vertices(tokens);
+
+      case "duplicate":
+        this.#expectMaximum(tokens, 0, "duplicate");
+        return this.selectionOperations.duplicate();
+
+      case "repeat":
+        this.#expectMaximum(tokens, 0, "repeat");
+        return this.selectionOperations.repeat();
+
+      case "delete":
+        this.#expectMaximum(tokens, 0, "delete");
+        return this.selectionOperations.deleteSelection();
 
       default:
         throw new Error(
