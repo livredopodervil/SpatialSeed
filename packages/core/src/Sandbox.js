@@ -89,6 +89,37 @@ export class Sandbox {
     }]);
   }
 
+  replaceState(state, { markClean = true } = {}) {
+    const next = structuredClone(state);
+
+    if (
+      !next ||
+      typeof next !== "object" ||
+      !Array.isArray(next.objects)
+    ) {
+      throw new TypeError(
+        "O estado do sandbox deve conter um array objects."
+      );
+    }
+
+    this.#state = next;
+    this.#undo.length = 0;
+    this.#redo.length = 0;
+    this.#commands.length = 0;
+
+    if (markClean) {
+      this.#baseState = structuredClone(next);
+      this.#baseVersion = this.region.version;
+    }
+
+    this.#notify([{
+      type: "sandbox-state-replaced",
+      markClean
+    }]);
+
+    return true;
+  }
+
   createProposal() {
     return Object.freeze({
       regionId: this.region.descriptor.id,
