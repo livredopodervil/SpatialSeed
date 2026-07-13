@@ -402,9 +402,21 @@ export class DevConsole {
     const namespace =
       (tokens.shift() ?? "").toLowerCase();
 
+    if (namespace === "resources") {
+      this.#expectMaximum(
+        tokens,
+        0,
+        "runtime resources"
+      );
+
+      return this.commands.execute(
+        "runtime.resources"
+      );
+    }
+
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|all"
       );
     }
 
@@ -436,11 +448,12 @@ export class DevConsole {
         "incremental-runtime",
         "batch-selection",
         "affine-math",
+        "resource-audit",
         "all"
       ].includes(suite)
     ) {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|all"
       );
     }
 

@@ -788,6 +788,63 @@ export class ThreeRegionRenderer {
     this.renderer.setSize(innerWidth, innerHeight);
   }
 
+getResourceDiagnostics() {
+  const geometries = new Set();
+  const materials = new Set();
+  const textures = new Set();
+
+  let texturedMeshes = 0;
+
+  for (const mesh of this.#meshes.values()) {
+    if (mesh.geometry) geometries.add(mesh.geometry);
+
+    const list = Array.isArray(mesh.material)
+      ? mesh.material
+      : [mesh.material];
+
+    for (const material of list) {
+      if (!material) continue;
+
+      materials.add(material);
+
+      if (material.map) {
+        textures.add(material.map);
+        texturedMeshes += 1;
+      }
+    }
+  }
+
+  const info = this.renderer?.info;
+
+  return Object.freeze({
+    meshes: this.#meshes.size,
+    uniqueGeometries: geometries.size,
+    uniqueMaterials: materials.size,
+    uniqueTextures: textures.size,
+    texturedMeshes,
+
+    render: info ? {
+      calls: info.render.calls,
+      triangles: info.render.triangles,
+      lines: info.render.lines,
+      points: info.render.points,
+      frame: info.render.frame
+    } : null,
+
+    memory: info ? {
+      geometries: info.memory.geometries,
+      textures: info.memory.textures
+    } : null,
+
+    programs: Array.isArray(info?.programs)
+      ? info.programs.length
+      : null,
+
+    incremental:
+      this.getIncrementalDiagnostics?.() ?? null
+  });
+}
+
   animate = () => {
     requestAnimationFrame(this.animate);
     this.orbit.update();

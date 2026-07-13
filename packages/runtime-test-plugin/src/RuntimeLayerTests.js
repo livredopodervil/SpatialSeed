@@ -8,6 +8,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
+import { ResourceAudit } from "../../resource-audit/src/index.js";
 import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 
@@ -691,6 +692,111 @@ assets: {
         assertEqual(affineCopies({position:[0,0,0],rotation:[0,0,0,1],scale:[1,1,1]},10000,step).length,10000);
       }
     },
+
+"resource-audit": {
+  "conta aparência compartilhada"() {
+    const audit = new ResourceAudit({
+      sandbox: {
+        getSnapshot() {
+          return {
+            objects: [
+              { id: "a", appearanceId: "x" },
+              { id: "b", appearanceId: "x" }
+            ]
+          };
+        },
+        canUndo: false,
+        canRedo: false
+      },
+
+      editor: {
+        selection: {
+          snapshot() {
+            return {
+              members: [],
+              activeMember: null
+            };
+          }
+        }
+      },
+
+      renderer: {
+        getResourceDiagnostics() {
+          return {
+            meshes: 2,
+            uniqueGeometries: 2,
+            uniqueMaterials: 2,
+            uniqueTextures: 0
+          };
+        }
+      },
+
+      appearanceRuntime: {
+        stats() {
+          return {
+            assets: { total: 1 }
+          };
+        }
+      },
+
+      selectionOperations: {
+        getState() {
+          return {
+            pendingDuplicate: null,
+            lastDuplicate: null
+          };
+        }
+      }
+    });
+
+    const report = audit.collect();
+
+    assertEqual(report.logical.objects, 2);
+    assertEqual(report.logical.appearances, 1);
+    assertEqual(report.logical.embeddedMaterials, 0);
+  },
+
+  "detecta Base64 embutido"() {
+    const audit = new ResourceAudit({
+      sandbox: {
+        getSnapshot() {
+          return {
+            objects: [{
+              id: "a",
+              material: {
+                texture: {
+                  src: "data:image/png;base64,AAAA"
+                }
+              }
+            }]
+          };
+        },
+        canUndo: true,
+        canRedo: false
+      },
+
+      editor: {
+        selection: {
+          snapshot() {
+            return {
+              members: [],
+              activeMember: null
+            };
+          }
+        }
+      },
+
+      renderer: {},
+      appearanceRuntime: null,
+      selectionOperations: null
+    });
+
+    assertEqual(
+      audit.collect().logical.embeddedDataUrls,
+      1
+    );
+  }
+},
 
     simulation: {
       "simulador aceita comando na versão correta"() {

@@ -1,24 +1,25 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260713-0019e-a";
-import { Region } from "../../packages/core/src/Region.js?build=20260713-0019e-a";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260713-0019e-a";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260713-0019e-a";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260713-0019e-a";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260713-0019e-a";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260713-0019e-a";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260713-0019e-a";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260713-0019e-a";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260713-0019e-a";
-import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260713-0019e-a";
-import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260713-0019e-a";
-import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260713-0019e-a";
-import { ProjectService } from "../../packages/project-files/src/ProjectService.js?build=20260713-0019e-a";
-import { BenchmarkRunner } from "../../packages/benchmarks/src/BenchmarkRunner.js?build=20260713-0019e-a";
-import { TestService } from "../../packages/tests/src/TestService.js?build=20260713-0019e-a";
-import { activateRuntimeTestPlugin } from "../../packages/runtime-test-plugin/src/index.js?build=20260713-0019e-a";
-import { AppearanceRuntime } from "../../packages/appearance-runtime/src/index.js?build=20260713-0019e-a";
-import { classifyChanges } from "../../packages/incremental-runtime/src/index.js?build=20260713-0019e-a";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260713-0019f-a";
+import { Region } from "../../packages/core/src/Region.js?build=20260713-0019f-a";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260713-0019f-a";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260713-0019f-a";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260713-0019f-a";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260713-0019f-a";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260713-0019f-a";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260713-0019f-a";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260713-0019f-a";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260713-0019f-a";
+import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260713-0019f-a";
+import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260713-0019f-a";
+import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260713-0019f-a";
+import { ProjectService } from "../../packages/project-files/src/ProjectService.js?build=20260713-0019f-a";
+import { BenchmarkRunner } from "../../packages/benchmarks/src/BenchmarkRunner.js?build=20260713-0019f-a";
+import { TestService } from "../../packages/tests/src/TestService.js?build=20260713-0019f-a";
+import { activateRuntimeTestPlugin } from "../../packages/runtime-test-plugin/src/index.js?build=20260713-0019f-a";
+import { AppearanceRuntime } from "../../packages/appearance-runtime/src/index.js?build=20260713-0019f-a";
+import { classifyChanges } from "../../packages/incremental-runtime/src/index.js?build=20260713-0019f-a";
+import { ResourceAudit } from "../../packages/resource-audit/src/index.js?build=20260713-0019f-a";
 
-const BUILD = "20260713-0019e-a";
+const BUILD = "20260713-0019f-a";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -240,12 +241,22 @@ const benchmarkRunner = new BenchmarkRunner({
   projectService
 });
 
+const resourceAudit =
+  new ResourceAudit({
+    sandbox,
+    editor,
+    renderer: renderer3d,
+    appearanceRuntime,
+    selectionOperations
+  });
+
 const editorCommands = createEditorCommands({
   editor,
   renderer: renderer3d,
   selectionOperations,
   projectService,
-  benchmarkRunner
+  benchmarkRunner,
+  resourceAudit
 });
 
 const runtimeTestPlugin = activateRuntimeTestPlugin({

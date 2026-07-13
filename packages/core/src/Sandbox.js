@@ -121,6 +121,17 @@ export class Sandbox {
     return true;
   }
 
+  getHistoryDiagnostics() {
+    return Object.freeze({
+      undoDepth: this.#undo.length,
+      redoDepth: this.#redo.length,
+      commandCount: this.#commands.length,
+      dirty: this.dirty,
+      canUndo: this.canUndo,
+      canRedo: this.canRedo
+    });
+  }
+
   createProposal() {
     return Object.freeze({
       regionId: this.region.descriptor.id,

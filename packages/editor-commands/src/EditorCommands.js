@@ -5,7 +5,8 @@ export function createEditorCommands({
   renderer,
   selectionOperations,
   projectService,
-  benchmarkRunner
+  benchmarkRunner,
+  resourceAudit
 }) {
   const commands = new CommandRegistry();
 
@@ -109,6 +110,12 @@ export function createEditorCommands({
     )
     .register("project.new", () =>
       projectService.newProject()
+    );
+
+  commands
+    .register(
+      "runtime.resources",
+      () => resourceAudit.collect()
     );
 
   commands
