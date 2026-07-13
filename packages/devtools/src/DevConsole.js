@@ -159,6 +159,9 @@ export class DevConsole {
       case "test":
         return this.#test(tokens);
 
+      case "runtime":
+        return this.#runtime(tokens);
+
       default:
         throw new Error(
           `Comando desconhecido: ${command || "(vazio)"}. Use help.`
@@ -393,6 +396,51 @@ export class DevConsole {
       throw new Error(`Inteiro inválido: ${value}`);
     }
     return number;
+  }
+
+  #runtime(tokens) {
+    const namespace =
+      (tokens.shift() ?? "").toLowerCase();
+
+    if (namespace !== "test") {
+      throw new Error(
+        "Uso: runtime test help|viewer|editor|clock|simulation|all"
+      );
+    }
+
+    const suite =
+      (tokens.shift() ?? "help").toLowerCase();
+
+    this.#expectMaximum(
+      tokens,
+      0,
+      `runtime test ${suite}`
+    );
+
+    if (suite === "help") {
+      return this.commands.execute(
+        "runtime.test.help"
+      );
+    }
+
+    if (
+      ![
+        "viewer",
+        "editor",
+        "clock",
+        "simulation",
+        "all"
+      ].includes(suite)
+    ) {
+      throw new Error(
+        "Uso: runtime test help|viewer|editor|clock|simulation|all"
+      );
+    }
+
+    return this.commands.execute(
+      "runtime.test.run",
+      { suite }
+    );
   }
 
   #tokenize(line) {
