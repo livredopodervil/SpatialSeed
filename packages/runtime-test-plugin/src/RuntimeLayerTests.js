@@ -6,6 +6,7 @@ import {
 } from "../../runtime-layers/src/index.js";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
+import { Selection } from "../../editor-core/src/Selection.js";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 
@@ -618,6 +619,37 @@ assets: {
         assertEqual(result.mode, "full");
       }
     },
+
+"batch-selection": {
+  "replaceMany emite uma notificação"() {
+    const selection = new Selection();
+    let notifications = 0;
+    selection.subscribe((_, event) => {
+      if (event.type !== "initial") notifications += 1;
+    });
+    selection.replaceMany(
+      Array.from({ length: 1000 }, (_, index) => ({
+        kind: "object",
+        regionId: "region-main",
+        objectId: `object-${index}`
+      })),
+      { activeObjectId: "object-999" }
+    );
+    assertEqual(notifications, 1);
+    assertEqual(selection.size, 1000);
+    assertEqual(selection.activeMember.objectId, "object-999");
+  },
+
+  "replaceMany remove duplicatas"() {
+    const selection = new Selection();
+    selection.replaceMany([
+      { kind: "object", regionId: "region-main", objectId: "a" },
+      { kind: "object", regionId: "region-main", objectId: "a" },
+      { kind: "object", regionId: "region-main", objectId: "b" }
+    ]);
+    assertEqual(selection.size, 2);
+  }
+},
 
     simulation: {
       "simulador aceita comando na versão correta"() {

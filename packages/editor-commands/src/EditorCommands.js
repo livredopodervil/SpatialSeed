@@ -59,6 +59,9 @@ export function createEditorCommands({
     .register("selection.duplicate", () =>
       selectionOperations.duplicate()
     )
+    .register("selection.duplicateMany", ({ count }) =>
+      selectionOperations.duplicateMany(count)
+    )
     .register("selection.repeat", () =>
       selectionOperations.repeat()
     )

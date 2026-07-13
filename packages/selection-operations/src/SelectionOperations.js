@@ -17,7 +17,7 @@ export class SelectionOperations {
 
   createBox({ name = null, position = [0, 1, 0], size = [2, 2, 2], color = "#6699cc" } = {}) {
     const id = crypto.randomUUID();
-    const index = this.sandbox.getState().objects.length + 1;
+    const index = this.sandbox.getSnapshot().objects.length + 1;
     const changed = this.sandbox.dispatch({
       type: "object.create",
       id,
@@ -31,21 +31,37 @@ export class SelectionOperations {
   }
 
   duplicate() {
+    return this.duplicateMany(1);
+  }
+
+  duplicateMany(count = 1) {
+    const copies = Number(count);
+    if (!Number.isInteger(copies) || copies < 1 || copies > 100000) {
+      throw new RangeError("A quantidade deve ser inteiro entre 1 e 100000.");
+    }
+
     const sourceObjects = this.#selectedObjects();
-    const duplicates = sourceObjects.map(object => ({
-      ...structuredClone(object),
-      id: crypto.randomUUID(),
-      name: `${object.name ?? object.id} cópia`
-    }));
+    const duplicates = [];
+
+    for (let copyIndex = 1; copyIndex <= copies; copyIndex += 1) {
+      for (const object of sourceObjects) {
+        duplicates.push({
+          ...structuredClone(object),
+          id: crypto.randomUUID(),
+          name: copyName(object.name ?? object.id, copyIndex)
+        });
+      }
+    }
 
     const changed = this.sandbox.dispatch({
       type: "selection.duplicate",
-      source: "selection-operations",
+      source: copies === 1 ? "selection-operations" : "selection-duplicate-many",
       sourceIds: sourceObjects.map(object => object.id),
+      copyCount: copies,
       objects: duplicates
     });
 
-    if (!changed) return { changed: false };
+    if (!changed) return { changed: false, duplicateIds: [] };
 
     const duplicateIds = duplicates.map(object => object.id);
     this.#selectIds(duplicateIds);
@@ -59,7 +75,13 @@ export class SelectionOperations {
       )
     };
 
-    return { changed: true, duplicateIds };
+    return {
+      changed: true,
+      copyCount: copies,
+      sourceCount: sourceObjects.length,
+      createdCount: duplicates.length,
+      duplicateIds
+    };
   }
 
   repeat() {
@@ -300,7 +322,7 @@ export class SelectionOperations {
     if (!ids.length) throw new Error("A seleção está vazia.");
 
     const byId = new Map(
-      this.sandbox.getState().objects.map(object => [object.id, object])
+      this.sandbox.getSnapshot().objects.map(object => [object.id, object])
     );
 
     return ids.map(id => {
@@ -313,7 +335,7 @@ export class SelectionOperations {
   #activeObject() {
     const id = this.editor.selection.snapshot().activeMember?.objectId;
     if (!id) throw new Error("A seleção está vazia.");
-    const object = this.sandbox.getState().objects.find(candidate => candidate.id === id);
+    const object = this.sandbox.getSnapshot().objects.find(candidate => candidate.id === id);
     if (!object) throw new Error(`Objeto ativo não encontrado: ${id}`);
     return object;
   }
@@ -359,20 +381,23 @@ export class SelectionOperations {
   }
 
   #selectIds(ids) {
-    this.editor.selection.replace({
-      kind: "object",
-      regionId: this.regionId,
-      objectId: ids[0]
-    });
-
-    for (const id of ids.slice(1)) {
-      this.editor.selection.toggle({
+    this.editor.selection.replaceMany(
+      ids.map(id => ({
         kind: "object",
         regionId: this.regionId,
         objectId: id
-      });
-    }
+      })),
+      { activeObjectId: ids.at(-1) ?? null }
+    );
   }
+
+}
+
+function copyName(name, copyIndex) {
+  const base = String(name)
+    .replace(/(?:\s+#\d+)+$/u, "")
+    .replace(/(?:\s+cópia)+$/u, "");
+  return `${base} #${copyIndex + 1}`;
 }
 
 function snapshotTransform(object) {

@@ -31,6 +31,31 @@ export class Selection {
     this.#emit("replace");
   }
 
+  replaceMany(
+    members,
+    { activeObjectId = null } = {}
+  ) {
+    const unique = [];
+    const seen = new Set();
+
+    for (const member of members ?? []) {
+      if (!member?.objectId) continue;
+      const key = `${member.regionId ?? ""}:${member.objectId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push({ ...member });
+    }
+
+    this.#members = unique;
+    const requestedIndex = activeObjectId
+      ? unique.findIndex(member => member.objectId === activeObjectId)
+      : -1;
+    this.#activeIndex = requestedIndex >= 0
+      ? requestedIndex
+      : unique.length - 1;
+    this.#emit("replace-many");
+  }
+
   toggle(member) {
     const index = this.#members.findIndex(current =>
       current.regionId === member.regionId &&

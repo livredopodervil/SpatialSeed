@@ -124,8 +124,7 @@ export class DevConsole {
         return this.#pivot(tokens);
 
       case "duplicate":
-        this.#expectMaximum(tokens, 0, "duplicate");
-        return this.commands.execute("selection.duplicate");
+        return this.#duplicate(tokens);
 
       case "repeat":
         this.#expectMaximum(tokens, 0, "repeat");
@@ -184,6 +183,7 @@ export class DevConsole {
         "rotate xDeg yDeg zDeg",
         "scale sx sy sz",
         "duplicate",
+        "duplicate count N",
         "repeat",
         "delete",
         "pivot median|bounds|active",
@@ -404,7 +404,7 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|all"
       );
     }
 
@@ -434,17 +434,40 @@ export class DevConsole {
         "appearance-runtime",
         "normalized-runtime",
         "incremental-runtime",
+        "batch-selection",
         "all"
       ].includes(suite)
     ) {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|all"
       );
     }
 
     return this.commands.execute(
       "runtime.test.run",
       { suite }
+    );
+  }
+
+  #duplicate(tokens) {
+    if (!tokens.length) {
+      return this.commands.execute("selection.duplicate");
+    }
+
+    const mode = (tokens.shift() ?? "").toLowerCase();
+    if (mode !== "count") {
+      throw new Error("Uso: duplicate [count N]");
+    }
+
+    this.#expectExact(tokens, 1, "duplicate count N");
+    const count = this.#positive(tokens[0]);
+    if (!Number.isInteger(count)) {
+      throw new Error("A quantidade deve ser inteira.");
+    }
+
+    return this.commands.execute(
+      "selection.duplicateMany",
+      { count }
     );
   }
 
