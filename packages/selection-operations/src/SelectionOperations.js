@@ -72,7 +72,8 @@ export class SelectionOperations {
       pivotBefore: this.#selectionPivot(sourceObjects),
       initialTransforms: Object.fromEntries(
         duplicates.map(object => [object.id, snapshotTransform(object)])
-      )
+      ),
+      transformedIds: []
     };
 
     return {
@@ -263,32 +264,89 @@ export class SelectionOperations {
   #observeDuplicateTransform(state, changes = []) {
     if (!this.pendingDuplicate) return;
 
-    const transformed = new Set(
-      changes
-        .filter(change => change.type === "object-transform")
-        .map(change => change.objectId)
+    const transformedIds = new Set(
+      this.pendingDuplicate.transformedIds ?? []
     );
 
-    const changedId = this.pendingDuplicate.duplicateIds.find(id => transformed.has(id));
-    if (!changedId) return;
+    for (const change of changes) {
+      if (
+        change.type === "object-transform" &&
+        this.pendingDuplicate.duplicateIds.includes(
+          change.objectId
+        )
+      ) {
+        transformedIds.add(change.objectId);
+      }
+    }
 
-    const object = state.objects.find(candidate => candidate.id === changedId);
-    const before = this.pendingDuplicate.initialTransforms[changedId];
+    this.pendingDuplicate.transformedIds = [
+      ...transformedIds
+    ];
+
+    /*
+     * O gizmo pode publicar os membros da seleção em notificações
+     * sucessivas. Só consolidamos o histórico quando todos os membros
+     * duplicados tiverem recebido sua transformação.
+     */
+    if (
+      transformedIds.size <
+      this.pendingDuplicate.duplicateIds.length
+    ) {
+      return;
+    }
+
+    const byId = new Map(
+      state.objects.map(object => [
+        object.id,
+        object
+      ])
+    );
+
+    const duplicates =
+      this.pendingDuplicate.duplicateIds
+        .map(id => byId.get(id))
+        .filter(Boolean);
+
+    if (
+      duplicates.length !==
+      this.pendingDuplicate.duplicateIds.length
+    ) {
+      return;
+    }
+
+    const referenceId =
+      this.pendingDuplicate.duplicateIds[0];
+
+    const object =
+      byId.get(referenceId);
+
+    const before =
+      this.pendingDuplicate
+        .initialTransforms[referenceId];
+
     if (!object || !before) return;
 
-    const deltaMatrix = matrixFromObject(object)
-      .multiply(matrixFromSnapshot(before).invert());
-
-    const duplicates = this.pendingDuplicate.duplicateIds
-      .map(id => state.objects.find(candidate => candidate.id === id))
-      .filter(Boolean);
+    const deltaMatrix =
+      matrixFromObject(object)
+        .multiply(
+          matrixFromSnapshot(before)
+            .invert()
+        );
 
     this.lastDuplicate = {
-      sourceIds: [...this.pendingDuplicate.sourceIds],
-      duplicateIds: [...this.pendingDuplicate.duplicateIds],
-      pivotBefore: [...this.pendingDuplicate.pivotBefore],
-      pivotAfter: this.#selectionPivot(duplicates),
-      deltaMatrix: deltaMatrix.toArray()
+      sourceIds: [
+        ...this.pendingDuplicate.sourceIds
+      ],
+      duplicateIds: [
+        ...this.pendingDuplicate.duplicateIds
+      ],
+      pivotBefore: [
+        ...this.pendingDuplicate.pivotBefore
+      ],
+      pivotAfter:
+        this.#selectionPivot(duplicates),
+      deltaMatrix:
+        deltaMatrix.toArray()
     };
 
     this.pendingDuplicate = null;
