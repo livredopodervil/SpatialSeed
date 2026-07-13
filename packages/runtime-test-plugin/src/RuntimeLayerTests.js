@@ -8,6 +8,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
+import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 
 export function createRuntimeLayerTests() {
@@ -651,6 +652,46 @@ assets: {
   }
 },
 
+
+    "affine-math": {
+      "translação acumulada"() {
+        const step=composeAffineOperations([{type:"move",value:[2,0,0]}]);
+        const c=affineCopies({position:[1,0,0],rotation:[0,0,0,1],scale:[1,1,1]},3,step);
+        assertDeepEqual(c.map(x=>x.position.map(roundAffine)),[[3,0,0],[5,0,0],[7,0,0]]);
+      },
+      "escala acumulada"() {
+        const step=composeAffineOperations([{type:"scale",value:[2,2,2]}]);
+        const c=affineCopies({position:[0,0,0],rotation:[0,0,0,1],scale:[1,1,1]},3,step);
+        assertDeepEqual(c.map(x=>x.scale.map(roundAffine)),[[2,2,2],[4,4,4],[8,8,8]]);
+      },
+      "rotação fecha ciclo"() {
+        const step=composeAffineOperations([{type:"rotate",value:[0,0,90]}]);
+        const c=affineCopies({position:[1,0,0],rotation:[0,0,0,1],scale:[1,1,1]},4,step);
+        assertDeepEqual(c.at(-1).position.map(roundAffine),[1,0,0]);
+      },
+      "pivô é preservado"() {
+        const step=composeAffineOperations([
+          {type:"pivot",value:[1,0,0]},
+          {type:"rotate",value:[0,0,180]}
+        ]);
+        const c=affineCopies({position:[2,0,0],rotation:[0,0,0,1],scale:[1,1,1]},1,step);
+        assertDeepEqual(c[0].position.map(roundAffine),[0,0,0]);
+      },
+      "roundtrip preserva posição e escala"() {
+        const source={position:[3,-2,5],rotation:eulerQuaternion([20,30,40]),scale:[2,3,4]};
+        const restored=decomposeTransform(composeTransform(source));
+        assertDeepEqual(restored.position.map(roundAffine),source.position);
+        assertDeepEqual(restored.scale.map(roundAffine),source.scale);
+      },
+      "gera dez mil transformações"() {
+        const step=composeAffineOperations([
+          {type:"move",value:[0.01,0,0]},
+          {type:"rotate",value:[0,0,0.1]}
+        ]);
+        assertEqual(affineCopies({position:[0,0,0],rotation:[0,0,0,1],scale:[1,1,1]},10000,step).length,10000);
+      }
+    },
+
     simulation: {
       "simulador aceita comando na versão correta"() {
         const bridge = createBridge();
@@ -762,6 +803,11 @@ function projectAssetObject(id, src) {
       }
     }
   };
+}
+
+function roundAffine(value) {
+  const result=Math.round(Number(value)*1e9)/1e9;
+  return Object.is(result,-0)?0:result;
 }
 
 function createBridge() {

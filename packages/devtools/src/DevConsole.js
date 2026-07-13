@@ -404,7 +404,7 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|all"
       );
     }
 
@@ -435,11 +435,12 @@ export class DevConsole {
         "normalized-runtime",
         "incremental-runtime",
         "batch-selection",
+        "affine-math",
         "all"
       ].includes(suite)
     ) {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|all"
       );
     }
 
