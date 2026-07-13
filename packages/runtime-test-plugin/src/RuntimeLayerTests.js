@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import {
   ViewerState,
   EditorSession,
@@ -10,6 +11,7 @@ import { Selection } from "../../editor-core/src/Selection.js";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import { RefCountCache, textureKey } from "../../renderer-resource-cache/src/index.js";
+import { InstanceBatchIndex, InstanceBatchManager } from "../../instance-batches/src/index.js";
 import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 
@@ -842,6 +844,45 @@ assets: {
         assert(first !== second);
       }
     },
+
+"instance-batches": {
+  "índice reutiliza posição liberada"() {
+    const index = new InstanceBatchIndex();
+    const first = index.allocate("a");
+    const second = index.allocate("b");
+    index.release("a");
+    const reused = index.allocate("c");
+    assertEqual(first, 0);
+    assertEqual(second, 1);
+    assertEqual(reused, 0);
+    assertEqual(index.objectAt(0), "c");
+  },
+
+  "manager resolve hit por instanceId"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const manager = new InstanceBatchManager();
+    const created = manager.add({
+      objectId: "object-a",
+      batchKey: "box:a",
+      matrix: new THREE.Matrix4(),
+      descriptor: { geometry, material, capacity: 4 }
+    });
+    assertEqual(manager.objectFromHit({ object: created.batch.mesh, instanceId: created.instanceIndex }), "object-a");
+    manager.clear({ disposeGeometry: true, disposeMaterial: true });
+  },
+
+  "manager atualiza e remove objeto"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const manager = new InstanceBatchManager();
+    manager.add({ objectId: "object-a", batchKey: "box:a", matrix: new THREE.Matrix4(), descriptor: { geometry, material, capacity: 4 } });
+    assertEqual(manager.update("object-a", new THREE.Matrix4().makeTranslation(2, 0, 0)), true);
+    assertEqual(manager.remove("object-a").removed, true);
+    assertEqual(manager.hasObject("object-a"), false);
+    manager.clear({ disposeGeometry: true, disposeMaterial: true });
+  }
+},
 
     simulation: {
       "simulador aceita comando na versão correta"() {
