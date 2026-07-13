@@ -1,34 +1,127 @@
 import { immutableClone } from "./Immutable.js";
 
 export class InstanceStore {
-  constructor({ prototypes, initial = {} }) {
+  #records = new Map();
+
+  constructor({
+    prototypes,
+    initial = {}
+  }) {
     this.prototypes = prototypes;
-    this.records = new Map();
-    for (const [id, value] of Object.entries(initial)) this.set({ ...value, id });
+
+    for (const [id, value] of Object.entries(initial)) {
+      this.set({
+        ...value,
+        id
+      });
+    }
   }
-  get(id) { return this.records.get(id) ?? null; }
+
+  get(id) {
+    return this.#records.get(id) ?? null;
+  }
+
   set(instance) {
     const id = String(instance?.id ?? "");
-    if (!id) throw new Error("Instância sem id.");
-    if (!this.prototypes.has(instance.prototypeId)) throw new Error(`Protótipo inexistente: ${instance.prototypeId}`);
-    const normalized = {
-      ...structuredClone(instance),
-      id,
-      prototypeId: String(instance.prototypeId),
+
+    if (!id) {
+      throw new Error("Instância sem id.");
+    }
+
+    if (!this.prototypes.has(instance.prototypeId)) {
+      throw new Error(
+        `Protótipo inexistente: ${instance.prototypeId}.`
+      );
+    }
+
+    const normalized = immutableClone(
+      normalizeInstance(instance)
+    );
+
+    this.#records.set(id, normalized);
+
+    return normalized;
+  }
+
+  transform(id, patch) {
+    const current = this.get(id);
+
+    if (!current) {
+      throw new Error(`Instância inexistente: ${id}.`);
+    }
+
+    return this.set({
+      ...structuredClone(current),
       transform: {
-        position: [...(instance.transform?.position ?? [0, 0, 0])],
-        rotation: [...(instance.transform?.rotation ?? [0, 0, 0, 1])],
-        scale: [...(instance.transform?.scale ?? [1, 1, 1])]
+        ...current.transform,
+        ...structuredClone(patch)
       }
-    };
-    this.records.set(id, immutableClone(normalized));
-    return this.get(id);
+    });
   }
-  makeUnique(instanceId, { prototypeId = crypto.randomUUID(), prototypePatch = {} } = {}) {
+
+  makeUnique(
+    instanceId,
+    {
+      prototypeId = crypto.randomUUID(),
+      prototypePatch = {}
+    } = {}
+  ) {
     const instance = this.get(instanceId);
-    if (!instance) throw new Error(`Instância inexistente: ${instanceId}`);
-    const prototype = this.prototypes.cloneVariant(instance.prototypeId, { id: prototypeId, patch: prototypePatch });
-    return { prototype, instance: this.set({ ...structuredClone(instance), prototypeId: prototype.id }) };
+
+    if (!instance) {
+      throw new Error(
+        `Instância inexistente: ${instanceId}.`
+      );
+    }
+
+    const prototype = this.prototypes.cloneVariant(
+      instance.prototypeId,
+      {
+        id: prototypeId,
+        patch: prototypePatch
+      }
+    );
+
+    const updated = this.set({
+      ...structuredClone(instance),
+      prototypeId: prototype.id
+    });
+
+    return {
+      prototype,
+      instance: updated
+    };
   }
-  toObject() { return Object.fromEntries([...this.records].map(([id, value]) => [id, structuredClone(value)])); }
+
+  delete(id) {
+    return this.#records.delete(id);
+  }
+
+  toObject() {
+    return Object.fromEntries(
+      [...this.#records].map(([id, value]) => [
+        id,
+        structuredClone(value)
+      ])
+    );
+  }
+}
+
+function normalizeInstance(value) {
+  return {
+    ...structuredClone(value),
+    id: String(value.id),
+    prototypeId: String(value.prototypeId),
+    transform: {
+      position: [
+        ...(value.transform?.position ?? [0, 0, 0])
+      ],
+      rotation: [
+        ...(value.transform?.rotation ?? [0, 0, 0, 1])
+      ],
+      scale: [
+        ...(value.transform?.scale ?? [1, 1, 1])
+      ]
+    }
+  };
 }

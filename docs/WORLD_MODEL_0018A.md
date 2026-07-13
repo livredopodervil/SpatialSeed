@@ -1,37 +1,40 @@
-# Modelo de mundo 0018a
+# World Model 0018a
 
-Esta etapa introduz contratos e estruturas sem substituir ainda o estado legado ou o renderer.
+Primeira etapa isolada do novo modelo de mundo.
 
-## Novos contratos
+## Módulos
 
-```text
-WorldSnapshot
-WorldDelta
-CommitEnvelope
-PrototypeStore
-InstanceStore
-LegacyWorldAdapter
-```
+- `Immutable.js`
+- `WorldSnapshot.js`
+- `WorldDelta.js`
+- `CommitEnvelope.js`
+- `PrototypeStore.js`
+- `InstanceStore.js`
+- `index.js`
 
-## Otimização de snapshots
+## Responsabilidades
 
-`Region` e `Sandbox` passam a oferecer duas leituras:
+`WorldSnapshot` representa um estado versionado, imutável e serializável.
 
-```text
-getSnapshot()  referência interna imutável, sem clone
-getState()     cópia defensiva para fronteiras externas
-```
+`WorldDelta` representa mudanças aceitas entre duas versões.
 
-Todos os subscribers de uma mesma notificação recebem exatamente o mesmo snapshot.
+`CommitEnvelope` transporta comandos finais de um cliente para uma região.
 
-## Migração gradual
+`PrototypeStore` mantém descrições compartilhadas de geometria e material.
 
-O estado atual `objects[]` continua sendo o formato operacional do editor. `LegacyWorldAdapter` converte esse estado para protótipos e instâncias para testes, benchmarks e futura migração.
+`InstanceStore` mantém transformações individuais e implementa copy-on-write por `makeUnique()`.
 
-## Instâncias e copy-on-write
+## Limites desta etapa
 
-Objetos equivalentes compartilham protótipo. `InstanceStore.makeUnique()` cria uma variante e altera somente a instância solicitada.
+Nenhum arquivo existente do núcleo é alterado.
 
-## Limite desta etapa
+Não há integração com:
 
-Ainda não são substituídos o reducer legado, o formato `.spatialseed`, o renderer, a seleção nem o Inspector.
+- `Region`;
+- `Sandbox`;
+- renderer;
+- console;
+- seleção;
+- persistência `.spatialseed`.
+
+A próxima etapa deve criar um plugin de testes e comandos para validar o modelo sem acoplar o núcleo.
