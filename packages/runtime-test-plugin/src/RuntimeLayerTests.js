@@ -9,6 +9,7 @@ import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
+import { RefCountCache, textureKey } from "../../renderer-resource-cache/src/index.js";
 import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 
@@ -797,6 +798,50 @@ assets: {
     );
   }
 },
+
+    "render-resource-cache": {
+      "cache reutiliza e libera recurso"() {
+        let creates = 0;
+        let disposes = 0;
+
+        const cache = new RefCountCache({
+          create() {
+            creates += 1;
+            return {
+              dispose() {
+                disposes += 1;
+              }
+            };
+          }
+        });
+
+        const first = cache.acquire("a");
+        const second = cache.acquire("a");
+
+        assertEqual(creates, 1);
+        assertEqual(first.value, second.value);
+
+        cache.release("a");
+        assertEqual(disposes, 0);
+
+        cache.release("a");
+        assertEqual(disposes, 1);
+      },
+
+      "chave de textura inclui transformação UV"() {
+        const first = textureKey({
+          src: "texture.png",
+          repeat: [1, 1]
+        });
+
+        const second = textureKey({
+          src: "texture.png",
+          repeat: [2, 1]
+        });
+
+        assert(first !== second);
+      }
+    },
 
     simulation: {
       "simulador aceita comando na versão correta"() {

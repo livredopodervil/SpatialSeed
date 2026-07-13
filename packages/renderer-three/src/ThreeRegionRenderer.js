@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 
@@ -10,6 +11,7 @@ export class ThreeRegionRenderer {
   #tap = null;
   #textureLoader = new THREE.TextureLoader();
   #projectObject = object => object;
+  #resourceCache = new ThreeResourceCache({ textureLoader: this.#textureLoader });
   #incrementalDiagnostics = {
     fullUpdates: 0,
     incrementalUpdates: 0,
@@ -261,12 +263,20 @@ export class ThreeRegionRenderer {
 
     if (!mesh) {
       mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(...object.size),
-        new THREE.MeshStandardMaterial({ color: object.material.color })
+        undefined,
+        new THREE.MeshStandardMaterial({
+          color: object.material.color
+        })
       );
+
       mesh.userData.objectId = object.id;
-      mesh.userData.sizeKey = object.size.join(",");
+      mesh.userData.sizeKey = null;
       mesh.userData.textureSrc = null;
+      mesh.userData.geometryCacheKey = null;
+      mesh.userData.textureCacheKey = null;
+
+      this.#assignGeometry(mesh, object.size);
+
       this.#meshes.set(object.id, mesh);
       this.scene.add(mesh);
       this.#incrementalDiagnostics.objectsCreated += 1;
@@ -275,10 +285,9 @@ export class ThreeRegionRenderer {
     }
 
     const sizeKey = object.size.join(",");
+
     if (mesh.userData.sizeKey !== sizeKey) {
-      mesh.geometry.dispose();
-      mesh.geometry = new THREE.BoxGeometry(...object.size);
-      mesh.userData.sizeKey = sizeKey;
+      this.#assignGeometry(mesh, object.size);
     }
 
     if (!this.#session) {
@@ -289,7 +298,7 @@ export class ThreeRegionRenderer {
     }
 
     mesh.material.color.set(object.material.color);
-    this.#applyTextureState(mesh, object.material?.texture);
+    this.#assignTexture(mesh, object.material?.texture);
   }
 
   #removeObject(id) {
@@ -297,8 +306,7 @@ export class ThreeRegionRenderer {
     if (!mesh) return false;
 
     this.scene.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
+    this.#releaseMeshResources(mesh);
     this.#meshes.delete(id);
     this.#incrementalDiagnostics.objectsDeleted += 1;
     return true;
@@ -310,35 +318,92 @@ export class ThreeRegionRenderer {
     this.#updateVertexMarkers();
   }
 
-  #applyTextureState(mesh, textureState = null) {
-    const source = textureState?.src || "";
-    if (!source) {
-      if (mesh.material.map) { mesh.material.map.dispose(); mesh.material.map = null; mesh.material.needsUpdate = true; }
-      mesh.userData.textureSrc = null;
+  #assignGeometry(mesh, size) {
+    const acquired = this.#resourceCache.acquireBox(size);
+
+    if (mesh.userData.geometryCacheKey === acquired.key) {
+      this.#resourceCache.releaseGeometry(acquired.key);
       return;
     }
-    if (mesh.userData.textureSrc !== source) {
-      mesh.userData.textureSrc = source;
-      this.#textureLoader.load(source, texture => {
-        if (mesh.userData.textureSrc !== source) { texture.dispose(); return; }
-        if (mesh.material.map) mesh.material.map.dispose();
-        texture.colorSpace = THREE.SRGBColorSpace;
-        mesh.material.map = texture; mesh.material.needsUpdate = true;
-        this.#configureTexture(texture, textureState);
-      }, undefined, error => console.error("Falha ao carregar textura", source, error));
-      return;
-    }
-    if (mesh.material.map) this.#configureTexture(mesh.material.map, textureState);
+
+    this.#resourceCache.releaseGeometry(
+      mesh.userData.geometryCacheKey
+    );
+
+    mesh.geometry = acquired.value;
+    mesh.userData.geometryCacheKey = acquired.key;
+    mesh.userData.sizeKey = size.join(",");
   }
 
-  #configureTexture(texture, textureState = {}) {
-    const wrapping = { repeat: THREE.RepeatWrapping, mirror: THREE.MirroredRepeatWrapping, clamp: THREE.ClampToEdgeWrapping }[textureState.wrap] ?? THREE.RepeatWrapping;
-    texture.wrapS = wrapping; texture.wrapT = wrapping;
-    texture.repeat.fromArray(textureState.repeat ?? [1, 1]);
-    texture.offset.fromArray(textureState.offset ?? [0, 0]);
-    texture.center.set(0.5, 0.5);
-    texture.rotation = Number(textureState.rotationDeg ?? 0) * Math.PI / 180;
-    texture.needsUpdate = true;
+  #assignTexture(mesh, textureState = null) {
+    const acquired =
+      this.#resourceCache.acquireTexture(textureState);
+
+    const nextKey = acquired?.key ?? null;
+
+    if (mesh.userData.textureCacheKey === nextKey) {
+      if (acquired) {
+        this.#resourceCache.releaseTexture(acquired.key);
+      }
+      return;
+    }
+
+    this.#resourceCache.releaseTexture(
+      mesh.userData.textureCacheKey
+    );
+
+    mesh.userData.textureCacheKey = nextKey;
+    mesh.userData.textureSrc = textureState?.src ?? null;
+
+    if (!acquired) {
+      mesh.material.map = null;
+      mesh.material.needsUpdate = true;
+      return;
+    }
+
+    if (acquired.value) {
+      mesh.material.map = acquired.value;
+      mesh.material.needsUpdate = true;
+      return;
+    }
+
+    acquired.promise?.then(texture => {
+      if (
+        !texture ||
+        mesh.userData.textureCacheKey !== acquired.key
+      ) {
+        return;
+      }
+
+      mesh.material.map = texture;
+      mesh.material.needsUpdate = true;
+    }).catch(error => {
+      if (mesh.userData.textureCacheKey === acquired.key) {
+        mesh.userData.textureCacheKey = null;
+        mesh.userData.textureSrc = null;
+      }
+
+      console.error(
+        "Falha ao carregar textura",
+        textureState?.src,
+        error
+      );
+    });
+  }
+
+  #releaseMeshResources(mesh) {
+    this.#resourceCache.releaseGeometry(
+      mesh.userData.geometryCacheKey
+    );
+
+    this.#resourceCache.releaseTexture(
+      mesh.userData.textureCacheKey
+    );
+
+    mesh.userData.geometryCacheKey = null;
+    mesh.userData.textureCacheKey = null;
+    mesh.material.map = null;
+    mesh.material.dispose();
   }
 
   #storeEditedPivot(position) {
@@ -839,6 +904,8 @@ getResourceDiagnostics() {
     programs: Array.isArray(info?.programs)
       ? info.programs.length
       : null,
+
+    cache: this.#resourceCache.stats(),
 
     incremental:
       this.getIncrementalDiagnostics?.() ?? null
