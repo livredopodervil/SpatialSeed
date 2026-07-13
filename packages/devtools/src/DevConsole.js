@@ -416,7 +416,7 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|all"
       );
     }
 
@@ -451,11 +451,12 @@ export class DevConsole {
         "resource-audit",
         "render-resource-cache",
         "instance-batches",
+        "batch-material-cache",
         "all"
       ].includes(suite)
     ) {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|all"
       );
     }
 

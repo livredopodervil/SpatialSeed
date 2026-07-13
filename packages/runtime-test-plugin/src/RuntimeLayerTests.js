@@ -11,6 +11,7 @@ import { Selection } from "../../editor-core/src/Selection.js";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import { RefCountCache, textureKey } from "../../renderer-resource-cache/src/index.js";
+import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
 import { InstanceBatchIndex, InstanceBatchManager } from "../../instance-batches/src/index.js";
 import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
@@ -883,6 +884,70 @@ assets: {
     manager.clear({ disposeGeometry: true, disposeMaterial: true });
   }
 },
+
+    "batch-material-cache": {
+      "aparência idêntica reutiliza material"() {
+        const resourceCache = {
+          acquireTexture() {
+            return null;
+          },
+          releaseTexture() {
+            return true;
+          }
+        };
+
+        const cache = new BatchMaterialCache({ resourceCache });
+
+        const first = cache.acquire({
+          appearanceId: "appearance-a",
+          material: { color: "#ffffff" }
+        });
+
+        const second = cache.acquire({
+          appearanceId: "appearance-a",
+          material: { color: "#ffffff" }
+        });
+
+        assertEqual(
+          first.value.material,
+          second.value.material
+        );
+
+        assertEqual(cache.stats().entries, 1);
+        assertEqual(cache.stats().references, 2);
+
+        cache.release("appearance-a");
+        cache.release("appearance-a");
+      },
+
+      "aparências distintas criam materiais distintos"() {
+        const resourceCache = {
+          acquireTexture() {
+            return null;
+          },
+          releaseTexture() {
+            return true;
+          }
+        };
+
+        const cache = new BatchMaterialCache({ resourceCache });
+
+        const first = cache.acquire({
+          appearanceId: "appearance-a",
+          material: { color: "#ffffff" }
+        });
+
+        const second = cache.acquire({
+          appearanceId: "appearance-b",
+          material: { color: "#ffffff" }
+        });
+
+        assert(first.value.material !== second.value.material);
+
+        cache.release("appearance-a");
+        cache.release("appearance-b");
+      }
+    },
 
     simulation: {
       "simulador aceita comando na versão correta"() {

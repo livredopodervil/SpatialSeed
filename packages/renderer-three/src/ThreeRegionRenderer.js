@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -12,6 +13,8 @@ export class ThreeRegionRenderer {
   #textureLoader = new THREE.TextureLoader();
   #projectObject = object => object;
   #resourceCache = new ThreeResourceCache({ textureLoader: this.#textureLoader });
+  #materialCache = new BatchMaterialCache({ resourceCache: this.#resourceCache });
+
   #incrementalDiagnostics = {
     fullUpdates: 0,
     incrementalUpdates: 0,
@@ -262,18 +265,22 @@ export class ThreeRegionRenderer {
     let mesh = this.#meshes.get(object.id);
 
     if (!mesh) {
+      const acquiredMaterial = this.#materialCache.acquire({
+        appearanceId: object.appearanceId,
+        material: object.material
+      });
+
       mesh = new THREE.Mesh(
         undefined,
-        new THREE.MeshStandardMaterial({
-          color: object.material.color
-        })
+        acquiredMaterial.value.material
       );
 
       mesh.userData.objectId = object.id;
       mesh.userData.sizeKey = null;
-      mesh.userData.textureSrc = null;
+      mesh.userData.textureSrc =
+        object.material?.texture?.src ?? null;
       mesh.userData.geometryCacheKey = null;
-      mesh.userData.textureCacheKey = null;
+      mesh.userData.appearanceId = object.appearanceId;
 
       this.#assignGeometry(mesh, object.size);
 
@@ -290,15 +297,28 @@ export class ThreeRegionRenderer {
       this.#assignGeometry(mesh, object.size);
     }
 
+    if (mesh.userData.appearanceId !== object.appearanceId) {
+      this.#materialCache.release(
+        mesh.userData.appearanceId
+      );
+
+      const acquiredMaterial = this.#materialCache.acquire({
+        appearanceId: object.appearanceId,
+        material: object.material
+      });
+
+      mesh.material = acquiredMaterial.value.material;
+      mesh.userData.appearanceId = object.appearanceId;
+      mesh.userData.textureSrc =
+        object.material?.texture?.src ?? null;
+    }
+
     if (!this.#session) {
       mesh.position.fromArray(object.position);
       mesh.quaternion.fromArray(object.rotation);
       mesh.scale.fromArray(object.scale);
       mesh.updateMatrixWorld(true);
     }
-
-    mesh.material.color.set(object.material.color);
-    this.#assignTexture(mesh, object.material?.texture);
   }
 
   #removeObject(id) {
@@ -306,9 +326,21 @@ export class ThreeRegionRenderer {
     if (!mesh) return false;
 
     this.scene.remove(mesh);
-    this.#releaseMeshResources(mesh);
+
+    this.#resourceCache.releaseGeometry(
+      mesh.userData.geometryCacheKey
+    );
+
+    this.#materialCache.release(
+      mesh.userData.appearanceId
+    );
+
+    mesh.userData.geometryCacheKey = null;
+    mesh.userData.appearanceId = null;
+
     this.#meshes.delete(id);
     this.#incrementalDiagnostics.objectsDeleted += 1;
+
     return true;
   }
 
@@ -745,16 +777,8 @@ export class ThreeRegionRenderer {
   }
 
   #updateSelectionAppearance() {
-    const selected = new Set(
-      (this.#selectionSnapshot?.members ?? []).map(member => member.objectId)
-    );
-    const activeId = this.#selectionSnapshot?.activeMember?.objectId;
-
-    for (const [id, mesh] of this.#meshes) {
-      if (id === activeId) mesh.material.emissive.set(0x263d68);
-      else if (selected.has(id)) mesh.material.emissive.set(0x162741);
-      else mesh.material.emissive.set(0x000000);
-    }
+    // Materiais são compartilhados por appearanceId.
+    // O realce individual retorna com instanceColor no InstancedMesh.
   }
 
   getInputDiagnostics() {
@@ -906,6 +930,8 @@ getResourceDiagnostics() {
       : null,
 
     cache: this.#resourceCache.stats(),
+
+    materials: this.#materialCache.stats(),
 
     incremental:
       this.getIncrementalDiagnostics?.() ?? null
