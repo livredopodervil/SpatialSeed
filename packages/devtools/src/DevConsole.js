@@ -404,7 +404,7 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|all"
       );
     }
 
@@ -430,11 +430,12 @@ export class DevConsole {
         "clock",
         "simulation",
         "assets",
+        "project-assets",
         "all"
       ].includes(suite)
     ) {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|all"
       );
     }
 

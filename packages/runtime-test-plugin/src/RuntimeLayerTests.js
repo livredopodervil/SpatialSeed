@@ -5,6 +5,7 @@ import {
   SimulationBridge
 } from "../../runtime-layers/src/index.js";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
+import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -250,6 +251,144 @@ assets: {
   }
 },
 
+"project-assets": {
+  "textura repetida aparece uma vez"() {
+    const adapter =
+      new ProjectAppearanceAdapter();
+
+    const texture =
+      "data:image/png;base64," +
+      "A".repeat(4096);
+
+    const normalized =
+      adapter.normalizeScene({
+        schemaVersion: 1,
+        objects: [
+          projectAssetObject("a", texture),
+          projectAssetObject("b", texture)
+        ]
+      });
+
+    const textures =
+      Object.values(
+        normalized.assets.assets
+      ).filter(
+        asset =>
+          asset.kind === "texture"
+      );
+
+    assertEqual(textures.length, 1);
+
+    assertEqual(
+      normalized.scene.objects[0].appearanceId,
+      normalized.scene.objects[1].appearanceId
+    );
+  },
+
+  "formato deduplicado é menor"() {
+    const adapter =
+      new ProjectAppearanceAdapter();
+
+    const texture =
+      "data:image/png;base64," +
+      "B".repeat(16384);
+
+    const legacy = {
+      schemaVersion: 1,
+      objects: Array.from(
+        { length: 10 },
+        (_, index) =>
+          projectAssetObject(
+            `box-${index}`,
+            texture
+          )
+      )
+    };
+
+    const normalized =
+      adapter.normalizeScene(legacy);
+
+    const legacyBytes =
+      new Blob([
+        JSON.stringify(legacy)
+      ]).size;
+
+    const normalizedBytes =
+      new Blob([
+        JSON.stringify(normalized)
+      ]).size;
+
+    assert(
+      normalizedBytes <
+      legacyBytes / 2
+    );
+  },
+
+  "roundtrip restaura textura"() {
+    const adapter =
+      new ProjectAppearanceAdapter();
+
+    const legacy = {
+      schemaVersion: 1,
+      objects: [
+        projectAssetObject(
+          "box-a",
+          "data:image/png;base64,CCCC"
+        )
+      ]
+    };
+
+    const normalized =
+      adapter.normalizeScene(legacy);
+
+    const restored =
+      adapter.denormalizeScene(
+        normalized.scene,
+        normalized.assets
+      );
+
+    assertEqual(
+      restored.objects[0]
+        .material.texture.src,
+      legacy.objects[0]
+        .material.texture.src
+    );
+
+    assertDeepEqual(
+      restored.objects[0]
+        .material.texture.repeat,
+      [2, 3]
+    );
+  },
+
+  "appearance ausente é rejeitada"() {
+    const adapter =
+      new ProjectAppearanceAdapter();
+
+    let failed = false;
+
+    try {
+      adapter.denormalizeScene(
+        {
+          objects: [{
+            id: "missing",
+            appearanceId:
+              "appearance:missing"
+          }]
+        },
+        {
+          schemaVersion: 1,
+          assets: {}
+        }
+      );
+    } catch {
+      failed = true;
+    }
+
+    assertEqual(failed, true);
+  }
+},
+
     simulation: {
       "simulador aceita comando na versão correta"() {
         const bridge = createBridge();
@@ -336,6 +475,28 @@ assets: {
         assertEqual(packet.version, 1);
         assertNear(packet.snapshot.time, 0.25);
         assertEqual(packet.delta.type, "simulation-time");
+      }
+    }
+  };
+}
+
+function projectAssetObject(id, src) {
+  return {
+    id,
+    kind: "box",
+    name: id,
+    position: [0, 1, 0],
+    rotation: [0, 0, 0, 1],
+    scale: [1, 1, 1],
+    size: [2, 2, 2],
+    material: {
+      color: "#ffffff",
+      texture: {
+        src,
+        repeat: [2, 3],
+        offset: [0.1, 0.2],
+        rotationDeg: 15,
+        wrap: "repeat"
       }
     }
   };
