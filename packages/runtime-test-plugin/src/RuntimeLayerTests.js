@@ -5,6 +5,7 @@ import {
   SimulationBridge
 } from "../../runtime-layers/src/index.js";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
+import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 
 export function createRuntimeLayerTests() {
@@ -386,6 +387,149 @@ assets: {
     }
 
     assertEqual(failed, true);
+  }
+},
+
+"appearance-runtime": {
+  "resolve reutiliza a mesma referência"() {
+    const runtime =
+      new AppearanceRuntime();
+
+    const created =
+      runtime.internLegacyMaterial({
+        color: "#ffffff",
+        texture: {
+          src:
+            "data:image/png;base64,AAAA"
+        }
+      });
+
+    const first =
+      runtime.resolve(
+        created.appearanceId
+      );
+
+    const second =
+      runtime.resolve(
+        created.appearanceId
+      );
+
+    assertEqual(
+      first,
+      second
+    );
+
+    assertEqual(
+      runtime.stats()
+        .resolvedCache,
+      1
+    );
+  },
+
+  "import invalida cache de resolução"() {
+    const source =
+      new AppearanceRuntime();
+
+    const created =
+      source.internLegacyMaterial({
+        color: "#abcdef"
+      });
+
+    const assets =
+      source.exportAssets();
+
+    const runtime =
+      new AppearanceRuntime();
+
+    runtime.importAssets(assets);
+
+    const first =
+      runtime.resolve(
+        created.appearanceId
+      );
+
+    runtime.importAssets(
+      assets
+    );
+
+    const second =
+      runtime.resolve(
+        created.appearanceId
+      );
+
+    assert(
+      first !== second
+    );
+
+    assertEqual(
+      runtime.revision,
+      2
+    );
+  },
+
+  "normalização remove material embutido"() {
+    const runtime =
+      new AppearanceRuntime();
+
+    const scene =
+      runtime.normalizeScene({
+        schemaVersion: 1,
+        objects: [{
+          id: "box-a",
+          material: {
+            color: "#123456"
+          }
+        }]
+      });
+
+    assertEqual(
+      "material" in
+        scene.objects[0],
+      false
+    );
+
+    assert(
+      Boolean(
+        scene.objects[0]
+          .appearanceId
+      )
+    );
+  },
+
+  "stats distingue assets e cache"() {
+    const runtime =
+      new AppearanceRuntime();
+
+    const created =
+      runtime.internLegacyMaterial({
+        color: "#ffffff"
+      });
+
+    const before =
+      runtime.stats();
+
+    runtime.resolve(
+      created.appearanceId
+    );
+
+    const after =
+      runtime.stats();
+
+    assertEqual(
+      before.resolvedCache,
+      0
+    );
+
+    assertEqual(
+      after.resolvedCache,
+      1
+    );
+
+    assertEqual(
+      after.assets.byKind
+        .appearance.assets,
+      1
+    );
   }
 },
 
