@@ -120,6 +120,15 @@ export class AppearanceRuntime {
     });
   }
 
+  projectObject(object) {
+    if (object.material) return object;
+
+    return {
+      ...object,
+      material: this.legacyMaterial(object.appearanceId)
+    };
+  }
+
   projectScene(scene) {
     return {
       ...scene,

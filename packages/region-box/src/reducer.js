@@ -53,7 +53,8 @@ export function boxRegionReducer(state, command) {
         }),
         changes: [{
           type: "object-created",
-          objectId: object.id
+          objectId: object.id,
+          object
         }]
       };
     }
@@ -134,6 +135,7 @@ export function boxRegionReducer(state, command) {
         changes: incoming.map(object => ({
           type: "object-created",
           objectId: object.id,
+          object,
           source: command.source ?? "selection.duplicate"
         }))
       };

@@ -9,6 +9,14 @@ export class ThreeRegionRenderer {
   #session = null;
   #tap = null;
   #textureLoader = new THREE.TextureLoader();
+  #projectObject = object => object;
+  #incrementalDiagnostics = {
+    fullUpdates: 0,
+    incrementalUpdates: 0,
+    objectsCreated: 0,
+    objectsUpdated: 0,
+    objectsDeleted: 0
+  };
   #transformConfig = {
     size: 1.25,
     translationSnap: null,
@@ -37,7 +45,15 @@ export class ThreeRegionRenderer {
     selectionAction: null
   };
 
-  constructor(canvas, { dispatch, selection, editorState }) {
+  constructor(
+    canvas,
+    {
+      dispatch,
+      selection,
+      editorState,
+      projectObject = object => object
+    }
+  ) {
     if (typeof dispatch !== "function") throw new TypeError("dispatch must be a function");
     if (!selection?.subscribe) throw new TypeError("selection object is incompatible");
     if (!editorState?.subscribe) throw new TypeError("editorState object is incompatible");
@@ -46,6 +62,10 @@ export class ThreeRegionRenderer {
     this.dispatch = dispatch;
     this.selection = selection;
     this.editorState = editorState;
+    this.#projectObject =
+      typeof projectObject === "function"
+        ? projectObject
+        : object => object;
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -180,50 +200,111 @@ export class ThreeRegionRenderer {
   }
 
   update(state) {
+    this.#incrementalDiagnostics.fullUpdates += 1;
     const seen = new Set();
 
-    for (const object of state.objects) {
+    for (const rawObject of state.objects) {
+      const object = this.#projectObject(rawObject);
       seen.add(object.id);
-      let mesh = this.#meshes.get(object.id);
+      this.#upsertObject(object);
+    }
 
-      if (!mesh) {
-        mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(...object.size),
-          new THREE.MeshStandardMaterial({ color: object.material.color })
+    for (const id of [...this.#meshes.keys()]) {
+      if (!seen.has(id)) this.#removeObject(id);
+    }
+
+    this.#finishSceneUpdate();
+  }
+
+  applyChanges(state, changes = []) {
+    this.#incrementalDiagnostics.incrementalUpdates += 1;
+    let fallbackById = null;
+
+    for (const change of changes) {
+      const id = change.objectId;
+      if (!id) continue;
+
+      if (change.type === "object-deleted") {
+        this.#removeObject(id);
+        continue;
+      }
+
+      let rawObject = change.object;
+
+      if (!rawObject) {
+        fallbackById ??= new Map(
+          state.objects.map(object => [object.id, object])
         );
-        mesh.userData.objectId = object.id;
-        mesh.userData.sizeKey = object.size.join(",");
-        mesh.userData.textureSrc = null;
-        this.#meshes.set(object.id, mesh);
-        this.scene.add(mesh);
-      }
-      const sizeKey = object.size.join(",");
-      if (mesh.userData.sizeKey !== sizeKey) {
-        mesh.geometry.dispose();
-        mesh.geometry = new THREE.BoxGeometry(...object.size);
-        mesh.userData.sizeKey = sizeKey;
+        rawObject = fallbackById.get(id);
       }
 
-      if (!this.#session) {
-        mesh.position.fromArray(object.position);
-        mesh.quaternion.fromArray(object.rotation);
-        mesh.scale.fromArray(object.scale);
-        mesh.updateMatrixWorld(true);
+      if (!rawObject) {
+        this.#removeObject(id);
+        continue;
       }
 
-      mesh.material.color.set(object.material.color);
-      this.#applyTextureState(mesh, object.material?.texture);
+      this.#upsertObject(this.#projectObject(rawObject));
     }
 
-    for (const [id, mesh] of this.#meshes) {
-      if (!seen.has(id)) {
-        this.scene.remove(mesh);
-        mesh.geometry.dispose();
-        mesh.material.dispose();
-        this.#meshes.delete(id);
-      }
+    this.#finishSceneUpdate();
+  }
+
+  getIncrementalDiagnostics() {
+    return {
+      ...this.#incrementalDiagnostics,
+      meshes: this.#meshes.size
+    };
+  }
+
+  #upsertObject(object) {
+    let mesh = this.#meshes.get(object.id);
+
+    if (!mesh) {
+      mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(...object.size),
+        new THREE.MeshStandardMaterial({ color: object.material.color })
+      );
+      mesh.userData.objectId = object.id;
+      mesh.userData.sizeKey = object.size.join(",");
+      mesh.userData.textureSrc = null;
+      this.#meshes.set(object.id, mesh);
+      this.scene.add(mesh);
+      this.#incrementalDiagnostics.objectsCreated += 1;
+    } else {
+      this.#incrementalDiagnostics.objectsUpdated += 1;
     }
 
+    const sizeKey = object.size.join(",");
+    if (mesh.userData.sizeKey !== sizeKey) {
+      mesh.geometry.dispose();
+      mesh.geometry = new THREE.BoxGeometry(...object.size);
+      mesh.userData.sizeKey = sizeKey;
+    }
+
+    if (!this.#session) {
+      mesh.position.fromArray(object.position);
+      mesh.quaternion.fromArray(object.rotation);
+      mesh.scale.fromArray(object.scale);
+      mesh.updateMatrixWorld(true);
+    }
+
+    mesh.material.color.set(object.material.color);
+    this.#applyTextureState(mesh, object.material?.texture);
+  }
+
+  #removeObject(id) {
+    const mesh = this.#meshes.get(id);
+    if (!mesh) return false;
+
+    this.scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+    this.#meshes.delete(id);
+    this.#incrementalDiagnostics.objectsDeleted += 1;
+    return true;
+  }
+
+  #finishSceneUpdate() {
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();

@@ -1,23 +1,24 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260713-0019b";
-import { Region } from "../../packages/core/src/Region.js?build=20260713-0019b";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260713-0019b";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260713-0019b";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260713-0019b";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260713-0019b";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260713-0019b";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260713-0019b";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260713-0019b";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260713-0019b";
-import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260713-0019b";
-import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260713-0019b";
-import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260713-0019b";
-import { ProjectService } from "../../packages/project-files/src/ProjectService.js?build=20260713-0019b";
-import { BenchmarkRunner } from "../../packages/benchmarks/src/BenchmarkRunner.js?build=20260713-0019b";
-import { TestService } from "../../packages/tests/src/TestService.js?build=20260713-0019b";
-import { activateRuntimeTestPlugin } from "../../packages/runtime-test-plugin/src/index.js?build=20260713-0019b";
-import { AppearanceRuntime } from "../../packages/appearance-runtime/src/index.js?build=20260713-0019b";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260713-0019c";
+import { Region } from "../../packages/core/src/Region.js?build=20260713-0019c";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260713-0019c";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260713-0019c";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260713-0019c";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260713-0019c";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260713-0019c";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260713-0019c";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260713-0019c";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260713-0019c";
+import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260713-0019c";
+import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260713-0019c";
+import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260713-0019c";
+import { ProjectService } from "../../packages/project-files/src/ProjectService.js?build=20260713-0019c";
+import { BenchmarkRunner } from "../../packages/benchmarks/src/BenchmarkRunner.js?build=20260713-0019c";
+import { TestService } from "../../packages/tests/src/TestService.js?build=20260713-0019c";
+import { activateRuntimeTestPlugin } from "../../packages/runtime-test-plugin/src/index.js?build=20260713-0019c";
+import { AppearanceRuntime } from "../../packages/appearance-runtime/src/index.js?build=20260713-0019c";
+import { classifyChanges } from "../../packages/incremental-runtime/src/index.js?build=20260713-0019c";
 
-const BUILD = "20260713-0019b";
+const BUILD = "20260713-0019c";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -46,7 +47,7 @@ function showNotice(message, duration = 2200) {
   $("status").textContent = message;
 
   statusTimer = setTimeout(() => {
-    refresh();
+    refreshUi(sandbox.getSnapshot());
   }, duration);
 }
 
@@ -153,7 +154,8 @@ function dispatchRuntimeCommand(command) {
 const renderer3d = new ThreeRegionRenderer($("world"), {
   dispatch: dispatchRuntimeCommand,
   selection: editor.selection,
-  editorState: editor
+  editorState: editor,
+  projectObject: object => appearanceRuntime.projectObject(object)
 });
 
 const outline = new OutlineRenderer($("outline-content"));
@@ -214,7 +216,8 @@ function collectDeveloperState() {
       objectCount: sandbox.getState().objects.length
     },
     renderer: renderer3d.renderer?.info?.render ?? null,
-    appearance: appearanceRuntime.stats()
+    appearance: appearanceRuntime.stats(),
+    incremental: renderer3d.getIncrementalDiagnostics()
   };
 }
 
@@ -309,9 +312,11 @@ function escapeHtml(value) {
 
 setInterval(refreshDeveloperPanel, 400);
 
-function refresh(state = sandbox.getState()) {
-  renderer3d.update(appearanceRuntime.projectScene(state));
-  outline.update(region, sandbox, modules.describe());
+function refreshUi(state) {
+  if (!$("outline").hidden) {
+    outline.update(region, sandbox, modules.describe(), state);
+  }
+
   $("undo").disabled = !sandbox.canUndo;
   $("redo").disabled = !sandbox.canRedo;
   $("review").disabled = !sandbox.dirty;
@@ -319,7 +324,17 @@ function refresh(state = sandbox.getState()) {
     `build ${BUILD} · região ${region.version} · sandbox ${sandbox.dirty ? "alterado" : "limpo"}`;
 }
 
-sandbox.subscribe(state => refresh(state));
+sandbox.subscribe((state, changes) => {
+  const classification = classifyChanges(changes);
+
+  if (classification.mode === "incremental") {
+    renderer3d.applyChanges(state, classification.changes);
+  } else {
+    renderer3d.update(state);
+  }
+
+  refreshUi(state);
+});
 
 editor.selection.subscribe(snapshot => {
   const active = snapshot.activeMember?.objectId;

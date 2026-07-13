@@ -6,6 +6,7 @@ import {
 } from "../../runtime-layers/src/index.js";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
+import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 
 export function createRuntimeLayerTests() {
@@ -592,6 +593,29 @@ assets: {
 
         assertEqual(text.includes("data:image"), false);
         assert(Boolean(duplicate.appearanceId));
+      }
+    },
+
+    "incremental-runtime": {
+      "mudanças de objeto são incrementais"() {
+        const result = classifyChanges([
+          { type: "object-created", objectId: "a" },
+          { type: "object-transform", objectId: "a" },
+          { type: "object-deleted", objectId: "b" }
+        ]);
+
+        assertEqual(result.mode, "incremental");
+        assertDeepEqual(result.objectIds, ["a", "b"]);
+      },
+
+      "undo exige reconstrução integral"() {
+        const result = classifyChanges([{ type: "sandbox-undo" }]);
+        assertEqual(result.mode, "full");
+      },
+
+      "mudança desconhecida usa fallback integral"() {
+        const result = classifyChanges([{ type: "future-change" }]);
+        assertEqual(result.mode, "full");
       }
     },
 
