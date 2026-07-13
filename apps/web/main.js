@@ -1,22 +1,23 @@
-import { EventBus } from "../../packages/core/src/EventBus.js?build=20260712-0019a";
-import { Region } from "../../packages/core/src/Region.js?build=20260712-0019a";
-import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260712-0019a";
-import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260712-0019a";
-import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260712-0019a";
-import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260712-0019a";
-import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260712-0019a";
-import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260712-0019a";
-import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260712-0019a";
-import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260712-0019a";
-import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260712-0019a";
-import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260712-0019a";
-import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260712-0019a";
-import { ProjectService } from "../../packages/project-files/src/ProjectService.js?build=20260712-0019a";
-import { BenchmarkRunner } from "../../packages/benchmarks/src/BenchmarkRunner.js?build=20260712-0019a";
-import { TestService } from "../../packages/tests/src/TestService.js?build=20260712-0019a";
-import { activateRuntimeTestPlugin } from "../../packages/runtime-test-plugin/src/index.js?build=20260712-0019a";
+import { EventBus } from "../../packages/core/src/EventBus.js?build=20260713-0019b";
+import { Region } from "../../packages/core/src/Region.js?build=20260713-0019b";
+import { Sandbox } from "../../packages/core/src/Sandbox.js?build=20260713-0019b";
+import { ModuleRegistry } from "../../packages/plugin-api/src/ModuleRegistry.js?build=20260713-0019b";
+import { EditorState } from "../../packages/editor-core/src/EditorState.js?build=20260713-0019b";
+import { boxRegionReducer } from "../../packages/region-box/src/reducer.js?build=20260713-0019b";
+import { ThreeRegionRenderer } from "../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260713-0019b";
+import { OutlineRenderer } from "../../packages/renderer-outline/src/OutlineRenderer.js?build=20260713-0019b";
+import { DevConsole } from "../../packages/devtools/src/DevConsole.js?build=20260713-0019b";
+import { ObjectInspector } from "../../packages/object-inspector/src/ObjectInspector.js?build=20260713-0019b";
+import { TransformToolPanel } from "../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260713-0019b";
+import { SelectionOperations } from "../../packages/selection-operations/src/SelectionOperations.js?build=20260713-0019b";
+import { createEditorCommands } from "../../packages/editor-commands/src/EditorCommands.js?build=20260713-0019b";
+import { ProjectService } from "../../packages/project-files/src/ProjectService.js?build=20260713-0019b";
+import { BenchmarkRunner } from "../../packages/benchmarks/src/BenchmarkRunner.js?build=20260713-0019b";
+import { TestService } from "../../packages/tests/src/TestService.js?build=20260713-0019b";
+import { activateRuntimeTestPlugin } from "../../packages/runtime-test-plugin/src/index.js?build=20260713-0019b";
+import { AppearanceRuntime } from "../../packages/appearance-runtime/src/index.js?build=20260713-0019b";
 
-const BUILD = "20260712-0019a";
+const BUILD = "20260713-0019b";
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 const $ = id => document.getElementById(id);
@@ -116,23 +117,41 @@ await modules.activateAll({ eventBus: new EventBus(), reducers });
 const reducer = reducers.get("box-region");
 if (!reducer) throw new Error("Reducer box-region unavailable");
 
+const appearanceRuntime = new AppearanceRuntime();
+
+const initialScene = appearanceRuntime.normalizeScene({
+  schemaVersion: 1,
+  objects: [
+    {id:"box-1",kind:"box",name:"Caixa 1",position:[-3,1,0],rotation:[0,0,0,1],scale:[1,1,1],size:[2,2,2],material:{color:"#5b8bd9"}},
+    {id:"box-2",kind:"box",name:"Caixa 2",position:[0,1,0],rotation:[0,0,0,1],scale:[1,1,1],size:[2,2,2],material:{color:"#d98067"}},
+    {id:"box-3",kind:"box",name:"Caixa 3",position:[3,1,0],rotation:[0,0,0,1],scale:[1,1,1],size:[2,2,2],material:{color:"#72b883"}}
+  ]
+});
+
 const region = new Region(
   { id: "region-main", name: "Região principal", type: "box-region" },
-  {
-    schemaVersion: 1,
-    objects: [
-      {id:"box-1",kind:"box",name:"Caixa 1",position:[-3,1,0],rotation:[0,0,0,1],scale:[1,1,1],size:[2,2,2],material:{color:"#5b8bd9"}},
-      {id:"box-2",kind:"box",name:"Caixa 2",position:[0,1,0],rotation:[0,0,0,1],scale:[1,1,1],size:[2,2,2],material:{color:"#d98067"}},
-      {id:"box-3",kind:"box",name:"Caixa 3",position:[3,1,0],rotation:[0,0,0,1],scale:[1,1,1],size:[2,2,2],material:{color:"#72b883"}}
-    ]
-  }
+  initialScene
 );
 
 const sandbox = new Sandbox(region, reducer);
 const editor = new EditorState();
 
+function dispatchRuntimeCommand(command) {
+  const next = structuredClone(command);
+
+  if (next.type === "object.update" && next.patch?.material) {
+    const created = appearanceRuntime.internLegacyMaterial(
+      next.patch.material
+    );
+    next.patch.appearanceId = created.appearanceId;
+    delete next.patch.material;
+  }
+
+  return sandbox.dispatch(next);
+}
+
 const renderer3d = new ThreeRegionRenderer($("world"), {
-  dispatch: command => sandbox.dispatch(command),
+  dispatch: dispatchRuntimeCommand,
   selection: editor.selection,
   editorState: editor
 });
@@ -194,7 +213,8 @@ function collectDeveloperState() {
       canRedo: sandbox.canRedo,
       objectCount: sandbox.getState().objects.length
     },
-    renderer: renderer3d.renderer?.info?.render ?? null
+    renderer: renderer3d.renderer?.info?.render ?? null,
+    appearance: appearanceRuntime.stats()
   };
 }
 
@@ -208,7 +228,8 @@ const projectService = new ProjectService({
   sandbox,
   editor,
   renderer: renderer3d,
-  region
+  region,
+  appearanceRuntime
 });
 
 const benchmarkRunner = new BenchmarkRunner({
@@ -252,7 +273,8 @@ const objectInspector = new ObjectInspector({
   root: $("inspector-panel"),
   editor,
   sandbox,
-  dispatch: command => sandbox.dispatch(command)
+  appearanceRuntime,
+  dispatch: dispatchRuntimeCommand
 });
 
 const devConsole = new DevConsole({
@@ -288,7 +310,7 @@ function escapeHtml(value) {
 setInterval(refreshDeveloperPanel, 400);
 
 function refresh(state = sandbox.getState()) {
-  renderer3d.update(state);
+  renderer3d.update(appearanceRuntime.projectScene(state));
   outline.update(region, sandbox, modules.describe());
   $("undo").disabled = !sandbox.canUndo;
   $("redo").disabled = !sandbox.canRedo;
@@ -585,5 +607,6 @@ window.__SPATIAL_SEED__ = {
   objectInspector,
   transformToolPanel,
   selectionOperations,
-  editorCommands
+  editorCommands,
+  appearanceRuntime
 };

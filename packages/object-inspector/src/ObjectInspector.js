@@ -1,6 +1,6 @@
 export class ObjectInspector {
-  constructor({ root, editor, sandbox, dispatch }) {
-    this.root=root; this.editor=editor; this.sandbox=sandbox; this.dispatch=dispatch;
+  constructor({ root, editor, sandbox, dispatch, appearanceRuntime }) {
+    this.root=root; this.editor=editor; this.sandbox=sandbox; this.dispatch=dispatch; this.appearanceRuntime=appearanceRuntime;
     this.selectedId=null; this.pendingTextureDataUrl=null;
     this.#bind();
     editor.selection.subscribe(()=>this.refresh());
@@ -19,7 +19,7 @@ export class ObjectInspector {
     const o=this.sandbox.getState().objects.find(x=>x.id===members[0].objectId);
     if(!o)return;
     this.selectedId=o.id; empty.hidden=true; form.hidden=false;
-    const m=o.material??{}, t=m.texture??{};
+    const m=o.material??this.appearanceRuntime?.legacyMaterial(o.appearanceId)??{}, t=m.texture??{};
     this.#set("ins-name",o.name??"");
     this.#vec("ins-position",o.position??[0,0,0]);
     this.#vec("ins-rotation",quatToEuler(o.rotation??[0,0,0,1]));
@@ -38,13 +38,14 @@ export class ObjectInspector {
     if(!cur)throw new Error("Objeto não encontrado.");
     const shown=this.#read("ins-texture-src");
     const src=this.pendingTextureDataUrl!==null?this.pendingTextureDataUrl:(shown.startsWith("[arquivo] ")?"":shown);
+    const currentMaterial=cur.material??this.appearanceRuntime?.legacyMaterial(cur.appearanceId)??{};
     const patch={
       name:this.#read("ins-name"),
       position:this.#readVec("ins-position",3),
       rotation:eulerToQuat(this.#readVec("ins-rotation",3)),
       scale:this.#readVec("ins-scale",3,0.0001),
       size:this.#readVec("ins-size",3,0.0001),
-      material:{...(cur.material??{}),color:this.#read("ins-color"),texture:{
+      material:{...currentMaterial,color:this.#read("ins-color"),texture:{
         src,repeat:this.#readVec("ins-repeat",2,0.0001),
         offset:this.#readVec("ins-offset",2),
         rotationDeg:this.#num("ins-texture-rotation"),

@@ -533,6 +533,68 @@ assets: {
   }
 },
 
+    "normalized-runtime": {
+      "projeção reutiliza material legado"() {
+        const runtime = new AppearanceRuntime();
+        const scene = runtime.normalizeScene({
+          schemaVersion: 1,
+          objects: [
+            {
+              id: "a",
+              material: {
+                color: "#ffffff",
+                texture: {
+                  src: "data:image/png;base64,AAAA"
+                }
+              }
+            },
+            {
+              id: "b",
+              material: {
+                color: "#ffffff",
+                texture: {
+                  src: "data:image/png;base64,AAAA"
+                }
+              }
+            }
+          ]
+        });
+
+        const projected = runtime.projectScene(scene);
+
+        assertEqual("material" in scene.objects[0], false);
+        assertEqual(
+          projected.objects[0].material,
+          projected.objects[1].material
+        );
+      },
+
+      "duplicação normalizada não contém Base64"() {
+        const runtime = new AppearanceRuntime();
+        const scene = runtime.normalizeScene({
+          schemaVersion: 1,
+          objects: [{
+            id: "source",
+            material: {
+              color: "#ffffff",
+              texture: {
+                src:
+                  "data:image/png;base64," +
+                  "A".repeat(4096)
+              }
+            }
+          }]
+        });
+
+        const duplicate = structuredClone(scene.objects[0]);
+        duplicate.id = "duplicate";
+        const text = JSON.stringify(duplicate);
+
+        assertEqual(text.includes("data:image"), false);
+        assert(Boolean(duplicate.appearanceId));
+      }
+    },
+
     simulation: {
       "simulador aceita comando na versão correta"() {
         const bridge = createBridge();

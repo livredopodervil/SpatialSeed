@@ -1,22 +1,28 @@
 import { ProjectSerializer } from "./ProjectSerializer.js";
 import { ProjectValidator } from "./ProjectValidator.js";
-import { ProjectAppearanceAdapter } from "./ProjectAppearanceAdapter.js";
 
 export class ProjectService {
-  static apiVersion = "project-service-v2";
+  static apiVersion = "project-service-v3";
 
-  constructor({ sandbox, editor, renderer, region }) {
+  constructor({
+    sandbox,
+    editor,
+    renderer,
+    region,
+    appearanceRuntime
+  }) {
     this.sandbox = sandbox;
     this.editor = editor;
     this.renderer = renderer;
+    this.appearanceRuntime = appearanceRuntime;
     this.serializer = new ProjectSerializer({
       sandbox,
       editor,
       renderer,
-      region
+      region,
+      appearanceRuntime
     });
     this.validator = new ProjectValidator();
-    this.appearances = new ProjectAppearanceAdapter();
     this.metadata = {
       name: "Projeto Spatial Seed",
       createdAt: new Date().toISOString()
@@ -28,35 +34,20 @@ export class ProjectService {
   }
 
   save() {
-    const json = JSON.stringify(
-      this.inspect(),
-      null,
-      2
-    );
-
-    const blob = new Blob(
-      [json],
-      {
-        type:
-          "application/json;charset=utf-8"
-      }
-    );
-
+    const json = JSON.stringify(this.inspect(), null, 2);
+    const blob = new Blob([json], {
+      type: "application/json;charset=utf-8"
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const filename =
-      `${safeName(this.metadata.name)}.spatialseed`;
+    const filename = `${safeName(this.metadata.name)}.spatialseed`;
 
     link.href = url;
     link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
-
-    setTimeout(
-      () => URL.revokeObjectURL(url),
-      1000
-    );
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 
     return {
       changed: false,
@@ -69,70 +60,54 @@ export class ProjectService {
   openText(text) {
     const project = this.validator.parse(text);
 
-    const scene =
-      project.schemaVersion === 2
-        ? this.appearances.denormalizeScene(
-            project.scene,
-            project.assets
-          )
-        : project.scene;
+    this.appearanceRuntime.reset();
 
-    this.sandbox.replaceState(
-      scene,
-      { markClean: true }
+    if (project.schemaVersion === 2) {
+      this.appearanceRuntime.importAssets(
+        project.assets,
+        { replace: true }
+      );
+    }
+
+    const scene = this.appearanceRuntime.normalizeScene(
+      project.scene
     );
 
+    this.sandbox.replaceState(scene, { markClean: true });
     this.editor.selection.clear();
-    restoreEditor(
-      this.editor,
-      project.editor
-    );
+    restoreEditor(this.editor, project.editor);
 
-    if (
-      project.renderer
-        ?.transformConfig
-    ) {
+    if (project.renderer?.transformConfig) {
       this.renderer.setTransformConfig(
         project.renderer.transformConfig
       );
     }
 
     this.metadata = {
-      name:
-        project.metadata?.name ??
-        "Projeto Spatial Seed",
+      name: project.metadata?.name ?? "Projeto Spatial Seed",
       createdAt:
-        project.metadata?.createdAt ??
-        new Date().toISOString()
+        project.metadata?.createdAt ?? new Date().toISOString()
     };
 
     return {
       changed: true,
       loaded: true,
       name: this.metadata.name,
-      objectCount:
-        scene.objects.length,
-      schemaVersion:
-        project.schemaVersion
+      objectCount: scene.objects.length,
+      schemaVersion: project.schemaVersion,
+      normalizedRuntime: true
     };
   }
 
   newProject() {
+    this.appearanceRuntime.reset();
     this.sandbox.replaceState(
-      {
-        schemaVersion: 1,
-        objects: []
-      },
+      { schemaVersion: 1, objects: [] },
       { markClean: true }
     );
-
     this.editor.selection.clear();
-
     restoreEditor(this.editor, {
-      tool: {
-        type: "transform",
-        mode: "translate"
-      },
+      tool: { type: "transform", mode: "translate" },
       multiSelect: false,
       pivot: {
         policy: "median",
@@ -142,12 +117,10 @@ export class ProjectService {
         relativeOffset: [0, 0, 0]
       }
     });
-
     this.metadata = {
       name: "Projeto Spatial Seed",
       createdAt: new Date().toISOString()
     };
-
     return {
       changed: true,
       created: true,
@@ -158,43 +131,20 @@ export class ProjectService {
 
 function restoreEditor(editor, snapshot = {}) {
   editor.setPivotEditing(false);
-
-  if (snapshot.tool?.mode) {
-    editor.setToolMode(
-      snapshot.tool.mode
-    );
-  }
-
-  editor.setMultiSelect(
-    Boolean(snapshot.multiSelect)
-  );
-
-  const pivot =
-    snapshot.pivot ?? {};
+  if (snapshot.tool?.mode) editor.setToolMode(snapshot.tool.mode);
+  editor.setMultiSelect(Boolean(snapshot.multiSelect));
+  const pivot = snapshot.pivot ?? {};
 
   if (
     pivot.policy === "custom" &&
-    pivot.reference ===
-      "active-relative"
+    pivot.reference === "active-relative"
   ) {
-    editor.setRelativePivot(
-      pivot.relativeOffset ??
-      [0, 0, 0]
-    );
-  } else if (
-    pivot.policy === "custom"
-  ) {
-    editor.setCustomPivot(
-      pivot.customPosition ??
-      [0, 0, 0]
-    );
+    editor.setRelativePivot(pivot.relativeOffset ?? [0, 0, 0]);
+  } else if (pivot.policy === "custom") {
+    editor.setCustomPivot(pivot.customPosition ?? [0, 0, 0]);
   } else {
     editor.setPivotPolicy(
-      [
-        "median",
-        "bounds",
-        "active"
-      ].includes(pivot.policy)
+      ["median", "bounds", "active"].includes(pivot.policy)
         ? pivot.policy
         : "median"
     );
@@ -204,23 +154,10 @@ function restoreEditor(editor, snapshot = {}) {
 }
 
 function safeName(value) {
-  return String(
-    value ||
-    "projeto-spatial-seed"
-  )
+  return String(value || "projeto-spatial-seed")
     .normalize("NFKD")
-    .replace(
-      /[̀-ͯ]/g,
-      ""
-    )
-    .replace(
-      /[^a-zA-Z0-9._-]+/g,
-      "-"
-    )
-    .replace(
-      /^-+|-+$/g,
-      ""
-    )
-    .toLowerCase() ||
-    "projeto-spatial-seed";
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase() || "projeto-spatial-seed";
 }
