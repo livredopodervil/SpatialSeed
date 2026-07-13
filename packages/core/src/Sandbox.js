@@ -19,6 +19,7 @@ export class Sandbox {
   get canUndo() { return this.#undo.length > 0; }
   get canRedo() { return this.#redo.length > 0; }
   get dirty() { return this.#commands.length > 0; }
+  getSnapshot() { return this.#state; }
   getState() { return structuredClone(this.#state); }
 
   dispatch(command) {
@@ -132,14 +133,15 @@ export class Sandbox {
 
   subscribe(listener) {
     this.#subscribers.add(listener);
-    listener(this.getState(), [{ type: "initial" }]);
+    listener(this.getSnapshot(), [{ type: "initial" }]);
     return () => this.#subscribers.delete(listener);
   }
 
   #notify(changes) {
+    const snapshot = this.getSnapshot();
     for (const listener of this.#subscribers) {
       try {
-        listener(this.getState(), changes);
+        listener(snapshot, changes);
       } catch (error) {
         console.error("Sandbox subscriber failed", error);
       }

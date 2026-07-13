@@ -9,6 +9,7 @@ export class Region {
   }
 
   get version() { return this.#version; }
+  getSnapshot() { return this.#state; }
   getState() { return structuredClone(this.#state); }
 
   acceptProposal(proposal) {
@@ -26,13 +27,14 @@ export class Region {
 
   subscribe(listener) {
     this.#subscribers.add(listener);
-    listener(this.getState(), { type:"initial", version:this.#version });
+    listener(this.getSnapshot(), { type:"initial", version:this.#version });
     return () => this.#subscribers.delete(listener);
   }
 
   #notify(change) {
+    const snapshot = this.getSnapshot();
     for (const listener of this.#subscribers) {
-      try { listener(this.getState(), change); }
+      try { listener(snapshot, change); }
       catch (error) { console.error("Region subscriber failed", error); }
     }
   }
