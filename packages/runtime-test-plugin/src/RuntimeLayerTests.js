@@ -4,6 +4,7 @@ import {
   SimulationClock,
   SimulationBridge
 } from "../../runtime-layers/src/index.js";
+import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -147,6 +148,107 @@ export function createRuntimeLayerTests() {
         assertEqual(count, 2);
       }
     },
+
+assets: {
+  "textura idêntica é armazenada uma vez"() {
+    const graph = new AppearanceGraph();
+
+    const first = graph.internLegacyMaterial({
+      color: "#ffffff",
+      texture: {
+        src: "data:image/png;base64,AAAA",
+        repeat: [1, 1],
+        offset: [0, 0],
+        rotationDeg: 0,
+        wrap: "repeat"
+      }
+    });
+
+    const second = graph.internLegacyMaterial({
+      color: "#ffffff",
+      texture: {
+        src: "data:image/png;base64,AAAA",
+        repeat: [1, 1],
+        offset: [0, 0],
+        rotationDeg: 0,
+        wrap: "repeat"
+      }
+    });
+
+    assertEqual(first.texture.id, second.texture.id);
+    assertEqual(
+      graph.stats().byKind.texture.assets,
+      1
+    );
+  },
+
+  "aparência idêntica é compartilhada"() {
+    const graph = new AppearanceGraph();
+
+    const first = graph.internLegacyMaterial({
+      color: "#abcdef"
+    });
+
+    const second = graph.internLegacyMaterial({
+      color: "#abcdef"
+    });
+
+    assertEqual(
+      first.appearanceId,
+      second.appearanceId
+    );
+  },
+
+  "transformações criam materiais distintos"() {
+    const graph = new AppearanceGraph();
+
+    const first = graph.internLegacyMaterial({
+      color: "#ffffff",
+      texture: {
+        src: "data:image/png;base64,AAAA",
+        repeat: [1, 1]
+      }
+    });
+
+    const second = graph.internLegacyMaterial({
+      color: "#ffffff",
+      texture: {
+        src: "data:image/png;base64,AAAA",
+        repeat: [2, 2]
+      }
+    });
+
+    assertEqual(first.texture.id, second.texture.id);
+    assert(
+      first.material.id !== second.material.id
+    );
+  },
+
+  "objeto normalizado mantém appearanceId"() {
+    const graph = new AppearanceGraph();
+
+    const result = graph.internLegacyMaterial({
+      color: "#ffffff"
+    });
+
+    const object = graph.attachToObject(
+      {
+        id: "box-1",
+        material: {
+          color: "#ffffff"
+        }
+      },
+      result.appearanceId
+    );
+
+    assertEqual(
+      object.appearanceId,
+      result.appearanceId
+    );
+
+    assertEqual("material" in object, false);
+  }
+},
 
     simulation: {
       "simulador aceita comando na versão correta"() {
