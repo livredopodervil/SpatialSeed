@@ -26,6 +26,14 @@ export class ObjectInspector {
     this.#vec("ins-scale",o.scale??[1,1,1]);
     this.#vec("ins-size",o.size??[1,1,1]);
     this.#set("ins-color",m.color??"#ffffff");
+    this.#setChecked(
+      "ins-instance-color-enabled",
+      Boolean(o.instanceState?.color)
+    );
+    this.#set(
+      "ins-instance-color",
+      o.instanceState?.color ?? m.color ?? "#ffffff"
+    );
     this.#set("ins-texture-src",t.src??"");
     this.#vec("ins-repeat",t.repeat??[1,1]);
     this.#vec("ins-offset",t.offset??[0,0]);
@@ -50,7 +58,13 @@ export class ObjectInspector {
         offset:this.#readVec("ins-offset",2),
         rotationDeg:this.#num("ins-texture-rotation"),
         wrap:this.#read("ins-wrap")
-      }}
+      }},
+      instanceState:{
+        ...(cur.instanceState ?? {}),
+        color:this.#checked("ins-instance-color-enabled")
+          ? this.#read("ins-instance-color")
+          : null
+      }
     };
     const changed=this.dispatch({type:"object.update",id:this.selectedId,patch});
     this.pendingTextureDataUrl=null;
@@ -82,6 +96,8 @@ export class ObjectInspector {
     });
   }
   #set(id,v){const e=this.root.querySelector(`#${id}`);if(e)e.value=v}
+  #setChecked(id,v){const e=this.root.querySelector(`#${id}`);if(e)e.checked=Boolean(v)}
+  #checked(id){return Boolean(this.root.querySelector(`#${id}`)?.checked)}
   #vec(p,v){v.forEach((x,i)=>this.#set(`${p}-${i}`,Number(x)))}
   #read(id){return this.root.querySelector(`#${id}`)?.value??""}
   #num(id, min = null) {

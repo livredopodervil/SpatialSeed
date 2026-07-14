@@ -43,7 +43,10 @@ export function boxRegionReducer(state, command) {
         size: command.size ?? [2, 2, 2],
         material: Object.freeze({
           color: command.color ?? "#6699cc"
-        })
+        }),
+        instanceState: freezeInstanceState(
+          command.instanceState
+        )
       });
 
       return {
@@ -91,6 +94,13 @@ export function boxRegionReducer(state, command) {
           ...object,
           ...patch
         };
+
+        if ("instanceState" in patch) {
+          next.instanceState = freezeInstanceState({
+            ...(object.instanceState ?? {}),
+            ...(patch.instanceState ?? {})
+          });
+        }
 
         if ("appearanceId" in patch) {
           next.appearanceId = patch.appearanceId;
@@ -184,4 +194,29 @@ export function boxRegionReducer(state, command) {
     default:
       return { state, changes: [] };
   }
+}
+
+
+function freezeInstanceState(value = {}) {
+  const state = { ...value };
+
+  if (state.color === null || state.color === "") {
+    delete state.color;
+  } else if (state.color !== undefined) {
+    state.color = normalizeHexColor(state.color);
+  }
+
+  return Object.freeze(state);
+}
+
+function normalizeHexColor(value) {
+  const color = String(value).trim();
+
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+    throw new TypeError(
+      `Cor de instância inválida: ${value}.`
+    );
+  }
+
+  return color.toLowerCase();
 }

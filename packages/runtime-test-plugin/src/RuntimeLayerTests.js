@@ -42,6 +42,9 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020b-d";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
+  boxRegionReducer
+} from "../../region-box/src/reducer.js?build=20260714-0020b-f";
+import {
   GeometryRegistry,
   BoxGeometryProvider,
   SphereGeometryProvider,
@@ -1022,6 +1025,195 @@ assets: {
     assertEqual(manager.remove("object-a").removed, true);
     assertEqual(manager.hasObject("object-a"), false);
     manager.clear({ disposeGeometry: true, disposeMaterial: true });
+  }
+,
+
+  "lote armazena e atualiza cor por instância"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff
+    });
+    const batch = new InstanceBatch({
+      key: "color",
+      geometry,
+      material,
+      capacity: 4
+    });
+
+    batch.add(
+      "a",
+      new THREE.Matrix4(),
+      { color: "#ff0000" }
+    );
+
+    assertNear(batch.colorAt("a").r, 1);
+    assertNear(batch.colorAt("a").g, 0);
+
+    batch.updateAttributes(
+      "a",
+      { color: "#00ff00" }
+    );
+
+    assertNear(batch.colorAt("a").r, 0);
+    assertNear(batch.colorAt("a").g, 1);
+    assertEqual(batch.stats().hasInstanceColor, true);
+    assertEqual(batch.stats().colorBytes, 48);
+
+    batch.dispose({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
+  },
+
+  "manager atualiza cor sem trocar lote"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const manager = new InstanceBatchManager();
+
+    manager.add({
+      objectId: "a",
+      batchKey: "shared",
+      matrix: new THREE.Matrix4(),
+      attributes: { color: "#112233" },
+      descriptor: {
+        geometry,
+        material,
+        capacity: 4
+      }
+    });
+
+    const before = manager.locationOf("a");
+    assertEqual(
+      manager.updateAttributes(
+        "a",
+        { color: "#abcdef" }
+      ),
+      true
+    );
+    const after = manager.locationOf("a");
+
+    assertDeepEqual(after, before);
+    assertEqual(manager.batchCount, 1);
+
+    manager.clear({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
+  },
+
+  "índice reutilizado recebe a nova cor"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const batch = new InstanceBatch({
+      key: "reuse-color",
+      geometry,
+      material,
+      capacity: 2
+    });
+
+    const first = batch.add(
+      "a",
+      new THREE.Matrix4(),
+      { color: "#ff0000" }
+    );
+
+    batch.remove("a");
+
+    const reused = batch.add(
+      "b",
+      new THREE.Matrix4(),
+      { color: "#0000ff" }
+    );
+
+    assertEqual(reused, first);
+    assertNear(batch.colorAt("b").b, 1);
+    assertNear(batch.colorAt("b").r, 0);
+
+    batch.dispose({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
+  },
+
+  "reducer cria e remove override de cor"() {
+    const initial = Object.freeze({
+      objects: Object.freeze([])
+    });
+
+    const created = boxRegionReducer(
+      initial,
+      {
+        type: "object.create",
+        id: "brick",
+        instanceState: {
+          color: "#CC6633"
+        }
+      }
+    ).state;
+
+    assertEqual(
+      created.objects[0].instanceState.color,
+      "#cc6633"
+    );
+
+    const updated = boxRegionReducer(
+      created,
+      {
+        type: "object.update",
+        id: "brick",
+        patch: {
+          instanceState: { color: null }
+        }
+      }
+    ).state;
+
+    assertEqual(
+      "color" in updated.objects[0].instanceState,
+      false
+    );
+  },
+
+  "dez mil cores mantêm um único lote"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const manager = new InstanceBatchManager();
+    const startedAt = performance.now();
+
+    for (let index = 0; index < 10000; index += 1) {
+      manager.add({
+        objectId: `color-${index}`,
+        batchKey: "colors",
+        matrix: new THREE.Matrix4(),
+        attributes: {
+          color: new THREE.Color().setHSL(
+            index / 10000,
+            0.7,
+            0.5
+          )
+        },
+        descriptor: {
+          geometry,
+          material,
+          capacity: 10000
+        }
+      });
+    }
+
+    const elapsed = performance.now() - startedAt;
+    const stats = manager.stats();
+
+    assertEqual(stats.batches, 1);
+    assertEqual(stats.objects, 10000);
+    assertEqual(
+      stats.byBatch[0].colorBytes,
+      120000
+    );
+    assert(elapsed < 5000);
+
+    manager.clear({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
   }
 },
 

@@ -23,11 +23,11 @@ export class InstanceBatchManager {
     return batch;
   }
 
-  add({ objectId, batchKey, matrix, descriptor }) {
+  add({ objectId, batchKey, matrix, attributes = {}, descriptor }) {
     const id = String(objectId);
     if (this.#objectLocations.has(id)) throw new Error(`Objeto já registrado: ${id}`);
     const batch = this.ensureBatch({ ...descriptor, key: batchKey });
-    const instanceIndex = batch.add(id, matrix);
+    const instanceIndex = batch.add(id, matrix, attributes);
     this.#objectLocations.set(id, { batchKey: String(batchKey), instanceIndex });
     return { batch, instanceIndex };
   }
@@ -37,6 +37,18 @@ export class InstanceBatchManager {
     const location = this.#objectLocations.get(id);
     if (!location) return false;
     return Boolean(this.#batches.get(location.batchKey)?.update(id, matrix));
+  }
+
+  updateAttributes(objectId, attributes = {}) {
+    const id = String(objectId);
+    const location = this.#objectLocations.get(id);
+    if (!location) return false;
+
+    return Boolean(
+      this.#batches
+        .get(location.batchKey)
+        ?.updateAttributes(id, attributes)
+    );
   }
 
   remove(objectId) {
