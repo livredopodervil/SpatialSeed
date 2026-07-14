@@ -24,6 +24,14 @@ import {
 import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
 import { composeAffineStep, affineCopies as affineRepeatCopies } from "../../selection-operations/src/AffineRepeat.js?build=20260713-0019g-c2";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
+import {
+  GeometryRegistry,
+  BoxGeometryProvider,
+  SphereGeometryProvider,
+  CylinderGeometryProvider,
+  PlaneGeometryProvider,
+  createDefaultGeometryRegistry
+} from "../../geometry-registry/src/index.js?build=20260714-0020a-a";
 
 export function createRuntimeLayerTests() {
   return {
@@ -955,6 +963,93 @@ assets: {
 
         cache.release("appearance-a");
         cache.release("appearance-b");
+      }
+    },
+
+    "geometry-registry": {
+      "registro normaliza caixa legada"() {
+        const registry = createDefaultGeometryRegistry();
+
+        const descriptor = registry.describeLegacyObject({
+          id: "legacy-box",
+          kind: "box",
+          size: [2, 3, 4]
+        });
+
+        assertDeepEqual(descriptor, {
+          type: "box",
+          size: [2, 3, 4]
+        });
+      },
+
+      "descritores equivalentes geram mesma chave"() {
+        const registry = createDefaultGeometryRegistry();
+
+        assertEqual(
+          registry.key({
+            type: "sphere",
+            radius: 2,
+            widthSegments: 24,
+            heightSegments: 16
+          }),
+          registry.key({
+            heightSegments: 16,
+            type: "sphere",
+            widthSegments: 24,
+            radius: 2
+          })
+        );
+      },
+
+      "providers criam BufferGeometry"() {
+        const registry = createDefaultGeometryRegistry();
+
+        for (const descriptor of [
+          { type: "box", size: [1, 2, 3] },
+          { type: "sphere", radius: 1 },
+          { type: "cylinder", radius: 1, height: 2 },
+          { type: "plane", width: 2, height: 3 }
+        ]) {
+          const geometry = registry.create(descriptor);
+          assert(geometry?.isBufferGeometry === true);
+          geometry.dispose();
+        }
+      },
+
+      "registro rejeita provider duplicado"() {
+        const registry = new GeometryRegistry()
+          .register(BoxGeometryProvider);
+
+        let rejected = false;
+
+        try {
+          registry.register(BoxGeometryProvider);
+        } catch {
+          rejected = true;
+        }
+
+        assertEqual(rejected, true);
+      },
+
+      "validação rejeita dimensões inválidas"() {
+        const registry = createDefaultGeometryRegistry();
+
+        for (const descriptor of [
+          { type: "box", size: [1, 0, 1] },
+          { type: "sphere", radius: -1 },
+          { type: "cylinder", height: 0 },
+          { type: "plane", width: 0 }
+        ]) {
+          let rejected = false;
+
+          try {
+            registry.normalize(descriptor);
+          } catch {
+            rejected = true;
+          }
+
+          assertEqual(rejected, true);
+        }
       }
     },
 
