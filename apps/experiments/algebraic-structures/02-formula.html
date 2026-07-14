@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Spatial Seed - Motor Avançado</title>
+    <style>
+        :root { --bg: #08101a; --text: #edf4ff; --panel: #111827e8; --border: #ffffff2b; --accent: #2563eb; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; touch-action: none; }
+        #world { display: block; width: 100%; height: 100%; }
+        
+        #toolbar { position: fixed; z-index: 20; top: 1rem; left: 1rem; right: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; pointer-events: none; }
+        #toolbar > * { pointer-events: auto; }
+        
+        button, input, select { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.8rem; font-size: 0.85rem; cursor: pointer; backdrop-filter: blur(4px); transition: all 0.2s; }
+        button:hover:not(:disabled) { background: #1f2937e8; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button.active { background: var(--accent); border-color: #60a5fa; }
+        
+        #status-bar { position: fixed; bottom: 1rem; left: 1rem; background: var(--panel); padding: 0.5rem 0.8rem; border-radius: 8px; border: 1px solid var(--border); font-size: 0.8rem; pointer-events: none; display: flex; gap: 1rem; }
+        
+        .side-panel { position: absolute; top: 4rem; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; width: 300px; display: flex; flex-direction: column; gap: 1rem; backdrop-filter: blur(8px); }
+        .side-panel[hidden] { display: none; }
+        #panel-tools { right: 1rem; }
+        #panel-visuals { right: 320px; }
+        
+        .side-panel h3 { margin: 0 0 0.5rem 0; font-size: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+        .field-group { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; }
+        .field-group input { width: 60px; text-align: center; padding: 0.2rem; }
+        
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 50; display: flex; align-items: center; justify-content: center; }
+        .modal-overlay[hidden] { display: none; }
+        .modal-content { background: var(--panel); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); width: 600px; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
+        .modal-content h3 { margin-top: 0; }
+        textarea { width: 100%; box-sizing: border-box; background: #0b111bed; color: #a5d6ff; border: 1px solid var(--border); padding: 1rem; font-family: monospace; border-radius: 8px; resize: vertical; margin-top: 0.5rem; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "../../../vendor/three.module.js",
+            "three/addons/": "../../../vendor/addons/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <canvas id="world"></canvas>
+    
+    <header id="toolbar">
+        <button id="btn-add">Adicionar</button>
+        <button id="btn-math" style="background: var(--accent); font-weight: bold;">Gerar Fórmula</button>
+        <button id="btn-batch" style="background: #059669; font-weight: bold;">Lote</button>
+        
+        <div style="width: 1px; height: 20px; background: var(--border); margin: 0 0.5rem;"></div>
+        
+        <button class="tool-btn active" data-mode="translate">Mover</button>
+        <button class="tool-btn" data-mode="rotate">Girar</button>
+        <button class="tool-btn" data-mode="scale">Escalar</button>
+        <select id="select-space"><option value="world">Mundo</option><option value="local">Local</option></select>
+        
+        <div style="width: 1px; height: 20px; background: var(--border); margin: 0 0.5rem;"></div>
+
+        <button id="btn-tools">Ajustes</button>
+        <button id="btn-visuals">Aparência</button>
+        <button id="btn-undo" disabled>Desfazer</button>
+        <button id="btn-redo" disabled>Refazer</button>
+        <button id="btn-export">Guardar</button>
+        <button id="btn-clear">Limpar</button>
+    </header>
+
+    <div id="status-bar">
+        <span id="status-count">Objetos: 0</span>
+        <span id="status-selection">Seleção: 0</span>
+        <span id="status-history">Estado 1/1</span>
+    </div>
+
+    <!-- Painel de Snapping -->
+    <div id="panel-tools" class="side-panel" hidden>
+        <h3>Configurações <button id="btn-close-tools" style="float: right; padding: 0.1rem 0.4rem; font-size: 0.7rem;">X</button></h3>
+        <div class="field-group">
+            <label>Pivô:</label>
+            <select id="select-pivot">
+                <option value="median">Centro</option>
+                <option value="bounds">Limites</option>
+            </select>
+        </div>
+        <hr style="border: 0; border-top: 1px solid var(--border); width: 100%;">
+        <div class="field-group"><label>Snap Pos:</label> <input type="number" id="snap-t" value="0" min="0" step="0.5"></div>
+        <div class="field-group"><label>Snap Rot:</label> <input type="number" id="snap-r" value="0" min="0" step="5"></div>
+        <div class="field-group"><label>Snap Escala:</label> <input type="number" id="snap-s" value="0" min="0" step="0.1"></div>
+    </div>
+
+    <!-- Painel Visual (Atualiza estilos em tempo real) -->
+    <div id="panel-visuals" class="side-panel" hidden>
+        <h3>Estilo Algébrico <button id="btn-close-visuals" style="float: right; padding: 0.1rem 0.4rem; font-size: 0.7rem;">X</button></h3>
+        <div class="field-group"><label>Módulo (M):</label> <input type="number" id="vis-m" value="7" min="2" max="2310"></div>
+        <div class="field-group"><label>Tam. Base:</label> <input type="text" id="vis-base-size" value="1.5"></div>
+        <hr style="border: 0; border-top: 1px solid var(--border); width: 100%;">
+        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;"><input type="checkbox" id="vis-primes" checked> Destacar Primos (Branco)</label>
+        <div class="field-group"><label>Multiplicador Primo:</label> <input type="number" id="vis-prime-scale" value="3" min="1" step="0.5"></div>
+        <button id="btn-apply-visuals" style="margin-top: 0.5rem; background: var(--accent);">Aplicar Estilo</button>
+    </div>
+
+    <!-- Modal Fórmula -->
+    <div id="modal-formula" class="modal-overlay" hidden>
+        <div class="modal-content">
+            <h3>Fórmula 3D</h3>
+            <div style="display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;">
+                <label>N: <input type="number" id="input-n" value="25" min="1"></label>
+                <label style="display: flex; align-items: center; gap: 0.5rem;"><input type="checkbox" id="check-keep" checked> Manter cena atual</label>
+            </div>
+            <p style="font-size: 0.8rem; opacity: 0.8;">Iteradores: <code>k</code>, <code>j</code>. Use <code>i</code> e <code>e</code>.<br>X=Real, Z=Imag, Altura=k*2.</p>
+            <textarea id="input-expr" rows="3">(k*(k-1)/2 + j + 1) * i * e^(2 * pi * i * j / k)</textarea>
+            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                <button id="btn-apply-formula" style="flex: 2; background: #059669;">Gerar Matemática</button>
+                <button id="btn-cancel-formula" style="flex: 1;">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Batch -->
+    <div id="modal-batch" class="modal-overlay" hidden>
+        <div class="modal-content">
+            <h3>Transformação Afim em Lote</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div><strong style="font-size: 0.85rem;">Delta Pos</strong><div style="display:flex; gap:0.2rem;"><input id="b-px" value="0" type="number" step="0.5"><input id="b-py" value="2" type="number" step="0.5"><input id="b-pz" value="0" type="number" step="0.5"></div></div>
+                <div><strong style="font-size: 0.85rem;">Delta Rot (°)</strong><div style="display:flex; gap:0.2rem;"><input id="b-rx" value="0" type="number" step="5"><input id="b-ry" value="15" type="number" step="5"><input id="b-rz" value="0" type="number" step="5"></div></div>
+                <div><strong style="font-size: 0.85rem;">Delta Escala</strong><div style="display:flex; gap:0.2rem;"><input id="b-sx" value="0.95" type="number" step="0.05"><input id="b-sy" value="0.95" type="number" step="0.05"><input id="b-sz" value="0.95" type="number" step="0.05"></div></div>
+            </div>
+            <label style="display:block; margin-bottom:1rem;">Cópias (N): <input type="number" id="b-n" value="10" min="1"></label>
+            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                <button id="btn-apply-batch" style="flex: 2; background: #059669;">Executar</button>
+                <button id="btn-cancel-batch" style="flex: 1;">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+
+        function generateId() { return (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).substring(2); }
+
+        const State = { history: [{ objects: [{ id: generateId(), name: "Base", pos: [0, 1, 0], rot: [0, 0, 0], scale: [2, 2, 2], color: '#5b8bd9' }] }], currentIndex: 0 };
+        const Selection = new Set();
+        const instanceIdMap = new Map();
+        const indexToIdMap = new Map();
+
+        let pivotPolicy = 'median';
+        let transformSession = null;
+
+        const canvas = document.getElementById('world');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        const scene = new THREE.Scene();
+        scene.add(new THREE.GridHelper(200, 100, 0x444444, 0x222222));
+        scene.add(new THREE.HemisphereLight(0xaecbff, 0x182012, 1.5));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+        dirLight.position.set(50, 100, 70);
+        scene.add(dirLight);
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 50000);
+        camera.position.set(0, 50, 100);
+        camera.lookAt(0, 0, 0);
+
+        const orbitControls = new OrbitControls(camera, renderer.domElement);
+        orbitControls.enableDamping = true;
+
+        const MAX_INSTANCES = 50000;
+        const sharedGeometry = new THREE.BoxGeometry(2, 2, 2);
+        const sharedMaterial = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.1 });
+        const instancedMesh = new THREE.InstancedMesh(sharedGeometry, sharedMaterial, MAX_INSTANCES);
+        instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        
+        // FIX: Força o Raycaster a verificar os objetos independentemente da distância
+        instancedMesh.frustumCulled = false;
+        instancedMesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0,0,0), 999999);
+        scene.add(instancedMesh);
+
+        const transformAnchor = new THREE.Group();
+        scene.add(transformAnchor);
+        const transformControls = new TransformControls(camera, renderer.domElement);
+        transformControls.setSize(1.25);
+        scene.add(transformControls.getHelper());
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const dummy = new THREE.Object3D();
+        const colorHelper = new THREE.Color();
+        const highlightColor = new THREE.Color('#ffff00');
+
+        function pushState(objectsArray) {
+            State.history = State.history.slice(0, State.currentIndex + 1);
+            State.history.push({ objects: objectsArray });
+            State.currentIndex++;
+            syncScene();
+        }
+
+        function syncScene() {
+            const objects = State.history[State.currentIndex].objects;
+            instancedMesh.count = objects.length;
+            instanceIdMap.clear();
+            indexToIdMap.clear();
+
+            objects.forEach((objData, index) => {
+                instanceIdMap.set(objData.id, index);
+                indexToIdMap.set(index, objData.id);
+
+                dummy.position.fromArray(objData.pos);
+                dummy.rotation.fromArray(objData.rot);
+                dummy.scale.fromArray(objData.scale);
+                dummy.updateMatrix();
+                
+                instancedMesh.setMatrixAt(index, dummy.matrix);
+                instancedMesh.setColorAt(index, Selection.has(objData.id) ? highlightColor : colorHelper.set(objData.color));
+            });
+            
+            instancedMesh.instanceMatrix.needsUpdate = true;
+            if(instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+            rebuildAnchor();
+            updateUI();
+        }
+
+        // --- MANIPULAÇÃO (TransformControls) ---
+        function calculatePivot() {
+            if (Selection.size === 0) return null;
+            const objects = State.history[State.currentIndex].objects;
+            if (pivotPolicy === 'bounds') {
+                const bounds = new THREE.Box3().makeEmpty();
+                Selection.forEach(id => {
+                    const obj = objects.find(o => o.id === id);
+                    if (!obj) return;
+                    dummy.position.fromArray(obj.pos); dummy.rotation.fromArray(obj.rot); dummy.scale.fromArray(obj.scale); dummy.updateMatrixWorld(true);
+                    bounds.union((sharedGeometry.boundingBox || new THREE.Box3().setFromObject(new THREE.Mesh(sharedGeometry))).clone().applyMatrix4(dummy.matrixWorld));
+                });
+                return bounds.getCenter(new THREE.Vector3());
+            }
+            const median = new THREE.Vector3(); let count = 0;
+            Selection.forEach(id => { const obj = objects.find(o => o.id === id); if (obj) { median.add(new THREE.Vector3().fromArray(obj.pos)); count++; } });
+            return count > 0 ? median.multiplyScalar(1 / count) : null;
+        }
+
+        function rebuildAnchor() {
+            if (transformSession) return;
+            const pivot = calculatePivot();
+            if (!pivot) { transformControls.detach(); return; }
+            transformAnchor.position.copy(pivot); transformAnchor.rotation.set(0,0,0); transformAnchor.scale.set(1,1,1); transformAnchor.updateMatrixWorld(true);
+            transformControls.attach(transformAnchor);
+        }
+
+        transformControls.addEventListener('mouseDown', () => {
+            if (Selection.size === 0) return;
+            transformAnchor.updateMatrixWorld(true);
+            const initialAnchorInverse = transformAnchor.matrixWorld.clone().invert();
+            const sessionObjects = new Map();
+            Selection.forEach(id => {
+                const obj = State.history[State.currentIndex].objects.find(o => o.id === id);
+                if (obj) {
+                    dummy.position.fromArray(obj.pos); dummy.rotation.fromArray(obj.rot); dummy.scale.fromArray(obj.scale); dummy.updateMatrixWorld(true);
+                    sessionObjects.set(id, { initialMatrixWorld: dummy.matrixWorld.clone() });
+                }
+            });
+            transformSession = { anchorStartMatrix: transformAnchor.matrixWorld.clone(), anchorStartInverse: initialAnchorInverse, objects: sessionObjects };
+        });
+
+        transformControls.addEventListener('change', () => {
+            if (!transformSession) return;
+            const deltaMatrix = transformAnchor.matrixWorld.clone().multiply(transformSession.anchorStartInverse);
+            transformSession.objects.forEach((data, id) => {
+                const index = instanceIdMap.get(id);
+                if (index !== undefined) instancedMesh.setMatrixAt(index, deltaMatrix.clone().multiply(data.initialMatrixWorld));
+            });
+            instancedMesh.instanceMatrix.needsUpdate = true;
+        });
+
+        transformControls.addEventListener('mouseUp', () => {
+            if (!transformSession) return;
+            const newState = State.history[State.currentIndex].objects.map(obj => {
+                if (!Selection.has(obj.id) || !transformSession.objects.has(obj.id)) return obj;
+                dummy.matrixWorld.copy(transformAnchor.matrixWorld.clone().multiply(transformSession.anchorStartInverse).multiply(transformSession.objects.get(obj.id).initialMatrixWorld));
+                dummy.matrixWorld.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                return { ...obj, pos: dummy.position.toArray(), rot: dummy.rotation.toArray().slice(0,3), scale: dummy.scale.toArray() };
+            });
+            transformSession = null; pushState(newState);
+        });
+
+        transformControls.addEventListener('dragging-changed', (event) => orbitControls.enabled = !event.value);
+
+        // --- SELEÇÃO ---
+        renderer.domElement.addEventListener('pointerdown', (event) => {
+            if (transformControls.dragging) return;
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(instancedMesh);
+            if (intersects.length > 0) {
+                const objId = indexToIdMap.get(intersects[0].instanceId);
+                if (event.shiftKey) { Selection.has(objId) ? Selection.delete(objId) : Selection.add(objId); } 
+                else { if (!Selection.has(objId)) { Selection.clear(); Selection.add(objId); } }
+            } else { Selection.clear(); }
+            syncScene();
+        });
+
+        // --- MENUS E FERRAMENTAS ---
+        document.getElementById('btn-undo').onclick = () => { if (State.currentIndex > 0) { State.currentIndex--; Selection.clear(); syncScene(); } };
+        document.getElementById('btn-redo').onclick = () => { if (State.currentIndex < State.history.length - 1) { State.currentIndex++; Selection.clear(); syncScene(); } };
+        document.getElementById('btn-clear').onclick = () => { Selection.clear(); pushState([]); };
+        document.getElementById('btn-add').onclick = () => {
+            const newObj = { id: generateId(), pos: [0, 5, 0], rot: [0,0,0], scale: [2,2,2], color: '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0') };
+            Selection.clear(); Selection.add(newObj.id); pushState([...State.history[State.currentIndex].objects, newObj]);
+        };
+        document.getElementById('btn-export').onclick = () => {
+            const objects = State.history[State.currentIndex].objects.map(obj => ({
+                id: obj.id, kind: 'box', position: obj.pos, rotation: new THREE.Quaternion().setFromEuler(new THREE.Euler(obj.rot[0], obj.rot[1], obj.rot[2])).toArray(), scale: obj.scale, size: [2, 2, 2], material: { color: obj.color }
+            }));
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({ schemaVersion: 1, objects })])); a.download = 'exportacao.spatialseed'; a.click();
+        };
+
+        const panelTools = document.getElementById('panel-tools');
+        document.getElementById('btn-tools').onclick = () => panelTools.hidden = !panelTools.hidden;
+        document.getElementById('btn-close-tools').onclick = () => panelTools.hidden = true;
+        document.getElementById('select-pivot').onchange = (e) => { pivotPolicy = e.target.value; rebuildAnchor(); };
+        document.getElementById('select-space').onchange = (e) => transformControls.setSpace(e.target.value);
+        ['snap-t', 'snap-r', 'snap-s'].forEach(id => {
+            document.getElementById(id).onchange = () => {
+                const t = parseFloat(document.getElementById('snap-t').value)||null, r = parseFloat(document.getElementById('snap-r').value)||null, s = parseFloat(document.getElementById('snap-s').value)||null;
+                transformControls.setTranslationSnap(t===0?null:t); transformControls.setRotationSnap(r===0?null:THREE.MathUtils.degToRad(r)); transformControls.setScaleSnap(s===0?null:s);
+            };
+        });
+        document.querySelectorAll('.tool-btn').forEach(btn => btn.onclick = (e) => { document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active')); e.target.classList.add('active'); transformControls.setMode(e.target.dataset.mode); });
+
+        // --- LÓGICA MATEMÁTICA ---
+        function isPrime(num) {
+            num = Math.floor(Math.abs(num));
+            if (num <= 1) return false; if (num <= 3) return true; if (num % 2 === 0 || num % 3 === 0) return false;
+            for (let i = 5; i * i <= num; i += 6) if (num % i === 0 || num % (i + 2) === 0) return false;
+            return true;
+        }
+
+        function getColorForR(r, M, isP, highlightPrimes) {
+            if (isP && highlightPrimes) return '#ffffff';
+            const c = new THREE.Color().setHSL((r % M) / M, 0.8, 0.5);
+            return '#' + c.getHexString();
+        }
+
+        const modalFormula = document.getElementById('modal-formula');
+        document.getElementById('btn-math').onclick = () => modalFormula.hidden = false;
+        document.getElementById('btn-cancel-formula').onclick = () => modalFormula.hidden = true;
+        document.getElementById('btn-apply-formula').onclick = () => {
+            const N = parseInt(document.getElementById('input-n').value) || 25;
+            const keep = document.getElementById('check-keep').checked;
+            
+            // Valores lidos do painel visual (para já aplicar ao criar)
+            const M = parseInt(document.getElementById('vis-m').value) || 7;
+            const baseSize = parseFloat(document.getElementById('vis-base-size').value.replace(',', '.')) || 1.5;
+            const pScale = parseFloat(document.getElementById('vis-prime-scale').value) || 3;
+            const hlPrimes = document.getElementById('vis-primes').checked;
+            
+            let code; try { code = math.parse(document.getElementById('input-expr').value).compile(); } catch (e) { alert("Erro de sintaxe."); return; }
+
+            const newObjects = [];
+            for (let k = 1; k <= N; k++) {
+                for (let j = 0; j <= k; j++) {
+                    const r = (k * (k - 1) / 2) + j + 1;
+                    let pos;
+                    try {
+                        const val = code.evaluate({ k, j, N });
+                        if (math.typeOf(val) === 'Complex') pos = [val.re, k * 2, val.im];
+                        else if (typeof val === 'number') pos = [val, k * 2, 0]; else pos = [0, k * 2, 0];
+                    } catch(e) { alert("Erro: " + e.message); return; }
+                    
+                    const isP = isPrime(r);
+                    const finalScale = isP && hlPrimes ? baseSize * pScale : baseSize;
+                    
+                    newObjects.push({ 
+                        id: generateId(), name: `Alg r${r}`, pos, rot: [0,0,0], scale: [finalScale, finalScale, finalScale], 
+                        color: getColorForR(r, M, isP, hlPrimes), value: r 
+                    });
+                }
+            }
+            const current = keep ? State.history[State.currentIndex].objects : [];
+            Selection.clear(); newObjects.forEach(o => Selection.add(o.id));
+            pushState([...current, ...newObjects]);
+            modalFormula.hidden = true;
+        };
+
+        // --- PAINEL VISUAL (ATUALIZAÇÃO DINÂMICA) ---
+        const panelVisuals = document.getElementById('panel-visuals');
+        document.getElementById('btn-visuals').onclick = () => panelVisuals.hidden = !panelVisuals.hidden;
+        document.getElementById('btn-close-visuals').onclick = () => panelVisuals.hidden = true;
+
+        document.getElementById('btn-apply-visuals').onclick = () => {
+            const M = parseInt(document.getElementById('vis-m').value) || 7;
+            const baseSize = parseFloat(document.getElementById('vis-base-size').value.replace(',', '.')) || 1.5;
+            const pScale = parseFloat(document.getElementById('vis-prime-scale').value) || 3;
+            const hlPrimes = document.getElementById('vis-primes').checked;
+
+            const newState = State.history[State.currentIndex].objects.map(obj => {
+                if (obj.value === undefined) return obj; // Ignora os que não vieram da fórmula
+                
+                const isP = isPrime(obj.value);
+                const finalScale = isP && hlPrimes ? baseSize * pScale : baseSize;
+                
+                return {
+                    ...obj,
+                    scale: [finalScale, finalScale, finalScale],
+                    color: getColorForR(obj.value, M, isP, hlPrimes)
+                };
+            });
+            pushState(newState); // Salva no histórico para poder dar 'Undo'
+        };
+
+        // --- BATCH AFIM ---
+        const modalBatch = document.getElementById('modal-batch');
+        document.getElementById('btn-batch').onclick = () => { if (Selection.size === 0) alert("Selecione objetos."); else modalBatch.hidden = false; };
+        document.getElementById('btn-cancel-batch').onclick = () => modalBatch.hidden = true;
+        document.getElementById('btn-apply-batch').onclick = () => {
+            const copies = parseInt(document.getElementById('b-n').value) || 1;
+            const stepMatrix = new THREE.Matrix4().compose(
+                new THREE.Vector3(parseFloat(document.getElementById('b-px').value)||0, parseFloat(document.getElementById('b-py').value)||0, parseFloat(document.getElementById('b-pz').value)||0),
+                new THREE.Quaternion().setFromEuler(new THREE.Euler(THREE.MathUtils.degToRad(parseFloat(document.getElementById('b-rx').value)||0), THREE.MathUtils.degToRad(parseFloat(document.getElementById('b-ry').value)||0), THREE.MathUtils.degToRad(parseFloat(document.getElementById('b-rz').value)||0))),
+                new THREE.Vector3(parseFloat(document.getElementById('b-sx').value)||1, parseFloat(document.getElementById('b-sy').value)||1, parseFloat(document.getElementById('b-sz').value)||1)
+            );
+            const currentObjs = State.history[State.currentIndex].objects;
+            const newObjects = []; let lastBatch = currentObjs.filter(o => Selection.has(o.id));
+            
+            for (let i = 0; i < copies; i++) {
+                const nextBatch = lastBatch.map(obj => {
+                    const m = new THREE.Matrix4().compose(new THREE.Vector3().fromArray(obj.pos), new THREE.Quaternion().setFromEuler(new THREE.Euler(obj.rot[0], obj.rot[1], obj.rot[2])), new THREE.Vector3().fromArray(obj.scale)).multiply(stepMatrix); 
+                    const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), sca = new THREE.Vector3(); m.decompose(pos, quat, sca);
+                    return { id: generateId(), name: `${obj.name} Lote ${i+1}`, pos: pos.toArray(), rot: new THREE.Euler().setFromQuaternion(quat).toArray().slice(0,3), scale: sca.toArray(), color: obj.color, value: obj.value };
+                });
+                newObjects.push(...nextBatch); lastBatch = nextBatch;
+            }
+            Selection.clear(); newObjects.forEach(o => Selection.add(o.id));
+            pushState([...currentObjs, ...newObjects]); modalBatch.hidden = true;
+        };
+
+        function updateUI() {
+            document.getElementById('btn-undo').disabled = State.currentIndex === 0;
+            document.getElementById('btn-redo').disabled = State.currentIndex === State.history.length - 1;
+            document.getElementById('status-count').innerText = `Objetos: ${State.history[State.currentIndex].objects.length}`;
+            
+            let selText = `Seleção: ${Selection.size}`;
+            if (Selection.size === 1) {
+                const obj = State.history[State.currentIndex].objects.find(o => o.id === Array.from(Selection)[0]);
+                if (obj && obj.value !== undefined) selText += ` (r: ${obj.value})`;
+            }
+            document.getElementById('status-selection').innerText = selText;
+            document.getElementById('status-history').innerText = `Estado ${State.currentIndex + 1}/${State.history.length}`;
+        }
+
+        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+        syncScene();
+        function animate() { requestAnimationFrame(animate); orbitControls.update(); renderer.render(scene, camera); }
+        animate();
+    </script>
+</body>
+</html>
+
+
