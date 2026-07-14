@@ -1,5 +1,11 @@
 import * as THREE from "three";
 import {
+  SpatialSeedRuntime,
+  RuntimeQueryRegistry,
+  RuntimeEvents,
+  RuntimeCapabilities
+} from "../../runtime-api/src/index.js?build=20260714-0020b-a";
+import {
   ViewerState,
   EditorSession,
   SimulationClock,
@@ -26,7 +32,7 @@ import {
   resolveAffineOperations,
   composeAffineStep,
   affineCopies as affineRepeatCopies
-} from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020a-b1";
+} from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020b-a";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   GeometryRegistry,
@@ -35,10 +41,116 @@ import {
   CylinderGeometryProvider,
   PlaneGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260714-0020a-b1";
+} from "../../geometry-registry/src/index.js?build=20260714-0020b-a";
 
 export function createRuntimeLayerTests() {
   return {
+    "runtime-api": {
+      "fachada executa comandos sem expor registro"() {
+        const commands = {
+          execute(id, args) {
+            assertEqual(id, "sum");
+            return args.left + args.right;
+          },
+          describe() {
+            return [{ id: "sum", metadata: {} }];
+          }
+        };
+
+        const runtime = new SpatialSeedRuntime({ commands });
+
+        assertEqual(
+          runtime.execute("sum", { left: 2, right: 3 }),
+          5
+        );
+
+        assertEqual("commands" in runtime, false);
+      },
+
+      "queries e eventos permanecem separados"() {
+        const commands = {
+          execute() {
+            return null;
+          },
+          describe() {
+            return [];
+          }
+        };
+        const queries = new RuntimeQueryRegistry()
+          .register("answer", ({ value }) => value * 2);
+        const events = new RuntimeEvents();
+        const runtime = new SpatialSeedRuntime({
+          commands,
+          queries,
+          events
+        });
+
+        let received = null;
+        const unsubscribe = runtime.subscribe(
+          "changed",
+          value => { received = value; }
+        );
+
+        assertEqual(runtime.query("answer", { value: 21 }), 42);
+        runtime.emit("changed", 7);
+        assertEqual(received, 7);
+
+        unsubscribe();
+        runtime.emit("changed", 9);
+        assertEqual(received, 7);
+      },
+
+      "capacidades descrevem fronteira pública"() {
+        const commands = {
+          execute() {
+            return null;
+          },
+          describe() {
+            return [{ id: "noop", metadata: {} }];
+          }
+        };
+        const capabilities = new RuntimeCapabilities()
+          .register("renderer", {
+            apiVersion: "renderer-test-v1"
+          });
+        const runtime = new SpatialSeedRuntime({
+          commands,
+          capabilities
+        });
+        const description = runtime.capabilities();
+
+        assertEqual(
+          description.runtimeApi,
+          "spatial-seed-runtime-v1"
+        );
+        assertEqual(
+          description.modules.renderer.apiVersion,
+          "renderer-test-v1"
+        );
+      },
+
+      "benchmark mede sobrecarga real da fachada"() {
+        const commands = {
+          execute(id, args) {
+            assertEqual(id, "runtime.api.noop");
+            return args.value;
+          },
+          describe() {
+            return [];
+          }
+        };
+        const runtime = new SpatialSeedRuntime({ commands });
+        const result = runtime.benchmark({
+          iterations: 1000
+        });
+
+        assertEqual(result.iterations, 1000);
+        assert(result.directMs >= 0);
+        assert(result.facadeMs >= 0);
+        assert(Number.isFinite(result.overheadPerCallUs));
+      }
+    },
+
     viewer: {
       "viewer mantém apenas estado local"() {
         const viewer = new ViewerState({
