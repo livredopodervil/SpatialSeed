@@ -184,6 +184,8 @@ export class DevConsole {
         "scale sx sy sz",
         "duplicate",
         "duplicate count N [move|rotate|scale|pivot|matrix ...]",
+        '  expressões: duplicate count 24 move "3*cos(i*pi/12)" 0 "3*sin(i*pi/12)"',
+        '  rotação: rotate 0 "i*pi/12 rad" 0',
         "  pivot median|bounds|active",
         "  pivot absolute x y z",
         "  pivot relative dx dy dz",
@@ -533,9 +535,9 @@ export class DevConsole {
         operations.push({
           type,
           value: [
-            this.#number(tokens.shift()),
-            this.#number(tokens.shift()),
-            this.#number(tokens.shift())
+            this.#affineValue(tokens.shift()),
+            this.#affineValue(tokens.shift()),
+            this.#affineValue(tokens.shift())
           ]
         });
         continue;
@@ -607,7 +609,7 @@ export class DevConsole {
         operations.push({
           type,
           value: Array.from({ length: 16 }, () =>
-            this.#number(tokens.shift())
+            this.#affineValue(tokens.shift())
           )
         });
         continue;
@@ -626,6 +628,20 @@ export class DevConsole {
     return line.match(/"[^"]*"|'[^']*'|\S+/g)?.map(token =>
       token.replace(/^["']|["']$/g, "")
     ) ?? [];
+  }
+
+  #affineValue(value) {
+    const source = String(value ?? "").trim();
+
+    if (!source) {
+      throw new Error("Expressão afim vazia.");
+    }
+
+    const number = Number(source);
+
+    return Number.isFinite(number)
+      ? number
+      : source;
   }
 
   #number(value) {

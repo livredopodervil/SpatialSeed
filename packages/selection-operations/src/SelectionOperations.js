@@ -3,6 +3,7 @@ import {
   resolveAffineOperations,
   composeAffineStep,
   affineCopies,
+  affineProgramCopies,
   matrixFromObject,
   decomposeMatrix
 } from "./AffineRepeat.js";
@@ -112,16 +113,34 @@ export class SelectionOperations {
       operations,
       pivotContext
     );
-    const step = composeAffineStep(
-      resolved.operations,
-      pivotContext.defaultPivot
+    const parametric = hasAffineExpressions(
+      resolved.operations
     );
+
+    const step = parametric
+      ? null
+      : composeAffineStep(
+          resolved.operations,
+          pivotContext.defaultPivot
+        );
+
     const pivot = [...resolved.pivot.effective];
     const duplicates = [];
     const frontierIds = [];
 
     for (const object of sourceObjects) {
-      const transforms = affineCopies(object, copies, step);
+      const transforms = parametric
+        ? affineProgramCopies(
+            object,
+            copies,
+            resolved.operations,
+            {
+              defaultPivot:
+                pivotContext.defaultPivot
+            }
+          )
+        : affineCopies(object, copies, step);
+
       for (const transform of transforms) {
         const duplicate = {
           ...structuredClone(object),
@@ -145,7 +164,10 @@ export class SelectionOperations {
         structuredClone(resolved.operations),
       affinePivot:
         structuredClone(resolved.pivot),
-      deltaMatrix: step.toArray(),
+      affineParametric: parametric,
+      ...(step
+        ? { deltaMatrix: step.toArray() }
+        : {}),
       objects: duplicates
     });
 
@@ -154,18 +176,25 @@ export class SelectionOperations {
     const duplicateIds = duplicates.map(object => object.id);
     this.#selectIds(frontierIds);
     this.pendingDuplicate = null;
-    this.lastDuplicate = {
-      explicit: true,
-      sourceIds: sourceObjects.map(object => object.id),
-      duplicateIds: frontierIds,
-      repeatSourceIds: frontierIds,
-      deltaMatrix: step.toArray(),
-      pivot: structuredClone(resolved.pivot),
-      pivotBefore: pivot,
-      pivotAfter: this.#selectionPivot(
-        duplicates.filter(object => frontierIds.includes(object.id))
-      )
-    };
+
+    this.lastDuplicate = step
+      ? {
+          explicit: true,
+          sourceIds:
+            sourceObjects.map(object => object.id),
+          duplicateIds: frontierIds,
+          repeatSourceIds: frontierIds,
+          deltaMatrix: step.toArray(),
+          pivot:
+            structuredClone(resolved.pivot),
+          pivotBefore: pivot,
+          pivotAfter: this.#selectionPivot(
+            duplicates.filter(object =>
+              frontierIds.includes(object.id)
+            )
+          )
+        }
+      : null;
 
     return {
       changed: true,
@@ -174,11 +203,15 @@ export class SelectionOperations {
       createdCount: duplicates.length,
       duplicateIds,
       selectedIds: frontierIds,
-      deltaMatrix: step.toArray(),
+      parametric,
+      ...(step
+        ? { deltaMatrix: step.toArray() }
+        : {}),
       operations:
         structuredClone(resolved.operations),
       pivot:
-        structuredClone(resolved.pivot)
+        structuredClone(resolved.pivot),
+      repeatSupported: !parametric
     };
   }
 
@@ -604,6 +637,15 @@ export class SelectionOperations {
     );
   }
 
+}
+
+function hasAffineExpressions(operations) {
+  return operations.some(operation =>
+    Array.isArray(operation?.value) &&
+    operation.value.some(value =>
+      typeof value === "string"
+    )
+  );
 }
 
 function copyName(name, copyIndex) {
