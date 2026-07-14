@@ -1,4 +1,17 @@
 import * as THREE from "three";
+import {
+  compileAffineProgram,
+  createAffineEvaluationContext,
+  evaluateAffineProgram,
+  evaluateAffineVector
+} from "./AffineProgram.js";
+
+export {
+  compileAffineProgram,
+  evaluateAffineExpression,
+  evaluateAffineProgram
+} from "./AffineProgram.js";
+
 
 export function resolveAffineOperations(
   operations = [],
@@ -73,6 +86,82 @@ export function resolveAffineOperations(
       )
     })
   });
+}
+
+
+/**
+ * Gera cópias a partir de um programa paramétrico.
+ *
+ * O programa é reavaliado para cada índice. Assim, a etapa pode depender de
+ * i, u, tempo, posição, escala e variáveis do usuário.
+ */
+export function affineProgramCopies(
+  object,
+  count,
+  program,
+  {
+    variables = {},
+    time = 0,
+    deltaTime = 0,
+    defaultPivot = [0, 0, 0]
+  } = {}
+) {
+  const copies = Number(count);
+
+  if (!Number.isInteger(copies) || copies < 1) {
+    throw new RangeError("count deve ser inteiro positivo.");
+  }
+
+  const compiled =
+    program?.type === "affine-program"
+      ? program
+      : compileAffineProgram(program);
+
+  let current = matrixFromObject(object);
+  const result = [];
+
+  for (let index = 1; index <= copies; index += 1) {
+    const currentTransform = decomposeMatrix(current);
+    const context = createAffineEvaluationContext({
+      index,
+      count: copies,
+      time,
+      deltaTime,
+      transform: currentTransform,
+      variables
+    });
+
+    const evaluated = evaluateAffineProgram(
+      compiled,
+      context
+    );
+
+    const step = composeAffineStep(
+      evaluated,
+      evaluateAffineVector(
+        defaultPivot,
+        context,
+        "defaultPivot"
+      )
+    );
+
+    current = step.multiply(current);
+
+    result.push({
+      index,
+      context: Object.freeze({
+        i: context.i,
+        count: context.count,
+        u: context.u,
+        t: context.t,
+        dt: context.dt
+      }),
+      operations: evaluated,
+      ...decomposeMatrix(current)
+    });
+  }
+
+  return result;
 }
 
 export function composeAffineStep(operations = [], defaultPivot = [0, 0, 0]) {
@@ -192,6 +281,7 @@ function finite(value) {
   }
   return number;
 }
+
 
 
 function normalizePivotSpecification(operation) {

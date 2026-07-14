@@ -1,0 +1,6 @@
+version,date,device,test,iterations,total_ms,ms_per_transform,relative_to_native,notes
+0020b-b,2026-07-14,Android-Termux,affine-parametric,1000,19.5,0.0195,0.987,"AST compilada; melhor execução observada"
+0020b-b,2026-07-14,Android-Termux,affine-parametric,1000,36.4,0.0364,1.843,"execução após reinicialização"
+0020b-b,2026-07-14,Android-Termux,affine-native,10000,197.5,0.01975,1.000,"affine-math gera dez mil transformações"
+0020b-c,2026-07-14,Android-Termux,affine-parametric,1000,23.1,0.0231,1.196,"AffineProgram extraído para fragmento autocontido"
+0020b-c,2026-07-14,Android-Termux,affine-native,10000,193.1,0.01931,1.000,"affine-math após extração do AffineProgram"

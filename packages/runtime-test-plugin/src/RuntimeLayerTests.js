@@ -29,10 +29,17 @@ import {
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
 import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
 import {
+  compileAffineExpression,
+  compileAffineProgram,
+  evaluateAffineExpression,
+  evaluateAffineProgram
+} from "../../selection-operations/src/AffineProgram.js?build=20260714-0020b-d";
+import {
   resolveAffineOperations,
+  affineProgramCopies,
   composeAffineStep,
   affineCopies as affineRepeatCopies
-} from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020b-a";
+} from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020b-d";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   GeometryRegistry,
@@ -1340,6 +1347,289 @@ assets: {
         assertNear(copies[0].position[0], 0);
         assertNear(copies[0].position[1], 2);
         assertDeepEqual(copies[0].scale.map(roundAffine), [2, 2, 2]);
+      },
+
+      "expressões usam índice e variáveis"() {
+        assertNear(
+          evaluateAffineExpression(
+            "radius*cosd(i*angle)",
+            {
+              radius: 2,
+              i: 3,
+              angle: 60
+            }
+          ),
+          -2
+        );
+      },
+
+      "graus radianos e voltas são equivalentes"() {
+        const degree = evaluateAffineExpression("180 deg");
+        const radian = evaluateAffineExpression("pi rad");
+        const turn = evaluateAffineExpression("0.5 turn");
+
+        assertNear(degree, 180);
+        assertNear(radian, 180);
+        assertNear(turn, 180);
+      },
+
+      "sufixos angulares são intuitivos"() {
+        assertNear(
+          evaluateAffineExpression("180d"),
+          180
+        );
+        assertNear(
+          evaluateAffineExpression("pi/4r"),
+          45
+        );
+        assertNear(
+          evaluateAffineExpression("0.5turn"),
+          180
+        );
+      },
+
+      "potência canônica usa dois asteriscos"() {
+        assertNear(
+          evaluateAffineExpression("2 ** 3"),
+          8
+        );
+        assertNear(
+          evaluateAffineExpression("2 ^ 3"),
+          8
+        );
+      },
+
+      "precedência de potência segue Python"() {
+        assertNear(
+          evaluateAffineExpression("-2 ** 2"),
+          -4
+        );
+        assertNear(
+          evaluateAffineExpression("2 ** -2"),
+          0.25
+        );
+      },
+
+      "trigonometria matemática usa radianos"() {
+        assertNear(
+          evaluateAffineExpression("sin(pi / 2)"),
+          1
+        );
+        assertNear(
+          evaluateAffineExpression("cosd(60)"),
+          0.5
+        );
+      },
+
+      "expressão guarda fonte normalizada e AST imutável"() {
+        const expression = compileAffineExpression(
+          "2 ^ 3"
+        );
+
+        assertEqual(expression.source, "2 ^ 3");
+        assertEqual(expression.normalized, "2 ** 3");
+        assert(Object.isFrozen(expression));
+        assert(Object.isFrozen(expression.ast));
+      },
+
+      "backend matemático é substituível"() {
+        const calls = [];
+        const backend = {
+          literal(value) {
+            return value;
+          },
+          variable(value) {
+            return value;
+          },
+          unary(operator, value) {
+            calls.push(["unary", operator]);
+            return operator === "-" ? -value : value;
+          },
+          binary(operator, left, right) {
+            calls.push(["binary", operator]);
+            if (operator === "+") return left + right;
+            if (operator === "/") return left / right;
+            if (operator === "**") return left ** right;
+            throw new Error("operador inesperado");
+          },
+          call(name, args) {
+            calls.push(["call", name]);
+            return Math[name](...args);
+          },
+          toNumber(value) {
+            return Number(value);
+          }
+        };
+
+        assertNear(
+          evaluateAffineExpression(
+            "sin(pi / 2) + 2 ** 3",
+            {},
+            { backend }
+          ),
+          9
+        );
+        assert(
+          calls.some(entry =>
+            entry[0] === "binary" &&
+            entry[1] === "**"
+          )
+        );
+      },
+
+      "acesso arbitrário a propriedades é rejeitado"() {
+        let failed = false;
+
+        try {
+          evaluateAffineExpression("position.x");
+        } catch (error) {
+          failed = /(Caractere|Número) inválido/.test(
+            error?.message ?? ""
+          );
+        }
+
+        assert(failed);
+      },
+
+      "fragmento de expressão é reutilizável fora do repeat"() {
+        const program = compileAffineProgram([
+          {
+            type: "move",
+            value: ["i^2", "cosd(i*60)", "u"]
+          }
+        ]);
+
+        const evaluated = evaluateAffineProgram(
+          program,
+          {
+            i: 3,
+            count: 5,
+            u: 0.5,
+            pi: Math.PI,
+            e: Math.E,
+            tau: 2 * Math.PI,
+            deg: 1,
+            rad: 180 / Math.PI,
+            turn: 360
+          }
+        );
+
+        assertDeepEqual(
+          evaluated[0].value.map(roundAffine),
+          [9, -1, 0.5]
+        );
+      },
+
+      "programa é compilado uma única vez"() {
+        const program = compileAffineProgram([
+          {
+            type: "move",
+            value: ["i", "u", "amplitude*sin(i*pi/2)"]
+          }
+        ]);
+
+        const first = evaluateAffineProgram(program, {
+          i: 1,
+          u: 0,
+          amplitude: 2,
+          pi: Math.PI,
+          deg: 1,
+          rad: 180 / Math.PI,
+          turn: 360
+        });
+
+        const second = evaluateAffineProgram(program, {
+          i: 2,
+          u: 1,
+          amplitude: 2,
+          pi: Math.PI,
+          deg: 1,
+          rad: 180 / Math.PI,
+          turn: 360
+        });
+
+        assertDeepEqual(
+          first[0].value.map(roundAffine),
+          [1, 0, 2]
+        );
+        assertDeepEqual(
+          second[0].value.map(roundAffine),
+          [2, 1, 0]
+        );
+      },
+
+      "sequência paramétrica produz deslocamento não linear"() {
+        const copies = affineProgramCopies(
+          {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1]
+          },
+          4,
+          [
+            {
+              type: "move",
+              value: ["i^2", 0, 0]
+            }
+          ]
+        );
+
+        assertDeepEqual(
+          copies.map(copy =>
+            copy.position.map(roundAffine)
+          ),
+          [
+            [1, 0, 0],
+            [5, 0, 0],
+            [14, 0, 0],
+            [30, 0, 0]
+          ]
+        );
+      },
+
+      "expressão acessa posição e escala atuais"() {
+        const copies = affineProgramCopies(
+          {
+            position: [1, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [2, 1, 1]
+          },
+          2,
+          [{
+            type: "move",
+            value: ["x*sx", 0, 0]
+          }]
+        );
+
+        assertDeepEqual(
+          copies.map(copy =>
+            copy.position.map(roundAffine)
+          ),
+          [[3, 0, 0], [9, 0, 0]]
+        );
+      },
+
+      "mil transformações paramétricas são avaliadas"() {
+        const startedAt = performance.now();
+        const copies = affineProgramCopies(
+          {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1]
+          },
+          1000,
+          [{
+            type: "move",
+            value: [
+              "0.01*cos(i*0.1)",
+              "0.01*sin(i*0.1)",
+              "u"
+            ]
+          }]
+        );
+
+        assertEqual(copies.length, 1000);
+        assert(performance.now() - startedAt < 5000);
       }
     },
 
