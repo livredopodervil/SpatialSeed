@@ -1,5 +1,11 @@
 import * as THREE from "three";
 import {
+  SpatialSeedRuntime,
+  RuntimeQueryRegistry,
+  RuntimeEvents,
+  RuntimeCapabilities
+} from "../../runtime-api/src/index.js?build=20260714-0020b-a";
+import {
   ViewerState,
   EditorSession,
   SimulationClock,
@@ -23,11 +29,21 @@ import {
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
 import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
 import {
+  compileAffineExpression,
+  compileAffineProgram,
+  evaluateAffineExpression,
+  evaluateAffineProgram
+} from "../../selection-operations/src/AffineProgram.js?build=20260714-0020b-d";
+import {
   resolveAffineOperations,
+  affineProgramCopies,
   composeAffineStep,
   affineCopies as affineRepeatCopies
-} from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020a-b1";
+} from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020b-d";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
+import {
+  boxRegionReducer
+} from "../../region-box/src/reducer.js?build=20260714-0020b-f";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -35,10 +51,116 @@ import {
   CylinderGeometryProvider,
   PlaneGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260714-0020a-b1";
+} from "../../geometry-registry/src/index.js?build=20260714-0020b-a";
 
 export function createRuntimeLayerTests() {
   return {
+    "runtime-api": {
+      "fachada executa comandos sem expor registro"() {
+        const commands = {
+          execute(id, args) {
+            assertEqual(id, "sum");
+            return args.left + args.right;
+          },
+          describe() {
+            return [{ id: "sum", metadata: {} }];
+          }
+        };
+
+        const runtime = new SpatialSeedRuntime({ commands });
+
+        assertEqual(
+          runtime.execute("sum", { left: 2, right: 3 }),
+          5
+        );
+
+        assertEqual("commands" in runtime, false);
+      },
+
+      "queries e eventos permanecem separados"() {
+        const commands = {
+          execute() {
+            return null;
+          },
+          describe() {
+            return [];
+          }
+        };
+        const queries = new RuntimeQueryRegistry()
+          .register("answer", ({ value }) => value * 2);
+        const events = new RuntimeEvents();
+        const runtime = new SpatialSeedRuntime({
+          commands,
+          queries,
+          events
+        });
+
+        let received = null;
+        const unsubscribe = runtime.subscribe(
+          "changed",
+          value => { received = value; }
+        );
+
+        assertEqual(runtime.query("answer", { value: 21 }), 42);
+        runtime.emit("changed", 7);
+        assertEqual(received, 7);
+
+        unsubscribe();
+        runtime.emit("changed", 9);
+        assertEqual(received, 7);
+      },
+
+      "capacidades descrevem fronteira pública"() {
+        const commands = {
+          execute() {
+            return null;
+          },
+          describe() {
+            return [{ id: "noop", metadata: {} }];
+          }
+        };
+        const capabilities = new RuntimeCapabilities()
+          .register("renderer", {
+            apiVersion: "renderer-test-v1"
+          });
+        const runtime = new SpatialSeedRuntime({
+          commands,
+          capabilities
+        });
+        const description = runtime.capabilities();
+
+        assertEqual(
+          description.runtimeApi,
+          "spatial-seed-runtime-v1"
+        );
+        assertEqual(
+          description.modules.renderer.apiVersion,
+          "renderer-test-v1"
+        );
+      },
+
+      "benchmark mede sobrecarga real da fachada"() {
+        const commands = {
+          execute(id, args) {
+            assertEqual(id, "runtime.api.noop");
+            return args.value;
+          },
+          describe() {
+            return [];
+          }
+        };
+        const runtime = new SpatialSeedRuntime({ commands });
+        const result = runtime.benchmark({
+          iterations: 1000
+        });
+
+        assertEqual(result.iterations, 1000);
+        assert(result.directMs >= 0);
+        assert(result.facadeMs >= 0);
+        assert(Number.isFinite(result.overheadPerCallUs));
+      }
+    },
+
     viewer: {
       "viewer mantém apenas estado local"() {
         const viewer = new ViewerState({
@@ -904,6 +1026,195 @@ assets: {
     assertEqual(manager.hasObject("object-a"), false);
     manager.clear({ disposeGeometry: true, disposeMaterial: true });
   }
+,
+
+  "lote armazena e atualiza cor por instância"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xffffff
+    });
+    const batch = new InstanceBatch({
+      key: "color",
+      geometry,
+      material,
+      capacity: 4
+    });
+
+    batch.add(
+      "a",
+      new THREE.Matrix4(),
+      { color: "#ff0000" }
+    );
+
+    assertNear(batch.colorAt("a").r, 1);
+    assertNear(batch.colorAt("a").g, 0);
+
+    batch.updateAttributes(
+      "a",
+      { color: "#00ff00" }
+    );
+
+    assertNear(batch.colorAt("a").r, 0);
+    assertNear(batch.colorAt("a").g, 1);
+    assertEqual(batch.stats().hasInstanceColor, true);
+    assertEqual(batch.stats().colorBytes, 48);
+
+    batch.dispose({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
+  },
+
+  "manager atualiza cor sem trocar lote"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const manager = new InstanceBatchManager();
+
+    manager.add({
+      objectId: "a",
+      batchKey: "shared",
+      matrix: new THREE.Matrix4(),
+      attributes: { color: "#112233" },
+      descriptor: {
+        geometry,
+        material,
+        capacity: 4
+      }
+    });
+
+    const before = manager.locationOf("a");
+    assertEqual(
+      manager.updateAttributes(
+        "a",
+        { color: "#abcdef" }
+      ),
+      true
+    );
+    const after = manager.locationOf("a");
+
+    assertDeepEqual(after, before);
+    assertEqual(manager.batchCount, 1);
+
+    manager.clear({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
+  },
+
+  "índice reutilizado recebe a nova cor"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const batch = new InstanceBatch({
+      key: "reuse-color",
+      geometry,
+      material,
+      capacity: 2
+    });
+
+    const first = batch.add(
+      "a",
+      new THREE.Matrix4(),
+      { color: "#ff0000" }
+    );
+
+    batch.remove("a");
+
+    const reused = batch.add(
+      "b",
+      new THREE.Matrix4(),
+      { color: "#0000ff" }
+    );
+
+    assertEqual(reused, first);
+    assertNear(batch.colorAt("b").b, 1);
+    assertNear(batch.colorAt("b").r, 0);
+
+    batch.dispose({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
+  },
+
+  "reducer cria e remove override de cor"() {
+    const initial = Object.freeze({
+      objects: Object.freeze([])
+    });
+
+    const created = boxRegionReducer(
+      initial,
+      {
+        type: "object.create",
+        id: "brick",
+        instanceState: {
+          color: "#CC6633"
+        }
+      }
+    ).state;
+
+    assertEqual(
+      created.objects[0].instanceState.color,
+      "#cc6633"
+    );
+
+    const updated = boxRegionReducer(
+      created,
+      {
+        type: "object.update",
+        id: "brick",
+        patch: {
+          instanceState: { color: null }
+        }
+      }
+    ).state;
+
+    assertEqual(
+      "color" in updated.objects[0].instanceState,
+      false
+    );
+  },
+
+  "dez mil cores mantêm um único lote"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const manager = new InstanceBatchManager();
+    const startedAt = performance.now();
+
+    for (let index = 0; index < 10000; index += 1) {
+      manager.add({
+        objectId: `color-${index}`,
+        batchKey: "colors",
+        matrix: new THREE.Matrix4(),
+        attributes: {
+          color: new THREE.Color().setHSL(
+            index / 10000,
+            0.7,
+            0.5
+          )
+        },
+        descriptor: {
+          geometry,
+          material,
+          capacity: 10000
+        }
+      });
+    }
+
+    const elapsed = performance.now() - startedAt;
+    const stats = manager.stats();
+
+    assertEqual(stats.batches, 1);
+    assertEqual(stats.objects, 10000);
+    assertEqual(
+      stats.byBatch[0].colorBytes,
+      120000
+    );
+    assert(elapsed < 5000);
+
+    manager.clear({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
+  }
 },
 
     "batch-material-cache": {
@@ -1228,6 +1539,289 @@ assets: {
         assertNear(copies[0].position[0], 0);
         assertNear(copies[0].position[1], 2);
         assertDeepEqual(copies[0].scale.map(roundAffine), [2, 2, 2]);
+      },
+
+      "expressões usam índice e variáveis"() {
+        assertNear(
+          evaluateAffineExpression(
+            "radius*cosd(i*angle)",
+            {
+              radius: 2,
+              i: 3,
+              angle: 60
+            }
+          ),
+          -2
+        );
+      },
+
+      "graus radianos e voltas são equivalentes"() {
+        const degree = evaluateAffineExpression("180 deg");
+        const radian = evaluateAffineExpression("pi rad");
+        const turn = evaluateAffineExpression("0.5 turn");
+
+        assertNear(degree, 180);
+        assertNear(radian, 180);
+        assertNear(turn, 180);
+      },
+
+      "sufixos angulares são intuitivos"() {
+        assertNear(
+          evaluateAffineExpression("180d"),
+          180
+        );
+        assertNear(
+          evaluateAffineExpression("pi/4r"),
+          45
+        );
+        assertNear(
+          evaluateAffineExpression("0.5turn"),
+          180
+        );
+      },
+
+      "potência canônica usa dois asteriscos"() {
+        assertNear(
+          evaluateAffineExpression("2 ** 3"),
+          8
+        );
+        assertNear(
+          evaluateAffineExpression("2 ^ 3"),
+          8
+        );
+      },
+
+      "precedência de potência segue Python"() {
+        assertNear(
+          evaluateAffineExpression("-2 ** 2"),
+          -4
+        );
+        assertNear(
+          evaluateAffineExpression("2 ** -2"),
+          0.25
+        );
+      },
+
+      "trigonometria matemática usa radianos"() {
+        assertNear(
+          evaluateAffineExpression("sin(pi / 2)"),
+          1
+        );
+        assertNear(
+          evaluateAffineExpression("cosd(60)"),
+          0.5
+        );
+      },
+
+      "expressão guarda fonte normalizada e AST imutável"() {
+        const expression = compileAffineExpression(
+          "2 ^ 3"
+        );
+
+        assertEqual(expression.source, "2 ^ 3");
+        assertEqual(expression.normalized, "2 ** 3");
+        assert(Object.isFrozen(expression));
+        assert(Object.isFrozen(expression.ast));
+      },
+
+      "backend matemático é substituível"() {
+        const calls = [];
+        const backend = {
+          literal(value) {
+            return value;
+          },
+          variable(value) {
+            return value;
+          },
+          unary(operator, value) {
+            calls.push(["unary", operator]);
+            return operator === "-" ? -value : value;
+          },
+          binary(operator, left, right) {
+            calls.push(["binary", operator]);
+            if (operator === "+") return left + right;
+            if (operator === "/") return left / right;
+            if (operator === "**") return left ** right;
+            throw new Error("operador inesperado");
+          },
+          call(name, args) {
+            calls.push(["call", name]);
+            return Math[name](...args);
+          },
+          toNumber(value) {
+            return Number(value);
+          }
+        };
+
+        assertNear(
+          evaluateAffineExpression(
+            "sin(pi / 2) + 2 ** 3",
+            {},
+            { backend }
+          ),
+          9
+        );
+        assert(
+          calls.some(entry =>
+            entry[0] === "binary" &&
+            entry[1] === "**"
+          )
+        );
+      },
+
+      "acesso arbitrário a propriedades é rejeitado"() {
+        let failed = false;
+
+        try {
+          evaluateAffineExpression("position.x");
+        } catch (error) {
+          failed = /(Caractere|Número) inválido/.test(
+            error?.message ?? ""
+          );
+        }
+
+        assert(failed);
+      },
+
+      "fragmento de expressão é reutilizável fora do repeat"() {
+        const program = compileAffineProgram([
+          {
+            type: "move",
+            value: ["i^2", "cosd(i*60)", "u"]
+          }
+        ]);
+
+        const evaluated = evaluateAffineProgram(
+          program,
+          {
+            i: 3,
+            count: 5,
+            u: 0.5,
+            pi: Math.PI,
+            e: Math.E,
+            tau: 2 * Math.PI,
+            deg: 1,
+            rad: 180 / Math.PI,
+            turn: 360
+          }
+        );
+
+        assertDeepEqual(
+          evaluated[0].value.map(roundAffine),
+          [9, -1, 0.5]
+        );
+      },
+
+      "programa é compilado uma única vez"() {
+        const program = compileAffineProgram([
+          {
+            type: "move",
+            value: ["i", "u", "amplitude*sin(i*pi/2)"]
+          }
+        ]);
+
+        const first = evaluateAffineProgram(program, {
+          i: 1,
+          u: 0,
+          amplitude: 2,
+          pi: Math.PI,
+          deg: 1,
+          rad: 180 / Math.PI,
+          turn: 360
+        });
+
+        const second = evaluateAffineProgram(program, {
+          i: 2,
+          u: 1,
+          amplitude: 2,
+          pi: Math.PI,
+          deg: 1,
+          rad: 180 / Math.PI,
+          turn: 360
+        });
+
+        assertDeepEqual(
+          first[0].value.map(roundAffine),
+          [1, 0, 2]
+        );
+        assertDeepEqual(
+          second[0].value.map(roundAffine),
+          [2, 1, 0]
+        );
+      },
+
+      "sequência paramétrica produz deslocamento não linear"() {
+        const copies = affineProgramCopies(
+          {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1]
+          },
+          4,
+          [
+            {
+              type: "move",
+              value: ["i^2", 0, 0]
+            }
+          ]
+        );
+
+        assertDeepEqual(
+          copies.map(copy =>
+            copy.position.map(roundAffine)
+          ),
+          [
+            [1, 0, 0],
+            [5, 0, 0],
+            [14, 0, 0],
+            [30, 0, 0]
+          ]
+        );
+      },
+
+      "expressão acessa posição e escala atuais"() {
+        const copies = affineProgramCopies(
+          {
+            position: [1, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [2, 1, 1]
+          },
+          2,
+          [{
+            type: "move",
+            value: ["x*sx", 0, 0]
+          }]
+        );
+
+        assertDeepEqual(
+          copies.map(copy =>
+            copy.position.map(roundAffine)
+          ),
+          [[3, 0, 0], [9, 0, 0]]
+        );
+      },
+
+      "mil transformações paramétricas são avaliadas"() {
+        const startedAt = performance.now();
+        const copies = affineProgramCopies(
+          {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1]
+          },
+          1000,
+          [{
+            type: "move",
+            value: [
+              "0.01*cos(i*0.1)",
+              "0.01*sin(i*0.1)",
+              "u"
+            ]
+          }]
+        );
+
+        assertEqual(copies.length, 1000);
+        assert(performance.now() - startedAt < 5000);
       }
     },
 

@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="spatial-seed-build" content="20260714-0020a-b1">
+<meta name="spatial-seed-build" content="20260714-0020b-a">
 <title>Spatial Seed Monorepo</title>
-<link rel="stylesheet" href="./style.css?build=20260714-0020a-b1">
+<link rel="stylesheet" href="./style.css?build=20260714-0020b-a">
 <script type="importmap">
 {
   "imports": {
@@ -56,7 +56,7 @@
   <strong>Seleção do editor</strong>
   <div id="selection-content">∅</div>
   <div id="pivot-content">Pivô: mediana</div>
-  <div id="build-content">build 20260714-0020a-b1</div>
+  <div id="build-content">build 20260714-0020b-a</div>
 </aside>
 
 <aside id="outline" hidden>
@@ -109,7 +109,11 @@
 <div class="ins-vector"><span>Escala</span><input id="ins-scale-0" type="number" step="0.1"><input id="ins-scale-1" type="number" step="0.1"><input id="ins-scale-2" type="number" step="0.1"></div>
 <div class="ins-vector"><span>Dimensões</span><input id="ins-size-0" type="number" step="0.1"><input id="ins-size-1" type="number" step="0.1"><input id="ins-size-2" type="number" step="0.1"></div>
 </fieldset>
-<fieldset><legend>Material</legend><label>Cor <input id="ins-color" type="color"></label></fieldset>
+<fieldset><legend>Material compartilhado</legend><label>Cor-base <input id="ins-color" type="color"></label></fieldset>
+<fieldset><legend>Instância</legend>
+<label><input id="ins-instance-color-enabled" type="checkbox"> Usar cor própria</label>
+<label>Cor da instância <input id="ins-instance-color" type="color"></label>
+</fieldset>
 <fieldset><legend>Textura</legend>
 <label>Arquivo <input id="ins-texture-file" type="file" accept="image/*"></label>
 <label>URL/Data URL <input id="ins-texture-src" type="text"></label>
@@ -174,6 +178,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./main.js?build=20260714-0020a-b1"></script>
+<script type="module" src="./main.js?build=20260714-0020b-a"></script>
 </body>
 </html>

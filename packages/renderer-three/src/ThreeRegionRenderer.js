@@ -288,6 +288,8 @@ export class ThreeRegionRenderer {
       proxy.userData.batchKey = null;
       proxy.userData.size = [...object.size];
       proxy.userData.appearanceId = object.appearanceId;
+      proxy.userData.instanceColor =
+        object.instanceState?.color ?? null;
       this.#meshes.set(object.id, proxy);
       this.#incrementalDiagnostics.objectsCreated += 1;
     } else {
@@ -316,6 +318,12 @@ export class ThreeRegionRenderer {
     }
 
     proxy.userData.appearanceId = object.appearanceId;
+    proxy.userData.instanceColor =
+      object.instanceState?.color ?? null;
+
+    if (!this.#selectedVisualIds.has(object.id)) {
+      this.#applyObjectInstanceColor(object.id);
+    }
   }
 
   #removeObject(id) {
@@ -393,7 +401,7 @@ export class ThreeRegionRenderer {
     }
 
     proxy.userData.batchKey = batchKey;
-    this.#setInstanceColor(object.id, 0xffffff);
+    this.#applyObjectInstanceColor(object.id);
   }
 
   #removeFromBatch(objectId, batchKey) {
@@ -421,9 +429,41 @@ export class ThreeRegionRenderer {
     if (!location) return false;
     const batch = this.#batchManager.getBatch(location.batchKey);
     if (!batch) return false;
-    batch.mesh.setColorAt(location.instanceIndex, new THREE.Color(value));
-    batch.mesh.instanceColor.needsUpdate = true;
-    return true;
+
+    const desired = new THREE.Color(value);
+    const base = batch.material?.color?.isColor
+      ? batch.material.color
+      : new THREE.Color(0xffffff);
+
+    const tint = new THREE.Color(
+      safeColorRatio(desired.r, base.r),
+      safeColorRatio(desired.g, base.g),
+      safeColorRatio(desired.b, base.b)
+    );
+
+    return this.#batchManager.updateAttributes(
+      objectId,
+      { color: tint }
+    );
+  }
+
+  #applyObjectInstanceColor(objectId) {
+    const proxy = this.#meshes.get(objectId);
+    if (!proxy) return false;
+
+    const location = this.#batchManager.locationOf(objectId);
+    const batch = location
+      ? this.#batchManager.getBatch(location.batchKey)
+      : null;
+
+    if (!batch) return false;
+
+    const desired =
+      proxy.userData.instanceColor ??
+      batch.material?.color ??
+      0xffffff;
+
+    return this.#setInstanceColor(objectId, desired);
   }
 
   #updateBatchMatrix(objectId, proxy) {
@@ -786,12 +826,13 @@ export class ThreeRegionRenderer {
     const changed = new Set([...this.#selectedVisualIds, ...selected]);
 
     for (const objectId of changed) {
-      const color = objectId === activeId
-        ? 0x8faaff
-        : selected.has(objectId)
-          ? 0xc8d4ff
-          : 0xffffff;
-      this.#setInstanceColor(objectId, color);
+      if (objectId === activeId) {
+        this.#setInstanceColor(objectId, 0x8faaff);
+      } else if (selected.has(objectId)) {
+        this.#setInstanceColor(objectId, 0xc8d4ff);
+      } else {
+        this.#applyObjectInstanceColor(objectId);
+      }
     }
 
     this.#selectedVisualIds = selected;
@@ -958,4 +999,13 @@ getResourceDiagnostics() {
     this.orbit.update();
     this.renderer.render(this.scene, this.camera);
   };
+}
+
+
+function safeColorRatio(desired, base) {
+  if (Math.abs(base) < 1e-8) {
+    return desired <= 1e-8 ? 0 : desired;
+  }
+
+  return desired / base;
 }

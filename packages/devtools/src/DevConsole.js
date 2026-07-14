@@ -184,6 +184,8 @@ export class DevConsole {
         "scale sx sy sz",
         "duplicate",
         "duplicate count N [move|rotate|scale|pivot|matrix ...]",
+        '  expressões: duplicate count 24 move "3*cos(i*pi/12)" 0 "3*sin(i*pi/12)"',
+        '  rotação: rotate 0 "i*pi/12 rad" 0',
         "  pivot median|bounds|active",
         "  pivot absolute x y z",
         "  pivot relative dx dy dz",
@@ -405,10 +407,37 @@ export class DevConsole {
     const namespace =
       (tokens.shift() ?? "").toLowerCase();
 
+    if (namespace === "benchmark") {
+      const target =
+        (tokens.shift() ?? "").toLowerCase();
+
+      if (target !== "api") {
+        throw new Error(
+          "Uso: runtime benchmark api [iterações]"
+        );
+      }
+
+      const iterations = tokens.length
+        ? this.#integer(tokens.shift())
+        : 10000;
+
+      this.#expectMaximum(
+        tokens,
+        0,
+        "runtime benchmark api [iterações]"
+      );
+
+      return this.commands.execute(
+        "runtime.api.benchmark",
+        { iterations }
+      );
+    }
+
     if (namespace === "resources") {
       this.#expectMaximum(
         tokens,
         0,
+        "runtime benchmark api [iterações]",
         "runtime resources"
       );
 
@@ -419,7 +448,7 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|affine-pivot|instanced-renderer|affine-repeat|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|affine-pivot|runtime-api|instanced-renderer|affine-repeat|all"
       );
     }
 
@@ -456,6 +485,7 @@ export class DevConsole {
         "instance-batches",
         "batch-material-cache",
         "geometry-registry",
+        "runtime-api",
         "affine-pivot",
         "instanced-renderer",
         "affine-repeat",
@@ -463,7 +493,7 @@ export class DevConsole {
       ].includes(suite)
     ) {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|affine-pivot|instanced-renderer|affine-repeat|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|affine-pivot|runtime-api|instanced-renderer|affine-repeat|all"
       );
     }
 
@@ -505,9 +535,9 @@ export class DevConsole {
         operations.push({
           type,
           value: [
-            this.#number(tokens.shift()),
-            this.#number(tokens.shift()),
-            this.#number(tokens.shift())
+            this.#affineValue(tokens.shift()),
+            this.#affineValue(tokens.shift()),
+            this.#affineValue(tokens.shift())
           ]
         });
         continue;
@@ -579,7 +609,7 @@ export class DevConsole {
         operations.push({
           type,
           value: Array.from({ length: 16 }, () =>
-            this.#number(tokens.shift())
+            this.#affineValue(tokens.shift())
           )
         });
         continue;
@@ -598,6 +628,20 @@ export class DevConsole {
     return line.match(/"[^"]*"|'[^']*'|\S+/g)?.map(token =>
       token.replace(/^["']|["']$/g, "")
     ) ?? [];
+  }
+
+  #affineValue(value) {
+    const source = String(value ?? "").trim();
+
+    if (!source) {
+      throw new Error("Expressão afim vazia.");
+    }
+
+    const number = Number(source);
+
+    return Number.isFinite(number)
+      ? number
+      : source;
   }
 
   #number(value) {
