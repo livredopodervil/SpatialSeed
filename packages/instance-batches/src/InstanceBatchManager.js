@@ -54,6 +54,20 @@ export class InstanceBatchManager {
     return batch?.objectAt(hit.instanceId) ?? null;
   }
 
+  deleteBatch(key, options = {}) {
+    const normalized = String(key);
+    const batch = this.#batches.get(normalized);
+    if (!batch) return false;
+    if (batch.size > 0 && !options.force) return false;
+    batch.dispose(options);
+    this.#batches.delete(normalized);
+    return true;
+  }
+
+  batches() {
+    return [...this.#batches.values()];
+  }
+
   stats() {
     return Object.freeze({ batches: this.#batches.size, objects: this.#objectLocations.size, byBatch: [...this.#batches.values()].map(batch => batch.stats()) });
   }

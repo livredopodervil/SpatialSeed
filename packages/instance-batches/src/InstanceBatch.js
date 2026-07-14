@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { InstanceBatchIndex } from "./InstanceBatchIndex.js";
 
 export class InstanceBatch {
+  #boundsDirty = true;
   constructor({ key, geometry, material, capacity = 64 }) {
     if (!geometry) throw new TypeError("InstanceBatch exige geometry.");
     if (!material) throw new TypeError("InstanceBatch exige material.");
@@ -17,6 +18,7 @@ export class InstanceBatch {
   }
 
   get size() { return this.index.size; }
+  get boundsDirty() { return this.#boundsDirty; }
   has(objectId) { return this.index.has(objectId); }
 
   add(objectId, matrix) {
@@ -25,6 +27,7 @@ export class InstanceBatch {
     this.mesh.setMatrixAt(index, normalizeMatrix(matrix));
     this.mesh.count = Math.max(this.mesh.count, index + 1);
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.#boundsDirty = true;
     return index;
   }
 
@@ -33,6 +36,7 @@ export class InstanceBatch {
     if (index < 0) return false;
     this.mesh.setMatrixAt(index, normalizeMatrix(matrix));
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.#boundsDirty = true;
     return true;
   }
 
@@ -41,11 +45,22 @@ export class InstanceBatch {
     if (!released.removed) return released;
     this.mesh.setMatrixAt(released.index, new THREE.Matrix4().makeScale(0, 0, 0));
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.#boundsDirty = true;
     return released;
   }
 
+  flushBounds() {
+    if (!this.#boundsDirty) return false;
+
+    this.mesh.computeBoundingBox();
+    this.mesh.computeBoundingSphere();
+    this.#boundsDirty = false;
+
+    return true;
+  }
+
   objectAt(instanceId) { return this.index.objectAt(instanceId); }
-  stats() { return Object.freeze({ key: this.key, size: this.size, capacity: this.capacity, count: this.mesh.count, index: this.index.stats() }); }
+  stats() { return Object.freeze({ key: this.key, size: this.size, capacity: this.capacity, count: this.mesh.count, boundsDirty: this.#boundsDirty, index: this.index.stats() }); }
 
   dispose({ disposeGeometry = false, disposeMaterial = false } = {}) {
     this.index.clear();

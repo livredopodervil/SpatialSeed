@@ -183,7 +183,7 @@ export class DevConsole {
         "rotate xDeg yDeg zDeg",
         "scale sx sy sz",
         "duplicate",
-        "duplicate count N",
+        "duplicate count N [move|rotate|scale|pivot|matrix ...]",
         "repeat",
         "delete",
         "pivot median|bounds|active",
@@ -416,7 +416,7 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|instanced-renderer|affine-repeat|all"
       );
     }
 
@@ -452,11 +452,13 @@ export class DevConsole {
         "render-resource-cache",
         "instance-batches",
         "batch-material-cache",
+        "instanced-renderer",
+        "affine-repeat",
         "all"
       ].includes(suite)
     ) {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|instanced-renderer|affine-repeat|all"
       );
     }
 
@@ -472,20 +474,60 @@ export class DevConsole {
     }
 
     const mode = (tokens.shift() ?? "").toLowerCase();
-    if (mode !== "count") {
-      throw new Error("Uso: duplicate [count N]");
+    if (mode !== "count" || !tokens.length) {
+      throw new Error(
+        "Uso: duplicate count N [move|rotate|scale|pivot|matrix ...]"
+      );
     }
 
-    this.#expectExact(tokens, 1, "duplicate count N");
-    const count = this.#positive(tokens[0]);
+    const count = this.#positive(tokens.shift());
     if (!Number.isInteger(count)) {
       throw new Error("A quantidade deve ser inteira.");
     }
 
-    return this.commands.execute(
-      "selection.duplicateMany",
-      { count }
-    );
+    if (!tokens.length) {
+      return this.commands.execute("selection.duplicateMany", { count });
+    }
+
+    const operations = [];
+    while (tokens.length) {
+      const type = (tokens.shift() ?? "").toLowerCase();
+
+      if (["move", "rotate", "scale", "pivot"].includes(type)) {
+        if (tokens.length < 3) {
+          throw new Error(`Uso: ${type} x y z`);
+        }
+        operations.push({
+          type,
+          value: [
+            this.#number(tokens.shift()),
+            this.#number(tokens.shift()),
+            this.#number(tokens.shift())
+          ]
+        });
+        continue;
+      }
+
+      if (type === "matrix") {
+        if (tokens.length < 16) {
+          throw new Error("Uso: matrix m00 ... m15");
+        }
+        operations.push({
+          type,
+          value: Array.from({ length: 16 }, () =>
+            this.#number(tokens.shift())
+          )
+        });
+        continue;
+      }
+
+      throw new Error(`Operação afim desconhecida: ${type}.`);
+    }
+
+    return this.commands.execute("selection.duplicateAffine", {
+      count,
+      operations
+    });
   }
 
   #tokenize(line) {

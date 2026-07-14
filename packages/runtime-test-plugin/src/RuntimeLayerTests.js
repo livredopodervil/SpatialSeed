@@ -12,8 +12,17 @@ import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import { RefCountCache, textureKey } from "../../renderer-resource-cache/src/index.js";
 import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
-import { InstanceBatchIndex, InstanceBatchManager } from "../../instance-batches/src/index.js";
+import {
+  InstanceBatchIndex
+} from "../../instance-batches/src/InstanceBatchIndex.js?build=20260713-0019g-c2";
+import {
+  InstanceBatch
+} from "../../instance-batches/src/InstanceBatch.js?build=20260713-0019g-c2";
+import {
+  InstanceBatchManager
+} from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
 import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
+import { composeAffineStep, affineCopies as affineRepeatCopies } from "../../selection-operations/src/AffineRepeat.js?build=20260713-0019g-c2";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 
 export function createRuntimeLayerTests() {
@@ -946,6 +955,111 @@ assets: {
 
         cache.release("appearance-a");
         cache.release("appearance-b");
+      }
+    },
+
+    "instanced-renderer": {
+      "limites acompanham instância movida"() {
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshBasicMaterial();
+        const batch = new InstanceBatch({
+          key: "bounds",
+          geometry,
+          material,
+          capacity: 4
+        });
+
+        batch.add(
+          "object-a",
+          new THREE.Matrix4().makeTranslation(100, 0, 0)
+        );
+
+        assertEqual(batch.boundsDirty, true);
+        assertEqual(batch.flushBounds(), true);
+        assertEqual(batch.boundsDirty, false);
+        assert(batch.mesh.boundingSphere.center.x > 90);
+
+        batch.update(
+          "object-a",
+          new THREE.Matrix4().makeTranslation(-100, 0, 0)
+        );
+
+        assertEqual(batch.flushBounds(), true);
+        assert(batch.mesh.boundingSphere.center.x < -90);
+
+        batch.dispose({
+          disposeGeometry: true,
+          disposeMaterial: true
+        });
+      },
+
+      "flush sem mudança tem custo constante"() {
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshBasicMaterial();
+        const batch = new InstanceBatch({
+          key: "clean",
+          geometry,
+          material,
+          capacity: 2
+        });
+
+        batch.add("object-a", new THREE.Matrix4());
+        assertEqual(batch.flushBounds(), true);
+        assertEqual(batch.flushBounds(), false);
+
+        batch.dispose({
+          disposeGeometry: true,
+          disposeMaterial: true
+        });
+      },
+
+      "manager remove lote vazio"() {
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshBasicMaterial();
+        const manager = new InstanceBatchManager();
+        manager.add({
+          objectId: "object-a",
+          batchKey: "batch-a",
+          matrix: new THREE.Matrix4(),
+          descriptor: { geometry, material, capacity: 4 }
+        });
+        manager.remove("object-a");
+        assertEqual(manager.deleteBatch("batch-a"), true);
+        assertEqual(manager.batchCount, 0);
+        geometry.dispose();
+        material.dispose();
+      }
+    },
+
+    "affine-repeat": {
+      "duplicação afim acumula translação"() {
+        const step = composeAffineStep([
+          { type: "move", value: [2, 0, 0] }
+        ]);
+        const copies = affineRepeatCopies({
+          position: [1, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1]
+        }, 3, step);
+        assertDeepEqual(
+          copies.map(copy => copy.position.map(roundAffine)),
+          [[3, 0, 0], [5, 0, 0], [7, 0, 0]]
+        );
+      },
+
+      "matriz afim combina rotação e escala"() {
+        const step = composeAffineStep([
+          { type: "rotate", value: [0, 0, 90] },
+          { type: "scale", value: [2, 2, 2] }
+        ]);
+        const copies = affineRepeatCopies({
+          position: [1, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1]
+        }, 1, step);
+        assertNear(copies[0].position[0], 0);
+        assertNear(copies[0].position[1], 2);
+        assertDeepEqual(copies[0].scale.map(roundAffine), [2, 2, 2]);
       }
     },
 

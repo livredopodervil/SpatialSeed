@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { composeAffineStep, affineCopies, matrixFromObject, decomposeMatrix } from "./AffineRepeat.js";
 
 export class SelectionOperations {
   static apiVersion = "selection-operations-v2";
@@ -85,6 +86,76 @@ export class SelectionOperations {
     };
   }
 
+  duplicateAffine(count, operations = []) {
+    const copies = Number(count);
+    if (!Number.isInteger(copies) || copies < 1 || copies > 100000) {
+      throw new RangeError("A quantidade deve ser inteiro entre 1 e 100000.");
+    }
+    if (!Array.isArray(operations) || operations.length === 0) {
+      return this.duplicateMany(copies);
+    }
+
+    const sourceObjects = this.#selectedObjects();
+    const pivot = this.#effectivePivot(sourceObjects);
+    const step = composeAffineStep(operations, pivot);
+    const duplicates = [];
+    const frontierIds = [];
+
+    for (const object of sourceObjects) {
+      const transforms = affineCopies(object, copies, step);
+      for (const transform of transforms) {
+        const duplicate = {
+          ...structuredClone(object),
+          id: crypto.randomUUID(),
+          name: copyName(object.name ?? object.id, transform.index),
+          position: transform.position,
+          rotation: transform.rotation,
+          scale: transform.scale
+        };
+        duplicates.push(duplicate);
+        if (transform.index === copies) frontierIds.push(duplicate.id);
+      }
+    }
+
+    const changed = this.sandbox.dispatch({
+      type: "selection.duplicate",
+      source: "selection-affine-duplicate",
+      sourceIds: sourceObjects.map(object => object.id),
+      copyCount: copies,
+      affineOperations: structuredClone(operations),
+      deltaMatrix: step.toArray(),
+      objects: duplicates
+    });
+
+    if (!changed) return { changed: false, duplicateIds: [] };
+
+    const duplicateIds = duplicates.map(object => object.id);
+    this.#selectIds(frontierIds);
+    this.pendingDuplicate = null;
+    this.lastDuplicate = {
+      explicit: true,
+      sourceIds: sourceObjects.map(object => object.id),
+      duplicateIds: frontierIds,
+      repeatSourceIds: frontierIds,
+      deltaMatrix: step.toArray(),
+      pivotBefore: pivot,
+      pivotAfter: this.#selectionPivot(
+        duplicates.filter(object => frontierIds.includes(object.id))
+      )
+    };
+
+    return {
+      changed: true,
+      copyCount: copies,
+      sourceCount: sourceObjects.length,
+      createdCount: duplicates.length,
+      duplicateIds,
+      selectedIds: frontierIds,
+      deltaMatrix: step.toArray(),
+      operations: structuredClone(operations)
+    };
+  }
+
   repeat() {
     if (!this.lastDuplicate?.deltaMatrix) {
       return {
@@ -96,9 +167,14 @@ export class SelectionOperations {
     let sourceObjects;
 
     try {
-      sourceObjects = this.#selectedObjects({
-        fallbackIds: this.lastDuplicate.duplicateIds
-      });
+      const explicitIds = this.lastDuplicate.explicit
+        ? this.lastDuplicate.repeatSourceIds
+        : [];
+      sourceObjects = explicitIds?.length
+        ? this.#objectsByIds(explicitIds)
+        : this.#selectedObjects({
+            fallbackIds: this.lastDuplicate.duplicateIds
+          });
     } catch (error) {
       const message = error?.message ?? "";
 
@@ -145,6 +221,7 @@ export class SelectionOperations {
       ...this.lastDuplicate,
       sourceIds: sourceObjects.map(object => object.id),
       duplicateIds,
+      repeatSourceIds: duplicateIds,
       pivotBefore: this.#selectionPivot(sourceObjects),
       pivotAfter: this.#selectionPivot(duplicates)
     };
@@ -390,6 +467,17 @@ export class SelectionOperations {
     });
   }
 
+  #objectsByIds(ids) {
+    const byId = new Map(
+      this.sandbox.getSnapshot().objects.map(object => [object.id, object])
+    );
+    return ids.map(id => {
+      const object = byId.get(id);
+      if (!object) throw new Error(`Objeto não encontrado: ${id}`);
+      return object;
+    });
+  }
+
   #activeObject() {
     const id = this.editor.selection.snapshot().activeMember?.objectId;
     if (!id) throw new Error("A seleção está vazia.");
@@ -472,22 +560,6 @@ function matrixFromSnapshot(snapshot) {
     new THREE.Quaternion().fromArray(snapshot.rotation),
     new THREE.Vector3().fromArray(snapshot.scale)
   );
-}
-
-function matrixFromObject(object) {
-  return matrixFromSnapshot(snapshotTransform(object));
-}
-
-function decomposeMatrix(matrix) {
-  const position = new THREE.Vector3();
-  const rotation = new THREE.Quaternion();
-  const scale = new THREE.Vector3();
-  matrix.decompose(position, rotation, scale);
-  return {
-    position: position.toArray(),
-    rotation: rotation.toArray(),
-    scale: scale.toArray()
-  };
 }
 
 function aroundPivot(operation, pivot) {

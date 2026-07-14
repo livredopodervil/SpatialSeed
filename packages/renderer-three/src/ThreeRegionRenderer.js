@@ -1,4 +1,10 @@
 import * as THREE from "three";
+import {
+  InstanceBatch
+} from "../../instance-batches/src/InstanceBatch.js?build=20260713-0019g-c2";
+import {
+  InstanceBatchManager
+} from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
 import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -14,6 +20,9 @@ export class ThreeRegionRenderer {
   #projectObject = object => object;
   #resourceCache = new ThreeResourceCache({ textureLoader: this.#textureLoader });
   #materialCache = new BatchMaterialCache({ resourceCache: this.#resourceCache });
+  #batchManager = null;
+  #selectedVisualIds = new Set();
+  #batchCapacity = 65536;
 
   #incrementalDiagnostics = {
     fullUpdates: 0,
@@ -79,6 +88,15 @@ export class ThreeRegionRenderer {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x08101a);
+
+    this.#batchManager = new InstanceBatchManager({
+      createBatch: descriptor => {
+        const batch = new InstanceBatch(descriptor);
+        batch.mesh.frustumCulled = false;
+        this.scene.add(batch.mesh);
+        return batch;
+      }
+    });
 
     this.camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
     this.camera.position.set(10, 8, 14);
@@ -262,180 +280,164 @@ export class ThreeRegionRenderer {
   }
 
   #upsertObject(object) {
-    let mesh = this.#meshes.get(object.id);
+    let proxy = this.#meshes.get(object.id);
 
-    if (!mesh) {
-      const acquiredMaterial = this.#materialCache.acquire({
-        appearanceId: object.appearanceId,
-        material: object.material
-      });
-
-      mesh = new THREE.Mesh(
-        undefined,
-        acquiredMaterial.value.material
-      );
-
-      mesh.userData.objectId = object.id;
-      mesh.userData.sizeKey = null;
-      mesh.userData.textureSrc =
-        object.material?.texture?.src ?? null;
-      mesh.userData.geometryCacheKey = null;
-      mesh.userData.appearanceId = object.appearanceId;
-
-      this.#assignGeometry(mesh, object.size);
-
-      this.#meshes.set(object.id, mesh);
-      this.scene.add(mesh);
+    if (!proxy) {
+      proxy = new THREE.Object3D();
+      proxy.userData.objectId = object.id;
+      proxy.userData.batchKey = null;
+      proxy.userData.size = [...object.size];
+      proxy.userData.appearanceId = object.appearanceId;
+      this.#meshes.set(object.id, proxy);
       this.#incrementalDiagnostics.objectsCreated += 1;
     } else {
       this.#incrementalDiagnostics.objectsUpdated += 1;
     }
 
-    const sizeKey = object.size.join(",");
-
-    if (mesh.userData.sizeKey !== sizeKey) {
-      this.#assignGeometry(mesh, object.size);
-    }
-
-    if (mesh.userData.appearanceId !== object.appearanceId) {
-      this.#materialCache.release(
-        mesh.userData.appearanceId
-      );
-
-      const acquiredMaterial = this.#materialCache.acquire({
-        appearanceId: object.appearanceId,
-        material: object.material
-      });
-
-      mesh.material = acquiredMaterial.value.material;
-      mesh.userData.appearanceId = object.appearanceId;
-      mesh.userData.textureSrc =
-        object.material?.texture?.src ?? null;
-    }
+    proxy.userData.size = [...object.size];
 
     if (!this.#session) {
-      mesh.position.fromArray(object.position);
-      mesh.quaternion.fromArray(object.rotation);
-      mesh.scale.fromArray(object.scale);
-      mesh.updateMatrixWorld(true);
+      proxy.position.fromArray(object.position);
+      proxy.quaternion.fromArray(object.rotation);
+      proxy.scale.fromArray(object.scale);
+      proxy.updateMatrix();
+      proxy.updateMatrixWorld(true);
     }
+
+    const nextBatchKey = this.#batchKeyFor(object);
+
+    if (proxy.userData.batchKey !== nextBatchKey) {
+      if (proxy.userData.batchKey) {
+        this.#removeFromBatch(object.id, proxy.userData.batchKey);
+      }
+      this.#addToBatch(object, proxy, nextBatchKey);
+    } else {
+      this.#updateBatchMatrix(object.id, proxy);
+    }
+
+    proxy.userData.appearanceId = object.appearanceId;
   }
 
   #removeObject(id) {
-    const mesh = this.#meshes.get(id);
-    if (!mesh) return false;
+    const proxy = this.#meshes.get(id);
+    if (!proxy) return false;
 
-    this.scene.remove(mesh);
-
-    this.#resourceCache.releaseGeometry(
-      mesh.userData.geometryCacheKey
-    );
-
-    this.#materialCache.release(
-      mesh.userData.appearanceId
-    );
-
-    mesh.userData.geometryCacheKey = null;
-    mesh.userData.appearanceId = null;
-
+    this.#removeFromBatch(id, proxy.userData.batchKey);
     this.#meshes.delete(id);
+    this.#selectedVisualIds.delete(id);
     this.#incrementalDiagnostics.objectsDeleted += 1;
-
     return true;
   }
 
   #finishSceneUpdate() {
+    this.#flushBatchBounds();
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
   }
 
-  #assignGeometry(mesh, size) {
-    const acquired = this.#resourceCache.acquireBox(size);
+  #flushBatchBounds() {
+    let flushed = 0;
 
-    if (mesh.userData.geometryCacheKey === acquired.key) {
-      this.#resourceCache.releaseGeometry(acquired.key);
-      return;
+    for (const batch of this.#batchManager.batches()) {
+      if (batch.flushBounds()) flushed += 1;
     }
 
-    this.#resourceCache.releaseGeometry(
-      mesh.userData.geometryCacheKey
-    );
-
-    mesh.geometry = acquired.value;
-    mesh.userData.geometryCacheKey = acquired.key;
-    mesh.userData.sizeKey = size.join(",");
+    return flushed;
   }
 
-  #assignTexture(mesh, textureState = null) {
-    const acquired =
-      this.#resourceCache.acquireTexture(textureState);
-
-    const nextKey = acquired?.key ?? null;
-
-    if (mesh.userData.textureCacheKey === nextKey) {
-      if (acquired) {
-        this.#resourceCache.releaseTexture(acquired.key);
-      }
-      return;
-    }
-
-    this.#resourceCache.releaseTexture(
-      mesh.userData.textureCacheKey
-    );
-
-    mesh.userData.textureCacheKey = nextKey;
-    mesh.userData.textureSrc = textureState?.src ?? null;
-
-    if (!acquired) {
-      mesh.material.map = null;
-      mesh.material.needsUpdate = true;
-      return;
-    }
-
-    if (acquired.value) {
-      mesh.material.map = acquired.value;
-      mesh.material.needsUpdate = true;
-      return;
-    }
-
-    acquired.promise?.then(texture => {
-      if (
-        !texture ||
-        mesh.userData.textureCacheKey !== acquired.key
-      ) {
-        return;
-      }
-
-      mesh.material.map = texture;
-      mesh.material.needsUpdate = true;
-    }).catch(error => {
-      if (mesh.userData.textureCacheKey === acquired.key) {
-        mesh.userData.textureCacheKey = null;
-        mesh.userData.textureSrc = null;
-      }
-
-      console.error(
-        "Falha ao carregar textura",
-        textureState?.src,
-        error
-      );
-    });
+  #batchKeyFor(object) {
+    return JSON.stringify([object.kind, object.size, object.appearanceId]);
   }
 
-  #releaseMeshResources(mesh) {
+  #addToBatch(object, proxy, batchKey) {
+    let batch = this.#batchManager.getBatch(batchKey);
+
+    if (!batch) {
+      const geometry = this.#resourceCache.acquireBox(object.size);
+      const material = this.#materialCache.acquire({
+        appearanceId: object.appearanceId,
+        material: object.material
+      });
+
+      try {
+        const added = this.#batchManager.add({
+          objectId: object.id,
+          batchKey,
+          matrix: proxy.matrix,
+          descriptor: {
+            geometry: geometry.value,
+            material: material.value.material,
+            capacity: this.#batchCapacity
+          }
+        });
+        batch = added.batch;
+        batch.mesh.userData.geometryCacheKey = geometry.key;
+        batch.mesh.userData.appearanceId = object.appearanceId;
+      } catch (error) {
+        this.#resourceCache.releaseGeometry(geometry.key);
+        this.#materialCache.release(object.appearanceId);
+        throw error;
+      }
+    } else {
+      this.#batchManager.add({
+        objectId: object.id,
+        batchKey,
+        matrix: proxy.matrix,
+        descriptor: {
+          geometry: batch.geometry,
+          material: batch.material,
+          capacity: batch.capacity
+        }
+      });
+    }
+
+    proxy.userData.batchKey = batchKey;
+    this.#setInstanceColor(object.id, 0xffffff);
+  }
+
+  #removeFromBatch(objectId, batchKey) {
+    if (!batchKey) return false;
+    const batch = this.#batchManager.getBatch(batchKey);
+    const result = this.#batchManager.remove(objectId);
+
+    if (!result.removed || !batch || batch.size > 0) {
+      return result.removed;
+    }
+
+    this.scene.remove(batch.mesh);
     this.#resourceCache.releaseGeometry(
-      mesh.userData.geometryCacheKey
+      batch.mesh.userData.geometryCacheKey
     );
-
-    this.#resourceCache.releaseTexture(
-      mesh.userData.textureCacheKey
+    this.#materialCache.release(
+      batch.mesh.userData.appearanceId
     );
+    this.#batchManager.deleteBatch(batchKey);
+    return true;
+  }
 
-    mesh.userData.geometryCacheKey = null;
-    mesh.userData.textureCacheKey = null;
-    mesh.material.map = null;
-    mesh.material.dispose();
+  #setInstanceColor(objectId, value) {
+    const location = this.#batchManager.locationOf(objectId);
+    if (!location) return false;
+    const batch = this.#batchManager.getBatch(location.batchKey);
+    if (!batch) return false;
+    batch.mesh.setColorAt(location.instanceIndex, new THREE.Color(value));
+    batch.mesh.instanceColor.needsUpdate = true;
+    return true;
+  }
+
+  #updateBatchMatrix(objectId, proxy) {
+    proxy.updateMatrix();
+    return this.#batchManager.update(objectId, proxy.matrix);
+  }
+
+  #worldBoundsForProxy(proxy, target = new THREE.Box3()) {
+    const size = proxy.userData.size ?? [1, 1, 1];
+    const half = new THREE.Vector3(size[0] / 2, size[1] / 2, size[2] / 2);
+    target.min.copy(half).multiplyScalar(-1);
+    target.max.copy(half);
+    proxy.updateMatrixWorld(true);
+    return target.applyMatrix4(proxy.matrixWorld);
   }
 
   #storeEditedPivot(position) {
@@ -530,7 +532,9 @@ export class ThreeRegionRenderer {
       if (!mesh) continue;
       const result = delta.clone().multiply(snapshot.matrixWorld);
       result.decompose(mesh.position, mesh.quaternion, mesh.scale);
+      mesh.updateMatrix();
       mesh.updateMatrixWorld(true);
+      this.#updateBatchMatrix(objectId, mesh);
     }
   }
 
@@ -638,8 +642,7 @@ export class ThreeRegionRenderer {
       const bounds = new THREE.Box3().makeEmpty();
 
       for (const mesh of meshes) {
-        mesh.updateMatrixWorld(true);
-        bounds.expandByObject(mesh, true);
+        bounds.union(this.#worldBoundsForProxy(mesh));
       }
 
       return bounds.getCenter(new THREE.Vector3());
@@ -695,8 +698,7 @@ export class ThreeRegionRenderer {
       const mesh = this.#meshes.get(member.objectId);
       if (!mesh) continue;
 
-      mesh.updateMatrixWorld(true);
-      bounds.expandByObject(mesh, true);
+      bounds.union(this.#worldBoundsForProxy(mesh));
     }
 
     if (bounds.isEmpty()) {
@@ -777,8 +779,22 @@ export class ThreeRegionRenderer {
   }
 
   #updateSelectionAppearance() {
-    // Materiais são compartilhados por appearanceId.
-    // O realce individual retorna com instanceColor no InstancedMesh.
+    const selected = new Set(
+      (this.#selectionSnapshot?.members ?? []).map(member => member.objectId)
+    );
+    const activeId = this.#selectionSnapshot?.activeMember?.objectId;
+    const changed = new Set([...this.#selectedVisualIds, ...selected]);
+
+    for (const objectId of changed) {
+      const color = objectId === activeId
+        ? 0x8faaff
+        : selected.has(objectId)
+          ? 0xc8d4ff
+          : 0xffffff;
+      this.#setInstanceColor(objectId, color);
+    }
+
+    this.#selectedVisualIds = selected;
   }
 
   getInputDiagnostics() {
@@ -829,8 +845,20 @@ export class ThreeRegionRenderer {
     ];
     this.raycaster.setFromCamera(this.pointer, this.camera);
 
-    const hit = this.raycaster.intersectObjects([...this.#meshes.values()], false)[0];
-    this.#inputDiagnostics.objectHits = hit ? 1 : 0;
+    // Atualiza apenas lotes modificados. O Raycaster ordena os
+    // resultados pela distância à câmera, não pelo centro do mundo.
+    this.#flushBatchBounds();
+
+    const hits = this.raycaster.intersectObjects(
+      this.#batchManager.batches().map(batch => batch.mesh),
+      false
+    );
+
+    const hit = hits.find(candidate =>
+      this.#batchManager.objectFromHit(candidate)
+    );
+
+    this.#inputDiagnostics.objectHits = hit ? hits.length : 0;
 
     const hasSelection =
       (this.#selectionSnapshot?.members?.length ?? 0) > 0;
@@ -848,7 +876,7 @@ export class ThreeRegionRenderer {
       this.#inputDiagnostics.discardedReason = "gizmo-active";
       return;
     }
-    const objectId = hit?.object?.userData?.objectId;
+    const objectId = this.#batchManager.objectFromHit(hit);
     this.#inputDiagnostics.lastObjectId = objectId ?? null;
 
     if (!objectId) {
@@ -878,26 +906,18 @@ export class ThreeRegionRenderer {
   }
 
 getResourceDiagnostics() {
+  const batches = this.#batchManager.batches();
   const geometries = new Set();
   const materials = new Set();
   const textures = new Set();
-
   let texturedMeshes = 0;
 
-  for (const mesh of this.#meshes.values()) {
-    if (mesh.geometry) geometries.add(mesh.geometry);
-
-    const list = Array.isArray(mesh.material)
-      ? mesh.material
-      : [mesh.material];
-
-    for (const material of list) {
-      if (!material) continue;
-
-      materials.add(material);
-
-      if (material.map) {
-        textures.add(material.map);
+  for (const batch of batches) {
+    if (batch.geometry) geometries.add(batch.geometry);
+    if (batch.material) {
+      materials.add(batch.material);
+      if (batch.material.map) {
+        textures.add(batch.material.map);
         texturedMeshes += 1;
       }
     }
@@ -906,12 +926,14 @@ getResourceDiagnostics() {
   const info = this.renderer?.info;
 
   return Object.freeze({
-    meshes: this.#meshes.size,
+    meshes: batches.length,
+    logicalProxies: this.#meshes.size,
+    instancedMeshes: batches.length,
+    logicalInstances: this.#batchManager.stats().objects,
     uniqueGeometries: geometries.size,
     uniqueMaterials: materials.size,
     uniqueTextures: textures.size,
     texturedMeshes,
-
     render: info ? {
       calls: info.render.calls,
       triangles: info.render.triangles,
@@ -919,22 +941,15 @@ getResourceDiagnostics() {
       points: info.render.points,
       frame: info.render.frame
     } : null,
-
     memory: info ? {
       geometries: info.memory.geometries,
       textures: info.memory.textures
     } : null,
-
-    programs: Array.isArray(info?.programs)
-      ? info.programs.length
-      : null,
-
+    programs: Array.isArray(info?.programs) ? info.programs.length : null,
     cache: this.#resourceCache.stats(),
-
     materials: this.#materialCache.stats(),
-
-    incremental:
-      this.getIncrementalDiagnostics?.() ?? null
+    batches: this.#batchManager.stats(),
+    incremental: this.getIncrementalDiagnostics?.() ?? null
   });
 }
 
