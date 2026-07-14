@@ -184,6 +184,9 @@ export class DevConsole {
         "scale sx sy sz",
         "duplicate",
         "duplicate count N [move|rotate|scale|pivot|matrix ...]",
+        "  pivot median|bounds|active",
+        "  pivot absolute x y z",
+        "  pivot relative dx dy dz",
         "repeat",
         "delete",
         "pivot median|bounds|active",
@@ -416,7 +419,7 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|instanced-renderer|affine-repeat|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|affine-pivot|instanced-renderer|affine-repeat|all"
       );
     }
 
@@ -453,13 +456,14 @@ export class DevConsole {
         "instance-batches",
         "batch-material-cache",
         "geometry-registry",
+        "affine-pivot",
         "instanced-renderer",
         "affine-repeat",
         "all"
       ].includes(suite)
     ) {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|instanced-renderer|affine-repeat|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|affine-pivot|instanced-renderer|affine-repeat|all"
       );
     }
 
@@ -494,7 +498,7 @@ export class DevConsole {
     while (tokens.length) {
       const type = (tokens.shift() ?? "").toLowerCase();
 
-      if (["move", "rotate", "scale", "pivot"].includes(type)) {
+      if (["move", "rotate", "scale"].includes(type)) {
         if (tokens.length < 3) {
           throw new Error(`Uso: ${type} x y z`);
         }
@@ -507,6 +511,65 @@ export class DevConsole {
           ]
         });
         continue;
+      }
+
+      if (type === "pivot") {
+        const mode = (tokens.shift() ?? "").toLowerCase();
+
+        if (["median", "bounds", "active"].includes(mode)) {
+          operations.push({ type: "pivot", mode });
+          continue;
+        }
+
+        if (
+          ["absolute", "custom", "relative"].includes(mode)
+        ) {
+          if (tokens.length < 3) {
+            throw new Error(
+              `Uso: pivot ${mode} x y z`
+            );
+          }
+
+          const value = [
+            this.#number(tokens.shift()),
+            this.#number(tokens.shift()),
+            this.#number(tokens.shift())
+          ];
+
+          operations.push({
+            type: "pivot",
+            mode:
+              mode === "custom"
+                ? "absolute"
+                : mode,
+            ...(mode === "relative"
+              ? { offset: value }
+              : { position: value })
+          });
+          continue;
+        }
+
+        /*
+         * Compatibilidade: "pivot x y z" continua sendo
+         * interpretado como pivô absoluto.
+         */
+        if (mode !== "" && tokens.length >= 2) {
+          operations.push({
+            type: "pivot",
+            mode: "absolute",
+            position: [
+              this.#number(mode),
+              this.#number(tokens.shift()),
+              this.#number(tokens.shift())
+            ]
+          });
+          continue;
+        }
+
+        throw new Error(
+          "Uso: pivot median|bounds|active|" +
+          "absolute x y z|relative dx dy dz"
+        );
       }
 
       if (type === "matrix") {

@@ -1,5 +1,80 @@
 import * as THREE from "three";
 
+export function resolveAffineOperations(
+  operations = [],
+  {
+    defaultPivot = [0, 0, 0],
+    medianPivot = defaultPivot,
+    boundsPivot = medianPivot,
+    activePosition = medianPivot
+  } = {}
+) {
+  if (!Array.isArray(operations)) {
+    throw new TypeError("operations deve ser um array.");
+  }
+
+  const resolved = [];
+  const pivots = [];
+  let currentPivot = vector3(defaultPivot, "defaultPivot");
+
+  for (const operation of operations) {
+    const type = String(operation?.type ?? "").toLowerCase();
+
+    if (type !== "pivot") {
+      resolved.push(structuredClone(operation));
+      continue;
+    }
+
+    const specification = normalizePivotSpecification(operation);
+    let position;
+
+    if (specification.mode === "median") {
+      position = vector3(medianPivot, "medianPivot");
+    } else if (specification.mode === "bounds") {
+      position = vector3(boundsPivot, "boundsPivot");
+    } else if (specification.mode === "active") {
+      position = vector3(activePosition, "activePosition");
+    } else if (specification.mode === "relative") {
+      const offset = vector3(specification.value, "pivot relative");
+      const center = vector3(activePosition, "activePosition");
+      position = center.map(
+        (value, index) => value + offset[index]
+      );
+    } else {
+      position = vector3(specification.value, "pivot absolute");
+    }
+
+    currentPivot = position;
+
+    resolved.push({
+      type: "pivot",
+      value: [...position]
+    });
+
+    pivots.push({
+      mode: specification.mode,
+      requested: specification.value
+        ? [...specification.value]
+        : null,
+      resolved: [...position]
+    });
+  }
+
+  return Object.freeze({
+    operations: Object.freeze(resolved),
+    pivot: Object.freeze({
+      default: Object.freeze(
+        vector3(defaultPivot, "defaultPivot")
+      ),
+      effective: Object.freeze([...currentPivot]),
+      explicit: pivots.length > 0,
+      trace: Object.freeze(
+        pivots.map(pivot => Object.freeze(pivot))
+      )
+    })
+  });
+}
+
 export function composeAffineStep(operations = [], defaultPivot = [0, 0, 0]) {
   if (!Array.isArray(operations)) {
     throw new TypeError("operations deve ser um array.");
@@ -116,4 +191,52 @@ function finite(value) {
     throw new TypeError(`Valor numérico inválido: ${value}.`);
   }
   return number;
+}
+
+
+function normalizePivotSpecification(operation) {
+  const mode = String(
+    operation?.mode ??
+    operation?.value?.mode ??
+    ""
+  ).toLowerCase();
+
+  if (["median", "bounds", "active"].includes(mode)) {
+    return { mode, value: null };
+  }
+
+  if (mode === "relative") {
+    return {
+      mode,
+      value:
+        operation?.offset ??
+        operation?.value?.offset ??
+        operation?.value?.value
+    };
+  }
+
+  if (mode === "absolute" || mode === "custom") {
+    return {
+      mode: "absolute",
+      value:
+        operation?.position ??
+        operation?.value?.position ??
+        operation?.value?.value
+    };
+  }
+
+  if (
+    Array.isArray(operation?.value) &&
+    operation.value.length === 3
+  ) {
+    return {
+      mode: "absolute",
+      value: operation.value
+    };
+  }
+
+  throw new Error(
+    "Pivot afim inválido. Use median, bounds, active, " +
+    "absolute x y z ou relative dx dy dz."
+  );
 }

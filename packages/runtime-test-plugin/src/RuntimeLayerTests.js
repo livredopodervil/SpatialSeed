@@ -22,7 +22,11 @@ import {
   InstanceBatchManager
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
 import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
-import { composeAffineStep, affineCopies as affineRepeatCopies } from "../../selection-operations/src/AffineRepeat.js?build=20260713-0019g-c2";
+import {
+  resolveAffineOperations,
+  composeAffineStep,
+  affineCopies as affineRepeatCopies
+} from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020a-b1";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   GeometryRegistry,
@@ -31,7 +35,7 @@ import {
   CylinderGeometryProvider,
   PlaneGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260714-0020a-a";
+} from "../../geometry-registry/src/index.js?build=20260714-0020a-b1";
 
 export function createRuntimeLayerTests() {
   return {
@@ -1123,6 +1127,75 @@ assets: {
         assertEqual(manager.batchCount, 0);
         geometry.dispose();
         material.dispose();
+      }
+    },
+
+    "affine-pivot": {
+      "pivô median é resolvido explicitamente"() {
+        const resolved = resolveAffineOperations(
+          [
+            { type: "move", value: [3, 0, 0] },
+            { type: "pivot", mode: "median" },
+            { type: "rotate", value: [0, 15, 0] }
+          ],
+          {
+            defaultPivot: [100, 0, 0],
+            medianPivot: [2, 3, 4],
+            boundsPivot: [5, 6, 7],
+            activePosition: [8, 9, 10]
+          }
+        );
+
+        assertDeepEqual(
+          resolved.operations[1],
+          { type: "pivot", value: [2, 3, 4] }
+        );
+        assertDeepEqual(
+          resolved.pivot.effective,
+          [2, 3, 4]
+        );
+      },
+
+      "pivô relativo usa objeto ativo"() {
+        const resolved = resolveAffineOperations(
+          [{
+            type: "pivot",
+            mode: "relative",
+            offset: [1, -2, 3]
+          }],
+          {
+            activePosition: [10, 20, 30]
+          }
+        );
+
+        assertDeepEqual(
+          resolved.pivot.effective,
+          [11, 18, 33]
+        );
+      },
+
+      "pivô absoluto preserva compatibilidade"() {
+        const resolved = resolveAffineOperations(
+          [{ type: "pivot", value: [7, 8, 9] }]
+        );
+
+        assertDeepEqual(
+          resolved.pivot.effective,
+          [7, 8, 9]
+        );
+      },
+
+      "sem pivô explícito usa default determinístico"() {
+        const resolved = resolveAffineOperations(
+          [{ type: "rotate", value: [0, 30, 0] }],
+          { defaultPivot: [4, 5, 6] }
+        );
+
+        assertEqual(resolved.pivot.explicit, false);
+        assertDeepEqual(
+          resolved.pivot.effective,
+          [4, 5, 6]
+        );
       }
     },
 

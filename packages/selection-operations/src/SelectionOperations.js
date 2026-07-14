@@ -1,5 +1,11 @@
 import * as THREE from "three";
-import { composeAffineStep, affineCopies, matrixFromObject, decomposeMatrix } from "./AffineRepeat.js";
+import {
+  resolveAffineOperations,
+  composeAffineStep,
+  affineCopies,
+  matrixFromObject,
+  decomposeMatrix
+} from "./AffineRepeat.js";
 
 export class SelectionOperations {
   static apiVersion = "selection-operations-v2";
@@ -96,8 +102,21 @@ export class SelectionOperations {
     }
 
     const sourceObjects = this.#selectedObjects();
-    const pivot = this.#effectivePivot(sourceObjects);
-    const step = composeAffineStep(operations, pivot);
+    const pivotContext = {
+      defaultPivot: this.#effectivePivot(sourceObjects),
+      medianPivot: this.#selectionPivot(sourceObjects),
+      boundsPivot: this.#boundsPivot(sourceObjects),
+      activePosition: [...this.#activeObject().position]
+    };
+    const resolved = resolveAffineOperations(
+      operations,
+      pivotContext
+    );
+    const step = composeAffineStep(
+      resolved.operations,
+      pivotContext.defaultPivot
+    );
+    const pivot = [...resolved.pivot.effective];
     const duplicates = [];
     const frontierIds = [];
 
@@ -122,7 +141,10 @@ export class SelectionOperations {
       source: "selection-affine-duplicate",
       sourceIds: sourceObjects.map(object => object.id),
       copyCount: copies,
-      affineOperations: structuredClone(operations),
+      affineOperations:
+        structuredClone(resolved.operations),
+      affinePivot:
+        structuredClone(resolved.pivot),
       deltaMatrix: step.toArray(),
       objects: duplicates
     });
@@ -138,6 +160,7 @@ export class SelectionOperations {
       duplicateIds: frontierIds,
       repeatSourceIds: frontierIds,
       deltaMatrix: step.toArray(),
+      pivot: structuredClone(resolved.pivot),
       pivotBefore: pivot,
       pivotAfter: this.#selectionPivot(
         duplicates.filter(object => frontierIds.includes(object.id))
@@ -152,7 +175,10 @@ export class SelectionOperations {
       duplicateIds,
       selectedIds: frontierIds,
       deltaMatrix: step.toArray(),
-      operations: structuredClone(operations)
+      operations:
+        structuredClone(resolved.operations),
+      pivot:
+        structuredClone(resolved.pivot)
     };
   }
 
@@ -496,6 +522,43 @@ export class SelectionOperations {
     return sum.map(value => value / objects.length);
   }
 
+  #boundsPivot(objects) {
+    const bounds = new THREE.Box3().makeEmpty();
+    const corner = new THREE.Vector3();
+
+    for (const object of objects) {
+      const size = object.size ?? [1, 1, 1];
+      const half = size.map(
+        (value, index) =>
+          Math.abs(
+            Number(value ?? 1) *
+            Number(object.scale?.[index] ?? 1)
+          ) / 2
+      );
+      const matrix = matrixFromObject({
+        ...object,
+        scale: [1, 1, 1]
+      });
+
+      for (const x of [-half[0], half[0]]) {
+        for (const y of [-half[1], half[1]]) {
+          for (const z of [-half[2], half[2]]) {
+            corner.set(x, y, z).applyMatrix4(matrix);
+            bounds.expandByPoint(corner);
+          }
+        }
+      }
+    }
+
+    if (bounds.isEmpty()) {
+      return this.#selectionPivot(objects);
+    }
+
+    return bounds.getCenter(
+      new THREE.Vector3()
+    ).toArray();
+  }
+
   #effectivePivot(objects) {
     if (this.editor.pivot.policy === "custom") {
       if (
@@ -521,6 +584,10 @@ export class SelectionOperations {
       return [
         ...this.#activeObject().position
       ];
+    }
+
+    if (this.editor.pivot.policy === "bounds") {
+      return this.#boundsPivot(objects);
     }
 
     return this.#selectionPivot(objects);
