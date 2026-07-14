@@ -1,3 +1,5 @@
+import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields } from "../../../packages/ui-widgets/src/index.js?build=20260714-0021a";
+
 const BUILD = "20260714-0020b-a";
 
 export function bindWebInterface({
@@ -29,6 +31,12 @@ export function bindWebInterface({
   let consoleHistoryIndex = 0;
   let lastConsoleText = "";
   let statusTimer = null;
+  let latestSelection = runtime.query("selection.snapshot");
+  let latestEditor = runtime.query("editor.snapshot");
+  const panelManager=new FloatingPanelManager({root:documentRoot});
+  for(const selector of ["#outline","#review-panel","#diagnostic-panel","#developer-panel","#inspector-panel","#transform-tools-panel"])panelManager.register(selector);
+  attachScrubbableFields(documentRoot);
+  const marquee=new SelectionMarquee({canvas:$("world"),element:$("selection-marquee"),onComplete:r=>renderer.selectScreenRect(r,latestEditor.selectionOperation)});
 
   function showError(error) {
     $("error-box").hidden = false;
@@ -48,9 +56,8 @@ export function bindWebInterface({
     $("undo").disabled = !status.canUndo;
     $("redo").disabled = !status.canRedo;
     $("review").disabled = !status.dirty;
-    $("status").textContent =
-      `build ${BUILD} · região ${status.regionVersion} · ` +
-      `sandbox ${status.dirty ? "alterado" : "limpo"}`;
+    const count=latestSelection?.members?.length??0,active=latestSelection?.activeMember?.objectId??"∅",mode=latestEditor?.tool?.mode??"select",operation=latestEditor?.selectionOperation??"replace";
+    $("status").textContent=`${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"}`;
   }
 
   function showNotice(message, duration = 2200) {
@@ -154,7 +161,9 @@ export function bindWebInterface({
   const unsubscribeSelection = runtime.subscribe(
     "selection.changed",
     snapshot => {
+      latestSelection=snapshot;
       const active = snapshot.activeMember?.objectId;
+      $("selection-summary").textContent=`${snapshot.members.length} selecionado${snapshot.members.length===1?"":"s"}`;
 
       $("selection-content").textContent =
         snapshot.members.length
@@ -176,12 +185,14 @@ export function bindWebInterface({
       $("duplicate-selection").disabled = empty;
       $("delete-selection").disabled = empty;
       $("inspector").disabled = empty;
+      refreshUi();
     }
   );
 
   const unsubscribeEditor = runtime.subscribe(
     "editor.changed",
     snapshot => {
+      latestEditor=snapshot;
       $("multi-select").textContent = snapshot.multiSelect
         ? "Seleção: múltipla"
         : "Seleção: única";
@@ -192,14 +203,11 @@ export function bindWebInterface({
 
       $("pivot-policy").value = snapshot.pivot.policy;
 
-      documentRoot
-        .querySelectorAll("[data-transform]")
-        .forEach(button => {
-          button.dataset.active =
-            button.dataset.transform === snapshot.tool.mode
-              ? "true"
-              : "false";
-        });
+      documentRoot.querySelectorAll("[data-tool-mode]").forEach(button=>{button.dataset.active=button.dataset.toolMode===snapshot.tool.mode?"true":"false"});
+      documentRoot.querySelectorAll("[data-selection-op]").forEach(button=>{button.dataset.active=button.dataset.selectionOp===snapshot.selectionOperation?"true":"false"});
+      $("area-selection").dataset.active=snapshot.areaSelection?"true":"false";
+      marquee.setEnabled(snapshot.tool.mode==="select"&&snapshot.areaSelection);
+      refreshUi();
 
       $("pivot-content").textContent =
         snapshot.pivot.policy === "custom"
@@ -212,15 +220,9 @@ export function bindWebInterface({
     }
   );
 
-  documentRoot
-    .querySelectorAll("[data-transform]")
-    .forEach(button => {
-      button.addEventListener("click", () =>
-        execute("tool.set", {
-          mode: button.dataset.transform
-        })
-      );
-    });
+  documentRoot.querySelectorAll("[data-tool-mode]").forEach(button=>button.addEventListener("click",()=>renderer.setTransformMode(button.dataset.toolMode)));
+  documentRoot.querySelectorAll("[data-selection-op]").forEach(button=>button.addEventListener("click",()=>renderer.setSelectionOperation(button.dataset.selectionOp)));
+  $("area-selection").addEventListener("click",()=>editor.setAreaSelection(!editor.areaSelection));
 
   $("space").addEventListener("click", event => {
     const result = execute("space.toggle");
@@ -500,6 +502,8 @@ export function bindWebInterface({
       unsubscribeEditor();
       unsubscribeSelection();
       unsubscribeWorld();
+      marquee.dispose();
+      panelManager.dispose();
     }
   });
 }

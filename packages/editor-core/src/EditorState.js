@@ -6,7 +6,9 @@ export class EditorState {
 
   constructor() {
     this.selection = new Selection();
-    this.tool = { type: "transform", mode: "translate" };
+    this.tool = { type: "interaction", mode: "select", transformMode: "translate" };
+    this.selectionOperation = "replace";
+    this.areaSelection = false;
     this.multiSelect = false;
     this.pivot = {
       policy: "median",
@@ -18,8 +20,28 @@ export class EditorState {
   }
 
   setToolMode(mode) {
-    this.tool = { ...this.tool, mode };
+    const allowed = new Set(["navigate", "select", "translate", "rotate", "scale"]);
+    if (!allowed.has(mode)) throw new RangeError(`Unknown tool mode: ${mode}`);
+    const transformMode = ["translate", "rotate", "scale"].includes(mode)
+      ? mode : this.tool.transformMode;
+    this.tool = {
+      type: ["navigate", "select"].includes(mode) ? "interaction" : "transform",
+      mode,
+      transformMode
+    };
     this.#emit("tool");
+  }
+
+  setSelectionOperation(operation) {
+    const allowed = new Set(["replace", "add", "remove", "toggle"]);
+    if (!allowed.has(operation)) throw new RangeError(`Unknown selection operation: ${operation}`);
+    this.selectionOperation = operation;
+    this.#emit("selection-operation");
+  }
+
+  setAreaSelection(enabled) {
+    this.areaSelection = Boolean(enabled);
+    this.#emit("area-selection");
   }
 
   setMultiSelect(enabled) {
@@ -79,6 +101,8 @@ export class EditorState {
   snapshot() {
     return Object.freeze({
       tool: { ...this.tool },
+      selectionOperation: this.selectionOperation,
+      areaSelection: this.areaSelection,
       multiSelect: this.multiSelect,
       pivot: {
         ...this.pivot,

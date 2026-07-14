@@ -77,8 +77,8 @@ export class DevConsole {
         return this.commands.describe();
 
       case "inspect":
-        this.#expectMaximum(tokens, 1, "inspect");
-        return this.#inspect(tokens[0]);
+        this.#expectMaximum(tokens, 2, "inspect");
+        return this.#inspect(tokens[0], tokens[1]);
 
       case "list":
         this.#expectExact(tokens, 1, "list objects");
@@ -86,7 +86,7 @@ export class DevConsole {
         return this.sandbox.getState().objects;
 
       case "select":
-        return this.#select(tokens);
+        return this.#selectCommand(tokens);
 
       case "clear":
         this.#expectMaximum(tokens, 0, "clear");
@@ -198,9 +198,11 @@ export class DevConsole {
         "snap move|rotate|scale valor",
         "snap grid on|off",
         "select object-id [object-id ...]",
+        "select only|add|remove|toggle object-id [...]",
+        "select clear",
         "clear",
         "list objects",
-        "inspect selection|input|editor|sandbox|region|objects",
+        "inspect selection|selected|selected all|input|editor|sandbox|region|objects",
         "gizmo",
         "undo",
         "redo"
@@ -277,10 +279,14 @@ export class DevConsole {
     });
   }
 
-  #inspect(target = "all") {
+  #inspect(target = "all", qualifier = null) {
     switch (target) {
-      case "selection":
-        return this.editor.selection.snapshot();
+      case "selection": return this.editor.selection.snapshot();
+      case "selected": {
+        const q=this.editor.selection.snapshot(),ids=q.members.map(m=>m.objectId),objects=this.sandbox.getState().objects.filter(o=>ids.includes(o.id));
+        if(qualifier==="all")return objects;
+        return objects.find(o=>o.id===q.activeMember?.objectId)??null;
+      }
       case "input":
         return this.renderer.getInputDiagnostics();
       case "editor":
@@ -306,9 +312,23 @@ export class DevConsole {
         return this.getDiagnostics();
       default:
         throw new Error(
-          "Uso: inspect selection|input|editor|sandbox|region|objects"
+          "Uso: inspect selection|selected|selected all|input|editor|sandbox|region|objects"
         );
     }
+  }
+
+  #selectCommand(tokens) {
+    const action=(tokens[0]??"").toLowerCase();
+    if(action==="clear"){this.editor.selection.clear();return this.editor.selection.snapshot()}
+    if(["only","add","remove","toggle"].includes(action)){const ids=tokens.slice(1);if(!ids.length)throw new Error(`Uso: select ${action} object-id [...]`);return this.#modifySelection(action,ids)}
+    return this.#select(tokens);
+  }
+
+  #modifySelection(action,ids){
+    const known=new Set(this.sandbox.getState().objects.map(o=>o.id));for(const id of ids)if(!known.has(id))throw new Error(`Objeto inexistente: ${id}`);
+    const q=this.editor.selection.snapshot(),byId=new Map(q.members.map(m=>[m.objectId,m])),member=id=>({kind:"object",regionId:this.region.descriptor.id,objectId:id});
+    if(action==="only"){byId.clear();for(const id of ids)byId.set(id,member(id))}else if(action==="add")for(const id of ids)byId.set(id,member(id));else if(action==="remove")for(const id of ids)byId.delete(id);else for(const id of ids){if(byId.has(id))byId.delete(id);else byId.set(id,member(id))}
+    const next=[...byId.values()];if(this.editor.selection.replaceMany)this.editor.selection.replaceMany(next);else{this.editor.selection.clear();if(next[0])this.editor.selection.replace(next[0]);for(const m of next.slice(1))this.editor.selection.toggle(m)}return this.editor.selection.snapshot();
   }
 
   #select(ids) {

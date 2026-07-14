@@ -22,6 +22,10 @@ export class ThreeRegionRenderer {
   #materialCache = new BatchMaterialCache({ resourceCache: this.#resourceCache });
   #batchManager = null;
   #selectedVisualIds = new Set();
+  #selectionHelpers = new Map();
+  #interactionMode = "select";
+  #selectionOperation = "replace";
+  #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
   #batchCapacity = 65536;
 
   #incrementalDiagnostics = {
@@ -195,8 +199,28 @@ export class ThreeRegionRenderer {
   setTransformMode(mode) {
     this.editorState.setPivotEditing(false);
     this.editorState.setToolMode(mode);
-    this.transform.setMode(mode);
+    this.#interactionMode = mode;
+    if (["translate", "rotate", "scale"].includes(mode)) this.transform.setMode(mode);
+    this.#configureTransformForEditor();
     this.#rebuildAnchor();
+  }
+
+  setSelectionOperation(operation) {
+    this.#selectionOperation = operation;
+    this.editorState.setSelectionOperation(operation);
+    return operation;
+  }
+
+  selectScreenRect(rectangle, operation = this.#selectionOperation) {
+    const r = this.canvas.getBoundingClientRect(), members = [];
+    for (const [objectId, proxy] of this.#meshes) {
+      const p = proxy.getWorldPosition(new THREE.Vector3()).project(this.camera);
+      if (p.z < -1 || p.z > 1) continue;
+      const x=(p.x+1)*.5*r.width,y=(1-p.y)*.5*r.height;
+      if(x>=rectangle.left&&x<=rectangle.right&&y>=rectangle.top&&y<=rectangle.bottom)members.push({kind:"object",regionId:"region-main",objectId});
+    }
+    this.#applySelectionMembers(members, operation);
+    return { operation, selected: members.length, selection: this.selection.snapshot() };
   }
 
   setPivotEditing(enabled) {
@@ -508,15 +532,15 @@ export class ThreeRegionRenderer {
   }
 
   #configureTransformForEditor() {
-    if (this.editorState.pivot.editing) {
-      this.transform.setMode("translate");
-      this.transform.setSpace("world");
-    } else {
-      this.transform.setMode(this.editorState.tool.mode);
-      this.transform.setSpace(
-        this.selection.orientationPolicy === "local" ? "local" : "world"
-      );
-    }
+    const mode=this.editorState.tool.mode;
+    this.#interactionMode=mode;
+    this.#selectionOperation=this.editorState.selectionOperation??"replace";
+    const enabled=this.editorState.pivot.editing||["translate","rotate","scale"].includes(mode);
+    this.transform.enabled=enabled;
+    this.transform.getHelper().visible=enabled;
+    if(this.editorState.pivot.editing){this.transform.setMode("translate");this.transform.setSpace("world")}
+    else if(enabled){this.transform.setMode(this.editorState.tool.transformMode??mode);this.transform.setSpace(this.selection.orientationPolicy==="local"?"local":"world")}
+    this.orbit.enabled=mode==="navigate"||!this.transform.dragging;
   }
 
   #beginSession() {
@@ -701,9 +725,9 @@ export class ThreeRegionRenderer {
     if (this.#session) return;
 
     const pivot = this.#calculatePivot();
-    if (!pivot) {
-      this.transform.detach();
-      return;
+    if (!pivot) { this.transform.detach(); return; }
+    if (!this.editorState.pivot.editing && !["translate","rotate","scale"].includes(this.editorState.tool.mode)) {
+      this.transform.detach(); return;
     }
 
     this.transformAnchor.position.copy(pivot);
@@ -819,23 +843,12 @@ export class ThreeRegionRenderer {
   }
 
   #updateSelectionAppearance() {
-    const selected = new Set(
-      (this.#selectionSnapshot?.members ?? []).map(member => member.objectId)
-    );
-    const activeId = this.#selectionSnapshot?.activeMember?.objectId;
-    const changed = new Set([...this.#selectedVisualIds, ...selected]);
-
-    for (const objectId of changed) {
-      if (objectId === activeId) {
-        this.#setInstanceColor(objectId, 0x8faaff);
-      } else if (selected.has(objectId)) {
-        this.#setInstanceColor(objectId, 0xc8d4ff);
-      } else {
-        this.#applyObjectInstanceColor(objectId);
-      }
-    }
-
-    this.#selectedVisualIds = selected;
+    const selected=new Set((this.#selectionSnapshot?.members??[]).map(m=>m.objectId));
+    const activeId=this.#selectionSnapshot?.activeMember?.objectId;
+    for(const [id,h] of this.#selectionHelpers){if(!selected.has(id)){this.scene.remove(h);h.geometry?.dispose?.();h.material?.dispose?.();this.#selectionHelpers.delete(id)}}
+    for(const id of selected){const proxy=this.#meshes.get(id);if(!proxy)continue;let h=this.#selectionHelpers.get(id);if(!h){h=new THREE.Box3Helper(new THREE.Box3(),id===activeId?0xffd166:0x8faaff);h.renderOrder=999;h.material.depthTest=false;h.material.depthWrite=false;this.#selectionHelpers.set(id,h);this.scene.add(h)}h.box.copy(this.#worldBoundsForProxy(proxy));h.material.color.set(id===activeId?0xffd166:0x8faaff);h.visible=true}
+    for(const id of this.#selectedVisualIds)if(!selected.has(id))this.#applyObjectInstanceColor(id);
+    this.#selectedVisualIds=selected;
   }
 
   getInputDiagnostics() {
@@ -895,49 +908,36 @@ export class ThreeRegionRenderer {
       false
     );
 
-    const hit = hits.find(candidate =>
-      this.#batchManager.objectFromHit(candidate)
-    );
+    const hitIds=[...new Set(hits.map(h=>this.#batchManager.objectFromHit(h)).filter(Boolean))];
+    const objectId=this.#cycledHitId(hitIds,event.clientX,event.clientY);
+    this.#inputDiagnostics.objectHits=hitIds.length;
 
-    this.#inputDiagnostics.objectHits = hit ? hits.length : 0;
+    if(this.#interactionMode==="navigate"){this.#inputDiagnostics.discardedReason="navigation-mode";return}
+    const transformMode=["translate","rotate","scale"].includes(this.#interactionMode);
+    const gizmoActive=transformMode&&(this.transform.axis!==null||this.transform.dragging);
+    this.#inputDiagnostics.gizmoHits=gizmoActive?1:0;
+    if(gizmoActive){this.#inputDiagnostics.discardedReason="gizmo-active";return}
+    this.#inputDiagnostics.lastObjectId=objectId??null;
 
-    const hasSelection =
-      (this.#selectionSnapshot?.members?.length ?? 0) > 0;
+    if(!objectId){this.#inputDiagnostics.selectionAction="clear";this.#inputDiagnostics.discardedReason="nenhum-objeto";if(this.#selectionOperation==="replace")this.selection.clear();return}
+    const member={kind:"object",regionId:"region-main",objectId};
+    const op=this.editorState.multiSelect?"toggle":this.#selectionOperation;
+    this.#inputDiagnostics.selectionAction=op;this.#applySelectionMembers([member],op);this.#inputDiagnostics.discardedReason=null;
+  }
 
-    const gizmoActive =
-      hasSelection &&
-      (
-        this.transform.axis !== null ||
-        this.transform.dragging
-      );
+  #applySelectionMembers(members,operation){
+    const current=this.#selectionSnapshot?.members??[],byId=new Map(current.map(m=>[m.objectId,m]));
+    if(operation==="replace"){if(this.selection.replaceMany)this.selection.replaceMany(members);else{this.selection.clear();if(members[0])this.selection.replace(members[0]);for(const m of members.slice(1))this.selection.toggle(m)}return}
+    if(operation==="add")for(const m of members)byId.set(m.objectId,m);
+    else if(operation==="remove")for(const m of members)byId.delete(m.objectId);
+    else for(const m of members){if(byId.has(m.objectId))byId.delete(m.objectId);else byId.set(m.objectId,m)}
+    const next=[...byId.values()];if(this.selection.replaceMany)this.selection.replaceMany(next);else{this.selection.clear();if(next[0])this.selection.replace(next[0]);for(const m of next.slice(1))this.selection.toggle(m)}
+  }
 
-    this.#inputDiagnostics.gizmoHits = gizmoActive ? 1 : 0;
-
-    if (gizmoActive) {
-      this.#inputDiagnostics.discardedReason = "gizmo-active";
-      return;
-    }
-    const objectId = this.#batchManager.objectFromHit(hit);
-    this.#inputDiagnostics.lastObjectId = objectId ?? null;
-
-    if (!objectId) {
-      this.#inputDiagnostics.selectionAction = "clear";
-      this.#inputDiagnostics.discardedReason = "nenhum-objeto";
-      this.selection.clear();
-      return;
-    }
-
-    const member = { kind: "object", regionId: "region-main", objectId };
-
-    if (this.editorState.multiSelect) {
-      this.#inputDiagnostics.selectionAction = "toggle";
-      this.selection.toggle(member);
-    } else {
-      this.#inputDiagnostics.selectionAction = "replace";
-      this.selection.replace(member);
-    }
-
-    this.#inputDiagnostics.discardedReason = null;
+  #cycledHitId(ids,x,y){
+    if(!ids.length){this.#overlapCycle={x:null,y:null,ids:[],index:-1,time:0};return null}
+    const now=performance.now(),samePoint=this.#overlapCycle.x!==null&&Math.hypot(x-this.#overlapCycle.x,y-this.#overlapCycle.y)<12,sameIds=ids.length===this.#overlapCycle.ids.length&&ids.every((id,i)=>id===this.#overlapCycle.ids[i]);
+    if(samePoint&&sameIds&&now-this.#overlapCycle.time<1400)this.#overlapCycle.index=(this.#overlapCycle.index+1)%ids.length;else this.#overlapCycle={x,y,ids:[...ids],index:0,time:now};this.#overlapCycle.time=now;return ids[this.#overlapCycle.index];
   }
 
   resize() {

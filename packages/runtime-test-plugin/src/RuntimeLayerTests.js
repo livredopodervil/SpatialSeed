@@ -1,3 +1,4 @@
+import { EditorState } from "../../editor-core/src/EditorState.js?build=20260714-0021a";
 import * as THREE from "three";
 import {
   SpatialSeedRuntime,
@@ -1825,7 +1826,13 @@ assets: {
       }
     },
 
-    simulation: {
+    "selection-ui": {
+    "editor inicia em seleção"() { const e=new EditorState(); assertEqual(e.snapshot().tool.mode,"select"); assertEqual(e.snapshot().selectionOperation,"replace"); },
+    "preserva transformação ao navegar"() { const e=new EditorState(); e.setToolMode("rotate"); e.setToolMode("navigate"); assertEqual(e.snapshot().tool.transformMode,"rotate"); },
+    "operações são explícitas"() { const e=new EditorState(); e.setSelectionOperation("add"); e.setAreaSelection(true); assertEqual(e.snapshot().selectionOperation,"add"); assertEqual(e.snapshot().areaSelection,true); }
+  },
+
+  simulation: {
       "simulador aceita comando na versão correta"() {
         const bridge = createBridge();
 
