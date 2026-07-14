@@ -1,2 +1,17 @@
 
 .backups/
+
+# Runtime local
+.seed-server.log
+.seed-server.pid
+.backups/
+
+# Pacotes e artefatos
+*.bundle
+*.zip
+*.tar
+*.tar.gz
+
+# Sistema/editor
+.DS_Store
+*.swp
