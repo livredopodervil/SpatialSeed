@@ -6,7 +6,7 @@ import {
   affineProgramCopies,
   matrixFromObject,
   decomposeMatrix
-} from "./AffineRepeat.js";
+} from "./AffineRepeat.js?build=20260715-0021d";
 
 export class SelectionOperations {
   static apiVersion = "selection-operations-v2";

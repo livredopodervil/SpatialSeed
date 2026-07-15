@@ -3,8 +3,10 @@ import {
   compileAffineProgram,
   createAffineEvaluationContext,
   evaluateAffineProgram,
-  evaluateAffineVector
-} from "./AffineProgram.js";
+  evaluateAffineVector,
+  AFFINE_AST_VERSION,
+  compileCanonicalAffineAst
+} from "./AffineProgram.js?build=20260715-0021d";
 
 export {
   compileAffineProgram,
@@ -103,7 +105,9 @@ export function affineProgramCopies(
     variables = {},
     time = 0,
     deltaTime = 0,
-    defaultPivot = [0, 0, 0]
+    defaultPivot = [0, 0, 0],
+    mode = null,
+    translationSpace = null
   } = {}
 ) {
   const copies = Number(count);
@@ -115,8 +119,101 @@ export function affineProgramCopies(
   const compiled =
     program?.type === "affine-program"
       ? program
-      : compileAffineProgram(program);
+      : program?.astVersion === AFFINE_AST_VERSION
+        ? compileCanonicalAffineAst(program)
+        : compileAffineProgram(program, {
+            mode: mode ?? "indexed",
+            translationSpace: translationSpace ?? "world"
+          });
 
+  const executionMode =
+    mode ?? compiled.semantics?.mode ?? "indexed";
+  const space =
+    translationSpace ??
+    compiled.semantics?.translationSpace ??
+    "world";
+
+  if (executionMode === "recursive") {
+    return affineRecursiveProgramCopies(
+      object,
+      copies,
+      compiled,
+      { variables, time, deltaTime, defaultPivot }
+    );
+  }
+
+  if (executionMode !== "indexed") {
+    throw new Error(`Modo afim desconhecido: ${executionMode}.`);
+  }
+
+  return affineIndexedProgramCopies(
+    object,
+    copies,
+    compiled,
+    {
+      variables,
+      time,
+      deltaTime,
+      defaultPivot,
+      translationSpace: space
+    }
+  );
+}
+
+function affineIndexedProgramCopies(
+  object,
+  copies,
+  compiled,
+  {
+    variables,
+    time,
+    deltaTime,
+    defaultPivot,
+    translationSpace
+  }
+) {
+  const seed = decomposeMatrix(matrixFromObject(object));
+  let current = cloneTransform(seed);
+  const result = [];
+
+  for (let index = 1; index <= copies; index += 1) {
+    const context = createAffineEvaluationContext({
+      index,
+      count: copies,
+      time,
+      deltaTime,
+      transform: current,
+      variables
+    });
+    const evaluated = evaluateAffineProgram(compiled, context);
+
+    current = applyIndexedOperations({
+      seed,
+      previous: current,
+      operations: evaluated,
+      defaultPivot: evaluateAffineVector(
+        defaultPivot,
+        context,
+        "defaultPivot"
+      ),
+      translationSpace
+    });
+
+    result.push(copyResult(index, context, evaluated, current, {
+      mode: "indexed",
+      translationSpace
+    }));
+  }
+
+  return result;
+}
+
+function affineRecursiveProgramCopies(
+  object,
+  copies,
+  compiled,
+  { variables, time, deltaTime, defaultPivot }
+) {
   let current = matrixFromObject(object);
   const result = [];
 
@@ -130,12 +227,7 @@ export function affineProgramCopies(
       transform: currentTransform,
       variables
     });
-
-    const evaluated = evaluateAffineProgram(
-      compiled,
-      context
-    );
-
+    const evaluated = evaluateAffineProgram(compiled, context);
     const step = composeAffineStep(
       evaluated,
       evaluateAffineVector(
@@ -146,22 +238,135 @@ export function affineProgramCopies(
     );
 
     current = step.multiply(current);
-
-    result.push({
+    result.push(copyResult(
       index,
-      context: Object.freeze({
-        i: context.i,
-        count: context.count,
-        u: context.u,
-        t: context.t,
-        dt: context.dt
-      }),
-      operations: evaluated,
-      ...decomposeMatrix(current)
-    });
+      context,
+      evaluated,
+      decomposeMatrix(current),
+      { mode: "recursive", translationSpace: "matrix" }
+    ));
   }
 
   return result;
+}
+
+function applyIndexedOperations({
+  seed,
+  previous,
+  operations,
+  defaultPivot,
+  translationSpace
+}) {
+  let position = [...previous.position];
+  let rotation = [...previous.rotation];
+  let scale = [...previous.scale];
+  let pivot = [...defaultPivot];
+
+  for (const operation of operations) {
+    if (operation.type === "pivot") {
+      pivot = vector3(operation.value, "pivot");
+      continue;
+    }
+
+    if (operation.type === "move") {
+      const delta = vector3(operation.value, "move");
+      const worldDelta = translationSpace === "local"
+        ? rotateVector(delta, rotation)
+        : delta;
+
+      position = position.map(
+        (value, axis) => value + worldDelta[axis]
+      );
+      continue;
+    }
+
+    if (operation.type === "rotate") {
+      const delta = eulerQuaternion(operation.value);
+      rotation = multiplyQuaternions(rotation, delta);
+      continue;
+    }
+
+    if (operation.type === "scale") {
+      const factors = vector3(operation.value, "scale");
+      scale = seed.scale.map(
+        (value, axis) => value * factors[axis]
+      );
+      continue;
+    }
+
+    if (operation.type === "matrix") {
+      const matrix = new THREE.Matrix4()
+        .fromArray(operation.value.map(finite));
+      const transformed = decomposeMatrix(
+        matrix.multiply(matrixFromObject({
+          position, rotation, scale
+        }))
+      );
+      position = transformed.position;
+      rotation = transformed.rotation;
+      scale = transformed.scale;
+      continue;
+    }
+
+    throw new Error(
+      `Operação afim desconhecida: ${operation.type}.`
+    );
+  }
+
+  return { position, rotation, scale, pivot };
+}
+
+function eulerQuaternion(value) {
+  const [x, y, z] = vector3(value, "rotate");
+  return new THREE.Quaternion()
+    .setFromEuler(new THREE.Euler(
+      THREE.MathUtils.degToRad(x),
+      THREE.MathUtils.degToRad(y),
+      THREE.MathUtils.degToRad(z),
+      "XYZ"
+    ))
+    .toArray();
+}
+
+function multiplyQuaternions(left, right) {
+  return new THREE.Quaternion()
+    .fromArray(left)
+    .multiply(new THREE.Quaternion().fromArray(right))
+    .normalize()
+    .toArray();
+}
+
+function rotateVector(vector, quaternion) {
+  return new THREE.Vector3()
+    .fromArray(vector)
+    .applyQuaternion(new THREE.Quaternion().fromArray(quaternion))
+    .toArray();
+}
+
+function cloneTransform(transform) {
+  return {
+    position: [...transform.position],
+    rotation: [...transform.rotation],
+    scale: [...transform.scale]
+  };
+}
+
+function copyResult(index, context, operations, transform, semantics) {
+  return {
+    index,
+    context: Object.freeze({
+      i: context.i,
+      count: context.count,
+      u: context.u,
+      t: context.t,
+      dt: context.dt
+    }),
+    operations,
+    semantics: Object.freeze({ ...semantics }),
+    position: [...transform.position],
+    rotation: [...transform.rotation],
+    scale: [...transform.scale]
+  };
 }
 
 export function composeAffineStep(operations = [], defaultPivot = [0, 0, 0]) {

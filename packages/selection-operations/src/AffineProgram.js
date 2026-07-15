@@ -1,4 +1,11 @@
 import * as THREE from "three";
+import {
+  AFFINE_AST_VERSION,
+  AFFINE_LANGUAGE_ID,
+  AFFINE_LANGUAGE_VERSION,
+  canonicalizeAffineOperations,
+  lowerCanonicalAffineAst
+} from "./AffineAst.js?build=20260715-0021d";
 
 const FUNCTION_NAMES = Object.freeze(new Set([
   "sin", "cos", "tan",
@@ -59,19 +66,45 @@ export const NativeAffineMathBackend = Object.freeze({
   }
 });
 
-export function compileAffineProgram(operations = []) {
+export function compileAffineProgram(operations = [], options = {}) {
   if (!Array.isArray(operations)) {
     throw new TypeError("operations deve ser um array.");
   }
 
+  const ast = canonicalizeAffineOperations(operations, {
+    mode: options.mode ?? "indexed",
+    translationSpace: options.translationSpace ?? "world",
+    sourceLanguage: options.sourceLanguage ?? AFFINE_LANGUAGE_ID,
+    sourceLanguageVersion:
+      options.sourceLanguageVersion ?? AFFINE_LANGUAGE_VERSION
+  });
+
+  return compileCanonicalAffineAst(ast);
+}
+
+export function compileCanonicalAffineAst(ast) {
+  if (ast?.astVersion !== AFFINE_AST_VERSION) {
+    throw new Error(
+      `AST afim incompatível: ${ast?.astVersion ?? "ausente"}.`
+    );
+  }
+
+  const lowered = lowerCanonicalAffineAst(ast);
+  const operations = Object.freeze(
+    lowered.operations.map(operation =>
+      deepFreeze(compileOperation(operation))
+    )
+  );
+
   return Object.freeze({
     type: "affine-program",
-    syntax: "spatialseed-math-v1",
-    operations: Object.freeze(
-      operations.map(operation =>
-        deepFreeze(compileOperation(operation))
-      )
-    )
+    syntax: lowered.source.languageVersion,
+    astVersion: ast.astVersion,
+    astHash: ast.hash,
+    ast,
+    semantics: ast.semantics,
+    source: lowered.source,
+    operations
   });
 }
 
@@ -89,7 +122,9 @@ export function evaluateAffineProgram(
   const compiled =
     program?.type === "affine-program"
       ? program
-      : compileAffineProgram(program);
+      : program?.astVersion === AFFINE_AST_VERSION
+        ? compileCanonicalAffineAst(program)
+        : compileAffineProgram(program);
 
   return compiled.operations.map(operation => {
     const type = operation.type;
@@ -770,3 +805,11 @@ function deepFreeze(value) {
 
   return value;
 }
+
+export {
+  AFFINE_AST_VERSION,
+  AFFINE_LANGUAGE_ID,
+  AFFINE_LANGUAGE_VERSION,
+  canonicalizeAffineOperations,
+  lowerCanonicalAffineAst
+} from "./AffineAst.js";

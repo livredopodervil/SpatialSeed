@@ -40,7 +40,7 @@ import {
   affineProgramCopies,
   composeAffineStep,
   affineCopies as affineRepeatCopies
-} from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020b-d";
+} from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
 } from "../../selection-operations/src/SelectionOperations.js?build=20260714-0021c-diagnostics";
