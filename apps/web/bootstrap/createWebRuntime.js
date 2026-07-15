@@ -3,21 +3,25 @@ import { Region } from "../../../packages/core/src/Region.js?build=20260714-0020
 import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260714-0020b-a";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260714-0020b-a";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260714-0020b-a";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260715-0022a";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260714-0020b-a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260714-0021c-diagnostics";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260715-0022a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260714-0020b-a";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260714-0020b-a";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260714-0020b-a";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260715-0022a";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260714-0020b-a";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260714-0020b-a";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260714-0020b-a";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260714-0021c-diagnostics";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260715-0022a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260714-0020b-a";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
+import {
+  createDefaultPropertyRegistry,
+  SelectionPropertyService
+} from "../../../packages/property-registry/src/index.js?build=20260715-0022a";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -135,13 +139,22 @@ export async function createWebRuntime({
     selectionOperations
   });
 
+  const propertyRegistry = createDefaultPropertyRegistry();
+  const propertyService = new SelectionPropertyService({
+    selection: editor.selection,
+    sandbox,
+    appearanceRuntime,
+    registry: propertyRegistry
+  });
+
   const commands = createEditorCommands({
     editor,
     renderer,
     selectionOperations,
     projectService,
     benchmarkRunner,
-    resourceAudit
+    resourceAudit,
+    propertyService
   });
 
   activateRuntimeTestPlugin({ commands });
@@ -209,8 +222,14 @@ export async function createWebRuntime({
     .register("editor.snapshot", () =>
       editor.snapshot()
     )
+    .register("properties.describe", () =>
+      propertyRegistry.describe()
+    )
+    .register("selection.properties.inspect", () =>
+      propertyService.inspectSelection()
+    )
     .register("runtime.status", () => ({
-      build: "20260714-0020b-a",
+      build: "20260715-0022a",
       regionVersion: region.version,
       baseVersion: sandbox.baseVersion,
       dirty: sandbox.dirty,
@@ -219,7 +238,7 @@ export async function createWebRuntime({
       objectCount: sandbox.getState().objects.length
     }))
     .register("developer.state", () => ({
-      build: "20260714-0020b-a",
+      build: "20260715-0022a",
       selection: editor.selection.snapshot(),
       editor: editor.snapshot(),
       input: renderer.getInputDiagnostics(),
@@ -253,7 +272,10 @@ export async function createWebRuntime({
     }))
     .register("editor", () => ({
       apiVersion: EditorState.apiVersion
-    }));
+    }))
+    .register("properties", () =>
+      propertyRegistry.describe()
+    );
 
   commands.register(
     "runtime.api.benchmark",
@@ -303,7 +325,9 @@ export async function createWebRuntime({
       modules,
       devConsole,
       objectInspector,
-      transformToolPanel
+      transformToolPanel,
+      propertyRegistry,
+      propertyService
     })
   });
 }

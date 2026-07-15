@@ -15,6 +15,8 @@ import {
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
+import { Region } from "../../core/src/Region.js";
+import { Sandbox } from "../../core/src/Sandbox.js";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import { RefCountCache, textureKey } from "../../renderer-resource-cache/src/index.js";
@@ -47,7 +49,7 @@ import {
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260714-0020b-f";
+} from "../../region-box/src/reducer.js?build=20260715-0022a";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -56,6 +58,11 @@ import {
   PlaneGeometryProvider,
   createDefaultGeometryRegistry
 } from "../../geometry-registry/src/index.js?build=20260714-0020b-a";
+import {
+  normalizeHexColor,
+  createDefaultPropertyRegistry,
+  SelectionPropertyService
+} from "../../property-registry/src/index.js?build=20260715-0022a";
 
 export function createRuntimeLayerTests() {
   return {
@@ -1285,6 +1292,183 @@ assets: {
       }
     },
 
+    "property-contract": {
+      "codec de cor normaliza formas curta e longa"() {
+        assertEqual(normalizeHexColor("#AbC"), "#aabbcc");
+        assertEqual(normalizeHexColor(" #12EF90 "), "#12ef90");
+      },
+
+      "registro descreve metadados sem expor implementação"() {
+        const description = createDefaultPropertyRegistry().describe();
+        const color = description.properties.find(
+          property => property.id === "appearance.color"
+        );
+
+        assertEqual(description.apiVersion, "property-registry-v1");
+        assertEqual(color.valueType, "color");
+        assertEqual(color.editableMany, true);
+        assertEqual("normalize" in color, false);
+      },
+
+      "inspeção diferencia valores uniformes e mistos"() {
+        const fixture = createPropertyFixture();
+
+        fixture.selection.replaceMany([
+          { regionId: "region-properties", objectId: "a" },
+          { regionId: "region-properties", objectId: "b" }
+        ]);
+
+        const inspection = fixture.service.inspectSelection();
+
+        assertEqual(inspection.count, 2);
+        assertEqual(
+          inspection.properties["appearance.color"].status,
+          "mixed"
+        );
+        assertEqual(
+          inspection.properties["appearance.opacity"].status,
+          "uniform"
+        );
+        assertEqual(
+          inspection.properties["object.name"].editable,
+          false
+        );
+      },
+
+      "edição em lote é atômica e resolve alvos explícitos"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replaceMany([
+          { regionId: "region-properties", objectId: "a" },
+          { regionId: "region-properties", objectId: "b" }
+        ]);
+
+        const result = fixture.service.setSelection({
+          "appearance.color": "#0af",
+          "instance.color": "#fedcba"
+        });
+        const state = fixture.sandbox.getState();
+        const proposal = fixture.sandbox.createProposal();
+
+        assertEqual(result.changed, true);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          1
+        );
+        assertDeepEqual(
+          proposal.commands[0].targetIds,
+          ["a", "b"]
+        );
+        assertEqual(
+          proposal.commands[0].propertyPatch["appearance.color"],
+          "#00aaff"
+        );
+        assertEqual(state.objects[0].instanceState.color, "#fedcba");
+        assertEqual(state.objects[1].instanceState.color, "#fedcba");
+        assertEqual(
+          fixture.appearanceRuntime.legacyMaterial(
+            state.objects[0].appearanceId
+          ).color,
+          "#00aaff"
+        );
+        assertEqual(
+          fixture.appearanceRuntime.legacyMaterial(
+            state.objects[1].appearanceId
+          ).opacity,
+          1
+        );
+        assertEqual(
+          state.objects[0].appearanceId,
+          state.objects[1].appearanceId
+        );
+      },
+
+      "textura e transformação compartilham a mesma via de propriedades"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replaceMany([
+          { regionId: "region-properties", objectId: "a" },
+          { regionId: "region-properties", objectId: "b" }
+        ]);
+
+        fixture.service.setSelection({
+          "texture.src": "https://example.test/grid.png",
+          "texture.repeat": [4, 2],
+          "texture.offset": [0.25, 0.5],
+          "texture.wrap": "mirror"
+        });
+
+        for (const object of fixture.sandbox.getState().objects) {
+          const material = fixture.appearanceRuntime.legacyMaterial(
+            object.appearanceId
+          );
+          assertEqual(
+            material.texture.src,
+            "https://example.test/grid.png"
+          );
+          assertDeepEqual(material.texture.repeat, [4, 2]);
+          assertDeepEqual(material.texture.offset, [0.25, 0.5]);
+          assertEqual(material.texture.wrap, "mirror");
+        }
+      },
+
+      "remoção de cor de instância também é uma operação em lote"() {
+        const fixture = createPropertyFixture({ instanceColor: "#112233" });
+        fixture.selection.replaceMany([
+          { regionId: "region-properties", objectId: "a" },
+          { regionId: "region-properties", objectId: "b" }
+        ]);
+
+        fixture.service.unsetSelection(["instance.color"]);
+
+        for (const object of fixture.sandbox.getState().objects) {
+          assertEqual("color" in object.instanceState, false);
+        }
+      },
+
+      "entrada inválida não altera estado nem histórico"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replaceMany([
+          { regionId: "region-properties", objectId: "a" },
+          { regionId: "region-properties", objectId: "b" }
+        ]);
+        const before = fixture.sandbox.getState();
+        let rejected = false;
+
+        try {
+          fixture.service.setSelection({
+            "appearance.color": "azul"
+          });
+        } catch {
+          rejected = true;
+        }
+
+        assertEqual(rejected, true);
+        assertDeepEqual(fixture.sandbox.getState(), before);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          0
+        );
+      },
+
+      "valor já vigente não cria item de histórico"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "a"
+        });
+
+        const result = fixture.service.setSelection({
+          "appearance.color": "#112233",
+          "appearance.opacity": 1
+        });
+
+        assertEqual(result.changed, false);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          0
+        );
+      }
+    },
+
     "geometry-registry": {
       "registro normaliza caixa legada"() {
         const registry = createDefaultGeometryRegistry();
@@ -2127,6 +2311,62 @@ assets: {
         assertEqual(packet.delta.type, "simulation-time");
       }
     }
+  };
+}
+
+function createPropertyFixture({ instanceColor = null } = {}) {
+  const appearanceRuntime = new AppearanceRuntime();
+  const scene = appearanceRuntime.normalizeScene({
+    schemaVersion: 1,
+    objects: [
+      propertyObject("a", "#112233", instanceColor),
+      propertyObject("b", "#445566", instanceColor)
+    ]
+  });
+  const region = new Region(
+    {
+      id: "region-properties",
+      name: "Propriedades",
+      type: "box-region"
+    },
+    scene
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const selection = new Selection();
+  const registry = createDefaultPropertyRegistry();
+  const service = new SelectionPropertyService({
+    selection,
+    sandbox,
+    appearanceRuntime,
+    registry
+  });
+
+  return {
+    appearanceRuntime,
+    sandbox,
+    selection,
+    registry,
+    service
+  };
+}
+
+function propertyObject(id, color, instanceColor) {
+  return {
+    id,
+    kind: "box",
+    name: id,
+    position: [0, 1, 0],
+    rotation: [0, 0, 0, 1],
+    scale: [1, 1, 1],
+    size: [2, 2, 2],
+    material: {
+      color,
+      opacity: 1,
+      transparent: false
+    },
+    instanceState: instanceColor
+      ? { color: instanceColor }
+      : {}
   };
 }
 

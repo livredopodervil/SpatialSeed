@@ -468,7 +468,7 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|affine-pivot|runtime-api|instanced-renderer|affine-repeat|all"
+        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|property-contract|affine-pivot|runtime-api|instanced-renderer|affine-repeat|all"
       );
     }
 

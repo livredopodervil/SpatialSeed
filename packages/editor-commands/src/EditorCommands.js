@@ -6,7 +6,8 @@ export function createEditorCommands({
   selectionOperations,
   projectService,
   benchmarkRunner,
-  resourceAudit
+  resourceAudit,
+  propertyService = null
 }) {
   const commands = new CommandRegistry();
 
@@ -100,6 +101,16 @@ export function createEditorCommands({
     .register("gizmo.inspect", () =>
       renderer.getTransformDiagnostics()
     );
+
+  if (propertyService) {
+    commands
+      .register("selection.properties.set", ({ patch }) =>
+        propertyService.setSelection(patch)
+      )
+      .register("selection.properties.unset", ({ properties }) =>
+        propertyService.unsetSelection(properties)
+      );
+  }
 
   commands
     .register("project.inspect", () =>

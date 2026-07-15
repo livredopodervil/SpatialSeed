@@ -30,6 +30,72 @@ function updateMany(objects, transforms) {
   return changed ? Object.freeze(next) : objects;
 }
 
+function applyObjectPatch(object, patch = {}) {
+  const next = {
+    ...object,
+    ...patch
+  };
+
+  if ("instanceState" in patch) {
+    next.instanceState = freezeInstanceState({
+      ...(object.instanceState ?? {}),
+      ...(patch.instanceState ?? {})
+    });
+  }
+
+  if ("appearanceId" in patch) {
+    next.appearanceId = patch.appearanceId;
+    delete next.material;
+  } else if (patch.material) {
+    next.material = {
+      ...(object.material ?? {}),
+      ...patch.material,
+      texture: patch.material.texture
+        ? {
+            ...((object.material ?? {}).texture ?? {}),
+            ...patch.material.texture
+          }
+        : (object.material ?? {}).texture
+    };
+  }
+
+  return next;
+}
+
+function applyPropertyUpdates(objects, command) {
+  const targetIds = [...(command.targetIds ?? [])];
+  const updates = command.updates ?? [];
+
+  if (!targetIds.length || !updates.length) return objects;
+
+  const uniqueTargets = new Set(targetIds);
+  const existingIds = new Set(objects.map(object => object.id));
+  const updateById = new Map(updates.map(update => [update.id, update]));
+
+  if (uniqueTargets.size !== targetIds.length) {
+    throw new Error("Alvos de propriedades duplicados.");
+  }
+
+  for (const id of targetIds) {
+    if (!existingIds.has(id)) throw new Error(`Objeto inexistente: ${id}.`);
+    if (!updateById.has(id)) throw new Error(`Atualização ausente: ${id}.`);
+  }
+
+  if (
+    updates.length !== targetIds.length ||
+    updates.some(update => !uniqueTargets.has(update.id))
+  ) {
+    throw new Error("Atualizações de propriedades não correspondem aos alvos.");
+  }
+
+  return Object.freeze(objects.map(object => {
+    const update = updateById.get(object.id);
+    return update
+      ? Object.freeze(applyObjectPatch(object, update.patch))
+      : object;
+  }));
+}
+
 export function boxRegionReducer(state, command) {
   switch (command.type) {
     case "object.create": {
@@ -88,40 +154,27 @@ export function boxRegionReducer(state, command) {
     }
 
     case "object.update": {
-      const objects = updateById(state.objects, command.id, object => {
-        const patch = command.patch ?? {};
-        const next = {
-          ...object,
-          ...patch
-        };
-
-        if ("instanceState" in patch) {
-          next.instanceState = freezeInstanceState({
-            ...(object.instanceState ?? {}),
-            ...(patch.instanceState ?? {})
-          });
-        }
-
-        if ("appearanceId" in patch) {
-          next.appearanceId = patch.appearanceId;
-          delete next.material;
-        } else if (patch.material) {
-          next.material = {
-            ...(object.material ?? {}),
-            ...patch.material,
-            texture: patch.material.texture
-              ? {
-                  ...((object.material ?? {}).texture ?? {}),
-                  ...patch.material.texture
-                }
-              : (object.material ?? {}).texture
-          };
-        }
-
-        return next;
-      });
+      const objects = updateById(
+        state.objects,
+        command.id,
+        object => applyObjectPatch(object, command.patch)
+      );
       if (objects === state.objects) return { state, changes: [] };
       return { state: Object.freeze({ ...state, objects }), changes: [{ type: "object-updated", objectId: command.id }] };
+    }
+
+    case "selection.properties.set": {
+      const objects = applyPropertyUpdates(state.objects, command);
+      if (objects === state.objects) return { state, changes: [] };
+
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: command.targetIds.map(objectId => ({
+          type: "object-updated",
+          objectId,
+          source: "selection.properties"
+        }))
+      };
     }
 
     case "selection.duplicate": {

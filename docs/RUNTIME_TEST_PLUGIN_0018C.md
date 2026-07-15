@@ -10,6 +10,7 @@ runtime test viewer
 runtime test editor
 runtime test clock
 runtime test simulation
+runtime test property-contract
 runtime test all
 ```
 
@@ -24,5 +25,6 @@ runtime test all
 - aceitação por versão;
 - rejeição de conflito;
 - evolução autônoma do simulador.
+- contrato atômico de propriedades, aparência, textura e instância.
 
 O plugin recebe somente o registro de comandos. Não recebe Region, Sandbox, renderer ou DOM.
