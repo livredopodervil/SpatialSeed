@@ -77,6 +77,9 @@ import {
 import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260715-0022b";
+import {
+  HierarchyIndex
+} from "../../scene-hierarchy/src/index.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -891,6 +894,67 @@ assets: {
           {type:"rotate",value:[0,0,0.1]}
         ]);
         assertEqual(affineCopies({position:[0,0,0],rotation:[0,0,0,1],scale:[1,1,1]},10000,step).length,10000);
+      }
+    },
+
+    "scene-hierarchy": {
+      "indexa raízes pais e filhos em ordem determinística"() {
+        const hierarchy=new HierarchyIndex(hierarchyFixture());
+        assertDeepEqual(hierarchy.roots(),["root","loose"]);
+        assertDeepEqual(hierarchy.childrenOf("root"),["group","sibling"]);
+        assertEqual(hierarchy.parentOf("child"),"group");
+      },
+      "compõe transformação mundial pela cadeia de âncoras"() {
+        const hierarchy=new HierarchyIndex(hierarchyFixture());
+        const world=decomposeTransformStrict(hierarchy.worldMatrixOf("child"));
+        assertDeepEqual(world.position.map(roundAffine),[11,4,3]);
+      },
+      "cache mundial reutiliza referência imutável"() {
+        const hierarchy=new HierarchyIndex(hierarchyFixture());
+        const first=hierarchy.worldMatrixOf("child");
+        const second=hierarchy.worldMatrixOf("child");
+        assertEqual(first,second);
+        assertEqual(Object.isFrozen(first),true);
+      },
+      "seleção canônica remove descendentes redundantes"() {
+        const hierarchy=new HierarchyIndex(hierarchyFixture());
+        assertDeepEqual(
+          hierarchy.canonicalizeSelection(["child","group","loose","child"]),
+          ["group","loose"]
+        );
+      },
+      "travessia de descendentes preserva ordem da cena"() {
+        const hierarchy=new HierarchyIndex(hierarchyFixture());
+        assertDeepEqual(
+          hierarchy.descendantsOf("root"),
+          ["group","child","sibling"]
+        );
+      },
+      "rejeita pai inexistente"() {
+        assertThrowsCode(
+          () => new HierarchyIndex([{id:"child",parentId:"missing"}]),
+          "UNKNOWN_PARENT"
+        );
+      },
+      "rejeita identificador duplicado"() {
+        assertThrowsCode(
+          () => new HierarchyIndex([{id:"same"},{id:"same"}]),
+          "DUPLICATE_NODE_ID"
+        );
+      },
+      "rejeita ciclo direto ou por reparentamento"() {
+        assertThrowsCode(
+          () => new HierarchyIndex([
+            {id:"a",parentId:"b"},
+            {id:"b",parentId:"a"}
+          ]),
+          "HIERARCHY_CYCLE"
+        );
+        const hierarchy=new HierarchyIndex(hierarchyFixture());
+        assertThrowsCode(
+          () => hierarchy.assertCanReparent("root","child"),
+          "HIERARCHY_CYCLE"
+        );
       }
     },
 
@@ -2784,4 +2848,19 @@ function assertThrowsCode(callback, expectedCode) {
 
 function round(value) {
   return Math.round(value * 1000) / 1000;
+}
+
+function hierarchyFixture() {
+  return [
+    {id:"root",position:[10,0,0]},
+    {
+      id:"group",
+      parentId:"root",
+      position:[1,2,0],
+      rotation:eulerQuaternion([0,0,90])
+    },
+    {id:"child",parentId:"group",position:[2,0,3]},
+    {id:"sibling",parentId:"root",position:[-1,0,0]},
+    {id:"loose",position:[0,5,0]}
+  ];
 }
