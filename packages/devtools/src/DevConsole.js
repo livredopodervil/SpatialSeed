@@ -487,36 +487,6 @@ export class DevConsole {
       );
     }
 
-    if (
-      ![
-        "viewer",
-        "editor",
-        "clock",
-        "simulation",
-        "assets",
-        "project-assets",
-        "appearance-runtime",
-        "normalized-runtime",
-        "incremental-runtime",
-        "batch-selection",
-        "affine-math",
-        "resource-audit",
-        "render-resource-cache",
-        "instance-batches",
-        "batch-material-cache",
-        "geometry-registry",
-        "runtime-api",
-        "affine-pivot",
-        "instanced-renderer",
-        "affine-repeat",
-        "all"
-      ].includes(suite)
-    ) {
-      throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|affine-pivot|runtime-api|instanced-renderer|affine-repeat|all"
-      );
-    }
-
     return this.commands.execute(
       "runtime.test.run",
       { suite }

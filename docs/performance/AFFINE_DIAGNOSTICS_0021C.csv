@@ -1,0 +1,9 @@
+case,count,contract,current_result,passed,duration_ms,notes
+V01,10,unit-step,,,,
+V02,10,move-independent-from-seed-scale,,,,
+V03,41,absolute-parametric-scale,,,,
+V04,101,non-exponential-scale,,,,
+V05,21,signed-scale,,,,
+V06,12,unit-segment-length,,,,
+V07,10,no-stale-selection,,,,
+V08,40,no-stale-parametric-selection,,,,

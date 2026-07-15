@@ -1,4 +1,4 @@
-import { createWebRuntime } from "./bootstrap/createWebRuntime.js?build=20260714-0020b-a";
+import { createWebRuntime } from "./bootstrap/createWebRuntime.js?build=20260714-0021c-diagnostics";
 import { bindWebInterface } from "./bootstrap/bindWebInterface.js?build=20260714-0020b-a";
 
 const BUILD = "20260714-0020b-a";

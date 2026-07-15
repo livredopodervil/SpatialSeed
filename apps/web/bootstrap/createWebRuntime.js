@@ -6,7 +6,7 @@ import { EditorState } from "../../../packages/editor-core/src/EditorState.js?bu
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260714-0020b-a";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260714-0020b-a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260714-0020b-a";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260714-0021c-diagnostics";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260714-0020b-a";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260714-0020b-a";
@@ -14,7 +14,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260714-0020b-a";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260714-0020b-a";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260714-0020b-a";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260714-0020b-a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260714-0021c-diagnostics";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260714-0020b-a";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";

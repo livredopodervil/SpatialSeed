@@ -3,7 +3,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import os
 
-PROJECT = Path.home() / "storage/shared/SpatialSeed-monorepo"
+PROJECT = Path.home() / "SpatialSeed-monorepo"
 PORT = 8082
 
 class Handler(SimpleHTTPRequestHandler):

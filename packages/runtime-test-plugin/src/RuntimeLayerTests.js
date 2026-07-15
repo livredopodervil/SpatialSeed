@@ -41,6 +41,9 @@ import {
   composeAffineStep,
   affineCopies as affineRepeatCopies
 } from "../../selection-operations/src/AffineRepeat.js?build=20260714-0020b-d";
+import {
+  SelectionOperations
+} from "../../selection-operations/src/SelectionOperations.js?build=20260714-0021c-diagnostics";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   boxRegionReducer
@@ -1511,6 +1514,210 @@ assets: {
       }
     },
 
+    "affine-contract": {
+      "u percorre exatamente zero até um"() {
+        const copies = affineProgramCopies(
+          affineDiagnosticSeed(),
+          5,
+          [{ type: "move", value: ["u", 0, 0] }]
+        );
+
+        assertDeepEqual(
+          copies.map(copy => roundAffine(copy.context.u)),
+          [0, 0.25, 0.5, 0.75, 1]
+        );
+      },
+
+      "move mundial independe da escala da semente"() {
+        const copies = affineProgramCopies(
+          affineDiagnosticSeed({ scale: [4, 4, 4] }),
+          3,
+          [{ type: "move", value: [0, 1, 0] }]
+        );
+
+        assertDeepEqual(
+          copies.map(copy => copy.position.map(roundAffine)),
+          [[0, 1, 0], [0, 2, 0], [0, 3, 0]]
+        );
+      },
+
+      "move seguido de scale mantém passo unitário"() {
+        const copies = affineProgramCopies(
+          affineDiagnosticSeed(),
+          4,
+          [
+            { type: "move", value: [0, 1, 0] },
+            { type: "scale", value: [2, 2, 2] }
+          ]
+        );
+
+        assertDeepEqual(
+          copies.map(copy => roundAffine(copy.position[1])),
+          [1, 2, 3, 4]
+        );
+      },
+
+      "escala paramétrica descreve cada cópia sem acumulação"() {
+        const copies = affineProgramCopies(
+          affineDiagnosticSeed(),
+          5,
+          [{
+            type: "scale",
+            value: ["1+u", "1+u", "1+u"]
+          }]
+        );
+
+        assertDeepEqual(
+          copies.map(copy => roundAffine(copy.scale[0])),
+          [1, 1.25, 1.5, 1.75, 2]
+        );
+      },
+
+      "contas de colar crescem e diminuem simetricamente"() {
+        const copies = affineProgramCopies(
+          affineDiagnosticSeed(),
+          9,
+          [
+            { type: "move", value: [1, 0, 0] },
+            {
+              type: "scale",
+              value: [
+                "0.2+0.8*abs(sin(u*pi))",
+                "0.2+0.8*abs(sin(u*pi))",
+                "0.2+0.8*abs(sin(u*pi))"
+              ]
+            }
+          ]
+        );
+
+        const scales = copies.map(copy =>
+          roundAffine(copy.scale[0])
+        );
+
+        assertNear(scales[0], 0.2);
+        assertNear(scales[4], 1);
+        assertNear(scales[8], 0.2);
+      },
+
+      "cem passos de uma unidade terminam em cem"() {
+        const copies = affineProgramCopies(
+          affineDiagnosticSeed(),
+          100,
+          [{ type: "move", value: [0, 1, 0] }]
+        );
+
+        assertNear(copies.at(-1).position[1], 100, 1e-9);
+      },
+
+      "duplicação consecutiva usa seleção recém-publicada"() {
+        const sandbox = createAffineDiagnosticSandbox([
+          {
+            id: "seed",
+            name: "seed",
+            kind: "box",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            size: [1, 1, 1],
+            material: { color: "#ffffff" }
+          }
+        ]);
+        const editor = new EditorState();
+
+        editor.selection.replaceMany([{
+          kind: "object",
+          regionId: "region-main",
+          objectId: "seed"
+        }], { activeObjectId: "seed" });
+
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: "region-main"
+        });
+
+        const first = operations.duplicateAffine(
+          3,
+          [{ type: "move", value: ["i", 0, 0] }]
+        );
+        const second = operations.duplicateAffine(
+          2,
+          [{ type: "move", value: [0, "i", 0] }]
+        );
+
+        assertEqual(first.createdCount, 3);
+        assertEqual(second.createdCount, 2);
+        assertEqual(sandbox.getSnapshot().objects.length, 6);
+      },
+
+      "seleção nunca referencia objeto inexistente"() {
+        const sandbox = createAffineDiagnosticSandbox([
+          {
+            id: "seed",
+            name: "seed",
+            kind: "box",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            size: [1, 1, 1],
+            material: { color: "#ffffff" }
+          }
+        ]);
+        const editor = new EditorState();
+
+        editor.selection.replaceMany([{
+          kind: "object",
+          regionId: "region-main",
+          objectId: "seed"
+        }], { activeObjectId: "seed" });
+
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: "region-main"
+        });
+
+        for (let cycle = 0; cycle < 10; cycle += 1) {
+          operations.duplicateAffine(
+            2,
+            [{ type: "move", value: [1, 0, 0] }]
+          );
+
+          const ids = new Set(
+            sandbox.getSnapshot().objects.map(object => object.id)
+          );
+
+          for (const member of editor.selection.snapshot().members) {
+            assert(ids.has(member.objectId));
+          }
+        }
+      },
+
+      "mesmo programa produz resultado determinístico"() {
+        const program = [
+          { type: "move", value: ["cos(u*tau)", "u", "sin(u*tau)"] },
+          { type: "rotate", value: [0, "u*360", 0] },
+          { type: "scale", value: ["0.5+u", "0.5+u", "0.5+u"] }
+        ];
+
+        const first = affineProgramCopies(
+          affineDiagnosticSeed(),
+          32,
+          program
+        );
+        const second = affineProgramCopies(
+          affineDiagnosticSeed(),
+          32,
+          program
+        );
+
+        assertDeepEqual(
+          first.map(affineDiagnosticSnapshot),
+          second.map(affineDiagnosticSnapshot)
+        );
+      }
+    },
+
     "affine-repeat": {
       "duplicação afim acumula translação"() {
         const step = composeAffineStep([
@@ -1941,6 +2148,71 @@ function projectAssetObject(id, src) {
         rotationDeg: 15,
         wrap: "repeat"
       }
+    }
+  };
+}
+
+function affineDiagnosticSeed(overrides = {}) {
+  return {
+    position: [0, 0, 0],
+    rotation: [0, 0, 0, 1],
+    scale: [1, 1, 1],
+    ...structuredClone(overrides)
+  };
+}
+
+function affineDiagnosticSnapshot(copy) {
+  return {
+    index: copy.index,
+    position: copy.position.map(roundAffine),
+    rotation: copy.rotation.map(roundAffine),
+    scale: copy.scale.map(roundAffine)
+  };
+}
+
+function createAffineDiagnosticSandbox(initialObjects = []) {
+  let state = Object.freeze({
+    objects: Object.freeze(structuredClone(initialObjects))
+  });
+  const listeners = new Set();
+
+  return {
+    getSnapshot() {
+      return state;
+    },
+
+    getState() {
+      return state;
+    },
+
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+
+    dispatch(command) {
+      if (command.type !== "selection.duplicate") {
+        return false;
+      }
+
+      state = Object.freeze({
+        ...state,
+        objects: Object.freeze([
+          ...state.objects,
+          ...structuredClone(command.objects)
+        ])
+      });
+
+      const changes = command.objects.map(object => ({
+        type: "object-created",
+        objectId: object.id
+      }));
+
+      for (const listener of listeners) {
+        listener(state, changes);
+      }
+
+      return true;
     }
   };
 }
