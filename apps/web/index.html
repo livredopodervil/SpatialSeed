@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="spatial-seed-build" content="20260714-0021a">
+<meta name="spatial-seed-build" content="20260714-0021b">
 <title>Spatial Seed Monorepo</title>
-<link rel="stylesheet" href="./style.css?build=20260714-0021a">
+<link rel="stylesheet" href="./style.css?build=20260714-0021b">
 <script type="importmap">
 {
   "imports": {
@@ -47,6 +47,17 @@
   <button id="structure">Estrutura</button>
   <button id="diagnostics">Diagnóstico</button>
   <button id="developer">Desenvolvedor</button>
+  <button id="console" title="Abrir console flutuante">⌨ Console</button>
+  <button
+    id="scene-only"
+    title="Exibir somente a cena; Tab ou Esc restaura a interface"
+    aria-pressed="false"
+  >◉ Cena</button>
+  <button
+    id="viewport-fullscreen"
+    title="Alternar tela cheia do viewport (F)"
+    aria-pressed="false"
+  >⛶</button>
   <button id="inspector">Inspector</button>
   <button id="transform-tools">Transformação</button>
   <button id="project-save">Salvar</button>
@@ -66,7 +77,7 @@
   <div id="selection-summary">0 selecionados</div>
   <div id="selection-content">∅</div>
   <div id="pivot-content">Pivô: mediana</div>
-  <div id="build-content">build 20260714-0021a</div>
+  <div id="build-content">build 20260714-0021b</div>
 </aside>
 
 <aside id="outline" hidden>
@@ -79,21 +90,29 @@
   <textarea id="diagnostic-content" class="component-text" readonly aria-label="Diagnóstico de execução"></textarea>
 </section>
 
-<section id="developer-panel" class="panel-console" hidden>
+<section id="developer-panel" hidden>
   <header>
     <strong>Painel do desenvolvedor</strong>
-    <button id="close-developer">×</button>
+    <button id="close-developer" title="Fechar">×</button>
+  </header>
+  <div id="developer-live"></div>
+</section>
+
+<section id="console-panel" class="panel-console" hidden>
+  <header>
+    <strong>Console</strong>
+    <button id="close-console" title="Fechar">×</button>
   </header>
 
-  <div id="developer-live"></div>
-
   <div id="developer-console">
-    <label for="console-input">Console de operações</label>
+    <label for="console-input">Comandos e programas</label>
     <textarea
       id="console-input"
-      rows="4"
+      rows="5"
       spellcheck="false"
-      placeholder="help; inspect input; select box-1; move 1 0 0"
+      autocapitalize="off"
+      autocomplete="off"
+      placeholder="help; inspect selected; duplicate count 24 move ..."
     ></textarea>
 
     <div class="actions">
@@ -105,7 +124,12 @@
       <button id="console-copy-last">Copiar último</button>
     </div>
 
-    <textarea id="console-output" class="component-text" readonly aria-label="Saída do console"></textarea>
+    <textarea
+      id="console-output"
+      class="component-text"
+      readonly
+      aria-label="Saída do console"
+    ></textarea>
   </div>
 </section>
 <section id="inspector-panel" hidden>
@@ -188,6 +212,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./main.js?build=20260714-0021a"></script>
+<script type="module" src="./main.js?build=20260714-0021b"></script>
 </body>
 </html>

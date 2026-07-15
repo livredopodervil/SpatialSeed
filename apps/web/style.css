@@ -158,3 +158,92 @@ input,textarea,.component-text,.dev-card textarea{
 .ss-panel-handle{cursor:grab;touch-action:none}.ss-panel-handle:active{cursor:grabbing}
 .panel-console{opacity:.88;background:#07101be8!important}.panel-console:focus-within,.panel-console:hover{opacity:.98}
 input[data-scrubbable="true"]{cursor:ew-resize;touch-action:none}input[data-scrubbable="true"]:focus{cursor:text}
+
+
+/* 0021b — apresentação da cena, console e maximização */
+#console-panel{
+  position:fixed;
+  z-index:30;
+  left:.65rem;
+  bottom:.65rem;
+  width:min(720px,calc(100vw - 1.3rem));
+  height:min(52vh,520px);
+  border:1px solid #ffffff24;
+  border-radius:14px;
+  background:#07101be8;
+  overflow:auto;
+}
+#console-panel>header{
+  position:sticky;
+  top:0;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+  padding:.58rem .65rem;
+  border-bottom:1px solid #ffffff18;
+  background:#07101bf2;
+}
+#console-panel>header strong{flex:1}
+#console-panel #developer-console{padding:.65rem}
+#console-panel #console-output{
+  min-height:10rem;
+  max-height:none;
+  height:calc(100% - 11.5rem);
+}
+.ss-panel-maximize{
+  min-width:2rem;
+  font-size:1rem;
+  line-height:1;
+}
+.ss-floating-panel.ss-panel-maximized{
+  position:fixed!important;
+  inset:0 auto auto 0!important;
+  width:100vw!important;
+  height:100dvh!important;
+  max-width:none!important;
+  max-height:none!important;
+  border-radius:0!important;
+  margin:0!important;
+  z-index:1000!important;
+}
+.ss-floating-panel.ss-panel-maximized>header{
+  position:sticky;
+  top:0;
+}
+#viewport-fullscreen[data-active="true"],
+#scene-only[data-active="true"]{
+  outline:2px solid #ffffffaa;
+  background:#31517bee;
+}
+body.ss-scene-only #toolbar,
+body.ss-scene-only #selection-panel,
+body.ss-scene-only #outline,
+body.ss-scene-only #review-panel,
+body.ss-scene-only #diagnostic-panel,
+body.ss-scene-only #developer-panel,
+body.ss-scene-only #console-panel,
+body.ss-scene-only #inspector-panel,
+body.ss-scene-only #transform-tools-panel,
+body.ss-scene-only #selection-marquee,
+body.ss-scene-only #error-box{
+  display:none!important;
+}
+body.ss-scene-only #world{
+  position:fixed;
+  inset:0;
+  width:100vw;
+  height:100dvh;
+}
+input[data-scrubbable="true"]{
+  cursor:move;
+  touch-action:none;
+}
+@media(max-width:700px){
+  #console-panel{
+    left:.3rem;
+    bottom:.3rem;
+    width:calc(100vw - .6rem);
+    height:min(58vh,560px);
+  }
+}

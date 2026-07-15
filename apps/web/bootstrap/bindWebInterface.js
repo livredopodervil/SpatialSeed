@@ -1,6 +1,6 @@
-import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields } from "../../../packages/ui-widgets/src/index.js?build=20260714-0021a";
+import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields } from "../../../packages/ui-widgets/src/index.js?build=20260714-0021b";
 
-const BUILD = "20260714-0020b-a";
+const BUILD = "20260714-0021b";
 
 export function bindWebInterface({
   runtime,
@@ -33,8 +33,20 @@ export function bindWebInterface({
   let statusTimer = null;
   let latestSelection = runtime.query("selection.snapshot");
   let latestEditor = runtime.query("editor.snapshot");
-  const panelManager=new FloatingPanelManager({root:documentRoot});
-  for(const selector of ["#outline","#review-panel","#diagnostic-panel","#developer-panel","#inspector-panel","#transform-tools-panel"])panelManager.register(selector);
+  const panelManager = new FloatingPanelManager({
+    root: documentRoot
+  });
+  for (const selector of [
+    "#outline",
+    "#review-panel",
+    "#diagnostic-panel",
+    "#developer-panel",
+    "#console-panel",
+    "#inspector-panel",
+    "#transform-tools-panel"
+  ]) {
+    panelManager.register(selector);
+  }
   attachScrubbableFields(documentRoot);
   const marquee=new SelectionMarquee({canvas:$("world"),element:$("selection-marquee"),onComplete:r=>renderer.selectScreenRect(r,latestEditor.selectionOperation)});
 
@@ -372,13 +384,23 @@ export function bindWebInterface({
   );
 
   $("developer").addEventListener("click", () => {
-    $("developer-panel").hidden = false;
+    panelManager.show("#developer-panel");
     refreshDeveloperPanel();
+  });
+
+  $("console").addEventListener("click", () => {
+    panelManager.show("#console-panel");
+    $("console-input").focus();
   });
 
   $("close-developer").addEventListener(
     "click",
-    () => { $("developer-panel").hidden = true; }
+    () => panelManager.hide("#developer-panel")
+  );
+
+  $("close-console").addEventListener(
+    "click",
+    () => panelManager.hide("#console-panel")
   );
 
   $("console-run").addEventListener("click", () => {
@@ -460,6 +482,91 @@ export function bindWebInterface({
     }
   });
 
+  let sceneOnly = false;
+
+  function isTextEditingTarget(target) {
+    return Boolean(
+      target?.closest?.(
+        "input,textarea,select,[contenteditable='true']"
+      )
+    );
+  }
+
+  function setSceneOnly(enabled) {
+    sceneOnly = Boolean(enabled);
+    documentRoot.body.classList.toggle("ss-scene-only", sceneOnly);
+    $("scene-only").dataset.active = sceneOnly ? "true" : "false";
+    $("scene-only").setAttribute(
+      "aria-pressed",
+      sceneOnly ? "true" : "false"
+    );
+    return sceneOnly;
+  }
+
+  async function toggleViewportFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await documentRoot.documentElement.requestFullscreen({
+          navigationUI: "hide"
+        });
+      }
+    } catch (error) {
+      showNotice(
+        `Tela cheia indisponível: ${error?.message ?? error}`
+      );
+    }
+  }
+
+  function refreshFullscreenButton() {
+    const active = Boolean(document.fullscreenElement);
+    $("viewport-fullscreen").dataset.active =
+      active ? "true" : "false";
+    $("viewport-fullscreen").setAttribute(
+      "aria-pressed",
+      active ? "true" : "false"
+    );
+    $("viewport-fullscreen").title = active
+      ? "Sair da tela cheia (F)"
+      : "Alternar tela cheia do viewport (F)";
+  }
+
+  $("scene-only").addEventListener(
+    "click",
+    () => setSceneOnly(!sceneOnly)
+  );
+  $("viewport-fullscreen").addEventListener(
+    "click",
+    toggleViewportFullscreen
+  );
+  document.addEventListener(
+    "fullscreenchange",
+    refreshFullscreenButton
+  );
+
+  documentRoot.addEventListener("keydown", event => {
+    if (isTextEditingTarget(event.target)) return;
+
+    if (event.key === "Tab") {
+      event.preventDefault();
+      setSceneOnly(!sceneOnly);
+      return;
+    }
+
+    if (event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      toggleViewportFullscreen();
+      return;
+    }
+
+    if (event.key === "Escape" && sceneOnly) {
+      setSceneOnly(false);
+    }
+  });
+
+  refreshFullscreenButton();
+
   $("review").addEventListener("click", () => {
     $("review-content").textContent =
       JSON.stringify(sandbox.createProposal(), null, 2);
@@ -503,6 +610,10 @@ export function bindWebInterface({
       unsubscribeSelection();
       unsubscribeWorld();
       marquee.dispose();
+      document.removeEventListener(
+        "fullscreenchange",
+        refreshFullscreenButton
+      );
       panelManager.dispose();
     }
   });
