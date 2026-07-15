@@ -1,5 +1,5 @@
 import { createWebRuntime } from "./bootstrap/createWebRuntime.js?build=20260715-0022a";
-import { bindWebInterface } from "./bootstrap/bindWebInterface.js?build=20260714-0020b-a";
+import { bindWebInterface } from "./bootstrap/bindWebInterface.js?build=20260715-0022a";
 
 const BUILD = "20260715-0022a";
 const $ = id => document.getElementById(id);

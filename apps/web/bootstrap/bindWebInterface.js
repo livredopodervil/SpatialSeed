@@ -1,6 +1,6 @@
 import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields } from "../../../packages/ui-widgets/src/index.js?build=20260714-0021b";
 
-const BUILD = "20260714-0021b";
+const BUILD = "20260715-0022a";
 
 export function bindWebInterface({
   runtime,
