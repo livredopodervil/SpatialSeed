@@ -1,3 +1,7 @@
+import {
+  parsePropertyInput
+} from "../../property-registry/src/index.js?build=20260715-0022b";
+
 export class DevConsole {
   static apiVersion = "dev-console-v4";
 
@@ -8,7 +12,8 @@ export class DevConsole {
     renderer,
     getDiagnostics,
     onOutput,
-    commands
+    commands,
+    queries = null
   }) {
     this.editor = editor;
     this.sandbox = sandbox;
@@ -17,6 +22,7 @@ export class DevConsole {
     this.getDiagnostics = getDiagnostics;
     this.onOutput = onOutput;
     this.commands = commands;
+    this.queries = queries;
     this.history = [];
   }
 
@@ -24,10 +30,7 @@ export class DevConsole {
     const input = String(source ?? "").trim();
     if (!input) return [];
 
-    const lines = input
-      .split(/[;\n]+/)
-      .map(line => line.trim())
-      .filter(Boolean);
+    const lines = splitStatements(input);
 
     const results = [];
 
@@ -161,6 +164,9 @@ export class DevConsole {
       case "runtime":
         return this.#runtime(tokens);
 
+      case "property":
+        return this.#property(tokens);
+
       default:
         throw new Error(
           `Comando desconhecido: ${command || "(vazio)"}. Use help.`
@@ -203,6 +209,9 @@ export class DevConsole {
         "clear",
         "list objects",
         "inspect selection|selected|selected all|input|editor|sandbox|region|objects",
+        "property list|inspect [id]",
+        "property set id valor [...]",
+        "property unset id",
         "gizmo",
         "undo",
         "redo"
@@ -221,6 +230,90 @@ export class DevConsole {
     return this.commands.execute("object.create.box", {
       position: tokens.map(value => this.#number(value))
     });
+  }
+
+  #property(tokens) {
+    const action = (tokens.shift() ?? "help").toLowerCase();
+    const description = this.#propertyDescription();
+
+    if (action === "help" || action === "list") {
+      this.#expectMaximum(tokens, 0, `property ${action}`);
+      return {
+        usage: [
+          "property list",
+          "property inspect [id]",
+          "property set id valor [...]",
+          "property unset id"
+        ],
+        ...description
+      };
+    }
+
+    if (action === "inspect") {
+      this.#expectMaximum(tokens, 1, "property inspect [id]");
+      const inspection = this.#query(
+        "selection.properties.inspect"
+      );
+
+      if (!tokens.length) return inspection;
+
+      const id = tokens[0];
+      this.#propertyDescriptor(description, id);
+      return inspection.properties[id];
+    }
+
+    const id = tokens.shift();
+    if (!id) {
+      throw new Error(`Uso: property ${action} id.`);
+    }
+    const descriptor = this.#propertyDescriptor(description, id);
+
+    if (action === "unset") {
+      this.#expectMaximum(tokens, 0, `property unset ${id}`);
+      return this.commands.execute(
+        "selection.properties.unset",
+        { properties: [id] }
+      );
+    }
+
+    if (action !== "set") {
+      throw new Error(
+        "Uso: property list|inspect|set|unset."
+      );
+    }
+
+    if (!tokens.length) {
+      throw new Error(`Uso: property set ${id} valor [...].`);
+    }
+
+    const value = parsePropertyInput(descriptor, tokens);
+    return this.commands.execute(
+      "selection.properties.set",
+      { patch: { [id]: value } }
+    );
+  }
+
+  #propertyDescription() {
+    return this.#query("properties.describe");
+  }
+
+  #propertyDescriptor(description, id) {
+    const descriptor = description.properties.find(
+      property => property.id === id
+    );
+
+    if (!descriptor) {
+      throw new Error(`Propriedade desconhecida: ${id}.`);
+    }
+
+    return descriptor;
+  }
+
+  #query(id, args) {
+    if (!this.queries?.execute) {
+      throw new Error("Consultas do runtime indisponíveis.");
+    }
+    return this.queries.execute(id, args);
   }
 
   #pivot(tokens) {
@@ -659,4 +752,36 @@ export class DevConsole {
       throw new Error(`Argumentos inesperados. Uso: ${usage}.`);
     }
   }
+}
+
+function splitStatements(source) {
+  const statements = [];
+  let current = "";
+  let quote = null;
+
+  for (const character of String(source)) {
+    if (quote) {
+      current += character;
+      if (character === quote) quote = null;
+      continue;
+    }
+
+    if (character === '"' || character === "'") {
+      quote = character;
+      current += character;
+      continue;
+    }
+
+    if (character === ";" || character === "\n") {
+      if (current.trim()) statements.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += character;
+  }
+
+  if (quote) throw new Error("Texto entre aspas não foi encerrado.");
+  if (current.trim()) statements.push(current.trim());
+  return statements;
 }

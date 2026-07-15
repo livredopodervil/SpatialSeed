@@ -6,6 +6,8 @@ O recorte 0022a estabelece uma única semântica para propriedades editáveis. P
 
 Este recorte cobre nome, aparência, textura e estado por instância. A interface visual e a gramática textual serão ligadas a esse contrato no recorte 0022b.
 
+O recorte 0022b foi posteriormente implementado e está descrito em `PROPERTY_SURFACES_0022B.md`.
+
 ## Componentes
 
 - `PropertyRegistry`: fonte autoritativa de metadados, validação, normalização, leitura e aplicabilidade.

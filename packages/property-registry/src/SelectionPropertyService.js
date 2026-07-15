@@ -59,6 +59,9 @@ export class SelectionPropertyService {
 
     for (const [id, value] of entries) {
       const descriptor = this.registry.require(id);
+      if (!descriptor.writable) {
+        throw new Error(`Propriedade somente leitura: ${id}.`);
+      }
       if (objects.length > 1 && !descriptor.editableMany) {
         throw new Error(`Propriedade não editável em lote: ${id}.`);
       }
@@ -121,7 +124,11 @@ export class SelectionPropertyService {
       const descriptor = this.registry.require(id);
 
       if (descriptor.scope === "object") {
-        setPath(patch, descriptor.path, value);
+        if (descriptor.write) {
+          descriptor.write(patch, value, { object });
+        } else {
+          setPath(patch, descriptor.path, value);
+        }
       } else if (descriptor.scope === "instance") {
         patch.instanceState ??= {};
         setPath(patch.instanceState, descriptor.path, value);
@@ -160,8 +167,9 @@ export class SelectionPropertyService {
 
   #context() {
     return {
-      material: object =>
-        this.appearanceRuntime.legacyMaterial(object.appearanceId),
+      material: object => object.appearanceId
+        ? this.appearanceRuntime.legacyMaterial(object.appearanceId)
+        : object.material,
       textureTransform: object => this.#textureTransform(object)
     };
   }

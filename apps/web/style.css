@@ -81,10 +81,8 @@ button:disabled{opacity:.35}
 
 #inspector-panel{position:fixed;z-index:25;top:4rem;right:.55rem;width:min(430px,calc(100vw - 1.1rem));max-height:80vh;overflow:auto;border:1px solid #ffffff22;border-radius:14px;background:#08101af7}
 #inspector-panel>header{position:sticky;top:0;display:flex;gap:.5rem;padding:.65rem;background:#08101af7}#inspector-panel>header strong{flex:1}
-#inspector-empty,#inspector-form{padding:.7rem}#inspector-form fieldset{margin:0 0 .7rem;border:1px solid #ffffff18;border-radius:10px}
-#inspector-form label{display:grid;grid-template-columns:8rem 1fr;gap:.5rem;align-items:center;margin:.45rem 0}
-#inspector-form input,#inspector-form select{width:100%;min-width:0;padding:.42rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff}
-.ins-vector{display:grid;grid-template-columns:8rem repeat(3,minmax(0,1fr));gap:.35rem;align-items:center;margin:.45rem 0}.ins-vector-2{grid-template-columns:8rem repeat(2,minmax(0,1fr))}
+#inspector-empty,#inspector-form{padding:.7rem}#inspector-summary{margin:0 0 .75rem;color:#b9c8dc;font-size:.88rem}#inspector-form fieldset{margin:0 0 .7rem;border:1px solid #ffffff18;border-radius:10px}
+.ins-property{margin:.55rem 0}.ins-property>label{display:grid;grid-template-columns:8.5rem minmax(0,1fr);gap:.5rem;align-items:center}.ins-property-editor{min-width:0}.ins-property input,.ins-property select{width:100%;min-width:0;padding:.42rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff}.ins-property-vector{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.35rem}.ins-property-vector[data-components="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}.ins-color-editor{display:grid;grid-template-columns:minmax(0,1fr) 3.2rem;gap:.35rem}.ins-color-editor input[type=color]{padding:.2rem}.ins-property-footer{display:flex;justify-content:flex-end;align-items:center;gap:.4rem;margin:.25rem 0 0 9rem;min-height:1.3rem}.ins-property-status{flex:1;color:#91a4bc}.ins-property-footer button{padding:.22rem .45rem}.ins-property.is-dirty{border-left:2px solid #5b8bd9;padding-left:.4rem}.ins-property[data-status=mixed] .ins-property-status{color:#e7bf75}.ins-file-property{display:grid;grid-template-columns:8.5rem minmax(0,1fr);gap:.5rem;align-items:center}
 @media(max-width:700px){#inspector-panel{top:auto;bottom:.55rem;max-height:72vh}}
 
 

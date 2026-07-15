@@ -43,6 +43,7 @@ export class PropertyRegistry {
           valueType: descriptor.valueType,
           nullable: descriptor.nullable,
           editableMany: descriptor.editableMany,
+          writable: descriptor.writable,
           values: descriptor.values
         })
       ))
@@ -54,11 +55,10 @@ export class PropertyRegistry {
     const properties = {};
 
     for (const descriptor of this.#descriptors.values()) {
-      const supported = members.map(object =>
-        descriptor.supports(object, context)
-      );
-
-      if (!members.length || supported.some(value => !value)) {
+      if (
+        !members.length ||
+        members.some(object => !descriptor.supports(object, context))
+      ) {
         properties[descriptor.id] = Object.freeze({
           id: descriptor.id,
           status: "unsupported",
@@ -68,18 +68,28 @@ export class PropertyRegistry {
         continue;
       }
 
-      const values = members.map(object =>
-        structuredClone(descriptor.read(object, context))
+      const value = structuredClone(
+        descriptor.read(members[0], context)
       );
-      const uniform = values.every(value =>
-        equalValue(value, values[0])
-      );
+      let uniform = true;
+
+      for (let index = 1; index < members.length; index += 1) {
+        if (!equalValue(
+          descriptor.read(members[index], context),
+          value
+        )) {
+          uniform = false;
+          break;
+        }
+      }
 
       properties[descriptor.id] = Object.freeze({
         id: descriptor.id,
         status: uniform ? "uniform" : "mixed",
-        editable: members.length === 1 || descriptor.editableMany,
-        value: uniform ? values[0] : null
+        editable: descriptor.writable && (
+          members.length === 1 || descriptor.editableMany
+        ),
+        value: uniform ? value : null
       });
     }
 
@@ -109,10 +119,14 @@ function normalizeDescriptor(input) {
     valueType: String(input.valueType ?? "unknown"),
     nullable: Boolean(input.nullable),
     editableMany: Boolean(input.editableMany),
+    writable: input.writable !== false,
     values: input.values
       ? Object.freeze([...input.values])
       : null,
     normalize: input.normalize,
+    write: typeof input.write === "function"
+      ? input.write
+      : null,
     read: input.read,
     supports: typeof input.supports === "function"
       ? input.supports

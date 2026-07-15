@@ -1,121 +1,375 @@
+import {
+  formatPropertyValue,
+  normalizeHexColor,
+  parsePropertyInput,
+  propertyComponentCount
+} from "../../property-registry/src/index.js?build=20260715-0022b";
+
+const GROUP_LABELS = Object.freeze({
+  object: "Identificação",
+  transform: "Transformação",
+  geometry: "Geometria",
+  appearance: "Aparência compartilhada",
+  instance: "Instância",
+  texture: "Textura"
+});
+
 export class ObjectInspector {
-  constructor({ root, editor, sandbox, dispatch, appearanceRuntime }) {
-    this.root=root; this.editor=editor; this.sandbox=sandbox; this.dispatch=dispatch; this.appearanceRuntime=appearanceRuntime;
-    this.selectedId=null; this.pendingTextureDataUrl=null;
+  static apiVersion = "object-inspector-properties-v1";
+
+  constructor({ root, editor, sandbox, query, execute }) {
+    this.root = root;
+    this.document = root.ownerDocument;
+    this.editor = editor;
+    this.sandbox = sandbox;
+    this.query = query;
+    this.execute = execute;
+    this.controls = new Map();
+    this.dirty = new Set();
+    this.unset = new Set();
+    this.pendingFiles = new Map();
+    this.selectionKey = "";
+    this.applying = false;
+
+    this.description = this.query("properties.describe");
+    this.#buildPropertyFields();
     this.#bind();
-    editor.selection.subscribe(()=>this.refresh());
-    sandbox.subscribe(()=>this.refresh());
+
+    editor.selection.subscribe(() => this.refresh());
+    sandbox.subscribe(() => this.refresh());
     this.refresh();
   }
+
   refresh() {
-    const members=this.editor.selection.snapshot().members;
-    const empty=this.root.querySelector("#inspector-empty");
-    const form=this.root.querySelector("#inspector-form");
-    if (members.length!==1) {
-      this.selectedId=null; empty.hidden=false; form.hidden=true;
-      empty.textContent=members.length?"O Inspector edita um objeto por vez.":"Selecione um objeto.";
+    if (this.applying) return;
+
+    const inspection = this.query("selection.properties.inspect");
+    const empty = this.root.querySelector("#inspector-empty");
+    const form = this.root.querySelector("#inspector-form");
+    const summary = this.root.querySelector("#inspector-summary");
+    const nextSelectionKey = inspection.targetIds.join("\u0000");
+
+    if (nextSelectionKey !== this.selectionKey) {
+      this.selectionKey = nextSelectionKey;
+      this.#clearPending();
+    }
+
+    if (!inspection.count) {
+      empty.hidden = false;
+      form.hidden = true;
+      empty.textContent = "Selecione um ou mais objetos.";
       return;
     }
-    const o=this.sandbox.getState().objects.find(x=>x.id===members[0].objectId);
-    if(!o)return;
-    this.selectedId=o.id; empty.hidden=true; form.hidden=false;
-    const m=o.material??this.appearanceRuntime?.legacyMaterial(o.appearanceId)??{}, t=m.texture??{};
-    this.#set("ins-name",o.name??"");
-    this.#vec("ins-position",o.position??[0,0,0]);
-    this.#vec("ins-rotation",quatToEuler(o.rotation??[0,0,0,1]));
-    this.#vec("ins-scale",o.scale??[1,1,1]);
-    this.#vec("ins-size",o.size??[1,1,1]);
-    this.#set("ins-color",m.color??"#ffffff");
-    this.#setChecked(
-      "ins-instance-color-enabled",
-      Boolean(o.instanceState?.color)
-    );
-    this.#set(
-      "ins-instance-color",
-      o.instanceState?.color ?? m.color ?? "#ffffff"
-    );
-    this.#set("ins-texture-src",t.src??"");
-    this.#vec("ins-repeat",t.repeat??[1,1]);
-    this.#vec("ins-offset",t.offset??[0,0]);
-    this.#set("ins-texture-rotation",t.rotationDeg??0);
-    this.#set("ins-wrap",t.wrap??"repeat");
+
+    empty.hidden = true;
+    form.hidden = false;
+    summary.textContent = inspection.count === 1
+      ? `1 objeto selecionado · ${inspection.targetIds[0]}`
+      : `${inspection.count} objetos selecionados`;
+
+    for (const descriptor of this.description.properties) {
+      const control = this.controls.get(descriptor.id);
+      const property = inspection.properties[descriptor.id];
+      if (!control || !property) continue;
+      this.#renderControl(control, property);
+    }
   }
+
   apply() {
-    if(!this.selectedId)throw new Error("Nenhum objeto selecionado.");
-    const cur=this.sandbox.getState().objects.find(x=>x.id===this.selectedId);
-    if(!cur)throw new Error("Objeto não encontrado.");
-    const shown=this.#read("ins-texture-src");
-    const src=this.pendingTextureDataUrl!==null?this.pendingTextureDataUrl:(shown.startsWith("[arquivo] ")?"":shown);
-    const currentMaterial=cur.material??this.appearanceRuntime?.legacyMaterial(cur.appearanceId)??{};
-    const patch={
-      name:this.#read("ins-name"),
-      position:this.#readVec("ins-position",3),
-      rotation:eulerToQuat(this.#readVec("ins-rotation",3)),
-      scale:this.#readVec("ins-scale",3,0.0001),
-      size:this.#readVec("ins-size",3,0.0001),
-      material:{...currentMaterial,color:this.#read("ins-color"),texture:{
-        src,repeat:this.#readVec("ins-repeat",2,0.0001),
-        offset:this.#readVec("ins-offset",2),
-        rotationDeg:this.#num("ins-texture-rotation"),
-        wrap:this.#read("ins-wrap")
-      }},
-      instanceState:{
-        ...(cur.instanceState ?? {}),
-        color:this.#checked("ins-instance-color-enabled")
-          ? this.#read("ins-instance-color")
-          : null
+    if (!this.dirty.size) {
+      return { changed: false, reason: "no-properties-changed" };
+    }
+
+    this.#clearValidation();
+    const patch = {};
+
+    for (const id of this.dirty) {
+      const control = this.controls.get(id);
+      if (!control) continue;
+
+      try {
+        patch[id] = this.unset.has(id)
+          ? null
+          : this.#readControl(control);
+      } catch (error) {
+        this.#showValidation(error, control);
+        throw error;
       }
-    };
-    const changed=this.dispatch({type:"object.update",id:this.selectedId,patch});
-    this.pendingTextureDataUrl=null;
-    return {changed,id:this.selectedId};
+    }
+
+    this.applying = true;
+
+    try {
+      const result = this.execute(
+        "selection.properties.set",
+        { patch }
+      );
+      this.#clearPending();
+      return result;
+    } finally {
+      this.applying = false;
+      this.refresh();
+    }
   }
-  #bind(){
+
+  #buildPropertyFields() {
+    const container = this.root.querySelector("#inspector-properties");
+    container.replaceChildren();
+    const groups = new Map();
+
+    for (const descriptor of this.description.properties) {
+      let group = groups.get(descriptor.group);
+
+      if (!group) {
+        const fieldset = this.document.createElement("fieldset");
+        const legend = this.document.createElement("legend");
+        legend.textContent = GROUP_LABELS[descriptor.group] ?? descriptor.group;
+        fieldset.append(legend);
+        container.append(fieldset);
+        group = fieldset;
+        groups.set(descriptor.group, group);
+      }
+
+      const control = this.#createControl(descriptor);
+      group.append(control.row);
+      this.controls.set(descriptor.id, control);
+
+      if (descriptor.id === "texture.src") {
+        group.append(this.#createTextureFileControl(control));
+      }
+    }
+  }
+
+  #createControl(descriptor) {
+    const row = this.document.createElement("div");
+    row.className = "ins-property";
+    row.dataset.propertyId = descriptor.id;
+
+    const label = this.document.createElement("label");
+    const title = this.document.createElement("span");
+    title.className = "ins-property-label";
+    title.textContent = descriptor.label;
+    label.append(title);
+
+    const editor = this.document.createElement("div");
+    editor.className = "ins-property-editor";
+    const inputs = [];
+
+    if (descriptor.valueType.startsWith("vector")) {
+      editor.classList.add("ins-property-vector");
+      const componentCount = propertyComponentCount(descriptor);
+      editor.dataset.components = String(componentCount);
+      for (let index = 0; index < componentCount; index += 1) {
+        const input = numberInput(this.document);
+        input.setAttribute("aria-label", `${descriptor.label} ${index + 1}`);
+        editor.append(input);
+        inputs.push(input);
+      }
+    } else if (descriptor.valueType === "boolean") {
+      const select = this.document.createElement("select");
+      select.append(
+        option(this.document, "true", "Sim"),
+        option(this.document, "false", "Não")
+      );
+      editor.append(select);
+      inputs.push(select);
+    } else if (descriptor.valueType === "enum") {
+      const select = this.document.createElement("select");
+      for (const value of descriptor.values ?? []) {
+        select.append(option(this.document, value, value));
+      }
+      editor.append(select);
+      inputs.push(select);
+    } else if (descriptor.valueType === "color") {
+      editor.classList.add("ins-color-editor");
+      const text = this.document.createElement("input");
+      text.type = "text";
+      text.spellcheck = false;
+      text.placeholder = "#rgb ou #rrggbb";
+      const picker = this.document.createElement("input");
+      picker.type = "color";
+      picker.setAttribute("aria-label", `${descriptor.label}: seletor visual`);
+      editor.append(text, picker);
+      inputs.push(text, picker);
+      picker.addEventListener("input", () => {
+        text.value = picker.value;
+        this.#markDirty(descriptor.id);
+      });
+      text.addEventListener("input", () => {
+        try {
+          picker.value = normalizeHexColor(text.value);
+        } catch {
+          // O campo textual permanece livre para edição parcial.
+        }
+      });
+    } else {
+      const input = descriptor.valueType === "number"
+        ? numberInput(this.document)
+        : this.document.createElement("input");
+      if (descriptor.valueType !== "number") input.type = "text";
+      input.spellcheck = false;
+      editor.append(input);
+      inputs.push(input);
+    }
+
+    for (const input of inputs) {
+      input.addEventListener("input", () =>
+        this.#markDirty(descriptor.id)
+      );
+      input.addEventListener("change", () =>
+        this.#markDirty(descriptor.id)
+      );
+    }
+
+    label.append(editor);
+    row.append(label);
+
+    const footer = this.document.createElement("div");
+    footer.className = "ins-property-footer";
+    const status = this.document.createElement("small");
+    status.className = "ins-property-status";
+    footer.append(status);
+
+    let removeButton = null;
+    if (descriptor.nullable) {
+      removeButton = this.document.createElement("button");
+      removeButton.type = "button";
+      removeButton.textContent = "Remover";
+      removeButton.addEventListener("click", () => {
+        this.unset.add(descriptor.id);
+        this.pendingFiles.delete(descriptor.id);
+        this.#markDirty(descriptor.id, { preserveUnset: true });
+        this.#setControlValue(
+          { descriptor, inputs },
+          null,
+          "uniform"
+        );
+      });
+      footer.append(removeButton);
+    }
+
+    row.append(footer);
+
+    return {
+      descriptor,
+      row,
+      inputs,
+      status,
+      removeButton
+    };
+  }
+
+  #createTextureFileControl(control) {
+    const label = this.document.createElement("label");
+    label.className = "ins-property ins-file-property";
+    const title = this.document.createElement("span");
+    title.className = "ins-property-label";
+    title.textContent = "Arquivo de imagem";
+    const input = this.document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+
+    input.addEventListener("change", event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const reader = new this.document.defaultView.FileReader();
+      reader.addEventListener("load", () => {
+        this.pendingFiles.set(
+          control.descriptor.id,
+          String(reader.result)
+        );
+        control.inputs[0].value = `[arquivo] ${file.name}`;
+        this.#markDirty(control.descriptor.id);
+      });
+      reader.readAsDataURL(file);
+    });
+
+    label.append(title, input);
+    return label;
+  }
+
+  #renderControl(control, property) {
+    const { descriptor, row, inputs, status, removeButton } = control;
+    const editable = Boolean(property.editable);
+
+    row.hidden = property.status === "unsupported";
+    row.dataset.status = property.status;
+    row.classList.toggle("is-dirty", this.dirty.has(descriptor.id));
+
+    for (const input of inputs) input.disabled = !editable;
+    if (removeButton) removeButton.disabled = !editable;
+
+    status.textContent = statusText(property, descriptor);
+
+    if (!this.dirty.has(descriptor.id)) {
+      this.#setControlValue(control, property.value, property.status);
+    }
+  }
+
+  #setControlValue(control, value, status) {
+    const { descriptor, inputs } = control;
+    const mixed = status === "mixed";
+
+    if (descriptor.valueType.startsWith("vector")) {
+      inputs.forEach((input, index) => {
+        input.value = mixed || value === null ? "" : value[index];
+        input.placeholder = mixed ? "misto" : "";
+      });
+      return;
+    }
+
+    const input = inputs[0];
+    input.value = mixed ? "" : formatPropertyValue(descriptor, value);
+    input.placeholder = mixed ? "valores diferentes" : "";
+
+    if (descriptor.valueType === "color" && inputs[1]) {
+      inputs[1].value = mixed || value === null
+        ? "#000000"
+        : normalizeHexColor(value);
+    }
+  }
+
+  #readControl(control) {
+    const { descriptor, inputs } = control;
+
+    if (this.pendingFiles.has(descriptor.id)) {
+      return this.pendingFiles.get(descriptor.id);
+    }
+
+    const raw = descriptor.valueType.startsWith("vector")
+      ? inputs.map(input => input.value)
+      : [inputs[0].value];
+
+    return parsePropertyInput(descriptor, raw);
+  }
+
+  #markDirty(id, { preserveUnset = false } = {}) {
+    this.dirty.add(id);
+    if (!preserveUnset) this.unset.delete(id);
+    this.controls.get(id)?.row.classList.add("is-dirty");
+  }
+
+  #clearPending() {
+    this.dirty.clear();
+    this.unset.clear();
+    this.pendingFiles.clear();
+    for (const control of this.controls.values()) {
+      control.row.classList.remove("is-dirty");
+    }
+  }
+
+  #bind() {
     this.root
       .querySelector("#inspector-apply")
       .addEventListener("click", () => {
-        this.#clearValidation();
-
         try {
-          const result = this.apply();
-          this.#clearValidation();
-          return result;
+          this.apply();
         } catch (error) {
-          this.#showValidation(error);
-
-          return {
-            changed: false,
-            reason: "validation"
-          };
+          if (!error?.fieldShown) {
+            this.#showValidation(error);
+          }
         }
       });
-    this.root.querySelector("#inspector-remove-texture").addEventListener("click",()=>{this.pendingTextureDataUrl="";this.#set("ins-texture-src","");});
-    this.root.querySelector("#ins-texture-file").addEventListener("change",e=>{
-      const f=e.target.files?.[0]; if(!f)return;
-      const r=new FileReader(); r.addEventListener("load",()=>{this.pendingTextureDataUrl=String(r.result);this.#set("ins-texture-src",`[arquivo] ${f.name}`);}); r.readAsDataURL(f);
-    });
-  }
-  #set(id,v){const e=this.root.querySelector(`#${id}`);if(e)e.value=v}
-  #setChecked(id,v){const e=this.root.querySelector(`#${id}`);if(e)e.checked=Boolean(v)}
-  #checked(id){return Boolean(this.root.querySelector(`#${id}`)?.checked)}
-  #vec(p,v){v.forEach((x,i)=>this.#set(`${p}-${i}`,Number(x)))}
-  #read(id){return this.root.querySelector(`#${id}`)?.value??""}
-  #num(id, min = null) {
-    const value = Number(this.#read(id));
-
-    if (!Number.isFinite(value)) {
-      const error = new Error(`Valor inválido: ${id}`);
-      error.fieldId = id;
-      throw error;
-    }
-
-    if (min !== null && value < min) {
-      const error = new Error(`${id} deve ser ≥ ${min}`);
-      error.fieldId = id;
-      throw error;
-    }
-
-    return value;
   }
 
   #clearValidation() {
@@ -127,27 +381,43 @@ export class ObjectInspector {
       });
   }
 
-  #showValidation(error) {
-    const field = error?.fieldId
-      ? this.root.querySelector(`#${error.fieldId}`)
-      : null;
-
-    if (field) {
-      field.setCustomValidity(error.message);
-      field.setAttribute("aria-invalid", "true");
-      field.focus();
-      field.reportValidity();
+  #showValidation(error, control = null) {
+    const input = control?.inputs?.[0] ?? null;
+    if (input) {
+      input.setCustomValidity(error?.message ?? String(error));
+      input.setAttribute("aria-invalid", "true");
+      input.focus();
+      input.reportValidity();
+      error.fieldShown = true;
       return;
     }
 
-    const message =
-      this.root.querySelector("#inspector-empty");
-
+    const message = this.root.querySelector("#inspector-empty");
     message.hidden = false;
-    message.textContent =
-      error?.message ?? String(error);
+    message.textContent = error?.message ?? String(error);
   }
-  #readVec(p,n,min=null){return Array.from({length:n},(_,i)=>this.#num(`${p}-${i}`,min))}
 }
-function eulerToQuat([xd,yd,zd]){const x=xd*Math.PI/180,y=yd*Math.PI/180,z=zd*Math.PI/180,c1=Math.cos(x/2),c2=Math.cos(y/2),c3=Math.cos(z/2),s1=Math.sin(x/2),s2=Math.sin(y/2),s3=Math.sin(z/2);return[s1*c2*c3+c1*s2*s3,c1*s2*c3-s1*c2*s3,c1*c2*s3+s1*s2*c3,c1*c2*c3-s1*s2*s3]}
-function quatToEuler([x,y,z,w]){const r=Math.atan2(2*(w*x+y*z),1-2*(x*x+y*y)),sp=2*(w*y-z*x),p=Math.abs(sp)>=1?Math.sign(sp)*Math.PI/2:Math.asin(sp),ya=Math.atan2(2*(w*z+x*y),1-2*(y*y+z*z));return[r,p,ya].map(v=>v*180/Math.PI)}
+
+function numberInput(documentRoot) {
+  const input = documentRoot.createElement("input");
+  input.type = "number";
+  input.step = "any";
+  return input;
+}
+
+function option(documentRoot, value, label) {
+  const result = documentRoot.createElement("option");
+  result.value = value;
+  result.textContent = label;
+  return result;
+}
+
+function statusText(property, descriptor) {
+  if (property.status === "mixed") return "Valores diferentes";
+  if (property.status === "unsupported") return "Não suportado";
+  if (!property.editable && descriptor.editableMany === false) {
+    return "Editável apenas com um objeto selecionado";
+  }
+  if (property.value === null) return "Sem valor próprio";
+  return property.editable ? "" : "Somente leitura";
+}

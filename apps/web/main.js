@@ -1,7 +1,7 @@
-import { createWebRuntime } from "./bootstrap/createWebRuntime.js?build=20260715-0022a";
-import { bindWebInterface } from "./bootstrap/bindWebInterface.js?build=20260715-0022a";
+import { createWebRuntime } from "./bootstrap/createWebRuntime.js?build=20260715-0022b";
+import { bindWebInterface } from "./bootstrap/bindWebInterface.js?build=20260715-0022b";
 
-const BUILD = "20260715-0022a";
+const BUILD = "20260715-0022b";
 const $ = id => document.getElementById(id);
 
 function showFatalError(error) {

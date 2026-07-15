@@ -15,6 +15,55 @@ export function createDefaultPropertyRegistry() {
       read: object => object.name ?? object.id
     }))
     .register(property({
+      id: "transform.position",
+      label: "Posição",
+      group: "transform",
+      scope: "object",
+      path: ["position"],
+      valueType: "vector3",
+      editableMany: false,
+      normalize: value => vector(value, 3),
+      read: object => [...(object.position ?? [0, 0, 0])]
+    }))
+    .register(property({
+      id: "transform.rotationDeg",
+      label: "Rotação °",
+      group: "transform",
+      scope: "object",
+      path: ["rotation"],
+      valueType: "vector3",
+      editableMany: false,
+      normalize: value => vector(value, 3),
+      read: object => quaternionToEuler(
+        object.rotation ?? [0, 0, 0, 1]
+      ),
+      write: (patch, value) => {
+        patch.rotation = eulerToQuaternion(value);
+      }
+    }))
+    .register(property({
+      id: "transform.scale",
+      label: "Escala",
+      group: "transform",
+      scope: "object",
+      path: ["scale"],
+      valueType: "vector3",
+      normalize: value => positiveVector(value, 3),
+      read: object => [...(object.scale ?? [1, 1, 1])]
+    }))
+    .register(property({
+      id: "geometry.size",
+      label: "Dimensões",
+      group: "geometry",
+      scope: "object",
+      path: ["size"],
+      valueType: "vector3",
+      normalize: value => positiveVector(value, 3),
+      supports: object =>
+        object?.kind === "box" && Array.isArray(object.size),
+      read: object => [...object.size]
+    }))
+    .register(property({
       id: "appearance.color",
       label: "Cor",
       group: "appearance",
@@ -159,10 +208,56 @@ function vector(value, length) {
   return value.map(finiteNumber);
 }
 
+function positiveVector(value, length) {
+  const result = vector(value, length);
+  if (result.some(component => component <= 0)) {
+    throw new RangeError("Todos os componentes devem ser positivos.");
+  }
+  return result;
+}
+
 function enumValue(value, values) {
   const result = String(value);
   if (!values.includes(result)) {
     throw new TypeError(`Valor deve ser um de: ${values.join(", ")}.`);
   }
   return result;
+}
+
+function eulerToQuaternion([xDegrees, yDegrees, zDegrees]) {
+  const x = xDegrees * Math.PI / 180;
+  const y = yDegrees * Math.PI / 180;
+  const z = zDegrees * Math.PI / 180;
+  const c1 = Math.cos(x / 2);
+  const c2 = Math.cos(y / 2);
+  const c3 = Math.cos(z / 2);
+  const s1 = Math.sin(x / 2);
+  const s2 = Math.sin(y / 2);
+  const s3 = Math.sin(z / 2);
+
+  return [
+    s1 * c2 * c3 + c1 * s2 * s3,
+    c1 * s2 * c3 - s1 * c2 * s3,
+    c1 * c2 * s3 + s1 * s2 * c3,
+    c1 * c2 * c3 - s1 * s2 * s3
+  ];
+}
+
+function quaternionToEuler([x, y, z, w]) {
+  const roll = Math.atan2(
+    2 * (w * x + y * z),
+    1 - 2 * (x * x + y * y)
+  );
+  const sinPitch = 2 * (w * y - z * x);
+  const pitch = Math.abs(sinPitch) >= 1
+    ? Math.sign(sinPitch) * Math.PI / 2
+    : Math.asin(sinPitch);
+  const yaw = Math.atan2(
+    2 * (w * z + x * y),
+    1 - 2 * (y * y + z * z)
+  );
+
+  return [roll, pitch, yaw].map(radians =>
+    radians * 180 / Math.PI
+  );
 }

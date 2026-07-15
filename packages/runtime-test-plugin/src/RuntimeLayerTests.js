@@ -60,9 +60,13 @@ import {
 } from "../../geometry-registry/src/index.js?build=20260714-0020b-a";
 import {
   normalizeHexColor,
+  parsePropertyInput,
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260715-0022a";
+} from "../../property-registry/src/index.js?build=20260715-0022b";
+import {
+  DevConsole
+} from "../../devtools/src/DevConsole.js?build=20260715-0022b";
 
 export function createRuntimeLayerTests() {
   return {
@@ -1310,6 +1314,30 @@ assets: {
         assertEqual("normalize" in color, false);
       },
 
+      "codec de entrada interpreta tipos declarados"() {
+        const properties = createDefaultPropertyRegistry()
+          .describe()
+          .properties;
+        const descriptor = id => properties.find(
+          property => property.id === id
+        );
+
+        assertDeepEqual(
+          parsePropertyInput(
+            descriptor("transform.position"),
+            ["1", "2.5", "-3"]
+          ),
+          [1, 2.5, -3]
+        );
+        assertEqual(
+          parsePropertyInput(
+            descriptor("appearance.transparent"),
+            ["sim"]
+          ),
+          true
+        );
+      },
+
       "inspeção diferencia valores uniformes e mistos"() {
         const fixture = createPropertyFixture();
 
@@ -1466,6 +1494,97 @@ assets: {
           fixture.sandbox.getHistoryDiagnostics().commandCount,
           0
         );
+      },
+
+      "transformação e geometria usam o mesmo contrato"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "a"
+        });
+
+        fixture.service.setSelection({
+          "transform.position": [4, 5, 6],
+          "transform.rotationDeg": [0, 90, 0],
+          "transform.scale": [2, 3, 4],
+          "geometry.size": [6, 7, 8]
+        });
+        const object = fixture.sandbox.getState().objects[0];
+
+        assertDeepEqual(object.position, [4, 5, 6]);
+        assertDeepEqual(object.scale, [2, 3, 4]);
+        assertDeepEqual(object.size, [6, 7, 8]);
+        assertNear(object.rotation[1], Math.SQRT1_2);
+        assertNear(object.rotation[3], Math.SQRT1_2);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          1
+        );
+      },
+
+      "console traduz property set e inspect para a API comum"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replaceMany([
+          { regionId: "region-properties", objectId: "a" },
+          { regionId: "region-properties", objectId: "b" }
+        ]);
+        const console = createPropertyConsole(fixture);
+
+        const setResult = console.execute(
+          "property set appearance.color #3af"
+        )[0];
+        const inspectResult = console.execute(
+          "property inspect appearance.color"
+        )[0];
+
+        assertEqual(setResult.ok, true);
+        assertEqual(inspectResult.ok, true);
+        assertEqual(inspectResult.result.status, "uniform");
+        assertEqual(inspectResult.result.value, "#33aaff");
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          1
+        );
+      },
+
+      "console valida aridade vetorial antes da mutação"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "a"
+        });
+        const console = createPropertyConsole(fixture);
+
+        const result = console.execute(
+          "property set transform.position 1 2"
+        )[0];
+
+        assertEqual(result.ok, false);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          0
+        );
+      },
+
+      "console preserva ponto e vírgula dentro de URI citada"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "a"
+        });
+        const console = createPropertyConsole(fixture);
+        const uri = "data:image/png;base64,AA;BB";
+
+        const result = console.execute(
+          `property set texture.src "${uri}"`
+        )[0];
+        const object = fixture.sandbox.getState().objects[0];
+        const material = fixture.appearanceRuntime.legacyMaterial(
+          object.appearanceId
+        );
+
+        assertEqual(result.ok, true);
+        assertEqual(material.texture.src, uri);
       }
     },
 
@@ -2348,6 +2467,39 @@ function createPropertyFixture({ instanceColor = null } = {}) {
     registry,
     service
   };
+}
+
+function createPropertyConsole(fixture) {
+  return new DevConsole({
+    editor: { selection: fixture.selection },
+    sandbox: fixture.sandbox,
+    region: fixture.sandbox.region,
+    renderer: {},
+    getDiagnostics: () => ({}),
+    commands: {
+      describe: () => [],
+      execute(id, args) {
+        if (id === "selection.properties.set") {
+          return fixture.service.setSelection(args.patch);
+        }
+        if (id === "selection.properties.unset") {
+          return fixture.service.unsetSelection(args.properties);
+        }
+        throw new Error(`Comando inesperado: ${id}.`);
+      }
+    },
+    queries: {
+      execute(id) {
+        if (id === "properties.describe") {
+          return fixture.registry.describe();
+        }
+        if (id === "selection.properties.inspect") {
+          return fixture.service.inspectSelection();
+        }
+        throw new Error(`Consulta inesperada: ${id}.`);
+      }
+    }
+  });
 }
 
 function propertyObject(id, color, instanceColor) {
