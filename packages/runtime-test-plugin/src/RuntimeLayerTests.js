@@ -30,7 +30,17 @@ import {
 import {
   InstanceBatchManager
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
-import { composeAffineOperations, affineCopies, composeTransform, decomposeTransform, eulerQuaternion } from "../../math-affine/src/index.js";
+import {
+  composeAffineOperations,
+  affineCopies,
+  composeTransform,
+  decomposeTransform,
+  decomposeTransformStrict,
+  eulerQuaternion,
+  identityMatrix,
+  invertAffineMatrix,
+  multiplyMatrices
+} from "../../math-affine/src/index.js";
 import {
   compileAffineExpression,
   compileAffineProgram,
@@ -845,6 +855,35 @@ assets: {
         const restored=decomposeTransform(composeTransform(source));
         assertDeepEqual(restored.position.map(roundAffine),source.position);
         assertDeepEqual(restored.scale.map(roundAffine),source.scale);
+      },
+      "inversa afim preserva identidade"() {
+        const matrix=composeTransform({
+          position:[3,-2,5],
+          rotation:eulerQuaternion([20,30,40]),
+          scale:[2,3,4]
+        });
+        const product=multiplyMatrices(matrix,invertAffineMatrix(matrix));
+        assertDeepEqual(product.map(roundAffine),identityMatrix());
+      },
+      "decomposição estrita aceita TRS exato"() {
+        const source={position:[3,-2,5],rotation:eulerQuaternion([20,30,40]),scale:[2,3,4]};
+        const restored=decomposeTransformStrict(composeTransform(source));
+        assertDeepEqual(restored.position.map(roundAffine),source.position);
+        assertDeepEqual(restored.scale.map(roundAffine),source.scale);
+      },
+      "decomposição estrita rejeita cisalhamento"() {
+        const shear=[1,0,0,0, 0.5,1,0,0, 0,0,1,0, 0,0,0,1];
+        assertThrowsCode(
+          () => decomposeTransformStrict(shear),
+          "NON_TRS_TRANSFORM"
+        );
+      },
+      "inversa afim rejeita escala nula"() {
+        const singular=composeTransform({scale:[1,0,1]});
+        assertThrowsCode(
+          () => invertAffineMatrix(singular),
+          "NON_INVERTIBLE_TRANSFORM"
+        );
       },
       "gera dez mil transformações"() {
         const step=composeAffineOperations([
@@ -2730,6 +2769,17 @@ function assertNear(actual, expected, epsilon = 1e-9) {
     Math.abs(actual - expected) <= epsilon,
     `Esperado aproximadamente ${expected}, recebido ${actual}.`
   );
+}
+
+function assertThrowsCode(callback, expectedCode) {
+  let captured=null;
+  try {
+    callback();
+  } catch (error) {
+    captured=error;
+  }
+  assert(captured,`Esperava erro ${expectedCode}, mas nenhuma exceção foi lançada.`);
+  assertEqual(captured.code,expectedCode);
 }
 
 function round(value) {

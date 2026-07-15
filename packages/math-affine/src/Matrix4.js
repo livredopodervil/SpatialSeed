@@ -1,5 +1,14 @@
 const EPS = 1e-12;
 
+export class AffineTransformError extends Error {
+  constructor(code, message, details = {}) {
+    super(message);
+    this.name = "AffineTransformError";
+    this.code = code;
+    this.details = Object.freeze({ ...details });
+  }
+}
+
 export const identityMatrix = () => [
   1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1
 ];
@@ -90,6 +99,93 @@ export function decomposeTransform(m) {
     0,0,0,1
   ];
   return { position, rotation: quatFromMatrix(r), scale:[sx,sy,sz] };
+}
+
+export function invertAffineMatrix(m, { epsilon = EPS } = {}) {
+  validateAffineMatrix(m, { epsilon });
+
+  const a00=m[0], a01=m[4], a02=m[8];
+  const a10=m[1], a11=m[5], a12=m[9];
+  const a20=m[2], a21=m[6], a22=m[10];
+
+  const c00=a11*a22-a12*a21;
+  const c01=a02*a21-a01*a22;
+  const c02=a01*a12-a02*a11;
+  const c10=a12*a20-a10*a22;
+  const c11=a00*a22-a02*a20;
+  const c12=a02*a10-a00*a12;
+  const c20=a10*a21-a11*a20;
+  const c21=a01*a20-a00*a21;
+  const c22=a00*a11-a01*a10;
+  const determinant=a00*c00+a01*c10+a02*c20;
+
+  if (Math.abs(determinant) <= epsilon) {
+    throw new AffineTransformError(
+      "NON_INVERTIBLE_TRANSFORM",
+      "Matriz afim não pode ser invertida: determinante nulo.",
+      { determinant, epsilon }
+    );
+  }
+
+  const inverseDeterminant=1/determinant;
+  const i00=c00*inverseDeterminant, i01=c01*inverseDeterminant, i02=c02*inverseDeterminant;
+  const i10=c10*inverseDeterminant, i11=c11*inverseDeterminant, i12=c12*inverseDeterminant;
+  const i20=c20*inverseDeterminant, i21=c21*inverseDeterminant, i22=c22*inverseDeterminant;
+  const tx=m[12], ty=m[13], tz=m[14];
+
+  return [
+    i00,i10,i20,0,
+    i01,i11,i21,0,
+    i02,i12,i22,0,
+    -(i00*tx+i01*ty+i02*tz),
+    -(i10*tx+i11*ty+i12*tz),
+    -(i20*tx+i21*ty+i22*tz),
+    1
+  ];
+}
+
+export function decomposeTransformStrict(m, {
+  absoluteTolerance = 1e-9,
+  relativeTolerance = 1e-9
+} = {}) {
+  validateAffineMatrix(m, { epsilon: absoluteTolerance });
+  const transform=decomposeTransform(m);
+  const reconstructed=composeTransform(transform);
+  let residual=0;
+  let magnitude=1;
+
+  for (let index=0; index<16; index+=1) {
+    residual=Math.max(residual,Math.abs(m[index]-reconstructed[index]));
+    magnitude=Math.max(magnitude,Math.abs(m[index]));
+  }
+
+  const tolerance=absoluteTolerance+relativeTolerance*magnitude;
+  if (residual > tolerance) {
+    throw new AffineTransformError(
+      "NON_TRS_TRANSFORM",
+      "Matriz afim contém cisalhamento ou outra transformação não representável por TRS.",
+      { residual, tolerance }
+    );
+  }
+  return transform;
+}
+
+export function validateAffineMatrix(m, { epsilon = EPS } = {}) {
+  validateMatrix(m);
+  const residual=Math.max(
+    Math.abs(m[3]),
+    Math.abs(m[7]),
+    Math.abs(m[11]),
+    Math.abs(m[15]-1)
+  );
+  if (residual > epsilon) {
+    throw new AffineTransformError(
+      "NON_AFFINE_TRANSFORM",
+      "Matriz deve representar uma transformação afim.",
+      { residual, epsilon }
+    );
+  }
+  return m;
 }
 
 export function validateMatrix(m) {
