@@ -185,6 +185,15 @@ export async function createWebRuntime({
     capabilities
   });
 
+  // O Inspector consulta estas propriedades durante sua construção.
+  queries
+    .register("properties.describe", () =>
+      propertyRegistry.describe()
+    )
+    .register("selection.properties.inspect", () =>
+      propertyService.inspectSelection()
+    );
+
   const transformToolPanel = new TransformToolPanel({
     root: transformToolsRoot,
     renderer
@@ -224,12 +233,6 @@ export async function createWebRuntime({
     )
     .register("editor.snapshot", () =>
       editor.snapshot()
-    )
-    .register("properties.describe", () =>
-      propertyRegistry.describe()
-    )
-    .register("selection.properties.inspect", () =>
-      propertyService.inspectSelection()
     )
     .register("runtime.status", () => ({
       build: "20260715-0022b",
