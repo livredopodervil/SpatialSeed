@@ -10,7 +10,8 @@ import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
 import {
   affectedHierarchyIds,
-  applyProjectedWorldMatrix
+  applyProjectedWorldMatrix,
+  isRenderableSceneNode
 } from "./WorldTransformProjection.js?build=20260715-0023d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -320,7 +321,7 @@ export class ThreeRegionRenderer {
       proxy = new THREE.Object3D();
       proxy.userData.objectId = object.id;
       proxy.userData.batchKey = null;
-      proxy.userData.size = [...object.size];
+      proxy.userData.size = object.size ? [...object.size] : [0,0,0];
       proxy.userData.appearanceId = object.appearanceId;
       proxy.userData.instanceColor =
         object.instanceState?.color ?? null;
@@ -330,11 +331,21 @@ export class ThreeRegionRenderer {
       this.#incrementalDiagnostics.objectsUpdated += 1;
     }
 
-    proxy.userData.size = [...object.size];
+    proxy.userData.size = object.size ? [...object.size] : [0,0,0];
 
     if (!this.#session) {
       applyProjectedWorldMatrix(proxy,worldMatrix);
     }
+
+    if (!isRenderableSceneNode(object)) {
+      if (proxy.userData.batchKey) {
+        this.#removeFromBatch(object.id,proxy.userData.batchKey);
+        proxy.userData.batchKey=null;
+      }
+      proxy.userData.logicalOnly=true;
+      return;
+    }
+    proxy.userData.logicalOnly=false;
 
     const nextBatchKey = this.#batchKeyFor(object);
 

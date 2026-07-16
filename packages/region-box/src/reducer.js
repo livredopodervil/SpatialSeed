@@ -1,5 +1,6 @@
 import {
   applyWorldTransforms,
+  groupNodes,
   reparentPreservingWorld
 } from "../../scene-hierarchy/src/index.js";
 
@@ -281,6 +282,28 @@ export function boxRegionReducer(state, command) {
           type: "hierarchy-reparented",
           objectId: command.id,
           parentId: command.parentId ?? null
+        }]
+      };
+    }
+
+    case "selection.group": {
+      const result=groupNodes(state.objects,{
+        groupId:command.groupId,
+        targetIds:command.targetIds,
+        name:command.name,
+        anchorWorldPosition:command.anchorWorldPosition,
+        pivot:command.pivot
+      });
+
+      return {
+        state:Object.freeze({
+          ...state,
+          objects:result.nodes
+        }),
+        changes:[{
+          type:"hierarchy-grouped",
+          objectId:result.group.id,
+          targetIds:result.targetIds
         }]
       };
     }

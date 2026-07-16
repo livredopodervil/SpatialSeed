@@ -82,7 +82,8 @@ import {
 } from "../../scene-hierarchy/src/index.js";
 import {
   affectedHierarchyIds,
-  applyProjectedWorldMatrix
+  applyProjectedWorldMatrix,
+  isRenderableSceneNode
 } from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
 
 export function createRuntimeLayerTests() {
@@ -1223,6 +1224,128 @@ assets: {
           decomposeTransformStrict(world).position.map(roundAffine),
           [2001,0,0]
         );
+      }
+    },
+
+    "hierarchy-group": {
+      "cria grupo com âncora e pivô independentes"() {
+        const sandbox=createHierarchySandbox();
+        sandbox.dispatch({
+          type:"selection.group",
+          groupId:"new-group",
+          targetIds:["moving","nested"],
+          pivot:[1,2,3]
+        });
+        const state=sandbox.getSnapshot();
+        const group=findHierarchyNode(state,"new-group");
+        assertEqual(group.kind,"group");
+        assertEqual(group.parentId,"source");
+        assertDeepEqual(group.pivot,[1,2,3]);
+        assertDeepEqual(group.rotation,[0,0,0,1]);
+        assertDeepEqual(group.scale,[1,1,1]);
+      },
+      "seleção canônica não reparenta descendente duas vezes"() {
+        const sandbox=createHierarchySandbox();
+        sandbox.dispatch({
+          type:"selection.group",
+          groupId:"new-group",
+          targetIds:["moving","nested"]
+        });
+        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertDeepEqual(hierarchy.childrenOf("new-group"),["moving"]);
+        assertEqual(hierarchy.parentOf("nested"),"moving");
+      },
+      "agrupamento preserva toda a subárvore no mundo"() {
+        const sandbox=createHierarchySandbox();
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const movingWorld=before.worldMatrixOf("moving");
+        const nestedWorld=before.worldMatrixOf("nested");
+        sandbox.dispatch({
+          type:"selection.group",
+          groupId:"new-group",
+          targetIds:["moving"]
+        });
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertMatricesNear(after.worldMatrixOf("moving"),movingWorld);
+        assertMatricesNear(after.worldMatrixOf("nested"),nestedWorld);
+      },
+      "alvos de pais diferentes usam ancestral comum"() {
+        const sandbox=createHierarchySandbox();
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const movingWorld=before.worldMatrixOf("moving");
+        const targetWorld=before.worldMatrixOf("target");
+        sandbox.dispatch({
+          type:"selection.group",
+          groupId:"cross-group",
+          targetIds:["moving","target"]
+        });
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertEqual(after.parentOf("cross-group"),null);
+        assertEqual(after.parentOf("moving"),"cross-group");
+        assertEqual(after.parentOf("target"),"cross-group");
+        assertMatricesNear(after.worldMatrixOf("moving"),movingWorld);
+        assertMatricesNear(after.worldMatrixOf("target"),targetWorld);
+      },
+      "grupo pode ser agrupado novamente"() {
+        const sandbox=createHierarchySandbox();
+        sandbox.dispatch({
+          type:"selection.group",
+          groupId:"inner",
+          targetIds:["moving"]
+        });
+        sandbox.dispatch({
+          type:"selection.group",
+          groupId:"outer",
+          targetIds:["inner"]
+        });
+        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertEqual(hierarchy.parentOf("inner"),"outer");
+        assertEqual(hierarchy.parentOf("moving"),"inner");
+        assertEqual(hierarchy.parentOf("nested"),"moving");
+      },
+      "grupo lógico não solicita geometria ao renderer"() {
+        assertEqual(isRenderableSceneNode({kind:"group"}),false);
+        assertEqual(isRenderableSceneNode({kind:"box"}),true);
+      },
+      "identificador duplicado falha atomicamente"() {
+        const sandbox=createHierarchySandbox();
+        const before=sandbox.getState();
+        assertThrowsCode(
+          () => sandbox.dispatch({
+            type:"selection.group",
+            groupId:"source",
+            targetIds:["moving"]
+          }),
+          "DUPLICATE_NODE_ID"
+        );
+        assertDeepEqual(sandbox.getState(),before);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+      "cisalhamento entre ramos falha atomicamente"() {
+        const sandbox=createShearHierarchySandbox();
+        const before=sandbox.getState();
+        assertThrowsCode(
+          () => sandbox.dispatch({
+            type:"selection.group",
+            groupId:"invalid-group",
+            targetIds:["rotated-child","loose"]
+          }),
+          "NON_TRS_TRANSFORM"
+        );
+        assertDeepEqual(sandbox.getState(),before);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+      "agrupamento e undo formam uma operação única"() {
+        const sandbox=createHierarchySandbox();
+        const before=sandbox.getState();
+        sandbox.dispatch({
+          type:"selection.group",
+          groupId:"new-group",
+          targetIds:["moving"]
+        });
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,1);
+        sandbox.undo();
+        assertDeepEqual(sandbox.getState(),before);
       }
     },
 
@@ -3186,6 +3309,12 @@ function createShearHierarchySandbox() {
           parentId:"scaled-parent",
           position:[0,0,0],
           rotation:eulerQuaternion([0,0,45]),
+          scale:[1,1,1]
+        },
+        {
+          id:"loose",
+          position:[5,0,0],
+          rotation:[0,0,0,1],
           scale:[1,1,1]
         }
       ]

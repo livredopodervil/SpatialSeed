@@ -31,3 +31,7 @@ export function affectedHierarchyIds(hierarchy, changes = []) {
 
   return Object.freeze([...affected]);
 }
+
+export function isRenderableSceneNode(node) {
+  return node?.kind !== "group";
+}
