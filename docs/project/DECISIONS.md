@@ -1,22 +1,336 @@
-# Decisões arquiteturais
+# Registro de decisões do SpatialSeed
 
-## Aparência
-`Object → appearanceId → materialId/shaderId → textureId`.
+> Documento vivo. Auditado em 16 de julho de 2026 contra o marco `0026`.
+> Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
-## Estado e renderer
-Objetos lógicos são independentes de Mesh, InstancedMesh ou outro backend.
+## Como ler
 
-## Instanciamento
-Lote por `kind + size + appearanceId`.
+Cada decisão possui um identificador estável, estado, decisão, motivação e
+consequências. Os estados usados são:
 
-## Edição
-Proxy `Object3D` invisível por objeto para pivô, gizmo e transformação.
+- **vigente:** deve orientar novas mudanças;
+- **implementada:** vigente e já representada no código;
+- **planejada:** aceita, mas ainda incompleta;
+- **superada:** preservada apenas para explicar a evolução.
 
-## Repetição afim
-`M(n+1) = ΔM · M(n)`.
+## D-001 — Estado lógico independente do renderer
 
-## Experimentos
-Cliente estável em `apps/web`; protótipos em `apps/experiments`.
+**Estado:** implementada.
 
-## Distribuição
-Python, Bash, Node, Go, PWA ou aplicativo são lançadores possíveis, não dependências semânticas do núcleo.
+Objetos, grupos, aparências e seleção não são definidos por `Mesh`,
+`InstancedMesh`, `Object3D` ou qualquer backend visual. Three.js é uma projeção
+substituível do estado lógico.
+
+**Motivação:** permitir múltiplos viewers, renderização textual, testes sem GPU,
+serialização estável e troca futura de backend.
+
+**Consequências:** proxies e objetos auxiliares do renderer são transitórios;
+IDs visuais não substituem IDs do mundo; otimizações gráficas não podem mudar a
+semântica dos objetos.
+
+## D-002 — Arquitetura orientada a comandos
+
+**Estado:** implementada.
+
+Toda mutação editorial deve existir uma vez na camada pública de comandos. GUI,
+Inspector, console, automação e programas chamam essa camada em vez de alterar
+o sandbox diretamente.
+
+**Motivação:** uma única fonte de comportamento, reutilização entre superfícies,
+histórico coerente e testes sem interação visual.
+
+**Consequências:** uma função disponível apenas na interface é incompleta;
+botões não são APIs; queries e eventos permanecem separados dos comandos.
+
+## D-003 — Região, sandbox e viewer são níveis distintos
+
+**Estado:** implementada localmente; distribuição remota planejada.
+
+A região representa o estado publicável; o sandbox contém a edição local e seu
+histórico; o viewer mantém somente estado de apresentação.
+
+**Motivação:** impedir que previews, gestos e desfazer local contaminem uma
+futura autoridade compartilhada.
+
+**Consequências:** undo/redo não é global; publicar uma proposta deverá ser uma
+operação explícita; navegação de câmera nunca altera o mundo.
+
+## D-004 — Preview não é commit
+
+**Estado:** implementada.
+
+Transformações interativas podem produzir previews no renderer, mas somente o
+resultado final confirmado gera comando e histórico.
+
+**Motivação:** eficiência visual, atomicidade e ausência de centenas de eventos
+persistentes durante um arraste.
+
+**Consequências:** cancelar restaura a projeção sem comando; renderer e editor
+devem suportar sessões transacionais.
+
+## D-005 — Geometrias e propriedades entram por registros
+
+**Estado:** implementada.
+
+`GeometryRegistry` e `PropertyRegistry` descrevem famílias, campos, tipos,
+limites e normalização. Painéis e console consultam os mesmos descritores.
+
+**Motivação:** acrescentar capacidades sem espalhar condicionais por renderer,
+Inspector e gramática textual.
+
+**Consequências:** novos providers precisam de contrato e testes; a UI não deve
+codificar listas autoritativas paralelas.
+
+## D-006 — Aparências e assets são normalizados
+
+**Estado:** implementada.
+
+Objetos referenciam `appearanceId`; aparências referenciam materiais, texturas e
+transformações de textura. Conteúdo repetido é compartilhado e contado por
+referência.
+
+**Motivação:** evitar Base64 e materiais duplicados, reduzir memória e permitir
+cache coerente entre objetos e lotes.
+
+**Consequências:** importação valida referências; alterações de aparência
+invalidam caches de forma explícita; o formato normalizado não deve voltar a
+embutir recursos em cada objeto.
+
+## D-007 — Instanciamento é otimização, não identidade
+
+**Estado:** implementada.
+
+Objetos lógicos continuam individuais mesmo quando são projetados num
+`THREE.InstancedMesh`. A chave de lote deriva de geometria e aparência
+compatíveis, não da identidade editorial.
+
+**Motivação:** cenas grandes com poucos draw calls sem sacrificar seleção,
+propriedades ou histórico por objeto.
+
+**Consequências:** picking resolve `instanceId` para objeto lógico; slots podem
+ser reutilizados; cor por instância não deve necessariamente trocar o lote.
+
+## D-008 — Grupos usam transformações locais
+
+**Estado:** implementada para hierarquia editorial.
+
+Filhos mantêm transform local em relação à âncora do grupo. Reparenting,
+desagrupamento e commits mundiais convertem matrizes sem deriva visível.
+
+**Motivação:** grupos aninháveis, pivô compartilhado e preservação das relações
+internas durante transformações externas.
+
+**Consequências:** o renderer calcula transforms mundiais por projeção; excluir
+ou duplicar um grupo opera sobre a subárvore; ciclos e pais ausentes são
+rejeitados.
+
+## D-009 — Repetição afim possui semântica matemática explícita
+
+**Estado:** implementada.
+
+A repetição canônica usa uma matriz delta:
+
+```text
+M(n+1) = ΔM · M(n)
+```
+
+Expressões paramétricas usam AST própria, variáveis autorizadas e convenções
+angulares explícitas.
+
+**Motivação:** determinismo, segurança, independência de `eval` e capacidade de
+testar precedência, unidades e contratos de índice.
+
+**Consequências:** a linguagem afim não é JavaScript; mudanças de sintaxe exigem
+compatibilidade ou migração documentada.
+
+## D-010 — JavaScript vive acima do runtime espacial
+
+**Estado:** implementada.
+
+Programas JavaScript executam em Worker e `Compartment` SES. Não recebem runtime,
+sandbox, renderer, DOM, rede ou arquivos. Funções matemáticas, gerador aleatório
+determinístico, `print`, snapshot clonado e capacidades espaciais são fornecidos
+explicitamente.
+
+**Motivação:** oferecer variáveis, funções, objetos e controle de fluxo sem
+entregar autoridade irrestrita sobre a aplicação.
+
+**Consequências:** programas são síncronos e têm timeout, orçamento e fronteira
+`structuredClone`; uma falha encerra a sessão do Worker; o isolamento ainda não
+equivale a uma auditoria formal de segurança.
+
+## D-011 — Programas produzem planos antes de alterar a cena
+
+**Estado:** implementada.
+
+`spatial.create` emite intenções serializáveis. `plan commit` valida revisão,
+capabilities, geometrias, posições, cores e orçamento, simula o reducer e só
+então publica uma transação atômica.
+
+**Motivação:** cancelar, falhar ou terminar um programa sem deixar estado
+parcial; permitir revisão humana e um único item de undo.
+
+**Consequências:** um plano obsoleto é rejeitado; handles do programa só recebem
+IDs reais no commit; `plan discard` não produz efeito.
+
+## D-012 — Catálogos armazenam fonte, não execução
+
+**Estado:** implementada.
+
+Procedimentos são funções nomeadas em um catálogo textual versionado. Importar,
+editar ou persistir uma definição nunca executa código. `procedure run` envia a
+fonte ao mesmo Worker SES e mantém o ciclo de plano e commit.
+
+**Motivação:** bibliotecas compartilháveis e editáveis sem criar uma via de
+autoridade paralela.
+
+**Consequências:** `merge` rejeita conflitos atomicamente; `replace` exige
+confirmação na interface; projeto espacial e catálogo são arquivos distintos.
+
+## D-013 — Distribuição web estática sem build obrigatório
+
+**Estado:** implementada.
+
+`apps/web/`, `packages/` e `vendor/` são publicados diretamente. Dependências
+necessárias em runtime são vendorizadas; Node/npm não são requisitos para usar
+ou desenvolver o cliente atual.
+
+**Motivação:** execução simples no Termux, GitHub Pages transparente e ausência
+de artefatos compilados divergentes da fonte.
+
+**Consequências:** caminhos relativos e import maps são parte do contrato de
+distribuição; um servidor HTTP continua necessário; arquivos estáticos novos
+devem entrar no manifesto PWA.
+
+## D-014 — PWA guarda o aplicativo, não substitui arquivos de projeto
+
+**Estado:** implementada.
+
+O service worker permite abrir o cliente offline após o primeiro carregamento.
+Salvar/Abrir permanece a persistência portátil da cena.
+
+**Motivação:** evitar a falsa promessa de que instalar o PWA protege o trabalho
+do usuário.
+
+**Consequências:** recuperação automática local é uma etapa futura; limpeza de
+dados do navegador pode remover preferências e catálogos locais; o rodapé deve
+mostrar diferenças entre publicação e cache controlador.
+
+## D-015 — Documento e transporte de arquivo são separados
+
+**Estado:** implementada.
+
+`ProjectService` produz e consome documentos; `BrowserProjectFileGateway` decide
+entre File System Access API e fallback de seletor/download.
+
+**Motivação:** manter regras de projeto fora do DOM e sobreviver às limitações
+do Chrome Android instalado.
+
+**Consequências:** bloqueio de picker nativo desativa essa via durante a sessão;
+cancelamento não altera o projeto; **Novo** descarta a referência anterior.
+
+## D-016 — Interface inicial é declarativa
+
+**Estado:** implementada.
+
+Ordem dos controles, menus, painéis, layout da barra, zona de saída do modo cena
+e tamanho inicial do gizmo vêm de `apps/web/config/ui.default.json`.
+
+**Motivação:** reorganizar a apresentação sem mover lógica de domínio ou editar
+vários módulos.
+
+**Consequências:** preferências locais têm precedência sobre defaults; o
+manifesto referencia controles existentes, não comandos internos.
+
+## D-017 — Build possui uma fonte autoritativa explícita
+
+**Estado:** implementada.
+
+Versão, build e canal são carregados de `apps/web/build-info.json`. HTML não
+mantém uma etiqueta estática concorrente.
+
+**Motivação:** eliminar diagnósticos contraditórios e caches aparentemente
+novos executando módulos antigos.
+
+**Consequências:** imports ainda podem usar query strings de cache, mas o rótulo
+humano vem do manifesto; PWA informa também o build do controlador efetivo.
+
+## D-018 — Testes e desempenho são superfícies do runtime
+
+**Estado:** implementada; política comparativa ainda incompleta.
+
+Testes arquiteturais e benchmarks são executáveis pelo console no mesmo cliente
+que usa os módulos reais. Benchmarks de cena usam sandbox isolado.
+
+**Motivação:** validar no Android/navegador e acompanhar regressões sem uma
+infraestrutura de build obrigatória.
+
+**Consequências:** mudanças estruturais exigem `runtime test all`; alterações de
+desempenho precisam registrar dispositivo, build, cenário e distribuição, não
+apenas duração total da suíte.
+
+## D-019 — Desenvolvimento por branches e patches auditáveis
+
+**Estado:** vigente.
+
+Cada incremento usa branch `feature/NNNN-*`, commits pequenos, teste antes da
+integração e patches aplicáveis no Termux. A autoria é de Rogério Duarte; ajuda
+automatizada pode aparecer como `Assisted-by: OpenAI Codex`.
+
+**Motivação:** aprendizado, revisão local, propriedade intelectual e reversão
+sem operações destrutivas.
+
+**Consequências:** assistentes não fazem push autônomo; o usuário aplica, testa e
+publica; hashes temporários podem diferir após `git am`, e o hash do repositório
+publicado torna-se o identificador canônico.
+
+## D-020 — Recuperação local preservará apenas commits editoriais
+
+**Estado:** planejada.
+
+A futura recuperação em IndexedDB deve gravar comandos confirmados, de forma
+atômica, versionada e postergada. Previews nunca serão persistidos. Blobs grandes
+podem migrar para OPFS.
+
+**Motivação:** recuperar acidentes sem confundir cache local com formato
+portátil ou salvar estados transitórios.
+
+## D-021 — Persistência compacta será retrocompatível
+
+**Estado:** planejada.
+
+O formato atual deve continuar abrindo enquanto novas versões passam a
+preservar protótipos, instâncias, hierarquias ou receitas sem expandir toda
+estrutura procedural.
+
+**Motivação:** evitar arquivos de megabytes para cenas que podem ser descritas
+por poucos parâmetros, sem perder projetos existentes.
+
+## Decisões superadas ou rejeitadas
+
+- **Build hard-coded no HTML:** superado por `build-info.json`.
+- **Lógica própria no Inspector ou no console:** rejeitada em favor dos mesmos
+  comandos e registros.
+- **Aplicação mantida na raiz do repositório:** superada; a aplicação atual é
+  `apps/web/`; arquivos da raiz são históricos.
+- **PWA como persistência automática da cena:** rejeitada; offline e documento
+  de projeto são responsabilidades diferentes.
+- **Grupo como seleção persistida sem transform local:** superada pela hierarquia
+  de entidades com âncora.
+- **JavaScript com acesso direto ao runtime:** rejeitada; programas planejam por
+  capacidades restritas.
+
+## Processo para novas decisões
+
+Uma decisão deve entrar aqui quando alterar uma fronteira durável: autoridade,
+formato, API, semântica, segurança, persistência, distribuição ou workflow. Uma
+mudança de botão, cor ou número de build não é uma decisão arquitetural.
+
+Ao registrar:
+
+1. atribua novo identificador;
+2. declare estado e motivação;
+3. descreva consequências e incompatibilidades;
+4. aponte testes ou especificações relacionados;
+5. marque explicitamente a decisão anterior como superada, sem apagar o
+   histórico.
