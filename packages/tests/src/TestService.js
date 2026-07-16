@@ -104,6 +104,18 @@ export class TestService {
         }
       })
       .register("project", {
+        "salvar prepara documento sem transporte web": () => {
+          const saved = this.projectService.save();
+          assertEqual(saved.prepared, true);
+          assertEqual(saved.filename.endsWith(".spatialseed"), true);
+          assertEqual(saved.mediaType.includes("application/json"), true);
+          assertEqual(saved.bytes > 0, true);
+          assertDeepEqual(
+            this.projectService.validator.parse(saved.text).scene,
+            this.projectService.inspect().scene
+          );
+        },
+
         "serialização valida em roundtrip": () => {
           const original = this.projectService.inspect();
           const parsed = this.projectService.validator.parse(

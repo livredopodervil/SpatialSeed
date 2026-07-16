@@ -64,6 +64,9 @@ import {
 } from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024i";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
+  ProjectValidator
+} from "../../project-files/src/ProjectValidator.js?build=20260716-0025d";
+import {
   boxRegionReducer
 } from "../../region-box/src/reducer.js?build=20260716-0024d";
 import {
@@ -83,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0024i";
+} from "../../devtools/src/DevConsole.js?build=20260716-0025g";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -104,6 +107,18 @@ import {
   formatBuildLabel,
   normalizeBuildInfo
 } from "../../../apps/web/BuildInfo.js";
+import {
+  BrowserProjectFileGateway,
+  isPlatformBlock
+} from "../../../apps/web/file-interop/BrowserProjectFileGateway.js";
+import {
+  formatPwaBuildLabel,
+  resolvePwaLocations,
+  workerBuild
+} from "../../../apps/web/pwa/registerPwa.js";
+import {
+  PwaInstallController
+} from "../../../apps/web/pwa/PwaInstallController.js";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260716-0024i";
@@ -1979,6 +1994,227 @@ assets: {
           () => normalizeBuildInfo({version:"0.1.0"}),
           "INVALID_BUILD_INFO"
         );
+      }
+    },
+
+    "file-interop": {
+      "capacidades distinguem API nativa e fallback"() {
+        const fallback=createFileGatewayHarness();
+        assertDeepEqual(fallback.gateway.capabilities(),{
+          nativeOpen:false,
+          nativeSave:false,
+          fallbackOpen:true,
+          fallbackSave:true
+        });
+
+        const native=createFileGatewayHarness({
+          showOpenFilePicker() {},
+          showSaveFilePicker() {}
+        });
+        assertEqual(native.gateway.capabilities().nativeOpen,true);
+        assertEqual(native.gateway.capabilities().nativeSave,true);
+      },
+
+      "download compatível permanece disponível sem seletor nativo"() {
+        const harness=createFileGatewayHarness();
+        harness.gateway.saveFallback({
+          prepared:true,
+          filename:"teste.spatialseed",
+          mediaType:"application/json",
+          text:"{\"format\":\"spatial-seed\"}",
+          bytes:25
+        });
+
+        assertDeepEqual(harness.calls,[
+          "url:create",
+          "dom:append",
+          "link:click",
+          "link:remove",
+          "timer:1000",
+          "url:revoke:blob:test"
+        ]);
+        assertEqual(harness.link.download,"teste.spatialseed");
+      },
+
+      "novo projeto descarta referência de arquivo anterior"() {
+        const harness=createFileGatewayHarness();
+        harness.gateway.fileHandle={name:"anterior.spatialseed"};
+        harness.gateway.reset();
+        assertEqual(harness.gateway.fileHandle,null);
+      },
+
+      "bloqueio da plataforma não é confundido com cancelamento"() {
+        assertEqual(isPlatformBlock({name:"NotAllowedError"}),true);
+        assertEqual(isPlatformBlock({name:"SecurityError"}),true);
+        assertEqual(isPlatformBlock({name:"NotSupportedError"}),true);
+        assertEqual(isPlatformBlock({name:"AbortError"}),false);
+        assertEqual(isPlatformBlock(new TypeError("programação")),false);
+      }
+    },
+
+    "project-files": {
+      "schema 2 aceita grupo lógico sem aparência"() {
+        const sourceRuntime=new AppearanceRuntime();
+        const scene=sourceRuntime.normalizeScene({
+          schemaVersion:1,
+          objects:[
+            {id:"group",kind:"group",position:[0,0,0]},
+            {
+              id:"box",
+              kind:"box",
+              parentId:"group",
+              material:{color:"#336699"}
+            }
+          ]
+        });
+        const parsed=new ProjectValidator().validate({
+          format:"spatial-seed",
+          schemaVersion:2,
+          assets:sourceRuntime.exportAssets(),
+          scene
+        });
+
+        assertEqual("appearanceId" in parsed.scene.objects[0],false);
+        assertEqual(Boolean(parsed.scene.objects[1].appearanceId),true);
+
+        const restoredRuntime=new AppearanceRuntime();
+        restoredRuntime.importAssets(parsed.assets,{replace:true});
+        const restored=restoredRuntime.normalizeScene(parsed.scene);
+        assertEqual(restored.objects[0].kind,"group");
+        assertEqual(restored.objects[1].parentId,"group");
+        assertEqual(
+          restoredRuntime.legacyMaterial(
+            restored.objects[1].appearanceId
+          ).color,
+          "#336699"
+        );
+      },
+
+      "schema 2 ainda rejeita renderizável sem aparência"() {
+        const assets=new AppearanceRuntime().exportAssets();
+        let message="";
+        try {
+          new ProjectValidator().validate({
+            format:"spatial-seed",
+            schemaVersion:2,
+            assets,
+            scene:{
+              schemaVersion:1,
+              objects:[{id:"box",kind:"box"}]
+            }
+          });
+        } catch (error) {
+          message=error.message;
+        }
+        assertEqual(message,"Objeto sem appearanceId: box.");
+      }
+    },
+
+    "pwa-status": {
+      "escopo local permanece limitado à aplicação"() {
+        const locations=resolvePwaLocations(
+          "http://127.0.0.1:8082/apps/web/pwa/registerPwa.js"
+        );
+        assertEqual(locations.applicationRoot,"http://127.0.0.1:8082/apps/web/");
+        assertEqual(locations.repositoryRoot,"http://127.0.0.1:8082/");
+        assertEqual(
+          locations.workerUrl,
+          "http://127.0.0.1:8082/apps/web/service-worker.js"
+        );
+        assertEqual(locations.scope,"/apps/web/");
+      },
+
+      "prefixo do GitHub Pages é preservado nos caminhos PWA"() {
+        const locations=resolvePwaLocations(
+          "https://livredopodervil.github.io/SpatialSeed/apps/web/pwa/registerPwa.js"
+        );
+        assertEqual(
+          locations.workerUrl,
+          "https://livredopodervil.github.io/SpatialSeed/apps/web/service-worker.js"
+        );
+        assertEqual(locations.scope,"/SpatialSeed/apps/web/");
+        assertEqual(
+          locations.legacyWorkerUrl,
+          "https://livredopodervil.github.io/SpatialSeed/service-worker.js"
+        );
+      },
+
+      "controlador expõe prompt somente depois da elegibilidade"() {
+        const windowRef=createPwaInstallWindow();
+        const controller=new PwaInstallController({windowRef});
+        let prevented=false;
+        let prompted=false;
+        assertEqual(controller.snapshot().mode,"manual");
+
+        controller.onBeforeInstallPrompt({
+          preventDefault() { prevented=true; },
+          prompt() {
+            prompted=true;
+            return Promise.resolve({outcome:"accepted"});
+          }
+        });
+        assertEqual(prevented,true);
+        assertEqual(controller.snapshot().mode,"available");
+        assertEqual(controller.snapshot().canPrompt,true);
+
+        controller.requestInstall();
+        assertEqual(prompted,true);
+        assertEqual(controller.snapshot().mode,"installing");
+        controller.dispose();
+      },
+
+      "modo standalone e evento de instalação atualizam o estado"() {
+        const standalone=new PwaInstallController({
+          windowRef:createPwaInstallWindow({standalone:true})
+        });
+        assertEqual(standalone.snapshot().mode,"installed");
+        standalone.dispose();
+
+        const controller=new PwaInstallController({
+          windowRef:createPwaInstallWindow()
+        });
+        controller.onAppInstalled();
+        assertEqual(controller.snapshot().installed,true);
+        assertEqual(controller.snapshot().canPrompt,false);
+        controller.dispose();
+      },
+
+      "extrai build do service worker controlador"() {
+        assertEqual(
+          workerBuild(
+            "https://example.test/SpatialSeed/apps/web/service-worker.js?build=0025g"
+          ),
+          "0025g"
+        );
+        assertEqual(workerBuild("https://example.test/worker.js"),null);
+        assertEqual(workerBuild(null),null);
+      },
+
+      "rótulo denuncia cache controlador anterior"() {
+        const label=formatPwaBuildLabel({
+          version:"0.1.0",
+          build:"0025g",
+          channel:"test"
+        },{
+          controllerBuild:"0025d",
+          updatePending:true,
+          waitingBuild:"0025g"
+        });
+        assertEqual(
+          label,
+          "v0.1.0 · build 0025g · cache 0025d · feche para atualizar"
+        );
+      },
+
+      "rótulo permanece conciso quando cache e publicação coincidem"() {
+        assertEqual(formatPwaBuildLabel({
+          version:"0.1.0",
+          build:"0025g",
+          channel:"test"
+        },{
+          controllerBuild:"0025g",
+          updatePending:false
+        }),"v0.1.0 · build 0025g");
       }
     },
 
@@ -4552,6 +4788,56 @@ function createBridge() {
   });
 }
 
+function createFileGatewayHarness(windowOverrides={}) {
+  const calls=[];
+  const link={
+    href:"",
+    download:"",
+    click() { calls.push("link:click"); },
+    remove() { calls.push("link:remove"); }
+  };
+  const windowRef={
+    setTimeout(callback,delay) {
+      calls.push(`timer:${delay}`);
+      callback();
+    },
+    ...windowOverrides
+  };
+  const documentRef={
+    body:{
+      appendChild(value) {
+        assertEqual(value,link);
+        calls.push("dom:append");
+      }
+    },
+    createElement(tag) {
+      assertEqual(tag,"a");
+      return link;
+    }
+  };
+  const urlApi={
+    createObjectURL() {
+      calls.push("url:create");
+      return "blob:test";
+    },
+    revokeObjectURL(url) {
+      calls.push(`url:revoke:${url}`);
+    }
+  };
+  class TestBlob {
+    constructor(parts) {
+      this.size=parts.join("").length;
+    }
+  }
+  const gateway=new BrowserProjectFileGateway({
+    windowRef,
+    documentRef,
+    urlApi,
+    BlobCtor:TestBlob
+  });
+  return {gateway,calls,link};
+}
+
 export function runRuntimeTests(suites, requested = "all") {
   const selected =
     requested === "all"
@@ -4634,6 +4920,22 @@ function assertNear(actual, expected, epsilon = 1e-9) {
     Math.abs(actual - expected) <= epsilon,
     `Esperado aproximadamente ${expected}, recebido ${actual}.`
   );
+}
+
+function createPwaInstallWindow({ standalone=false }={}) {
+  const listeners=new Map();
+  return {
+    navigator:{standalone:false},
+    matchMedia() { return {matches:standalone}; },
+    addEventListener(type,listener) {
+      const current=listeners.get(type) ?? new Set();
+      current.add(listener);
+      listeners.set(type,current);
+    },
+    removeEventListener(type,listener) {
+      listeners.get(type)?.delete(listener);
+    }
+  };
 }
 
 function dot3(a, b) {

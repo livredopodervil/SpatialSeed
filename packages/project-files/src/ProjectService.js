@@ -1,8 +1,8 @@
 import { ProjectSerializer } from "./ProjectSerializer.js";
-import { ProjectValidator } from "./ProjectValidator.js";
+import { ProjectValidator } from "./ProjectValidator.js?build=20260716-0025d";
 
 export class ProjectService {
-  static apiVersion = "project-service-v3";
+  static apiVersion = "project-service-v4";
 
   constructor({
     sandbox,
@@ -34,26 +34,16 @@ export class ProjectService {
   }
 
   save() {
-    const json = JSON.stringify(this.inspect(), null, 2);
-    const blob = new Blob([json], {
-      type: "application/json;charset=utf-8"
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const text = JSON.stringify(this.inspect(), null, 2);
     const filename = `${safeName(this.metadata.name)}.spatialseed`;
-
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
 
     return {
       changed: false,
-      downloaded: true,
+      prepared: true,
       filename,
-      bytes: blob.size
+      mediaType: "application/json;charset=utf-8",
+      text,
+      bytes: new TextEncoder().encode(text).byteLength
     };
   }
 

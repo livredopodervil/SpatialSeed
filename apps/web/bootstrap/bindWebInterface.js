@@ -1,10 +1,14 @@
 import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024i";
+import {
+  BrowserProjectFileGateway
+} from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0025c";
 
 export function bindWebInterface({
   runtime,
   web,
   buildInfo,
   uiConfiguration,
+  pwaInstallController = null,
   documentRoot = document
 }) {
   const $ = id => documentRoot.getElementById(id);
@@ -27,6 +31,16 @@ export function bindWebInterface({
     location: location.href,
     userAgent: navigator.userAgent
   };
+  const browserWindow = documentRoot.defaultView ?? window;
+  const projectFiles = new BrowserProjectFileGateway({
+    windowRef: browserWindow,
+    documentRef: documentRoot
+  });
+  const refreshProjectFileCapabilities = () => {
+    browserWindow.__SPATIAL_SEED_FILE_INTEROP__ =
+      projectFiles.capabilities();
+  };
+  refreshProjectFileCapabilities();
 
   const consoleLines = [];
   const consoleInputHistory = [];
@@ -39,6 +53,23 @@ export function bindWebInterface({
     root: documentRoot,
     configuration: uiConfiguration?.toolbar
   });
+  const installButton = $("pwa-install");
+  const installLabels = {
+    available: "Instalar aplicativo",
+    installing: "Finalizando instalação…",
+    installed: "Aplicativo instalado",
+    manual: "Como instalar"
+  };
+  const refreshInstallButton = state => {
+    const mode = state?.mode ?? "manual";
+    installButton.textContent = installLabels[mode] ?? installLabels.manual;
+    installButton.disabled = mode === "installing" || mode === "installed";
+    installButton.dataset.installMode = mode;
+  };
+  const unsubscribeInstall = pwaInstallController?.subscribe(
+    refreshInstallButton
+  ) ?? (() => {});
+  refreshInstallButton(pwaInstallController?.snapshot());
   const sceneExit = uiConfiguration?.presentation?.sceneExit ?? {
     corner: "top-left",
     size: 64
@@ -358,16 +389,58 @@ export function bindWebInterface({
     () => panelManager.hide("#outline")
   );
 
-  $("project-save").addEventListener("click", () => {
-    const result = execute("project.save");
-    if (result?.downloaded) {
-      showNotice(`Projeto salvo: ${result.filename}`);
+  $("project-save").addEventListener("click", async () => {
+    const project = execute("project.save");
+    if (!project?.prepared) return;
+
+    try {
+      let result = await projectFiles.save(project);
+      if (result.fallbackRequired) {
+        const approved = browserWindow.confirm(
+          "O Chrome deste aparelho oferece um seletor nativo, " +
+          "mas não permite usá-lo neste contexto. " +
+          "Deseja salvar por download compatível?"
+        );
+        if (!approved) return;
+        result = projectFiles.saveFallback(project, {
+          fallbackReason: result.fallbackReason
+        });
+      }
+      if (result.saved) {
+        const mode = result.fallbackReason
+          ? " · download compatível"
+          : "";
+        showNotice(`Projeto salvo: ${result.filename}${mode}`);
+      }
+    } catch (error) {
+      showError(error);
+    } finally {
+      refreshProjectFileCapabilities();
     }
   });
 
   $("project-open").addEventListener(
     "click",
-    () => $("project-file-input").click()
+    async () => {
+      if (!projectFiles.capabilities().nativeOpen) {
+        $("project-file-input").click();
+        return;
+      }
+
+      try {
+        const opened = await projectFiles.open();
+        if (opened.opened) {
+          loadProjectText(opened.text);
+        } else if (opened.fallbackRequired) {
+          showNotice("Usando seletor de arquivos compatível.");
+          $("project-file-input").click();
+        }
+      } catch (error) {
+        showError(error);
+      } finally {
+        refreshProjectFileCapabilities();
+      }
+    }
   );
 
   $("project-file-input").addEventListener(
@@ -377,15 +450,11 @@ export function bindWebInterface({
       if (!file) return;
 
       try {
-        const text = await file.text();
-        const result = execute("project.open", { text });
-
-        if (result?.loaded) {
-          showNotice(
-            `Projeto aberto: ${result.name} ` +
-            `(${result.objectCount} objetos)`
-          );
-        }
+        projectFiles.reset();
+        const opened = await projectFiles.readFile(file);
+        loadProjectText(opened.text);
+      } catch (error) {
+        showError(error);
       } finally {
         event.target.value = "";
       }
@@ -398,8 +467,44 @@ export function bindWebInterface({
     )) return;
 
     const result = execute("project.new");
-    if (result?.created) showNotice("Novo projeto criado.");
+    if (result?.created) {
+      projectFiles.reset();
+      showNotice("Novo projeto criado.");
+    }
   });
+
+  installButton.addEventListener("click", async () => {
+    try {
+      const result = await pwaInstallController?.requestInstall() ?? {
+        outcome: "manual"
+      };
+      if (result.outcome === "manual") {
+        browserWindow.alert(
+          "Abra o menu do navegador e escolha “Instalar aplicativo” ou " +
+          "“Adicionar à tela inicial”. No Safari, use o menu Compartilhar."
+        );
+      } else if (result.outcome === "accepted") {
+        showNotice("Instalação autorizada pelo usuário.");
+      } else if (result.outcome === "dismissed") {
+        showNotice("Instalação cancelada.");
+      }
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  function loadProjectText(text) {
+    const result = execute("project.open", { text });
+    if (result?.loaded) {
+      showNotice(
+        `Projeto aberto: ${result.name} ` +
+        `(${result.objectCount} objetos)`
+      );
+    } else {
+      projectFiles.reset();
+    }
+    return result;
+  }
 
   $("diagnostics").addEventListener("click", () => {
     Object.assign(
@@ -709,6 +814,8 @@ export function bindWebInterface({
       unsubscribeEditor();
       unsubscribeSelection();
       unsubscribeWorld();
+      unsubscribeInstall();
+      pwaInstallController?.dispose();
       marquee.dispose();
       document.removeEventListener(
         "fullscreenchange",
