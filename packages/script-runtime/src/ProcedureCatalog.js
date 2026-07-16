@@ -6,7 +6,33 @@ const PROCEDURE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 
 export class ProcedureCatalog {
   #entries = new Map();
+  #lastStorageError = null;
   #revision = 0;
+  #storage = null;
+  #restored = false;
+
+  constructor({ storage = null } = {}) {
+    if (storage !== null) {
+      for (const method of ["load", "save"]) {
+        if (typeof storage?.[method] !== "function") {
+          throw new TypeError(
+            `Armazenamento de procedimentos exige ${method}.`
+          );
+        }
+      }
+      this.#storage = storage;
+
+      try {
+        const document = storage.load();
+        if (document !== null && document !== undefined) {
+          this.#entries = recordsMap(normalizeDocument(document));
+          this.#restored = true;
+        }
+      } catch (error) {
+        this.#lastStorageError = error?.message ?? String(error);
+      }
+    }
+  }
 
   get revision() {
     return this.#revision;
@@ -29,8 +55,9 @@ export class ProcedureCatalog {
       );
     }
 
-    this.#entries.set(record.name, record);
-    this.#revision += 1;
+    const candidate = new Map(this.#entries);
+    candidate.set(record.name, record);
+    this.#commit(candidate);
     return Object.freeze({
       changed: true,
       procedure: clone(record),
@@ -64,11 +91,19 @@ export class ProcedureCatalog {
 
   remove(name) {
     const normalizedName = normalizeName(name);
-    const changed = this.#entries.delete(normalizedName);
+    if (!this.#entries.has(normalizedName)) {
+      return Object.freeze({
+        changed: false,
+        name: normalizedName,
+        revision: this.#revision
+      });
+    }
 
-    if (changed) this.#revision += 1;
+    const candidate = new Map(this.#entries);
+    candidate.delete(normalizedName);
+    this.#commit(candidate);
     return Object.freeze({
-      changed,
+      changed: true,
       name: normalizedName,
       revision: this.#revision
     });
@@ -78,19 +113,33 @@ export class ProcedureCatalog {
     return Object.freeze({
       revision: this.#revision,
       count: this.#entries.size,
-      procedures: this.list()
+      procedures: this.list(),
+      persistence: Object.freeze({
+        enabled: this.#storage !== null,
+        restored: this.#restored,
+        lastError: this.#lastStorageError
+      })
     });
   }
 
   exportDocument() {
-    return Object.freeze({
-      schemaVersion: PROCEDURE_LIBRARY_SCHEMA_VERSION,
-      procedures: Object.freeze(
-        [...this.#entries.values()]
-          .sort((left, right) => left.name.localeCompare(right.name))
-          .map(clone)
-      )
-    });
+    return documentFromEntries(this.#entries);
+  }
+
+  exportText() {
+    return JSON.stringify(this.exportDocument(), null, 2) + "\n";
+  }
+
+  importText(text, options = {}) {
+    let document;
+    try {
+      document = JSON.parse(String(text));
+    } catch (error) {
+      throw new TypeError("Biblioteca textual contém JSON inválido.", {
+        cause: error
+      });
+    }
+    return this.importDocument(document, options);
   }
 
   importDocument(document, { mode = "merge" } = {}) {
@@ -125,8 +174,7 @@ export class ProcedureCatalog {
       });
     }
 
-    this.#entries = candidate;
-    this.#revision += 1;
+    this.#commit(candidate);
     return Object.freeze({
       changed: true,
       mode: normalizedMode,
@@ -156,6 +204,24 @@ export class ProcedureCatalog {
       "}",
       `return __spatialSeedProcedure(${serializedArgument});`
     ].join("\n");
+  }
+
+  #commit(candidate) {
+    if (this.#storage) {
+      try {
+        this.#storage.save(documentFromEntries(candidate));
+      } catch (error) {
+        this.#lastStorageError = error?.message ?? String(error);
+        throw new Error(
+          `Não foi possível persistir o catálogo: ${this.#lastStorageError}`,
+          { cause: error }
+        );
+      }
+    }
+
+    this.#entries = candidate;
+    this.#revision += 1;
+    this.#lastStorageError = null;
   }
 }
 
@@ -236,6 +302,21 @@ function sameEntries(left, right) {
   }
 
   return true;
+}
+
+function recordsMap(records) {
+  return new Map(records.map(record => [record.name, record]));
+}
+
+function documentFromEntries(entries) {
+  return Object.freeze({
+    schemaVersion: PROCEDURE_LIBRARY_SCHEMA_VERSION,
+    procedures: Object.freeze(
+      [...entries.values()]
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map(clone)
+    )
+  });
 }
 
 function clone(value) {

@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0026h1";
+} from "../../devtools/src/DevConsole.js?build=20260716-0026i";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -111,6 +111,9 @@ import {
   BrowserProjectFileGateway,
   isPlatformBlock
 } from "../../../apps/web/file-interop/BrowserProjectFileGateway.js";
+import {
+  BrowserProcedureCatalogStore
+} from "../../../apps/web/procedures/BrowserProcedureCatalogStore.js";
 import {
   formatPwaBuildLabel,
   resolvePwaLocations,
@@ -877,6 +880,63 @@ export function createRuntimeLayerTests() {
           "conflita"
         );
         assertDeepEqual(catalog.exportDocument(), before);
+      },
+
+      "catálogo persiste e restaura fontes sem executar código"() {
+        const values = new Map();
+        const storage = {
+          getItem: key => values.get(key) ?? null,
+          setItem: (key, value) => values.set(key, value)
+        };
+        const store = new BrowserProcedureCatalogStore({
+          storage,
+          key: "procedure-test"
+        });
+        const first = new ProcedureCatalog({ storage: store });
+        first.define("tower", "({height=8}={}) => height");
+
+        const restored = new ProcedureCatalog({ storage: store });
+
+        assertEqual(restored.snapshot().count, 1);
+        assertEqual(restored.snapshot().persistence.restored, true);
+        assertEqual(
+          restored.get("tower").source,
+          "({height=8}={}) => height"
+        );
+      },
+
+      "falha de persistência não altera catálogo em memória"() {
+        const catalog = new ProcedureCatalog({
+          storage: {
+            load: () => null,
+            save() {
+              throw new Error("quota unavailable");
+            }
+          }
+        });
+
+        assertThrowsMessage(
+          () => catalog.define("tower", "() => 1"),
+          "quota unavailable"
+        );
+        assertEqual(catalog.snapshot().count, 0);
+        assert(
+          catalog.snapshot().persistence.lastError.includes("quota")
+        );
+      },
+
+      "documento textual faz roundtrip editável"() {
+        const source = new ProcedureCatalog();
+        source.define("city", "({rows=2}={}) => rows ** 2");
+        const text = source.exportText();
+        const target = new ProcedureCatalog();
+
+        const result = target.importText(text, { mode: "replace" });
+
+        assert(text.endsWith("\n"));
+        assert(text.includes('"schemaVersion"'));
+        assertEqual(result.count, 1);
+        assertDeepEqual(target.exportDocument(), source.exportDocument());
       },
 
       "invocação executa fonte no ambiente espacial autorizado"() {

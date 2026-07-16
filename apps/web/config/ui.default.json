@@ -72,6 +72,8 @@
           "project-save",
           "project-open",
           "project-new",
+          "procedure-library-save",
+          "procedure-library-open",
           "pwa-install"
         ]
       }

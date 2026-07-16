@@ -215,3 +215,23 @@ seguido por `plan commit` ou `procedure list` seguido por `procedure show`, são
 executadas sequencialmente. Blocos `program`, `calc`, `procedure define` e
 `procedure import` continuam sendo preservados integralmente, pois suas
 quebras de linha pertencem ao código-fonte.
+
+## Persistência e biblioteca textual 0026i
+
+O catálogo usa uma porta síncrona de armazenamento. Na aplicação web essa
+porta é implementada por `BrowserProcedureCatalogStore` sobre `localStorage`,
+com uma chave própria e versionada. Definir, remover ou importar primeiro grava
+o documento completo e somente depois troca o estado em memória; falha de
+quota ou armazenamento não deixa as duas representações divergirem.
+
+O menu Projeto oferece **Exportar procedimentos** e **Importar
+procedimentos**. O arquivo `spatialseed-procedures.json` é JSON UTF-8 legível,
+ordenado e independente do projeto de cena. Pode ser editado em qualquer
+editor de texto, versionado no Git e compartilhado. Importar apenas valida e
+armazena fontes: nenhum código é executado antes de `procedure run` no Worker
+SES.
+
+A importação de arquivo tenta `merge`. Fontes conflitantes não são combinadas
+parcialmente; a interface pode então solicitar confirmação para substituir o
+catálogo inteiro. O mesmo contrato continua disponível no console por
+`procedure export` e `procedure import merge|replace`.

@@ -550,6 +550,8 @@ export class DevConsole {
       ],
       notes: [
         "O catálogo guarda fontes; a função só executa dentro do Worker SES.",
+        "O catálogo web persiste localmente entre reinicializações.",
+        "Arquivos JSON podem ser exportados e importados pelo menu Projeto.",
         "run aceita um valor JSON e pode produzir um plano espacial.",
         "merge rejeita conflitos; replace troca o catálogo atomicamente."
       ],

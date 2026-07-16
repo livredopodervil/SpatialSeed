@@ -6,7 +6,7 @@ import { EditorState } from "../../../packages/editor-core/src/EditorState.js?bu
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260716-0024e";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260716-0026h1";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260716-0026i";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260716-0024d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
@@ -15,7 +15,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260716-0025d";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260714-0020b-a";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260716-0026h1";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260716-0026i";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -38,7 +38,10 @@ import {
   SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
-} from "../../../packages/script-runtime/src/index.js?build=20260716-0026h";
+} from "../../../packages/script-runtime/src/index.js?build=20260716-0026i";
+import {
+  BrowserProcedureCatalogStore
+} from "../procedures/BrowserProcedureCatalogStore.js?build=20260716-0026i";
 
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -255,7 +258,9 @@ export async function createWebRuntime({
     geometryTypes: geometryRegistry.list(),
     maxCommands: 10000
   });
-  const procedureCatalog = new ProcedureCatalog();
+  const procedureCatalog = new ProcedureCatalog({
+    storage: new BrowserProcedureCatalogStore()
+  });
   runtime.onDispose(() => programSession.dispose());
 
   const devConsole = new DevConsole({

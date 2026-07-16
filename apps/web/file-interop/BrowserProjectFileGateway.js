@@ -9,12 +9,14 @@ export class BrowserProjectFileGateway {
     windowRef = window,
     documentRef = document,
     urlApi = URL,
-    BlobCtor = Blob
+    BlobCtor = Blob,
+    fileType = projectFileType()
   } = {}) {
     this.window = windowRef;
     this.document = documentRef;
     this.urlApi = urlApi;
     this.BlobCtor = BlobCtor;
+    this.fileType = normalizeFileType(fileType);
     this.fileHandle = null;
     this.nativeOpenBlocked = false;
     this.nativeSaveBlocked = false;
@@ -42,7 +44,7 @@ export class BrowserProjectFileGateway {
     try {
       const handles = await this.window.showOpenFilePicker({
         multiple: false,
-        types: [projectFileType()]
+        types: [this.fileType]
       });
       const handle = handles?.[0];
       if (!handle) return { opened: false, cancelled: true };
@@ -113,7 +115,7 @@ export class BrowserProjectFileGateway {
         ? this.fileHandle
         : await this.window.showSaveFilePicker({
           suggestedName: project.filename,
-          types: [projectFileType()]
+          types: [this.fileType]
         });
       if (!handle) return { saved: false, cancelled: true };
 
@@ -166,6 +168,20 @@ function projectFileType() {
     description: "Projeto Spatial Seed",
     accept: PROJECT_ACCEPT
   };
+}
+
+function normalizeFileType(value) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof value.description !== "string" ||
+    !value.accept ||
+    typeof value.accept !== "object"
+  ) {
+    throw new TypeError("Tipo de documento incompatível.");
+  }
+
+  return structuredClone(value);
 }
 
 function normalizePayload(payload) {
