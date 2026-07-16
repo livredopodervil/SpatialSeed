@@ -106,7 +106,7 @@ import {
 } from "../../../apps/web/BuildInfo.js";
 import {
   normalizeUiConfiguration
-} from "../../ui-config/src/index.js?build=20260716-0024g";
+} from "../../ui-config/src/index.js?build=20260716-0024h";
 import { fnv1a64 } from "../../asset-store/src/index.js";
 
 export function createRuntimeLayerTests() {
@@ -1995,10 +1995,15 @@ assets: {
           presentation:{transform:{size:0.8}}
         });
         assertDeepEqual(configuration.toolbar.primary,["tool-select"]);
+        assertEqual(configuration.toolbar.layout,"horizontal");
         assertEqual(configuration.toolbar.menus[0].items[0],"undo");
         assertEqual(configuration.panels.items.inspector.anchor,"right");
         assertEqual(configuration.presentation.transform.size,0.8);
         assertEqual(configuration.presentation.sceneExit.corner,"top-left");
+        assertEqual(
+          configuration.presentation.sceneExit.helpStorageKey,
+          "spatialseed.ui.scene-help.v1"
+        );
         assertEqual(Object.isFrozen(configuration),true);
       },
       "rejeita controle repetido entre grupos"() {
@@ -2012,6 +2017,15 @@ assets: {
           });
         } catch (error) {
           failed=/duplicado/.test(error.message);
+        }
+        assertEqual(failed,true);
+      },
+      "rejeita disposição desconhecida da barra"() {
+        let failed=false;
+        try {
+          normalizeUiConfiguration({toolbar:{layout:"diagonal"}});
+        } catch (error) {
+          failed=/toolbar\.layout/.test(error.message);
         }
         assertEqual(failed,true);
       },

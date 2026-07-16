@@ -13,7 +13,10 @@ export class FloatingPanelManager {
     this.#root = root;
     this.#key = storageKey;
     this.#toolbarLayoutListener = event =>
-      this.#applyToolbarClearance(event.detail?.clearance);
+      this.#applyToolbarClearance(
+        event.detail?.clearance,
+        event.detail?.leftClearance
+      );
     this.#root.addEventListener(
       "spatialseed:toolbar-layout",
       this.#toolbarLayoutListener
@@ -35,6 +38,8 @@ export class FloatingPanelManager {
     panel.style.resize = options.resizable === false ? "none" : "both";
     panel.style.maxHeight =
       "calc(100dvh - var(--ss-toolbar-clearance, 4rem) - .55rem)";
+    panel.style.maxWidth =
+      "calc(100vw - var(--ss-toolbar-left-clearance, .55rem) - .55rem)";
 
     if (options.maximizable !== false) {
       const maximize = document.createElement("button");
@@ -268,11 +273,13 @@ export class FloatingPanelManager {
 
     panel.style.right = "auto";
     panel.style.bottom = "auto";
-    panel.style.left = `${clamp(
+    const savedLeft = `${clamp(
       saved.left,
       0,
       Math.max(0, innerWidth - 80)
     )}px`;
+    panel.style.left =
+      `max(var(--ss-toolbar-left-clearance, .55rem), ${savedLeft})`;
     const savedTop = `${clamp(
       saved.top,
       0,
@@ -287,7 +294,9 @@ export class FloatingPanelManager {
     const anchor = layout.anchor === "right" ? "right" : "left";
     const opposite = anchor === "right" ? "left" : "right";
     panel.style[opposite] = "auto";
-    panel.style[anchor] = ".55rem";
+    panel.style[anchor] = anchor === "left"
+      ? "var(--ss-toolbar-left-clearance, .55rem)"
+      : ".55rem";
 
     if (layout.top != null) {
       panel.style.top = layout.top === "toolbar"
@@ -307,18 +316,27 @@ export class FloatingPanelManager {
     }
   }
 
-  #applyToolbarClearance(value) {
+  #applyToolbarClearance(value, leftValue) {
     const clearance = Number(value);
-    if (!Number.isFinite(clearance)) return;
+    const leftClearance = Number(leftValue);
+    if (!Number.isFinite(clearance) || !Number.isFinite(leftClearance)) return;
 
     for (const panel of this.#panels.values()) {
       if (panel.hidden || panel.classList.contains("ss-panel-maximized")) {
         continue;
       }
       const rectangle = panel.getBoundingClientRect();
-      if (rectangle.top + 1 >= clearance) continue;
-      panel.style.bottom = "auto";
-      panel.style.top = `${clearance}px`;
+      if (rectangle.top + 1 < clearance) {
+        panel.style.bottom = "auto";
+        panel.style.top =
+          `max(var(--ss-toolbar-clearance, 0px), ${rectangle.top}px)`;
+      }
+
+      if (rectangle.left + 1 < leftClearance) {
+        panel.style.right = "auto";
+        panel.style.left =
+          `max(var(--ss-toolbar-left-clearance, 0px), ${rectangle.left}px)`;
+      }
     }
   }
 }

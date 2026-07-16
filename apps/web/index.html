@@ -17,6 +17,20 @@
 <canvas id="world"></canvas>
 <button id="scene-exit-hotspot" type="button"
   aria-label="Restaurar interface" title="Restaurar interface"></button>
+<dialog id="scene-help-dialog">
+  <form method="dialog">
+    <h2>Modo somente cena</h2>
+    <p id="scene-help-message"></p>
+    <p>Com teclado, use <kbd>Tab</kbd> ou <kbd>Esc</kbd>.</p>
+    <label class="scene-help-choice">
+      <input id="scene-help-suppress" type="checkbox">
+      Não mostrar novamente
+    </label>
+    <div class="actions">
+      <button type="submit" value="ok">Entendi</button>
+    </div>
+  </form>
+</dialog>
 
 <header id="toolbar">
   <button id="tool-navigate" data-tool-mode="navigate" title="Navegar">☝</button>
@@ -60,7 +74,13 @@
   >⛶</button>
   <button id="inspector">Inspector</button>
   <button id="transform-tools">Transformação</button>
-  <button id="geometry-create">Geometrias</button>
+  <button id="geometry-create">Criar</button>
+  <select id="toolbar-layout" aria-label="Disposição da barra">
+    <option value="horizontal">Barra horizontal</option>
+    <option value="vertical">Barra vertical</option>
+    <option value="floating">Barra flutuante</option>
+  </select>
+  <button id="scene-help">Ajuda do modo cena</button>
   <button id="project-save">Salvar</button>
   <button id="project-open">Abrir</button>
   <button id="project-new">Novo</button>

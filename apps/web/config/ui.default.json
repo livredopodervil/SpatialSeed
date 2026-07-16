@@ -2,11 +2,17 @@
   "schemaVersion": 1,
   "profile": "touch-compact",
   "toolbar": {
+    "layout": "horizontal",
+    "storageKey": "spatialseed.ui.toolbar.v1",
     "primary": [
       "tool-navigate",
       "tool-select",
       "tool-translate",
+      "tool-rotate",
       "tool-scale",
+      "multi-select",
+      "delete-selection",
+      "geometry-create",
       "scene-only",
       "viewport-fullscreen"
     ],
@@ -15,7 +21,6 @@
         "id": "transform",
         "label": "Transformar",
         "items": [
-          "tool-rotate",
           "space",
           "transform-tools"
         ]
@@ -29,7 +34,6 @@
           "selection-remove",
           "selection-toggle",
           "area-selection",
-          "multi-select",
           "clear-selection",
           "pivot-policy",
           "edit-pivot"
@@ -44,7 +48,6 @@
           "group-selection",
           "ungroup-selection",
           "repeat-duplicate",
-          "delete-selection",
           "undo",
           "redo"
         ]
@@ -59,7 +62,8 @@
           "developer",
           "console",
           "inspector",
-          "geometry-create"
+          "toolbar-layout",
+          "scene-help"
         ]
       },
       {
@@ -98,7 +102,8 @@
     },
     "sceneExit": {
       "corner": "top-left",
-      "size": 64
+      "size": 64,
+      "helpStorageKey": "spatialseed.ui.scene-help.v1"
     }
   }
 }

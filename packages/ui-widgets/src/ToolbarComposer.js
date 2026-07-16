@@ -53,6 +53,14 @@ export function composeToolbar({ root = document, configuration }) {
 
   const fileInput = root.getElementById("project-file-input");
   const status = root.getElementById("status");
+  const layoutSelect = find("toolbar-layout");
+  const dragHandle = ownerDocument.createElement("button");
+  dragHandle.type = "button";
+  dragHandle.className = "ss-toolbar-drag-handle";
+  dragHandle.textContent = "⠿";
+  dragHandle.title = "Mover barra flutuante";
+  dragHandle.setAttribute("aria-label", "Mover barra flutuante");
+  toolbar.append(dragHandle);
   if (fileInput) toolbar.append(fileInput);
   if (status) toolbar.append(status);
 
@@ -69,28 +77,139 @@ export function composeToolbar({ root = document, configuration }) {
   };
   toolbar.addEventListener("toggle", closeOtherMenus, true);
   toolbar.addEventListener("click", closeAfterCommand);
+
+  const readToolbarState = () => {
+    try {
+      return JSON.parse(
+        ownerDocument.defaultView.localStorage.getItem(
+          configuration.storageKey
+        ) || "{}"
+      );
+    } catch {
+      return {};
+    }
+  };
+  const saveToolbarState = patch => {
+    try {
+      ownerDocument.defaultView.localStorage.setItem(
+        configuration.storageKey,
+        JSON.stringify({ ...readToolbarState(), ...patch })
+      );
+    } catch {}
+  };
   const updateClearance = () => {
-    const bottom = Math.ceil(toolbar.getBoundingClientRect().bottom + 8);
+    const rectangle = toolbar.getBoundingClientRect();
+    const layout = toolbar.dataset.layout;
+    const clearance = layout === "horizontal"
+      ? Math.ceil(rectangle.bottom + 8)
+      : 8;
+    const leftClearance = layout === "vertical"
+      ? Math.ceil(rectangle.right + 8)
+      : 8;
     ownerDocument.documentElement.style.setProperty(
       "--ss-toolbar-clearance",
-      `${bottom}px`
+      `${clearance}px`
+    );
+    ownerDocument.documentElement.style.setProperty(
+      "--ss-toolbar-left-clearance",
+      `${leftClearance}px`
     );
     ownerDocument.dispatchEvent(new ownerDocument.defaultView.CustomEvent(
       "spatialseed:toolbar-layout",
-      { detail: { clearance: bottom } }
+      { detail: { clearance, leftClearance } }
     ));
   };
-  const resizeObserver = typeof ResizeObserver === "function"
-    ? new ResizeObserver(updateClearance)
+  const applyLayout = (layout, { persist = true } = {}) => {
+    const allowed = ["horizontal", "vertical", "floating"];
+    const next = allowed.includes(layout) ? layout : configuration.layout;
+    toolbar.dataset.layout = next;
+    ownerDocument.documentElement.dataset.toolbarLayout = next;
+    layoutSelect.value = next;
+
+    if (next === "floating") {
+      const state = readToolbarState();
+      toolbar.style.left = `${Number.isFinite(state.left) ? state.left : 8}px`;
+      toolbar.style.top = `${Number.isFinite(state.top) ? state.top : 8}px`;
+      toolbar.style.right = "auto";
+      toolbar.style.bottom = "auto";
+    } else {
+      toolbar.style.left = "";
+      toolbar.style.top = "";
+      toolbar.style.right = "";
+      toolbar.style.bottom = "";
+    }
+
+    if (persist) saveToolbarState({ layout: next });
+    updateClearance();
+  };
+  const onLayoutChange = event => {
+    applyLayout(event.target.value);
+    event.target.closest(".ss-toolbar-menu")?.removeAttribute("open");
+  };
+  layoutSelect.addEventListener("change", onLayoutChange);
+
+  const drag = event => {
+    if (toolbar.dataset.layout !== "floating") return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    const rectangle = toolbar.getBoundingClientRect();
+    const origin = {
+      x:event.clientX,
+      y:event.clientY,
+      left:rectangle.left,
+      top:rectangle.top
+    };
+    dragHandle.setPointerCapture?.(event.pointerId);
+
+    const move = current => {
+      const left = clamp(
+        origin.left + current.clientX - origin.x,
+        0,
+        Math.max(0, ownerDocument.defaultView.innerWidth - toolbar.offsetWidth)
+      );
+      const top = clamp(
+        origin.top + current.clientY - origin.y,
+        0,
+        Math.max(0, ownerDocument.defaultView.innerHeight - toolbar.offsetHeight)
+      );
+      toolbar.style.left = `${left}px`;
+      toolbar.style.top = `${top}px`;
+    };
+    const end = current => {
+      dragHandle.releasePointerCapture?.(current.pointerId);
+      dragHandle.removeEventListener("pointermove", move);
+      dragHandle.removeEventListener("pointerup", end);
+      dragHandle.removeEventListener("pointercancel", end);
+      const finalRectangle = toolbar.getBoundingClientRect();
+      saveToolbarState({
+        left:Math.round(finalRectangle.left),
+        top:Math.round(finalRectangle.top)
+      });
+    };
+    dragHandle.addEventListener("pointermove", move);
+    dragHandle.addEventListener("pointerup", end);
+    dragHandle.addEventListener("pointercancel", end);
+  };
+  dragHandle.addEventListener("pointerdown", drag);
+
+  const resizeObserver = typeof ownerDocument.defaultView.ResizeObserver === "function"
+    ? new ownerDocument.defaultView.ResizeObserver(updateClearance)
     : null;
   resizeObserver?.observe(toolbar);
-  updateClearance();
+  const storedLayout = readToolbarState().layout;
+  applyLayout(storedLayout ?? configuration.layout, { persist:false });
 
   return Object.freeze({
     dispose() {
       resizeObserver?.disconnect();
+      layoutSelect.removeEventListener("change", onLayoutChange);
+      dragHandle.removeEventListener("pointerdown", drag);
       toolbar.removeEventListener("toggle", closeOtherMenus, true);
       toolbar.removeEventListener("click", closeAfterCommand);
     }
   });
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
 }

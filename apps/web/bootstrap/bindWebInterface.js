@@ -1,4 +1,4 @@
-import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024g";
+import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024h";
 
 export function bindWebInterface({
   runtime,
@@ -48,6 +48,51 @@ export function bindWebInterface({
     "--ss-scene-exit-size",
     `${sceneExit.size}px`
   );
+  const sceneHelpDialog = $("scene-help-dialog");
+  const sceneHelpSuppress = $("scene-help-suppress");
+  const sceneHelpStorageKey = sceneExit.helpStorageKey;
+  const cornerLabels = {
+    "top-left":"superior esquerdo",
+    "top-right":"superior direito",
+    "bottom-left":"inferior esquerdo",
+    "bottom-right":"inferior direito"
+  };
+  $("scene-help-message").textContent =
+    `Para restaurar a interface, toque no canto ${
+      cornerLabels[sceneExit.corner]
+    } da cena.`;
+  const isSceneHelpSuppressed = () => {
+    try {
+      return localStorage.getItem(sceneHelpStorageKey) === "suppressed";
+    } catch {
+      return false;
+    }
+  };
+  const showSceneHelp = ({ manual = false } = {}) => {
+    const suppressed = isSceneHelpSuppressed();
+    if (suppressed && !manual) return false;
+    sceneHelpSuppress.checked = suppressed;
+    if (typeof sceneHelpDialog.showModal === "function") {
+      if (!sceneHelpDialog.open) sceneHelpDialog.showModal();
+    } else {
+      sceneHelpDialog.setAttribute("open", "");
+    }
+    return true;
+  };
+  sceneHelpDialog.addEventListener("close", () => {
+    try {
+      if (sceneHelpSuppress.checked) {
+        localStorage.setItem(sceneHelpStorageKey, "suppressed");
+      } else {
+        localStorage.removeItem(sceneHelpStorageKey);
+      }
+    } catch {}
+  });
+  sceneHelpDialog.addEventListener("cancel", event => {
+    event.preventDefault();
+    sceneHelpDialog.close();
+    if (sceneOnly) setSceneOnly(false);
+  });
   const panelManager = new FloatingPanelManager({
     root: documentRoot,
     storageKey: uiConfiguration?.panels?.storageKey
@@ -537,6 +582,7 @@ export function bindWebInterface({
   }
 
   function setSceneOnly(enabled) {
+    const entering = Boolean(enabled) && !sceneOnly;
     sceneOnly = Boolean(enabled);
     documentRoot.body.classList.toggle("ss-scene-only", sceneOnly);
     $("scene-only").dataset.active = sceneOnly ? "true" : "false";
@@ -544,6 +590,7 @@ export function bindWebInterface({
       "aria-pressed",
       sceneOnly ? "true" : "false"
     );
+    if (entering) showSceneHelp();
     return sceneOnly;
   }
 
@@ -584,6 +631,10 @@ export function bindWebInterface({
     "click",
     () => setSceneOnly(false)
   );
+  $("scene-help").addEventListener(
+    "click",
+    () => showSceneHelp({ manual:true })
+  );
   $("viewport-fullscreen").addEventListener(
     "click",
     toggleViewportFullscreen
@@ -594,6 +645,7 @@ export function bindWebInterface({
   );
 
   documentRoot.addEventListener("keydown", event => {
+    if (sceneHelpDialog.open) return;
     if (isTextEditingTarget(event.target)) return;
 
     if (event.key === "Tab") {

@@ -49,3 +49,18 @@ navegador não deixam o painel cobrir os controles.
 `presentation.sceneExit` configura a zona de toque que restaura a interface no
 modo somente cena. As opções de `corner` são `top-left`, `top-right`,
 `bottom-left` e `bottom-right`; `size` é medido em pixels CSS.
+
+## Extensão 0024h
+
+`toolbar.layout` aceita `horizontal`, `vertical` ou `floating`. A escolha feita
+no controle **Painéis → Disposição da barra** prevalece sobre o manifesto e é
+persistida na chave `toolbar.storageKey`. No modo flutuante, a alça `⠿` move a
+barra e sua posição também é preservada.
+
+Os controles primários incluem seleção, seleção múltipla, mover, girar,
+escalar, excluir e criar. A composição continua editável no manifesto.
+
+Ao entrar no modo somente cena, um diálogo explica o retorno pelo canto
+configurado. A opção **Não mostrar novamente** usa
+`presentation.sceneExit.helpStorageKey`; a ajuda pode ser reaberta pelo menu de
+painéis e a preferência pode ser desmarcada ali.

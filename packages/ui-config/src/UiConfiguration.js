@@ -23,6 +23,10 @@ export function normalizeUiConfiguration(source = {}) {
     });
   });
   const hidden = normalizeIdList(source.toolbar?.hidden, "toolbar.hidden");
+  const toolbarLayout = source.toolbar?.layout ?? "horizontal";
+  if (!["horizontal", "vertical", "floating"].includes(toolbarLayout)) {
+    throw new RangeError("toolbar.layout inválido.");
+  }
   assertUnique([
     ...primary,
     ...menus.flatMap(menu => menu.items),
@@ -63,6 +67,11 @@ export function normalizeUiConfiguration(source = {}) {
     schemaVersion,
     profile: requiredText(source.profile ?? "default", "profile"),
     toolbar: Object.freeze({
+      layout: toolbarLayout,
+      storageKey: requiredText(
+        source.toolbar?.storageKey ?? "spatialseed.ui.toolbar.v1",
+        "toolbar.storageKey"
+      ),
       primary: Object.freeze(primary),
       menus: Object.freeze(menus),
       hidden: Object.freeze(hidden)
@@ -84,6 +93,10 @@ export function normalizeUiConfiguration(source = {}) {
           128,
           64,
           "presentation.sceneExit.size"
+        ),
+        helpStorageKey: requiredText(
+          sceneExit.helpStorageKey ?? "spatialseed.ui.scene-help.v1",
+          "presentation.sceneExit.helpStorageKey"
         )
       })
     })
