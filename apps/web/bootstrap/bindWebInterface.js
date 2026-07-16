@@ -1,7 +1,7 @@
 import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024i";
 import {
   BrowserProjectFileGateway
-} from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0025c";
+} from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0026i";
 
 export function bindWebInterface({
   runtime,
@@ -20,6 +20,8 @@ export function bindWebInterface({
     outline,
     modules,
     devConsole,
+    procedureCatalog,
+    procedureCatalogEditor,
     objectInspector,
     transformToolPanel
   } = web;
@@ -35,6 +37,16 @@ export function bindWebInterface({
   const projectFiles = new BrowserProjectFileGateway({
     windowRef: browserWindow,
     documentRef: documentRoot
+  });
+  const procedureFiles = new BrowserProjectFileGateway({
+    windowRef: browserWindow,
+    documentRef: documentRoot,
+    fileType: {
+      description: "Biblioteca de procedimentos Spatial Seed",
+      accept: {
+        "application/json": [".ssproc.json", ".json"]
+      }
+    }
   });
   const refreshProjectFileCapabilities = () => {
     browserWindow.__SPATIAL_SEED_FILE_INTEROP__ =
@@ -134,6 +146,7 @@ export function bindWebInterface({
     "#diagnostic-panel",
     "#developer-panel",
     "#console-panel",
+    "#procedure-editor-panel",
     "#inspector-panel",
     "#transform-tools-panel",
     "#geometry-create-panel"
@@ -461,6 +474,74 @@ export function bindWebInterface({
     }
   );
 
+  $("procedure-library-save").addEventListener("click", async () => {
+    const text = procedureCatalog.exportText();
+    const payload = {
+      prepared: true,
+      filename: "spatialseed-procedures.json",
+      mediaType: "application/json;charset=utf-8",
+      text,
+      bytes: new TextEncoder().encode(text).byteLength
+    };
+
+    try {
+      let result = await procedureFiles.save(payload, { saveAs: true });
+      if (result.fallbackRequired) {
+        const approved = browserWindow.confirm(
+          "O seletor nativo não está disponível neste contexto. " +
+          "Deseja exportar a biblioteca por download compatível?"
+        );
+        if (!approved) return;
+        result = procedureFiles.saveFallback(payload, {
+          fallbackReason: result.fallbackReason
+        });
+      }
+      if (result.saved) {
+        showNotice(
+          `Procedimentos exportados: ${result.filename}`
+        );
+      }
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("procedure-library-open").addEventListener("click", async () => {
+    if (!procedureFiles.capabilities().nativeOpen) {
+      $("procedure-library-file-input").click();
+      return;
+    }
+
+    try {
+      const opened = await procedureFiles.open();
+      if (opened.opened) {
+        loadProcedureLibraryText(opened.text);
+      } else if (opened.fallbackRequired) {
+        $("procedure-library-file-input").click();
+      }
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("procedure-library-file-input").addEventListener(
+    "change",
+    async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      try {
+        procedureFiles.reset();
+        const opened = await procedureFiles.readFile(file);
+        loadProcedureLibraryText(opened.text);
+      } catch (error) {
+        showError(error);
+      } finally {
+        event.target.value = "";
+      }
+    }
+  );
+
   $("project-new").addEventListener("click", () => {
     if (!confirm(
       "Criar um projeto vazio? Alterações não salvas serão descartadas."
@@ -503,6 +584,37 @@ export function bindWebInterface({
     } else {
       projectFiles.reset();
     }
+    return result;
+  }
+
+  function loadProcedureLibraryText(text) {
+    if (
+      procedureCatalogEditor.snapshot().dirty &&
+      !browserWindow.confirm(
+        "O editor contém alterações não salvas. Descartá-las e importar?"
+      )
+    ) {
+      return { changed: false, cancelled: true };
+    }
+
+    let result;
+    try {
+      result = procedureCatalog.importText(text, { mode: "merge" });
+    } catch (error) {
+      if (!/conflita/i.test(error?.message ?? "")) throw error;
+
+      const replace = browserWindow.confirm(
+        "A biblioteca contém nomes com fontes diferentes. " +
+        "Deseja substituir o catálogo local inteiro?"
+      );
+      if (!replace) return { changed: false, cancelled: true };
+      result = procedureCatalog.importText(text, { mode: "replace" });
+    }
+
+    showNotice(
+      `Biblioteca importada: ${result.count} procedimentos.`
+    );
+    procedureCatalogEditor.refresh({ preserveSelection: false });
     return result;
   }
 
@@ -587,6 +699,11 @@ export function bindWebInterface({
     $("console-input").focus();
   });
 
+  $("procedure-editor").addEventListener("click", () => {
+    panelManager.show("#procedure-editor-panel");
+    procedureCatalogEditor.refresh();
+  });
+
   $("close-developer").addEventListener(
     "click",
     () => panelManager.hide("#developer-panel")
@@ -595,6 +712,11 @@ export function bindWebInterface({
   $("close-console").addEventListener(
     "click",
     () => panelManager.hide("#console-panel")
+  );
+
+  $("close-procedure-editor").addEventListener(
+    "click",
+    () => panelManager.hide("#procedure-editor-panel")
   );
 
   $("console-run").addEventListener("click", () => {
@@ -606,8 +728,8 @@ export function bindWebInterface({
     }
 
     consoleHistoryIndex = consoleInputHistory.length;
-    devConsole.execute(input);
-    refreshDeveloperPanel();
+    Promise.resolve(devConsole.execute(input))
+      .finally(refreshDeveloperPanel);
   });
 
   $("console-help").addEventListener("click", () => {

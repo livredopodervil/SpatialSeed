@@ -72,6 +72,9 @@
           "project-save",
           "project-open",
           "project-new",
+          "procedure-library-save",
+          "procedure-library-open",
+          "procedure-editor",
           "pwa-install"
         ]
       }
@@ -86,6 +89,7 @@
       "diagnostic-panel": { "anchor": "right", "top": "toolbar", "width": 520, "height": 520 },
       "developer-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
       "console-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
+      "procedure-editor-panel": { "anchor": "left", "top": "toolbar", "width": 760, "height": 680 },
       "inspector-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
       "transform-tools-panel": { "anchor": "left", "top": "toolbar", "width": 410, "height": 540 },
       "geometry-create-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 }

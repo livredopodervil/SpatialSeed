@@ -5,6 +5,7 @@ export class Sandbox {
   #undo = [];
   #redo = [];
   #commands = [];
+  #revision = 0;
   #subscribers = new Set();
 
   constructor(region, reducer) {
@@ -16,6 +17,7 @@ export class Sandbox {
   }
 
   get baseVersion() { return this.#baseVersion; }
+  get revision() { return this.#revision; }
   get canUndo() { return this.#undo.length > 0; }
   get canRedo() { return this.#redo.length > 0; }
   get dirty() { return this.#commands.length > 0; }
@@ -34,6 +36,7 @@ export class Sandbox {
     this.#redo.length = 0;
     this.#commands.push(structuredClone(command));
     this.#state = result.state;
+    this.#revision += 1;
     this.#notify(result.changes ?? []);
     return true;
   }
@@ -48,6 +51,7 @@ export class Sandbox {
     });
     this.#state = entry.state;
     this.#commands.pop();
+    this.#revision += 1;
     this.#notify([{ type: "sandbox-undo" }]);
     return true;
   }
@@ -65,6 +69,7 @@ export class Sandbox {
     });
     this.#state = result.state;
     this.#commands.push(structuredClone(entry.command));
+    this.#revision += 1;
     this.#notify(result.changes ?? [{ type: "sandbox-redo" }]);
     return true;
   }
@@ -74,6 +79,7 @@ export class Sandbox {
     this.#undo.length = 0;
     this.#redo.length = 0;
     this.#commands.length = 0;
+    this.#revision += 1;
     this.#notify([{ type: "sandbox-discard" }]);
   }
 
@@ -84,6 +90,7 @@ export class Sandbox {
     this.#undo.length = 0;
     this.#redo.length = 0;
     this.#commands.length = 0;
+    this.#revision += 1;
     this.#notify([{
       type: "sandbox-rebased",
       baseVersion: this.#baseVersion
@@ -107,6 +114,7 @@ export class Sandbox {
     this.#undo.length = 0;
     this.#redo.length = 0;
     this.#commands.length = 0;
+    this.#revision += 1;
 
     if (markClean) {
       this.#baseState = structuredClone(next);
@@ -125,6 +133,7 @@ export class Sandbox {
     return Object.freeze({
       undoDepth: this.#undo.length,
       redoDepth: this.#redo.length,
+      revision: this.#revision,
       commandCount: this.#commands.length,
       dirty: this.dirty,
       canUndo: this.canUndo,

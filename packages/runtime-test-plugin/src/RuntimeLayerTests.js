@@ -16,7 +16,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260716-0026g";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0025g";
+} from "../../devtools/src/DevConsole.js?build=20260716-0026j";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -112,6 +112,14 @@ import {
   isPlatformBlock
 } from "../../../apps/web/file-interop/BrowserProjectFileGateway.js";
 import {
+  BrowserProcedureCatalogStore
+} from "../../../apps/web/procedures/BrowserProcedureCatalogStore.js";
+import {
+  clampEditorFontSize,
+  highlightProcedureSource,
+  logicalLineCount
+} from "../../procedure-editor/src/index.js";
+import {
   formatPwaBuildLabel,
   resolvePwaLocations,
   workerBuild
@@ -123,6 +131,22 @@ import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260716-0024i";
 import { fnv1a64 } from "../../asset-store/src/index.js";
+import {
+  DisposableProgramRun,
+  PROGRAM_PLAN_VERSION,
+  ProgramRunController,
+  PROGRAM_WORKER_PROTOCOL_VERSION,
+  PROCEDURE_LIBRARY_SCHEMA_VERSION,
+  ProcedureCatalog,
+  ProgramSessionController,
+  ProgramSessionKernel,
+  SpatialPlanCommitService,
+  SPATIAL_CREATE_COMMAND,
+  createBrowserProgramSessionWorker,
+  createBrowserProgramWorker,
+  createSeededRandom,
+  executeProgramRequest
+} from "../../script-runtime/src/index.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -229,6 +253,1144 @@ export function createRuntimeLayerTests() {
         assert(result.directMs >= 0);
         assert(result.facadeMs >= 0);
         assert(Number.isFinite(result.overheadPerCallUs));
+      }
+    },
+
+    "program-planning": {
+      "planejador acumula apenas intenções serializáveis"() {
+        const run = new DisposableProgramRun({
+          runId: "run-a",
+          baseVersion: 7,
+          seed: 42,
+          allowedCommands: ["objects.create"]
+        });
+        const handle = run.createHandle("object");
+
+        run.emit("objects.create", {
+          handle,
+          geometry: { type: "sphere", radius: 1 }
+        });
+
+        const plan = run.complete({ value: 3 });
+
+        assertEqual(plan.planVersion, PROGRAM_PLAN_VERSION);
+        assertEqual(plan.baseVersion, 7);
+        assertEqual(plan.seed, 42);
+        assertEqual(plan.commands.length, 1);
+        assertEqual(
+          plan.commands[0].args.handle.id,
+          "run-a:object:1"
+        );
+        assertEqual(run.state, "completed");
+        assertEqual(run.commandCount, 0);
+        assert(Object.isFrozen(plan));
+        assert(Object.isFrozen(plan.commands[0].args));
+      },
+
+      "handles são determinísticos pela execução e ordem"() {
+        const first = new DisposableProgramRun({
+          runId: "stable-run"
+        });
+        const second = new DisposableProgramRun({
+          runId: "stable-run"
+        });
+
+        assertDeepEqual(
+          [
+            first.createHandle("object"),
+            first.createHandle("group")
+          ],
+          [
+            second.createHandle("object"),
+            second.createHandle("group")
+          ]
+        );
+      },
+
+      "comandos fora das capacidades são rejeitados"() {
+        const run = new DisposableProgramRun({
+          runId: "restricted-run",
+          allowedCommands: ["objects.create"]
+        });
+
+        assertThrowsMessage(
+          () => run.emit("project.open", { text: "{}" }),
+          "Comando não permitido"
+        );
+        assertEqual(run.commandCount, 0);
+      },
+
+      "cancelamento descarta o plano pendente"() {
+        const run = new DisposableProgramRun({
+          runId: "cancelled-run",
+          allowedCommands: ["objects.create"]
+        });
+        run.emit("objects.create", { id: "planned-a" });
+
+        const result = run.cancel("pedido-do-usuario");
+
+        assertEqual(result.discarded, true);
+        assertEqual(result.discardedCommands, 1);
+        assertEqual(run.state, "cancelled");
+        assertEqual(run.commandCount, 0);
+        assertThrowsMessage(
+          () => run.complete(),
+          "não está ativa"
+        );
+      },
+
+      "término e falha nunca produzem plano parcial"() {
+        for (const action of [
+          run => run.terminate("worker-terminated"),
+          run => run.fail(new Error("boom"))
+        ]) {
+          const run = new DisposableProgramRun({
+            runId: "discarded-run",
+            allowedCommands: ["objects.create"]
+          });
+          run.emit("objects.create", { id: "planned-a" });
+
+          const result = action(run);
+
+          assertEqual(result.discarded, true);
+          assertEqual(result.discardedCommands, 1);
+          assertEqual(run.commandCount, 0);
+        }
+      },
+
+      "orçamento interrompe emissão antes de exceder o limite"() {
+        const run = new DisposableProgramRun({
+          runId: "budget-run",
+          allowedCommands: ["objects.create"],
+          maxCommands: 2
+        });
+        run.emit("objects.create", { id: "a" });
+        run.emit("objects.create", { id: "b" });
+
+        assertThrowsMessage(
+          () => run.emit("objects.create", { id: "c" }),
+          "excedeu o limite"
+        );
+        assertEqual(run.commandCount, 2);
+      },
+
+      "controlador envia pedido sem receber acesso ao runtime"() {
+        const harness = createProgramControllerHarness();
+
+        const snapshot = harness.controller.start({
+          runId: "worker-run",
+          baseVersion: 9,
+          seed: 12,
+          source: "2 + 3",
+          snapshot: { selection: ["object-a"] },
+          allowedCommands: ["objects.create"]
+        });
+
+        assertEqual(snapshot.state, "running");
+        assertEqual(harness.worker.messages.length, 1);
+        assertEqual(
+          harness.worker.messages[0].protocolVersion,
+          PROGRAM_WORKER_PROTOCOL_VERSION
+        );
+        assertEqual(
+          harness.worker.messages[0].request.source,
+          "2 + 3"
+        );
+        assertEqual(
+          "runtime" in harness.worker.messages[0].request,
+          false
+        );
+      },
+
+      "resposta válida encerra Worker e deixa plano pendente"() {
+        const harness = createProgramControllerHarness();
+        harness.controller.start({
+          runId: "completed-run",
+          baseVersion: 4
+        });
+        const envelope = programCompletedEnvelope({
+          runId: "completed-run",
+          baseVersion: 4,
+          commands: [{
+            sequence: 0,
+            command: "objects.create",
+            args: { id: "planned-a" }
+          }]
+        });
+
+        harness.worker.emit("message", envelope);
+        envelope.plan.commands[0].args.id = "tampered";
+
+        assertEqual(harness.controller.state, "ready");
+        assertEqual(harness.worker.terminations, 1);
+        const plan = harness.controller.takePlan();
+        assertEqual(plan.commands[0].args.id, "planned-a");
+        assertEqual(harness.controller.state, "idle");
+      },
+
+      "cancelamento invalida respostas tardias"() {
+        const harness = createProgramControllerHarness();
+        harness.controller.start({
+          runId: "cancel-worker",
+          baseVersion: 2
+        });
+
+        const cancelled = harness.controller.cancel();
+        harness.worker.emit(
+          "message",
+          programCompletedEnvelope({
+            runId: "cancel-worker",
+            baseVersion: 2
+          })
+        );
+
+        assertEqual(cancelled.cancelled, true);
+        assertEqual(harness.worker.terminations, 1);
+        assertEqual(harness.controller.state, "cancelled");
+        assertEqual(harness.controller.snapshot().hasPlan, false);
+      },
+
+      "timeout encerra execução sem produzir plano"() {
+        const harness = createProgramControllerHarness();
+        harness.controller.start({
+          runId: "slow-run",
+          baseVersion: 1
+        });
+
+        harness.fireTimeout();
+
+        assertEqual(harness.controller.state, "timed-out");
+        assertEqual(harness.worker.terminations, 1);
+        assertEqual(harness.controller.snapshot().hasPlan, false);
+        assert(
+          harness.controller.snapshot().lastError.includes("5000 ms")
+        );
+      },
+
+      "protocolo ou execução incompatível falha fechado"() {
+        for (const envelope of [
+          {
+            ...programCompletedEnvelope({
+              runId: "expected-run",
+              baseVersion: 3
+            }),
+            protocolVersion: "unknown-protocol"
+          },
+          programCompletedEnvelope({
+            runId: "other-run",
+            baseVersion: 3
+          })
+        ]) {
+          const harness = createProgramControllerHarness();
+          harness.controller.start({
+            runId: "expected-run",
+            baseVersion: 3
+          });
+
+          harness.worker.emit("message", envelope);
+
+          assertEqual(harness.controller.state, "failed");
+          assertEqual(harness.worker.terminations, 1);
+          assertEqual(harness.controller.snapshot().hasPlan, false);
+        }
+      }
+    },
+
+    "program-evaluation": {
+      "expressão usa biblioteca matemática sem cena"() {
+        const envelope = executeProgramRequest({
+          runId: "expression-run",
+          baseVersion: 3,
+          source: "sqrt(3 ** 2 + 4 ** 2)",
+          mode: "expression",
+          allowedCommands: []
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertEqual(envelope.plan.commands.length, 0);
+        assertEqual(envelope.plan.result.value, 5);
+      },
+
+      "programa aceita funções objetos e controle de fluxo"() {
+        const envelope = executeProgramRequest({
+          runId: "language-run",
+          source: [
+            "const values = [];",
+            "const square = value => value ** 2;",
+            "for (let index = 0; index < 5; index += 1) {",
+            "  values.push(square(index));",
+            "}",
+            "return { values, sum: values.reduce((a, b) => a + b, 0) };"
+          ].join("\n"),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertDeepEqual(
+          envelope.plan.result.value,
+          { values: [0, 1, 4, 9, 16], sum: 30 }
+        );
+      },
+
+      "aleatoriedade repete sequência para a mesma semente"() {
+        const first = createSeededRandom("city-42");
+        const second = createSeededRandom("city-42");
+
+        assertDeepEqual(
+          [
+            first.random(),
+            first.random(-10, 10),
+            first.randomInt(4, 30)
+          ],
+          [
+            second.random(),
+            second.random(-10, 10),
+            second.randomInt(4, 30)
+          ]
+        );
+      },
+
+      "snapshot é somente entrada e saída precisa ser clonável"() {
+        const success = executeProgramRequest({
+          runId: "snapshot-run",
+          snapshot: { object: { position: [1, 2, 3] } },
+          source: "({ position: [...snapshot.object.position] })"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+        const failure = executeProgramRequest({
+          runId: "function-result-run",
+          source: "(() => 1)"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertDeepEqual(
+          success.plan.result.value,
+          { position: [1, 2, 3] }
+        );
+        assertEqual(failure.type, "program.failed");
+        assert(
+          failure.error.message.includes("structuredClone")
+        );
+      },
+
+      "saída é limitada e acompanha o resultado"() {
+        const success = executeProgramRequest({
+          runId: "print-run",
+          source: 'print("valor", 7)',
+          maxOutput: 1
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+        const failure = executeProgramRequest({
+          runId: "print-limit-run",
+          source: 'print("a"); print("b"); return 2;',
+          mode: "program",
+          maxOutput: 1
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertDeepEqual(
+          success.plan.result.output,
+          ["valor 7"]
+        );
+        assertEqual(failure.type, "program.failed");
+        assert(failure.error.message.includes("linhas de saída"));
+      },
+
+      "fábrica solicita Worker modular dedicado"() {
+        const created = [];
+        class WorkerFixture {
+          constructor(url, options) {
+            created.push({ url: String(url), options });
+          }
+        }
+
+        createBrowserProgramWorker({
+          WorkerClass: WorkerFixture,
+          workerUrl: new URL(
+            "https://example.test/ProgramWorker.js"
+          ),
+          name: "program-test"
+        });
+
+        assertEqual(created.length, 1);
+        assertEqual(created[0].options.type, "module");
+        assertEqual(created[0].options.name, "program-test");
+      }
+    },
+
+    "program-session": {
+      "estado explícito persiste entre avaliações"() {
+        const session = createTrustedProgramSession();
+        const first = session.execute({
+          runId: "session-state-1",
+          source: "session.radius = 12",
+          mode: "expression"
+        });
+        const second = session.execute({
+          runId: "session-state-2",
+          source: "session.radius * 2",
+          mode: "expression"
+        });
+
+        assertEqual(first.type, "program.completed");
+        assertEqual(second.plan.result.value, 24);
+        assertDeepEqual(session.snapshot(), {
+          state: "active",
+          revision: 2,
+          keys: ["radius"]
+        });
+      },
+
+      "funções do usuário permanecem dentro da sessão"() {
+        const session = createTrustedProgramSession();
+        session.execute({
+          runId: "session-function-1",
+          source: [
+            "session.polygon = n => n * (n - 3) / 2;",
+            "return 'polygon';"
+          ].join("\n"),
+          mode: "program"
+        });
+        const result = session.execute({
+          runId: "session-function-2",
+          source: "session.polygon(8)",
+          mode: "expression"
+        });
+
+        assertEqual(result.plan.result.value, 20);
+      },
+
+      "objetos abstratos podem ser mantidos sem atravessar o Worker"() {
+        const session = createTrustedProgramSession();
+        session.execute({
+          runId: "session-object-1",
+          source: [
+            "session.city = {",
+            "  blocks: [{ height: 3 }, { height: 8 }],",
+            "  tallest() { return max(...this.blocks.map(x => x.height)); }",
+            "};",
+            "return 'city';"
+          ].join("\n"),
+          mode: "program"
+        });
+        const result = session.execute({
+          runId: "session-object-2",
+          source: "session.city.tallest()",
+          mode: "expression"
+        });
+
+        assertEqual(result.plan.result.value, 8);
+      },
+
+      "falha invalida a sessão inteira"() {
+        const session = createTrustedProgramSession();
+        const failed = session.execute({
+          runId: "session-failure",
+          source: "throw new Error('broken')",
+          mode: "program"
+        });
+
+        assertEqual(failed.type, "program.failed");
+        assertEqual(session.snapshot().state, "invalid");
+        assertThrowsMessage(
+          () => session.execute({
+            runId: "session-after-failure",
+            source: "1 + 1"
+          }),
+          "Sessão de programa foi invalidada"
+        );
+      },
+
+      "fábrica solicita Worker de sessão modular"() {
+        const created = [];
+        class WorkerFixture {
+          constructor(url, options) {
+            created.push({ url: String(url), options });
+          }
+        }
+
+        createBrowserProgramSessionWorker({
+          WorkerClass: WorkerFixture,
+          workerUrl: new URL(
+            "https://example.test/ProgramSessionWorker.js"
+          ),
+          name: "session-test"
+        });
+
+        assertEqual(created.length, 1);
+        assertEqual(created[0].options.type, "module");
+        assertEqual(created[0].options.name, "session-test");
+      },
+
+      "controlador reutiliza Worker após resultados válidos"() {
+        const harness = createProgramSessionControllerHarness();
+
+        harness.controller.run({
+          runId: "persistent-run-1",
+          source: "session.value = 4"
+        }).catch(() => {});
+        harness.worker.emit(
+          "message",
+          sessionCompletedEnvelope({
+            runId: "persistent-run-1",
+            revision: 1,
+            keys: ["value"]
+          })
+        );
+        harness.controller.run({
+          runId: "persistent-run-2",
+          source: "session.value * 2"
+        }).catch(() => {});
+        harness.worker.emit(
+          "message",
+          sessionCompletedEnvelope({
+            runId: "persistent-run-2",
+            revision: 2,
+            keys: ["value"]
+          })
+        );
+
+        assertEqual(harness.workerCreations(), 1);
+        assertEqual(harness.worker.terminations, 0);
+        assertEqual(harness.controller.snapshot().revision, 2);
+        assertDeepEqual(harness.controller.snapshot().keys, ["value"]);
+      },
+
+      "timeout destrói a sessão sem tocar em plano algum"() {
+        const harness = createProgramSessionControllerHarness();
+        harness.controller.run({
+          runId: "persistent-slow",
+          source: "for (;;) {}",
+          mode: "program"
+        }).catch(() => {});
+
+        harness.fireTimeout();
+
+        assertEqual(harness.controller.snapshot().state, "timed-out");
+        assertEqual(harness.controller.snapshot().sessionAlive, false);
+        assertEqual(harness.worker.terminations, 1);
+      },
+
+      "controlador rejeita qualquer comando vindo da matemática"() {
+        const harness = createProgramSessionControllerHarness();
+        harness.controller.run({
+          runId: "forbidden-command",
+          source: "1"
+        }).catch(() => {});
+
+        harness.worker.emit(
+          "message",
+          sessionCompletedEnvelope({
+            runId: "forbidden-command",
+            revision: 1,
+            commands: [{
+              sequence: 0,
+              command: "object.create.box",
+              args: {}
+            }]
+          })
+        );
+
+        assertEqual(harness.controller.snapshot().state, "failed");
+        assertEqual(harness.controller.snapshot().sessionAlive, false);
+        assert(
+          harness.controller.snapshot().lastError.includes(
+            "não autorizado"
+          )
+        );
+      },
+
+      "console entrega programa completo sem separar ponto e vírgula"() {
+        const calls = [];
+        const console = createProgramConsole(calls);
+        const source = "session.f = x => x ** 2; return 'f'";
+
+        console.execute(`program ${source}`);
+
+        assertEqual(calls.length, 1);
+        assertEqual(calls[0].source, source);
+        assertEqual(calls[0].mode, "program");
+      }
+    },
+
+    "procedure-catalog": {
+      "catálogo define atualiza lista e remove procedimentos"() {
+        const catalog = new ProcedureCatalog();
+
+        const first = catalog.define("city", "options => options.rows");
+        const unchanged = catalog.define(
+          "city",
+          "options => options.rows",
+          { replace: true }
+        );
+        const updated = catalog.define(
+          "city",
+          "options => options.cols",
+          { replace: true }
+        );
+
+        assertEqual(first.changed, true);
+        assertEqual(unchanged.changed, false);
+        assertEqual(updated.revision, 2);
+        assertDeepEqual(catalog.list(), [{
+          name: "city",
+          sourceLength: "options => options.cols".length
+        }]);
+        assertEqual(catalog.remove("city").changed, true);
+        assertEqual(catalog.snapshot().count, 0);
+      },
+
+      "exportação e importação preservam fontes deterministicamente"() {
+        const source = new ProcedureCatalog();
+        source.define("tower", "({height=4}={}) => height");
+        source.define("city", "({rows=2}={}) => rows ** 2");
+        const document = source.exportDocument();
+        const target = new ProcedureCatalog();
+
+        const result = target.importDocument(document);
+
+        assertEqual(
+          document.schemaVersion,
+          PROCEDURE_LIBRARY_SCHEMA_VERSION
+        );
+        assertEqual(result.changed, true);
+        assertDeepEqual(target.exportDocument(), document);
+        assertDeepEqual(
+          target.list().map(entry => entry.name),
+          ["city", "tower"]
+        );
+      },
+
+      "importação conflitante é atômica"() {
+        const catalog = new ProcedureCatalog();
+        catalog.define("city", "() => 1");
+        const before = catalog.exportDocument();
+
+        assertThrowsMessage(
+          () => catalog.importDocument({
+            schemaVersion: PROCEDURE_LIBRARY_SCHEMA_VERSION,
+            procedures: [
+              { name: "tower", source: "() => 2" },
+              { name: "city", source: "() => 3" }
+            ]
+          }),
+          "conflita"
+        );
+        assertDeepEqual(catalog.exportDocument(), before);
+      },
+
+      "catálogo persiste e restaura fontes sem executar código"() {
+        const values = new Map();
+        const storage = {
+          getItem: key => values.get(key) ?? null,
+          setItem: (key, value) => values.set(key, value)
+        };
+        const store = new BrowserProcedureCatalogStore({
+          storage,
+          key: "procedure-test"
+        });
+        const first = new ProcedureCatalog({ storage: store });
+        first.define("tower", "({height=8}={}) => height");
+
+        const restored = new ProcedureCatalog({ storage: store });
+
+        assertEqual(restored.snapshot().count, 1);
+        assertEqual(restored.snapshot().persistence.restored, true);
+        assertEqual(
+          restored.get("tower").source,
+          "({height=8}={}) => height"
+        );
+      },
+
+      "falha de persistência não altera catálogo em memória"() {
+        const catalog = new ProcedureCatalog({
+          storage: {
+            load: () => null,
+            save() {
+              throw new Error("quota unavailable");
+            }
+          }
+        });
+
+        assertThrowsMessage(
+          () => catalog.define("tower", "() => 1"),
+          "quota unavailable"
+        );
+        assertEqual(catalog.snapshot().count, 0);
+        assert(
+          catalog.snapshot().persistence.lastError.includes("quota")
+        );
+      },
+
+      "documento textual faz roundtrip editável"() {
+        const source = new ProcedureCatalog();
+        source.define("city", "({rows=2}={}) => rows ** 2");
+        const text = source.exportText();
+        const target = new ProcedureCatalog();
+
+        const result = target.importText(text, { mode: "replace" });
+
+        assert(text.endsWith("\n"));
+        assert(text.includes('"schemaVersion"'));
+        assertEqual(result.count, 1);
+        assertDeepEqual(target.exportDocument(), source.exportDocument());
+      },
+
+      "invocação executa fonte no ambiente espacial autorizado"() {
+        const catalog = new ProcedureCatalog();
+        catalog.define("row", [
+          "({count=3}={}) => {",
+          "  for (let i=0;i<count;i+=1) {",
+          "    spatial.create('box',{position:[i,0,0]});",
+          "  }",
+          "  return {count, planned:spatial.stats().commandCount};",
+          "}"
+        ].join("\n"));
+
+        const envelope = executeProgramRequest({
+          runId: "procedure-row",
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"],
+          source: catalog.invocationSource("row", { count: 4 }),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertEqual(envelope.plan.commands.length, 4);
+        assertDeepEqual(envelope.plan.result.value, {
+          count: 4,
+          planned: 4
+        });
+      },
+
+      "console define lista mostra executa e exporta por nome"() {
+        const calls = [];
+        const catalog = new ProcedureCatalog();
+        const console = createProgramConsole(calls, {
+          procedures: catalog
+        });
+
+        return console.execute(
+          "procedure define tower ({height=8}={}) => height"
+        ).then(() => console.execute([
+          "procedure list",
+          "procedure show tower",
+          'procedure run tower {"height":12}'
+        ].join("\n")))
+          .then(entries => {
+            assertEqual(entries.length, 3);
+            assertEqual(entries[0].result.count, 1);
+            assert(entries[1].result.source.includes("height=8"));
+            assertEqual(calls.length, 1);
+            assert(calls[0].source.includes('"height":12'));
+            return console.execute("procedure export");
+          })
+          .then(exportEntries => {
+            assertEqual(
+              exportEntries[0].result.schemaVersion,
+              PROCEDURE_LIBRARY_SCHEMA_VERSION
+            );
+          });
+      },
+
+      "comandos administrativos em linhas distintas são sequenciais"() {
+        const calls = [];
+        const commits = [];
+        const console = createProgramConsole(calls, {
+          procedures: new ProcedureCatalog(),
+          plan: {
+            planVersion: PROGRAM_PLAN_VERSION,
+            runId: "multiline-plan",
+            baseVersion: 0,
+            seed: 0,
+            commands: [{
+              sequence: 0,
+              command: SPATIAL_CREATE_COMMAND,
+              args: {}
+            }],
+            result: null
+          },
+          execute(id, args) {
+            commits.push({ id, args: structuredClone(args) });
+            return { changed: true };
+          }
+        });
+
+        return console.execute("program return 'planned'")
+          .then(() => console.execute("plan status\nplan commit"))
+          .then(entries => {
+            assertEqual(entries.length, 2);
+            assertEqual(entries[0].result.pending, true);
+            assertEqual(entries[1].result.changed, true);
+            assertEqual(commits.length, 1);
+            assertEqual(commits[0].id, "program.plan.commit");
+          });
+      }
+    },
+
+    "procedure-editor": {
+      "numeração conta linhas lógicas e ignora quebra visual"() {
+        const longLine = "x".repeat(500);
+
+        assertEqual(logicalLineCount(longLine), 1);
+        assertEqual(logicalLineCount(`${longLine}\nreturn x`), 2);
+        assertEqual(logicalLineCount(""), 1);
+      },
+
+      "tamanho da fonte permanece em faixa acessível"() {
+        assertEqual(clampEditorFontSize(2), 10);
+        assertEqual(clampEditorFontSize(17.4), 17);
+        assertEqual(clampEditorFontSize(100), 28);
+        assertEqual(clampEditorFontSize("invalid"), 14);
+      },
+
+      "realce léxico escapa conteúdo antes de produzir marcação"() {
+        const html = highlightProcedureSource(
+          'const value = "<box>"; // comment'
+        );
+
+        assert(html.includes("ss-token-keyword"));
+        assert(html.includes("ss-token-string"));
+        assert(html.includes("ss-token-comment"));
+        assert(html.includes("&lt;box&gt;"));
+        assertEqual(html.includes("<box>"), false);
+      },
+
+      "realce mantém uma faixa para cada linha vazia"() {
+        const html = highlightProcedureSource("return 1\n\nreturn 2");
+        const lines = html.match(/ss-code-line/g) ?? [];
+
+        assertEqual(lines.length, 3);
+        assert(html.includes("&#8203;"));
+      }
+    },
+
+    "spatial-planning": {
+      "create produz intenção serializável sem tocar na cena"() {
+        const envelope = executeProgramRequest({
+          runId: "spatial-create",
+          baseVersion: 12,
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box", "sphere"],
+          source: [
+            "const handle = spatial.create('box', {",
+            "  size: [1, 2, 3],",
+            "  position: [4, 5, 6],",
+            "  color: '#336699'",
+            "});",
+            "return handle;"
+          ].join("\n"),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertEqual(envelope.plan.baseVersion, 12);
+        assertEqual(envelope.plan.commands.length, 1);
+        assertEqual(
+          envelope.plan.commands[0].command,
+          SPATIAL_CREATE_COMMAND
+        );
+        assertDeepEqual(
+          envelope.plan.commands[0].args.geometry,
+          { size: [1, 2, 3], type: "box" }
+        );
+        assertDeepEqual(
+          envelope.plan.commands[0].args.position,
+          [4, 5, 6]
+        );
+        assertEqual(envelope.plan.commands[0].args.color, "#336699");
+        assertDeepEqual(
+          envelope.plan.result.value,
+          envelope.plan.commands[0].args.handle
+        );
+        structuredClone(envelope.plan);
+      },
+
+      "handles repetem para mesma execução e ordem"() {
+        const request = {
+          runId: "deterministic-spatial",
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"],
+          source: [
+            "return [",
+            "  spatial.create('box'),",
+            "  spatial.create('box')",
+            "];"
+          ].join("\n"),
+          mode: "program"
+        };
+        const first = executeProgramRequest(request, {
+          evaluate: evaluateTrustedFixture
+        });
+        const second = executeProgramRequest(request, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertDeepEqual(
+          first.plan.result.value,
+          second.plan.result.value
+        );
+        assertEqual(first.plan.commands[0].args.handle.id,
+          "deterministic-spatial:object:1");
+        assertEqual(first.plan.commands[1].args.handle.id,
+          "deterministic-spatial:object:2");
+      },
+
+      "geometria fora das capacidades falha fechado"() {
+        const envelope = executeProgramRequest({
+          runId: "unsupported-spatial",
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"],
+          source: "spatial.create('mesh')"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.failed");
+        assert(envelope.error.message.includes("não permitida"));
+      },
+
+      "orçamento interrompe plano antes do comando excedente"() {
+        const envelope = executeProgramRequest({
+          runId: "budget-spatial",
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"],
+          maxCommands: 2,
+          source: [
+            "spatial.create('box');",
+            "spatial.create('box');",
+            "spatial.create('box');"
+          ].join("\n"),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.failed");
+        assert(envelope.error.message.includes("limite de 2 comandos"));
+      },
+
+      "sem capability spatial permanece ausente"() {
+        const envelope = executeProgramRequest({
+          runId: "no-spatial-capability",
+          allowedCommands: [],
+          geometryTypes: ["box"],
+          source: "typeof spatial"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.plan.result.value, "undefined");
+        assertEqual(envelope.plan.commands.length, 0);
+      },
+
+      "controlador aceita somente intenção autorizada"() {
+        const harness = createProgramSessionControllerHarness({
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"]
+        });
+        harness.controller.run({
+          runId: "authorized-spatial",
+          source: "spatial.create('box')",
+          mode: "program"
+        }).catch(() => {});
+        harness.worker.emit(
+          "message",
+          sessionCompletedEnvelope({
+            runId: "authorized-spatial",
+            revision: 1,
+            commands: [{
+              sequence: 0,
+              command: SPATIAL_CREATE_COMMAND,
+              args: {
+                handle: {
+                  kind: "object",
+                  id: "authorized-spatial:object:1"
+                },
+                geometry: { type: "box" }
+              }
+            }]
+          })
+        );
+
+        assertEqual(harness.controller.snapshot().state, "idle");
+        assertEqual(harness.worker.terminations, 0);
+      }
+    },
+
+    "spatial-plan-commit": {
+      "validação compila sem alterar mundo recursos ou histórico"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [{
+            type: "box",
+            options: {
+              size: [2, 4, 2],
+              position: [0, 2, 0],
+              color: "#4488ff"
+            }
+          }]
+        });
+        const worldBefore = fixture.sandbox.getState();
+        const assetsBefore = fixture.appearanceRuntime.exportAssets();
+
+        const compiled = fixture.service.validate(plan);
+
+        assertEqual(compiled.objects.length, 1);
+        assertDeepEqual(fixture.sandbox.getState(), worldBefore);
+        assertDeepEqual(
+          fixture.appearanceRuntime.exportAssets(),
+          assetsBefore
+        );
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          0
+        );
+      },
+
+      "commit cria lote inteiro em um único item de undo"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [
+            {
+              type: "box",
+              options: {
+                size: [1, 4, 1],
+                position: [0, 2, 0],
+                color: "#336699"
+              }
+            },
+            {
+              type: "sphere",
+              options: {
+                radius: 1.5,
+                position: [3, 1.5, 0],
+                color: "#336699"
+              }
+            }
+          ]
+        });
+
+        const result = fixture.service.commit(plan);
+
+        assertEqual(result.changed, true);
+        assertEqual(result.createdIds.length, 2);
+        assertEqual(fixture.sandbox.getState().objects.length, 2);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          1
+        );
+        assertEqual(
+          fixture.editor.selection.snapshot().members.length,
+          2
+        );
+
+        fixture.sandbox.undo();
+        assertEqual(fixture.sandbox.getState().objects.length, 0);
+      },
+
+      "aparência idêntica é deduplicada com referências corretas"() {
+        const fixture = createSpatialCommitFixture();
+        fixture.service.commit(spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: Array.from({ length: 5 }, (_, index) => ({
+            type: "box",
+            options: {
+              size: [1, 1, 1],
+              position: [index, 0.5, 0],
+              color: "#55aa77"
+            }
+          }))
+        }));
+        const objects = fixture.sandbox.getState().objects;
+        const stats = fixture.appearanceRuntime.stats().assets;
+
+        assertEqual(new Set(
+          objects.map(object => object.appearanceId)
+        ).size, 1);
+        assertEqual(stats.byKind.appearance.assets, 1);
+        assertEqual(stats.byKind.appearance.references, 5);
+        assertEqual(stats.byKind.material.assets, 1);
+        assertEqual(stats.byKind.material.references, 5);
+      },
+
+      "geometria inválida não deixa efeitos parciais"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [
+            { type: "box", options: { size: [1, 1, 1] } },
+            { type: "sphere", options: { radius: -2 } }
+          ]
+        });
+
+        assertThrowsMessage(
+          () => fixture.service.commit(plan),
+          "radius deve ser positivo"
+        );
+        assertEqual(fixture.sandbox.getState().objects.length, 0);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          0
+        );
+        assertEqual(
+          fixture.appearanceRuntime.stats().assets.assets,
+          0
+        );
+      },
+
+      "revisão local impede commit de plano obsoleto"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [{ type: "box", options: {} }]
+        });
+        fixture.sandbox.dispatch({
+          type: "object.create",
+          id: "external-object",
+          color: "#ffffff"
+        });
+
+        assertThrowsMessage(
+          () => fixture.service.commit(plan),
+          "Plano obsoleto"
+        );
+        assertEqual(fixture.sandbox.getState().objects.length, 1);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          1
+        );
+      },
+
+      "handles duplicados são rejeitados antes da transação"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [
+            { type: "box", handleId: "same-handle", options: {} },
+            { type: "sphere", handleId: "same-handle", options: {} }
+          ]
+        });
+
+        assertThrowsMessage(
+          () => fixture.service.commit(plan),
+          "Handle espacial duplicado"
+        );
+        assertEqual(fixture.sandbox.getState().objects.length, 0);
       }
     },
 
@@ -4642,6 +5804,40 @@ function createGeometryConsole(calls) {
   });
 }
 
+function createProgramConsole(calls, {
+  procedures = null,
+  plan = null,
+  execute = null
+} = {}) {
+  return new DevConsole({
+    editor: { selection: new Selection() },
+    sandbox: { revision: 0 },
+    region: {},
+    renderer: {},
+    getDiagnostics: () => ({}),
+    commands: {
+      describe: () => [],
+      execute(id, args) {
+        if (execute) return execute(id, args);
+        throw new Error("Sessão matemática não usa comandos de cena.");
+      }
+    },
+    programs: {
+      run(request) {
+        calls.push(structuredClone(request));
+        return Promise.resolve(plan ?? {
+          commands: [],
+          result: { value: "ok", output: [] }
+        });
+      },
+      snapshot: () => ({ state: "idle" }),
+      reset: () => ({ state: "idle" }),
+      cancel: () => ({ cancelled: false })
+    },
+    procedures
+  });
+}
+
 function propertyObject(id, color, instanceColor) {
   return {
     id,
@@ -4891,6 +6087,238 @@ export function runRuntimeTests(suites, requested = "all") {
   };
 }
 
+function createProgramControllerHarness() {
+  const worker = new FakeProgramWorker();
+  let timeoutCallback = null;
+  const clearedTimers = [];
+  const controller = new ProgramRunController({
+    workerFactory: () => worker,
+    timeoutMs: 5000,
+    setTimer(callback) {
+      timeoutCallback = callback;
+      return 17;
+    },
+    clearTimer(timerId) {
+      clearedTimers.push(timerId);
+    }
+  });
+
+  return {
+    controller,
+    worker,
+    clearedTimers,
+    fireTimeout() {
+      if (!timeoutCallback) {
+        throw new Error("Timeout não foi registrado.");
+      }
+      timeoutCallback();
+    }
+  };
+}
+
+function createProgramSessionControllerHarness(options = {}) {
+  const worker = new FakeProgramWorker();
+  let timeoutCallback = null;
+  let creations = 0;
+  const controller = new ProgramSessionController({
+    workerFactory() {
+      creations += 1;
+      return worker;
+    },
+    timeoutMs: 5000,
+    setTimer(callback) {
+      timeoutCallback = callback;
+      return 23;
+    },
+    clearTimer() {},
+    ...options
+  });
+
+  return {
+    controller,
+    worker,
+    workerCreations: () => creations,
+    fireTimeout() {
+      if (!timeoutCallback) {
+        throw new Error("Timeout de sessão não foi registrado.");
+      }
+      timeoutCallback();
+    }
+  };
+}
+
+class FakeProgramWorker {
+  constructor() {
+    this.listeners = new Map();
+    this.messages = [];
+    this.terminations = 0;
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type, listener) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  postMessage(message) {
+    this.messages.push(structuredClone(message));
+  }
+
+  terminate() {
+    this.terminations += 1;
+  }
+
+  emit(type, data) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ data: structuredClone(data) });
+    }
+  }
+}
+
+function programCompletedEnvelope({
+  runId,
+  baseVersion,
+  commands = []
+}) {
+  return {
+    protocolVersion: PROGRAM_WORKER_PROTOCOL_VERSION,
+    type: "program.completed",
+    runId,
+    plan: {
+      planVersion: PROGRAM_PLAN_VERSION,
+      runId,
+      baseVersion,
+      seed: 0,
+      commands: structuredClone(commands),
+      result: null
+    }
+  };
+}
+
+function sessionCompletedEnvelope({
+  runId,
+  baseVersion = 0,
+  revision,
+  keys = [],
+  commands = []
+}) {
+  return {
+    ...programCompletedEnvelope({
+      runId,
+      baseVersion,
+      commands
+    }),
+    session: {
+      state: "active",
+      revision,
+      keys: structuredClone(keys)
+    }
+  };
+}
+
+function evaluateTrustedFixture(source, endowments) {
+  const names = Object.keys(endowments);
+  const values = names.map(name => endowments[name]);
+  const evaluator = new Function(
+    ...names,
+    `"use strict"; return ${source};`
+  );
+
+  return evaluator(...values);
+}
+
+function createTrustedProgramSession() {
+  return new ProgramSessionKernel({
+    evaluate: evaluateTrustedFixture
+  });
+}
+
+function createSpatialCommitFixture() {
+  const region = new Region(
+    {
+      id: "region-spatial-commit",
+      name: "Spatial commit",
+      type: "box-region"
+    },
+    { schemaVersion: 1, objects: [] }
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const editor = { selection: new Selection() };
+  const appearanceRuntime = new AppearanceRuntime();
+  let idSequence = 0;
+  const service = new SpatialPlanCommitService({
+    sandbox,
+    editor,
+    regionId: region.descriptor.id,
+    geometryRegistry: createDefaultGeometryRegistry(),
+    appearanceRuntime,
+    createId: () => `program-object-${++idSequence}`
+  });
+
+  return {
+    region,
+    sandbox,
+    editor,
+    appearanceRuntime,
+    service
+  };
+}
+
+function spatialCreationPlan({
+  baseVersion = 0,
+  runId = "spatial-commit-run",
+  creations = []
+} = {}) {
+  return {
+    planVersion: PROGRAM_PLAN_VERSION,
+    runId,
+    baseVersion,
+    seed: 0,
+    commands: creations.map((creation, index) => ({
+      sequence: index,
+      command: SPATIAL_CREATE_COMMAND,
+      args: {
+        handle: {
+          kind: "object",
+          id: creation.handleId ?? `${runId}:object:${index + 1}`
+        },
+        geometry: {
+          ...(creation.options?.geometry ?? {}),
+          ...Object.fromEntries(
+            Object.entries(creation.options ?? {}).filter(([name]) =>
+              ![
+                "geometry",
+                "name",
+                "position",
+                "rotation",
+                "placement",
+                "color"
+              ].includes(name)
+            )
+          ),
+          type: creation.type
+        },
+        ...Object.fromEntries(
+          Object.entries(creation.options ?? {}).filter(([name]) =>
+            [
+              "name",
+              "position",
+              "rotation",
+              "placement",
+              "color"
+            ].includes(name)
+          )
+        )
+      }
+    })),
+    result: null
+  };
+}
+
 function assert(condition, message = "Falha de asserção.") {
   if (!condition) throw new Error(message);
 }
@@ -4951,6 +6379,25 @@ function assertThrowsCode(callback, expectedCode) {
   }
   assert(captured,`Esperava erro ${expectedCode}, mas nenhuma exceção foi lançada.`);
   assertEqual(captured.code,expectedCode);
+}
+
+function assertThrowsMessage(callback, expectedMessage) {
+  let captured = null;
+
+  try {
+    callback();
+  } catch (error) {
+    captured = error;
+  }
+
+  assert(
+    captured,
+    `Esperava erro contendo ${expectedMessage}, mas nenhuma exceção foi lançada.`
+  );
+  assert(
+    String(captured.message).includes(expectedMessage),
+    `Erro não contém ${expectedMessage}: ${captured.message}`
+  );
 }
 
 function round(value) {

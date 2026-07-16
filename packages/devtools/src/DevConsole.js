@@ -13,7 +13,9 @@ export class DevConsole {
     getDiagnostics,
     onOutput,
     commands,
-    queries = null
+    queries = null,
+    programs = null,
+    procedures = null
   }) {
     this.editor = editor;
     this.sandbox = sandbox;
@@ -23,12 +25,22 @@ export class DevConsole {
     this.onOutput = onOutput;
     this.commands = commands;
     this.queries = queries;
+    this.programs = programs;
+    this.procedures = procedures;
+    this.programSequence = 0;
+    this.pendingProgramPlan = null;
     this.history = [];
   }
 
   execute(source) {
     const input = String(source ?? "").trim();
     if (!input) return [];
+
+    if (isProgramConsoleInput(input)) {
+      return this.#executeProgramInputs(
+        splitProgramConsoleInputs(input)
+      );
+    }
 
     const lines = splitStatements(input);
 
@@ -64,6 +76,249 @@ export class DevConsole {
     }
 
     return results;
+  }
+
+  async #executeProgramInputs(inputs) {
+    const results = [];
+
+    for (const input of inputs) {
+      results.push(...await this.#executeProgramInput(input));
+    }
+
+    return results;
+  }
+
+  async #executeProgramInput(input) {
+    try {
+      const result = await this.#programCommand(input);
+      const entry = {
+        timestamp: new Date().toISOString(),
+        input,
+        ok: true,
+        result
+      };
+      this.history.push(entry);
+      this.onOutput?.({ type: "result", input, result });
+      return [entry];
+    } catch (error) {
+      const entry = {
+        timestamp: new Date().toISOString(),
+        input,
+        ok: false,
+        error: error?.message ?? String(error)
+      };
+      this.history.push(entry);
+      this.onOutput?.({
+        type: "error",
+        input,
+        error: entry.error
+      });
+      return [entry];
+    }
+  }
+
+  async #programCommand(input) {
+    if (!this.programs) {
+      throw new Error("Sessão de programas indisponível.");
+    }
+
+    const separator = input.search(/\s/);
+    const command = (separator < 0 ? input : input.slice(0, separator))
+      .toLowerCase();
+    const source = separator < 0 ? "" : input.slice(separator).trim();
+
+    if (command === "session") {
+      const action = (source || "status").toLowerCase();
+
+      if (action === "status") return this.programs.snapshot();
+      if (action === "reset") return this.programs.reset();
+      if (action === "cancel") return this.programs.cancel();
+      if (action === "help") return this.#programHelp();
+
+      throw new Error("Uso: session status|reset|cancel|help.");
+    }
+
+    if (command === "plan") {
+      const action = (source || "status").toLowerCase();
+
+      if (action === "help") return this.#programHelp();
+      if (action === "status") {
+        return this.#pendingPlanSnapshot();
+      }
+      if (action === "discard") {
+        const discarded = this.#pendingPlanSnapshot();
+        this.pendingProgramPlan = null;
+        return {
+          discarded: discarded.pending,
+          plan: discarded.plan
+        };
+      }
+      if (action === "commit") {
+        if (!this.pendingProgramPlan) {
+          throw new Error("Nenhum plano espacial está pendente.");
+        }
+        const result = this.commands.execute(
+          "program.plan.commit",
+          { plan: this.pendingProgramPlan }
+        );
+        this.pendingProgramPlan = null;
+        return result;
+      }
+
+      throw new Error("Uso: plan status|commit|discard|help.");
+    }
+
+    if (command === "procedure") {
+      return this.#procedureCommand(source);
+    }
+
+    if (!source) {
+      throw new Error(
+        command === "calc"
+          ? "Uso: calc expressão JavaScript."
+          : "Uso: program código JavaScript."
+      );
+    }
+
+    if (this.pendingProgramPlan) {
+      throw new Error(
+        "Existe um plano espacial pendente. Use plan commit ou plan discard."
+      );
+    }
+
+    return this.#runProgramSource({
+      source,
+      mode: command === "calc" ? "expression" : "program"
+    });
+  }
+
+  async #procedureCommand(source) {
+    if (!this.procedures) {
+      throw new Error("Catálogo de procedimentos indisponível.");
+    }
+
+    const { head: action, tail } = takeHead(source);
+
+    if (!action || action === "help") return this.#procedureHelp();
+    if (action === "list") {
+      expectEmpty(tail, "procedure list");
+      return this.procedures.snapshot();
+    }
+    if (action === "export") {
+      expectEmpty(tail, "procedure export");
+      return this.procedures.exportDocument();
+    }
+    if (action === "show") {
+      const { head: name, tail: extra } = takeHead(tail);
+      if (!name || extra) throw new Error("Uso: procedure show nome.");
+      return this.procedures.get(name);
+    }
+    if (action === "remove") {
+      const { head: name, tail: extra } = takeHead(tail);
+      if (!name || extra) throw new Error("Uso: procedure remove nome.");
+      return this.procedures.remove(name);
+    }
+    if (action === "define") {
+      const { head: name, tail: procedureSource } = takeHead(tail, {
+        lowercase: false
+      });
+      if (!name || !procedureSource) {
+        throw new Error(
+          "Uso: procedure define nome expressão-de-função."
+        );
+      }
+      return this.procedures.define(name, procedureSource, {
+        replace: true
+      });
+    }
+    if (action === "import") {
+      let mode = "merge";
+      let documentSource = tail;
+      const candidate = takeHead(tail);
+
+      if (["merge", "replace"].includes(candidate.head)) {
+        mode = candidate.head;
+        documentSource = candidate.tail;
+      }
+      if (!documentSource) {
+        throw new Error(
+          "Uso: procedure import [merge|replace] documento-JSON."
+        );
+      }
+
+      return this.procedures.importDocument(
+        parseJson(documentSource, "Biblioteca de procedimentos"),
+        { mode }
+      );
+    }
+    if (action === "run") {
+      if (this.pendingProgramPlan) {
+        throw new Error(
+          "Existe um plano espacial pendente. " +
+          "Use plan commit ou plan discard."
+        );
+      }
+
+      const { head: name, tail: argumentSource } = takeHead(tail, {
+        lowercase: false
+      });
+      if (!name) {
+        throw new Error("Uso: procedure run nome [argumento-JSON].");
+      }
+      const argument = argumentSource
+        ? parseJson(argumentSource, "Argumento do procedimento")
+        : {};
+
+      return this.#runProgramSource({
+        source: this.procedures.invocationSource(name, argument),
+        mode: "program"
+      });
+    }
+
+    throw new Error(
+      "Uso: procedure define|list|show|run|remove|export|import|help."
+    );
+  }
+
+  async #runProgramSource({ source, mode }) {
+    const plan = await this.programs.run({
+      runId: `console-session-${++this.programSequence}`,
+      baseVersion: Number(this.sandbox?.revision ?? 0),
+      seed: 0,
+      source,
+      mode
+    });
+
+    if (plan.commands?.length) {
+      this.pendingProgramPlan = structuredClone(plan);
+    }
+
+    return {
+      value: plan.result?.value ?? null,
+      output: plan.result?.output ?? [],
+      plan: {
+        runId: plan.runId,
+        baseVersion: plan.baseVersion,
+        commandCount: plan.commands?.length ?? 0,
+        commands: plan.commands ?? []
+      },
+      session: this.programs.snapshot()
+    };
+  }
+
+  #pendingPlanSnapshot() {
+    const plan = this.pendingProgramPlan;
+    return {
+      pending: plan !== null,
+      plan: plan === null
+        ? null
+        : {
+            runId: plan.runId,
+            baseVersion: plan.baseVersion,
+            commandCount: plan.commands.length,
+            commands: structuredClone(plan.commands)
+          }
+    };
   }
 
   #executeLine(line) {
@@ -186,6 +441,14 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "create") {
         return this.#createHelp();
       }
+      if (["calc", "program", "session", "plan"].includes(
+        String(topic).toLowerCase()
+      )) {
+        return this.#programHelp();
+      }
+      if (String(topic).toLowerCase() === "procedure") {
+        return this.#procedureHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -198,7 +461,13 @@ export class DevConsole {
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
         "runtime test placement-frame|geometry-creation|geometry-registry|" +
-        "file-interop|project-files|pwa-status|all",
+        "file-interop|project-files|pwa-status|spatial-planning|" +
+        "spatial-plan-commit|procedure-catalog|procedure-editor|all",
+        "calc expressão JavaScript",
+        "program código JavaScript",
+        "procedure define|list|show|run|remove|export|import|help",
+        "session status|reset|cancel|help",
+        "plan status|commit|discard|help",
         "help create",
         "create help",
         "create box|sphere|cylinder|plane|polygon ...",
@@ -235,6 +504,62 @@ export class DevConsole {
         "gizmo",
         "undo",
         "redo"
+      ]
+    };
+  }
+
+  #programHelp() {
+    return {
+      usage: [
+        "calc expressão JavaScript",
+        "program código JavaScript",
+        "session status",
+        "session reset",
+        "session cancel",
+        "procedure help",
+        "plan status|commit|discard"
+      ],
+      notes: [
+        "Use session.nome para valores, objetos e funções persistentes.",
+        "calc avalia uma expressão; program aceita comandos e return.",
+        "spatial cria um plano; plan commit aplica a transação atomicamente."
+      ],
+      examples: [
+        "calc sqrt(3 ** 2 + 4 ** 2)",
+        "calc session.radius = 12",
+        "program session.area = r => pi * r ** 2",
+        "calc session.area(session.radius)",
+        "program spatial.create('box', {size:[1,2,1], position:[0,1,0]})",
+        "plan status",
+        "plan commit",
+        "program for (let i=0;i<5;i+=1) print(i, random()); return 'ok'"
+      ]
+    };
+  }
+
+  #procedureHelp() {
+    return {
+      usage: [
+        "procedure define nome expressão-de-função",
+        "procedure list",
+        "procedure show nome",
+        "procedure run nome [argumento-JSON]",
+        "procedure remove nome",
+        "procedure export",
+        "procedure import [merge|replace] documento-JSON"
+      ],
+      notes: [
+        "O catálogo guarda fontes; a função só executa dentro do Worker SES.",
+        "O catálogo web persiste localmente entre reinicializações.",
+        "Arquivos JSON podem ser exportados e importados pelo menu Projeto.",
+        "run aceita um valor JSON e pode produzir um plano espacial.",
+        "merge rejeita conflitos; replace troca o catálogo atomicamente."
+      ],
+      examples: [
+        "procedure define tower ({height=8}={}) => " +
+          "spatial.create('box',{size:[2,height,2],position:[0,height/2,0]})",
+        "procedure run tower {\"height\":12}",
+        "plan commit"
       ]
     };
   }
@@ -791,7 +1116,8 @@ export class DevConsole {
     if (namespace !== "test") {
       throw new Error(
         "Uso: runtime test help|placement-frame|geometry-creation|" +
-        "geometry-registry|file-interop|project-files|pwa-status|all"
+        "geometry-registry|file-interop|project-files|pwa-status|" +
+        "spatial-planning|spatial-plan-commit|all"
       );
     }
 
@@ -1037,6 +1363,61 @@ function defaultGeometry(type) {
 
 function isNumericToken(value) {
   return String(value ?? "").trim() !== "" && Number.isFinite(Number(value));
+}
+
+function isProgramConsoleInput(source) {
+  return /^(calc|program|session|plan|procedure)(?:\s|$)/i.test(
+    String(source)
+  );
+}
+
+function splitProgramConsoleInputs(source) {
+  const input = String(source).trim();
+  const lines = input
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+  const preservesMultilineSource =
+    /^(calc|program|procedure\s+(define|import))(?:\s|$)/i.test(input);
+
+  if (
+    !preservesMultilineSource &&
+    lines.length > 1 &&
+    lines.every(line =>
+      /^(plan|session|procedure)(?:\s|$)/i.test(line)
+    )
+  ) {
+    return lines;
+  }
+
+  return [input];
+}
+
+function takeHead(source, { lowercase = true } = {}) {
+  const input = String(source ?? "").trim();
+  const separator = input.search(/\s/);
+  const rawHead = separator < 0 ? input : input.slice(0, separator);
+
+  return {
+    head: lowercase ? rawHead.toLowerCase() : rawHead,
+    tail: separator < 0 ? "" : input.slice(separator).trim()
+  };
+}
+
+function expectEmpty(value, usage) {
+  if (String(value ?? "").trim()) {
+    throw new Error(`Uso: ${usage}.`);
+  }
+}
+
+function parseJson(source, label) {
+  try {
+    return JSON.parse(String(source));
+  } catch (error) {
+    throw new TypeError(`${label} deve ser JSON válido.`, {
+      cause: error
+    });
+  }
 }
 
 function splitStatements(source) {
