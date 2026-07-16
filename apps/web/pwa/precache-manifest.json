@@ -107,6 +107,8 @@
     "packages/scene-hierarchy/src/Ungroup.js",
     "packages/scene-hierarchy/src/WorldTransformCommit.js",
     "packages/scene-hierarchy/src/index.js",
+    "packages/script-runtime/src/DisposableProgramRun.js",
+    "packages/script-runtime/src/index.js",
     "packages/selection-operations/src/AffineAst.js",
     "packages/selection-operations/src/AffineProgram.js",
     "packages/selection-operations/src/AffineRepeat.js",

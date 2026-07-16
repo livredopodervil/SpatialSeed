@@ -123,6 +123,10 @@ import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260716-0024i";
 import { fnv1a64 } from "../../asset-store/src/index.js";
+import {
+  DisposableProgramRun,
+  PROGRAM_PLAN_VERSION
+} from "../../script-runtime/src/index.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -229,6 +233,125 @@ export function createRuntimeLayerTests() {
         assert(result.directMs >= 0);
         assert(result.facadeMs >= 0);
         assert(Number.isFinite(result.overheadPerCallUs));
+      }
+    },
+
+    "program-planning": {
+      "planejador acumula apenas intenções serializáveis"() {
+        const run = new DisposableProgramRun({
+          runId: "run-a",
+          baseVersion: 7,
+          seed: 42,
+          allowedCommands: ["objects.create"]
+        });
+        const handle = run.createHandle("object");
+
+        run.emit("objects.create", {
+          handle,
+          geometry: { type: "sphere", radius: 1 }
+        });
+
+        const plan = run.complete({ value: 3 });
+
+        assertEqual(plan.planVersion, PROGRAM_PLAN_VERSION);
+        assertEqual(plan.baseVersion, 7);
+        assertEqual(plan.seed, 42);
+        assertEqual(plan.commands.length, 1);
+        assertEqual(
+          plan.commands[0].args.handle.id,
+          "run-a:object:1"
+        );
+        assertEqual(run.state, "completed");
+        assertEqual(run.commandCount, 0);
+        assert(Object.isFrozen(plan));
+        assert(Object.isFrozen(plan.commands[0].args));
+      },
+
+      "handles são determinísticos pela execução e ordem"() {
+        const first = new DisposableProgramRun({
+          runId: "stable-run"
+        });
+        const second = new DisposableProgramRun({
+          runId: "stable-run"
+        });
+
+        assertDeepEqual(
+          [
+            first.createHandle("object"),
+            first.createHandle("group")
+          ],
+          [
+            second.createHandle("object"),
+            second.createHandle("group")
+          ]
+        );
+      },
+
+      "comandos fora das capacidades são rejeitados"() {
+        const run = new DisposableProgramRun({
+          runId: "restricted-run",
+          allowedCommands: ["objects.create"]
+        });
+
+        assertThrowsMessage(
+          () => run.emit("project.open", { text: "{}" }),
+          "Comando não permitido"
+        );
+        assertEqual(run.commandCount, 0);
+      },
+
+      "cancelamento descarta o plano pendente"() {
+        const run = new DisposableProgramRun({
+          runId: "cancelled-run",
+          allowedCommands: ["objects.create"]
+        });
+        run.emit("objects.create", { id: "planned-a" });
+
+        const result = run.cancel("pedido-do-usuario");
+
+        assertEqual(result.discarded, true);
+        assertEqual(result.discardedCommands, 1);
+        assertEqual(run.state, "cancelled");
+        assertEqual(run.commandCount, 0);
+        assertThrowsMessage(
+          () => run.complete(),
+          "não está ativa"
+        );
+      },
+
+      "término e falha nunca produzem plano parcial"() {
+        for (const action of [
+          run => run.terminate("worker-terminated"),
+          run => run.fail(new Error("boom"))
+        ]) {
+          const run = new DisposableProgramRun({
+            runId: "discarded-run",
+            allowedCommands: ["objects.create"]
+          });
+          run.emit("objects.create", { id: "planned-a" });
+
+          const result = action(run);
+
+          assertEqual(result.discarded, true);
+          assertEqual(result.discardedCommands, 1);
+          assertEqual(run.commandCount, 0);
+        }
+      },
+
+      "orçamento interrompe emissão antes de exceder o limite"() {
+        const run = new DisposableProgramRun({
+          runId: "budget-run",
+          allowedCommands: ["objects.create"],
+          maxCommands: 2
+        });
+        run.emit("objects.create", { id: "a" });
+        run.emit("objects.create", { id: "b" });
+
+        assertThrowsMessage(
+          () => run.emit("objects.create", { id: "c" }),
+          "excedeu o limite"
+        );
+        assertEqual(run.commandCount, 2);
       }
     },
 
@@ -4951,6 +5074,25 @@ function assertThrowsCode(callback, expectedCode) {
   }
   assert(captured,`Esperava erro ${expectedCode}, mas nenhuma exceção foi lançada.`);
   assertEqual(captured.code,expectedCode);
+}
+
+function assertThrowsMessage(callback, expectedMessage) {
+  let captured = null;
+
+  try {
+    callback();
+  } catch (error) {
+    captured = error;
+  }
+
+  assert(
+    captured,
+    `Esperava erro contendo ${expectedMessage}, mas nenhuma exceção foi lançada.`
+  );
+  assert(
+    String(captured.message).includes(expectedMessage),
+    `Erro não contém ${expectedMessage}: ${captured.message}`
+  );
 }
 
 function round(value) {
