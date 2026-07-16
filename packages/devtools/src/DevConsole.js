@@ -277,6 +277,9 @@ export class DevConsole {
     };
     let color = "#6699cc";
     let planeWasSet = false;
+    let count = 1;
+    let seriesRequested = false;
+    const affineOperations = [];
 
     if (type === "polygon" && tokens.length && isNumericToken(tokens[0])) {
       geometry.sides = this.#integerAtLeast(tokens.shift(), 3, "sides");
@@ -319,6 +322,27 @@ export class DevConsole {
         color = normalizeHexColor(value);
         continue;
       }
+      if (option === "count") {
+        count = this.#positive(tokens.shift());
+        if (!Number.isInteger(count) || count > 100000) {
+          throw new Error("count deve ser inteiro entre 1 e 100000.");
+        }
+        seriesRequested = true;
+        continue;
+      }
+      if (["move", "rotate", "scale"].includes(option)) {
+        if (tokens.length < 3) throw new Error(`Uso: ${option} x y z`);
+        affineOperations.push({
+          type: option,
+          value: [
+            this.#affineValue(tokens.shift()),
+            this.#affineValue(tokens.shift()),
+            this.#affineValue(tokens.shift())
+          ]
+        });
+        seriesRequested = true;
+        continue;
+      }
 
       this.#geometryOption(type, geometry, option, tokens);
     }
@@ -327,11 +351,19 @@ export class DevConsole {
       throw new Error("Use plane ou normal; não combine os dois referenciais.");
     }
 
-    return this.commands.execute("object.create.geometry", {
-      geometry,
-      placement,
-      color
-    });
+    return this.commands.execute(
+      seriesRequested
+        ? "object.create.geometrySeries"
+        : "object.create.geometry",
+      {
+        geometry,
+        placement,
+        color,
+        ...(seriesRequested
+          ? { count, operations:affineOperations }
+          : {})
+      }
+    );
   }
 
   #geometryOption(type, geometry, option, tokens) {
@@ -401,7 +433,8 @@ export class DevConsole {
         "create sphere [radius r] [segments largura altura] [origin x y z] [color #rrggbb]",
         "create cylinder [radius r|top r bottom r] [height h] [segments n] [origin x y z] [color #rrggbb]",
         "create plane [size largura altura] [segments x y] [referencial] [color #rrggbb]",
-        "create polygon [n|sides n] [radius r] [angle graus] [referencial] [color #rrggbb]"
+        "create polygon [n|sides n] [radius r] [angle graus] [referencial] [color #rrggbb]",
+        "acrescente count N [move x y z] [rotate x y z] [scale x y z] para uma série afim"
       ],
       placement: [
         "plane xy|xz|yz [origin x y z]",
@@ -413,7 +446,8 @@ export class DevConsole {
         "create polygon sides 5 radius 1.5 origin 0 2 0 normal 1 1 0 tangent 0 0 1",
         "create plane size 6 4 points 0 0 0 6 0 0 0 3 2",
         "create sphere radius 1.5 segments 32 20 origin 0 2 0",
-        "create cylinder top 0 bottom 1.5 height 4 segments 32 origin 3 2 0"
+        "create cylinder top 0 bottom 1.5 height 4 segments 32 origin 3 2 0",
+        "create box size 1 1 1 count 20 move 2 0 0 rotate 0 5 0"
       ]
     };
   }

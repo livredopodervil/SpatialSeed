@@ -250,6 +250,38 @@
       <legend>Parâmetros</legend>
       <div data-geometry-parameters></div>
     </fieldset>
+    <fieldset class="geometry-series">
+      <legend>Série afim</legend>
+      <label class="geometry-field">
+        <span>Quantidade total</span>
+        <input name="series-count" type="number" value="1" min="1" max="100000" step="1">
+      </label>
+      <label class="geometry-field">
+        <span>Mover por cópia</span>
+        <span class="geometry-vector">
+          <input name="series-move-x" type="text" value="2" aria-label="Mover X">
+          <input name="series-move-y" type="text" value="0" aria-label="Mover Y">
+          <input name="series-move-z" type="text" value="0" aria-label="Mover Z">
+        </span>
+      </label>
+      <label class="geometry-field">
+        <span>Girar por cópia (°)</span>
+        <span class="geometry-vector">
+          <input name="series-rotate-x" type="text" value="0" aria-label="Girar X">
+          <input name="series-rotate-y" type="text" value="0" aria-label="Girar Y">
+          <input name="series-rotate-z" type="text" value="0" aria-label="Girar Z">
+        </span>
+      </label>
+      <label class="geometry-field">
+        <span>Escala por cópia</span>
+        <span class="geometry-vector">
+          <input name="series-scale-x" type="text" value="1" aria-label="Escala X">
+          <input name="series-scale-y" type="text" value="1" aria-label="Escala Y">
+          <input name="series-scale-z" type="text" value="1" aria-label="Escala Z">
+        </span>
+      </label>
+      <small>Os campos aceitam números ou expressões com i, u, count, sin, cos e pi.</small>
+    </fieldset>
     <div class="actions">
       <button type="submit">Criar e selecionar</button>
     </div>

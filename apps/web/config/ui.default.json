@@ -11,6 +11,8 @@
       "tool-rotate",
       "tool-scale",
       "multi-select",
+      "duplicate-selection",
+      "repeat-duplicate",
       "delete-selection",
       "geometry-create",
       "scene-only",
@@ -43,11 +45,8 @@
         "id": "edit",
         "label": "Editar",
         "items": [
-          "add-box",
-          "duplicate-selection",
           "group-selection",
           "ungroup-selection",
-          "repeat-duplicate",
           "undo",
           "redo"
         ]
@@ -76,7 +75,7 @@
         ]
       }
     ],
-    "hidden": []
+    "hidden": ["add-box"]
   },
   "panels": {
     "storageKey": "spatialseed.ui.layout.v2",

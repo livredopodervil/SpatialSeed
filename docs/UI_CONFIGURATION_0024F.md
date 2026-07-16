@@ -64,3 +64,10 @@ Ao entrar no modo somente cena, um diálogo explica o retorno pelo canto
 configurado. A opção **Não mostrar novamente** usa
 `presentation.sceneExit.helpStorageKey`; a ajuda pode ser reaberta pelo menu de
 painéis e a preferência pode ser desmarcada ali.
+
+## Extensão 0024i
+
+Os menus não se fecham ao executar um comando; isso permite repetir ações sem
+reabrir o grupo. **Duplicar** e **Repetir** passam a integrar os controles
+primários. O atalho legado **Caixa** fica oculto, pois a família está disponível
+no painel **Criar** junto às demais geometrias.

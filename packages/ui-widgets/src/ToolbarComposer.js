@@ -70,13 +70,7 @@ export function composeToolbar({ root = document, configuration }) {
       if (menu !== current) menu.open = false;
     }
   };
-  const closeAfterCommand = event => {
-    if (event.target.closest("button")) {
-      event.target.closest(".ss-toolbar-menu")?.removeAttribute("open");
-    }
-  };
   toolbar.addEventListener("toggle", closeOtherMenus, true);
-  toolbar.addEventListener("click", closeAfterCommand);
 
   const readToolbarState = () => {
     try {
@@ -144,7 +138,6 @@ export function composeToolbar({ root = document, configuration }) {
   };
   const onLayoutChange = event => {
     applyLayout(event.target.value);
-    event.target.closest(".ss-toolbar-menu")?.removeAttribute("open");
   };
   layoutSelect.addEventListener("change", onLayoutChange);
 
@@ -205,7 +198,6 @@ export function composeToolbar({ root = document, configuration }) {
       layoutSelect.removeEventListener("change", onLayoutChange);
       dragHandle.removeEventListener("pointerdown", drag);
       toolbar.removeEventListener("toggle", closeOtherMenus, true);
-      toolbar.removeEventListener("click", closeAfterCommand);
     }
   });
 }

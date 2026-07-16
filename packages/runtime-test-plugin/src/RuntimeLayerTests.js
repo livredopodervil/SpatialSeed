@@ -61,7 +61,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024g";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024i";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   boxRegionReducer
@@ -83,7 +83,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0024g";
+} from "../../devtools/src/DevConsole.js?build=20260716-0024i";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -106,7 +106,7 @@ import {
 } from "../../../apps/web/BuildInfo.js";
 import {
   normalizeUiConfiguration
-} from "../../ui-config/src/index.js?build=20260716-0024h";
+} from "../../ui-config/src/index.js?build=20260716-0024i";
 import { fnv1a64 } from "../../asset-store/src/index.js";
 
 export function createRuntimeLayerTests() {
@@ -3220,6 +3220,21 @@ assets: {
         );
       },
 
+      "console expõe a mesma série afim do painel"() {
+        const calls=[];
+        const console=createGeometryConsole(calls);
+        const result=console.execute(
+          "create box size 1 1 1 count 4 move 2 0 0 rotate 0 5 0"
+        )[0];
+        assertEqual(result.ok,true);
+        assertEqual(calls[0].id,"object.create.geometrySeries");
+        assertEqual(calls[0].args.count,4);
+        assertDeepEqual(calls[0].args.operations,[
+          {type:"move",value:[2,0,0]},
+          {type:"rotate",value:[0,5,0]}
+        ]);
+      },
+
       "operação normaliza e persiste descritor genérico"() {
         const region = new Region(
           { id: "geometry-region", type: "box-region" },
@@ -3279,6 +3294,66 @@ assets: {
         const object=sandbox.getState().objects[0];
         assertDeepEqual(object.position,[4,5,6]);
         assertNear(Math.abs(object.rotation[0]),Math.SQRT1_2);
+      },
+
+      "série afim cria semente e cópias em uma operação atômica"() {
+        const region=new Region(
+          {id:"geometry-series",type:"box-region"},
+          {schemaVersion:1,objects:[]}
+        );
+        const sandbox=new Sandbox(region,boxRegionReducer);
+        const editor=new EditorState();
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"geometry-series",
+          geometryRegistry:createDefaultGeometryRegistry(),
+          appearanceRuntime:new AppearanceRuntime()
+        });
+        const result=operations.createGeometrySeries({
+          geometry:{type:"box",size:[1,1,1]},
+          position:[0,0,0],
+          count:4,
+          operations:[{type:"move",value:[2,0,0]}]
+        });
+        assertEqual(result.count,4);
+        assertDeepEqual(
+          sandbox.getState().objects.map(object => object.position),
+          [[0,0,0],[2,0,0],[4,0,0],[6,0,0]]
+        );
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,1);
+        assertEqual(
+          editor.selection.snapshot().activeMember.objectId,
+          result.activeId
+        );
+      },
+
+      "expressão afim inválida não insere a semente"() {
+        const region=new Region(
+          {id:"geometry-series-invalid",type:"box-region"},
+          {schemaVersion:1,objects:[]}
+        );
+        const sandbox=new Sandbox(region,boxRegionReducer);
+        const operations=new SelectionOperations({
+          editor:new EditorState(),
+          sandbox,
+          regionId:"geometry-series-invalid",
+          geometryRegistry:createDefaultGeometryRegistry(),
+          appearanceRuntime:new AppearanceRuntime()
+        });
+        let rejected=false;
+        try {
+          operations.createGeometrySeries({
+            geometry:{type:"sphere"},
+            count:3,
+            operations:[{type:"move",value:["unknown(",0,0]}]
+          });
+        } catch {
+          rejected=true;
+        }
+        assertEqual(rejected,true);
+        assertEqual(sandbox.getState().objects.length,0);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
       }
     },
 

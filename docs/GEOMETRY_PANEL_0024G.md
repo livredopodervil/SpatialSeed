@@ -21,3 +21,22 @@ O painel inicial oferece:
 Planos e polígonos começam no plano XZ. Sólidos preservam a orientação nativa
 de sua geometria. Referenciais por normal/tangente e por três pontos continuam
 disponíveis no console e serão expostos visualmente em um incremento posterior.
+
+## Séries afins — 0024i
+
+O painel pode criar de 1 a 100.000 objetos em uma operação atômica. A quantidade
+é total: inclui a semente e todas as cópias. Os campos de translação, rotação e
+escala aceitam números ou expressões da linguagem afim (`i`, `u`, `count`,
+`sin`, `cos`, `pi` e demais funções permitidas).
+
+A interface envia `object.create.geometrySeries`. A operação normaliza a
+geometria, resolve o referencial, compila as expressões e calcula todas as
+transformações antes de alterar o sandbox. Semente e cópias produzem um único
+item de histórico; uma expressão inválida não insere objetos.
+
+O mesmo contrato está disponível no console:
+
+```text
+create box size 1 1 1 count 20 move 2 0 0 rotate 0 5 0
+create sphere radius 1 count 40 move "4*cos(i*pi/20)" 0 "4*sin(i*pi/20)"
+```

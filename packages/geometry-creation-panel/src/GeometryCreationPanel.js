@@ -63,15 +63,30 @@ export class GeometryCreationPanel {
       );
       const plane = this.form.elements.namedItem("plane").value;
       const placement = plane === "native" ? null : { origin, plane };
-      const result = this.execute("object.create.geometry", {
+      const count = integer(
+        finite(this.form.elements.namedItem("series-count").value, "Quantidade"),
+        "Quantidade"
+      );
+      if (count < 1 || count > 100000) {
+        throw new RangeError("Quantidade deve estar entre 1 e 100000.");
+      }
+      const operations = [
+        this.#affineOperation("move", 0),
+        this.#affineOperation("rotate", 0),
+        this.#affineOperation("scale", 1)
+      ].filter(Boolean);
+      const result = this.execute("object.create.geometrySeries", {
         name: name || null,
         geometry,
         position: placement ? undefined : origin,
         placement,
-        color
+        color,
+        count,
+        operations
       });
       this.result.textContent = result?.changed
-        ? `${description.label} criada · ${result.id}`
+        ? `${result.count} objeto${result.count === 1 ? "" : "s"} ` +
+          `criado${result.count === 1 ? "" : "s"} · ${description.label}`
         : "A criação não alterou a cena.";
       this.result.dataset.status = "ok";
       return result;
@@ -144,6 +159,16 @@ export class GeometryCreationPanel {
     const value = finite(input.value, parameter.label);
     return parameter.type === "integer" ? integer(value, parameter.label) : value;
   }
+
+  #affineOperation(type, neutral) {
+    const value = ["x", "y", "z"].map(axis => affineValue(
+      this.form.elements.namedItem(`series-${type}-${axis}`).value,
+      `${type} ${axis}`
+    ));
+    return value.every(component =>
+      typeof component === "number" && component === neutral
+    ) ? null : { type, value };
+  }
 }
 
 function finite(value, label) {
@@ -155,4 +180,11 @@ function finite(value, label) {
 function integer(value, label) {
   if (!Number.isInteger(value)) throw new TypeError(`${label}: use um inteiro.`);
   return value;
+}
+
+function affineValue(value, label) {
+  const source = String(value ?? "").trim();
+  if (!source) throw new TypeError(`${label}: valor ou expressão ausente.`);
+  const number = Number(source);
+  return Number.isFinite(number) ? number : source;
 }

@@ -386,6 +386,8 @@ input[data-scrubbable="true"]{
   overflow-wrap:anywhere;
 }
 [data-geometry-result][data-status="error"]{color:#ff9b9b}
+.geometry-series{display:grid;gap:.55rem}
+.geometry-series small{color:#91a4bc;line-height:1.4}
 #scene-exit-hotspot{display:none}
 body.ss-scene-only #scene-exit-hotspot{
   display:block!important;
