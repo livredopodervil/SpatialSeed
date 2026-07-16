@@ -183,3 +183,34 @@ Handles são convertidos em IDs reais apenas no processo principal. Cores iguais
 compartilham uma aparência e mantêm a contagem correta de referências. Uma
 falha antes do dispatch não deixa objetos nem recursos parciais; se a etapa de
 recursos falhar, o grafo de aparências anterior é restaurado.
+
+## Catálogo de procedimentos 0026h
+
+Procedimentos passam a ser fontes nomeadas mantidas por `ProcedureCatalog` no
+processo principal. O catálogo nunca avalia JavaScript. `procedure run` monta
+uma invocação com argumento JSON e a entrega ao mesmo Worker SES usado pelos
+programas; qualquer efeito espacial continua sendo apenas uma intenção até
+`plan commit`.
+
+As superfícies iniciais são:
+
+```text
+procedure define nome expressão-de-função
+procedure list
+procedure show nome
+procedure run nome [argumento-JSON]
+procedure remove nome
+procedure export
+procedure import [merge|replace] documento-JSON
+```
+
+`define` atualiza explicitamente uma definição existente. `merge` aceita
+fontes idênticas e rejeita conflitos sem alterar parcialmente o catálogo;
+`replace` substitui atomicamente todo o conteúdo. A exportação é ordenada e
+versionada para que uma etapa posterior possa conectá-la ao sistema de
+arquivos sem misturar transporte, armazenamento e execução.
+
+Entradas administrativas escritas em linhas separadas, como `plan status`
+seguido por `plan commit`, são executadas sequencialmente. Blocos `program`,
+`calc` e `procedure define` continuam sendo preservados integralmente, pois
+suas quebras de linha pertencem ao código-fonte.

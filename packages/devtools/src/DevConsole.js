@@ -14,7 +14,8 @@ export class DevConsole {
     onOutput,
     commands,
     queries = null,
-    programs = null
+    programs = null,
+    procedures = null
   }) {
     this.editor = editor;
     this.sandbox = sandbox;
@@ -25,6 +26,7 @@ export class DevConsole {
     this.commands = commands;
     this.queries = queries;
     this.programs = programs;
+    this.procedures = procedures;
     this.programSequence = 0;
     this.pendingProgramPlan = null;
     this.history = [];
@@ -35,7 +37,9 @@ export class DevConsole {
     if (!input) return [];
 
     if (isProgramConsoleInput(input)) {
-      return this.#executeProgramInput(input);
+      return this.#executeProgramInputs(
+        splitProgramConsoleInputs(input)
+      );
     }
 
     const lines = splitStatements(input);
@@ -69,6 +73,16 @@ export class DevConsole {
           error: entry.error
         });
       }
+    }
+
+    return results;
+  }
+
+  async #executeProgramInputs(inputs) {
+    const results = [];
+
+    for (const input of inputs) {
+      results.push(...await this.#executeProgramInput(input));
     }
 
     return results;
@@ -154,6 +168,10 @@ export class DevConsole {
       throw new Error("Uso: plan status|commit|discard|help.");
     }
 
+    if (command === "procedure") {
+      return this.#procedureCommand(source);
+    }
+
     if (!source) {
       throw new Error(
         command === "calc"
@@ -168,12 +186,107 @@ export class DevConsole {
       );
     }
 
+    return this.#runProgramSource({
+      source,
+      mode: command === "calc" ? "expression" : "program"
+    });
+  }
+
+  async #procedureCommand(source) {
+    if (!this.procedures) {
+      throw new Error("Catálogo de procedimentos indisponível.");
+    }
+
+    const { head: action, tail } = takeHead(source);
+
+    if (!action || action === "help") return this.#procedureHelp();
+    if (action === "list") {
+      expectEmpty(tail, "procedure list");
+      return this.procedures.snapshot();
+    }
+    if (action === "export") {
+      expectEmpty(tail, "procedure export");
+      return this.procedures.exportDocument();
+    }
+    if (action === "show") {
+      const { head: name, tail: extra } = takeHead(tail);
+      if (!name || extra) throw new Error("Uso: procedure show nome.");
+      return this.procedures.get(name);
+    }
+    if (action === "remove") {
+      const { head: name, tail: extra } = takeHead(tail);
+      if (!name || extra) throw new Error("Uso: procedure remove nome.");
+      return this.procedures.remove(name);
+    }
+    if (action === "define") {
+      const { head: name, tail: procedureSource } = takeHead(tail, {
+        lowercase: false
+      });
+      if (!name || !procedureSource) {
+        throw new Error(
+          "Uso: procedure define nome expressão-de-função."
+        );
+      }
+      return this.procedures.define(name, procedureSource, {
+        replace: true
+      });
+    }
+    if (action === "import") {
+      let mode = "merge";
+      let documentSource = tail;
+      const candidate = takeHead(tail);
+
+      if (["merge", "replace"].includes(candidate.head)) {
+        mode = candidate.head;
+        documentSource = candidate.tail;
+      }
+      if (!documentSource) {
+        throw new Error(
+          "Uso: procedure import [merge|replace] documento-JSON."
+        );
+      }
+
+      return this.procedures.importDocument(
+        parseJson(documentSource, "Biblioteca de procedimentos"),
+        { mode }
+      );
+    }
+    if (action === "run") {
+      if (this.pendingProgramPlan) {
+        throw new Error(
+          "Existe um plano espacial pendente. " +
+          "Use plan commit ou plan discard."
+        );
+      }
+
+      const { head: name, tail: argumentSource } = takeHead(tail, {
+        lowercase: false
+      });
+      if (!name) {
+        throw new Error("Uso: procedure run nome [argumento-JSON].");
+      }
+      const argument = argumentSource
+        ? parseJson(argumentSource, "Argumento do procedimento")
+        : {};
+
+      return this.#runProgramSource({
+        source: this.procedures.invocationSource(name, argument),
+        mode: "program"
+      });
+    }
+
+    throw new Error(
+      "Uso: procedure define|list|show|run|remove|export|import|help."
+    );
+  }
+
+  async #runProgramSource({ source, mode }) {
     const plan = await this.programs.run({
       runId: `console-session-${++this.programSequence}`,
       baseVersion: Number(this.sandbox?.revision ?? 0),
       seed: 0,
       source,
-      mode: command === "calc" ? "expression" : "program"
+      mode
     });
 
     if (plan.commands?.length) {
@@ -333,6 +446,9 @@ export class DevConsole {
       )) {
         return this.#programHelp();
       }
+      if (String(topic).toLowerCase() === "procedure") {
+        return this.#procedureHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -346,9 +462,10 @@ export class DevConsole {
         "test help|all|sandbox|reducer|commands|project",
         "runtime test placement-frame|geometry-creation|geometry-registry|" +
         "file-interop|project-files|pwa-status|spatial-planning|" +
-        "spatial-plan-commit|all",
+        "spatial-plan-commit|procedure-catalog|all",
         "calc expressão JavaScript",
         "program código JavaScript",
+        "procedure define|list|show|run|remove|export|import|help",
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
         "help create",
@@ -399,6 +516,7 @@ export class DevConsole {
         "session status",
         "session reset",
         "session cancel",
+        "procedure help",
         "plan status|commit|discard"
       ],
       notes: [
@@ -415,6 +533,31 @@ export class DevConsole {
         "plan status",
         "plan commit",
         "program for (let i=0;i<5;i+=1) print(i, random()); return 'ok'"
+      ]
+    };
+  }
+
+  #procedureHelp() {
+    return {
+      usage: [
+        "procedure define nome expressão-de-função",
+        "procedure list",
+        "procedure show nome",
+        "procedure run nome [argumento-JSON]",
+        "procedure remove nome",
+        "procedure export",
+        "procedure import [merge|replace] documento-JSON"
+      ],
+      notes: [
+        "O catálogo guarda fontes; a função só executa dentro do Worker SES.",
+        "run aceita um valor JSON e pode produzir um plano espacial.",
+        "merge rejeita conflitos; replace troca o catálogo atomicamente."
+      ],
+      examples: [
+        "procedure define tower ({height=8}={}) => " +
+          "spatial.create('box',{size:[2,height,2],position:[0,height/2,0]})",
+        "procedure run tower {\"height\":12}",
+        "plan commit"
       ]
     };
   }
@@ -1221,7 +1364,53 @@ function isNumericToken(value) {
 }
 
 function isProgramConsoleInput(source) {
-  return /^(calc|program|session|plan)(?:\s|$)/i.test(String(source));
+  return /^(calc|program|session|plan|procedure)(?:\s|$)/i.test(
+    String(source)
+  );
+}
+
+function splitProgramConsoleInputs(source) {
+  const input = String(source).trim();
+  const lines = input
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+
+  if (
+    lines.length > 1 &&
+    lines.every(line => /^(plan|session)(?:\s|$)/i.test(line))
+  ) {
+    return lines;
+  }
+
+  return [input];
+}
+
+function takeHead(source, { lowercase = true } = {}) {
+  const input = String(source ?? "").trim();
+  const separator = input.search(/\s/);
+  const rawHead = separator < 0 ? input : input.slice(0, separator);
+
+  return {
+    head: lowercase ? rawHead.toLowerCase() : rawHead,
+    tail: separator < 0 ? "" : input.slice(separator).trim()
+  };
+}
+
+function expectEmpty(value, usage) {
+  if (String(value ?? "").trim()) {
+    throw new Error(`Uso: ${usage}.`);
+  }
+}
+
+function parseJson(source, label) {
+  try {
+    return JSON.parse(String(source));
+  } catch (error) {
+    throw new TypeError(`${label} deve ser JSON válido.`, {
+      cause: error
+    });
+  }
 }
 
 function splitStatements(source) {

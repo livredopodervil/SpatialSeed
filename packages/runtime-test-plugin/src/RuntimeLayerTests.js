@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0026g";
+} from "../../devtools/src/DevConsole.js?build=20260716-0026h";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -128,6 +128,8 @@ import {
   PROGRAM_PLAN_VERSION,
   ProgramRunController,
   PROGRAM_WORKER_PROTOCOL_VERSION,
+  PROCEDURE_LIBRARY_SCHEMA_VERSION,
+  ProcedureCatalog,
   ProgramSessionController,
   ProgramSessionKernel,
   SpatialPlanCommitService,
@@ -808,6 +810,171 @@ export function createRuntimeLayerTests() {
         assertEqual(calls.length, 1);
         assertEqual(calls[0].source, source);
         assertEqual(calls[0].mode, "program");
+      }
+    },
+
+    "procedure-catalog": {
+      "catálogo define atualiza lista e remove procedimentos"() {
+        const catalog = new ProcedureCatalog();
+
+        const first = catalog.define("city", "options => options.rows");
+        const unchanged = catalog.define(
+          "city",
+          "options => options.rows",
+          { replace: true }
+        );
+        const updated = catalog.define(
+          "city",
+          "options => options.cols",
+          { replace: true }
+        );
+
+        assertEqual(first.changed, true);
+        assertEqual(unchanged.changed, false);
+        assertEqual(updated.revision, 2);
+        assertDeepEqual(catalog.list(), [{
+          name: "city",
+          sourceLength: "options => options.cols".length
+        }]);
+        assertEqual(catalog.remove("city").changed, true);
+        assertEqual(catalog.snapshot().count, 0);
+      },
+
+      "exportação e importação preservam fontes deterministicamente"() {
+        const source = new ProcedureCatalog();
+        source.define("tower", "({height=4}={}) => height");
+        source.define("city", "({rows=2}={}) => rows ** 2");
+        const document = source.exportDocument();
+        const target = new ProcedureCatalog();
+
+        const result = target.importDocument(document);
+
+        assertEqual(
+          document.schemaVersion,
+          PROCEDURE_LIBRARY_SCHEMA_VERSION
+        );
+        assertEqual(result.changed, true);
+        assertDeepEqual(target.exportDocument(), document);
+        assertDeepEqual(
+          target.list().map(entry => entry.name),
+          ["city", "tower"]
+        );
+      },
+
+      "importação conflitante é atômica"() {
+        const catalog = new ProcedureCatalog();
+        catalog.define("city", "() => 1");
+        const before = catalog.exportDocument();
+
+        assertThrowsMessage(
+          () => catalog.importDocument({
+            schemaVersion: PROCEDURE_LIBRARY_SCHEMA_VERSION,
+            procedures: [
+              { name: "tower", source: "() => 2" },
+              { name: "city", source: "() => 3" }
+            ]
+          }),
+          "conflita"
+        );
+        assertDeepEqual(catalog.exportDocument(), before);
+      },
+
+      "invocação executa fonte no ambiente espacial autorizado"() {
+        const catalog = new ProcedureCatalog();
+        catalog.define("row", [
+          "({count=3}={}) => {",
+          "  for (let i=0;i<count;i+=1) {",
+          "    spatial.create('box',{position:[i,0,0]});",
+          "  }",
+          "  return {count, planned:spatial.stats().commandCount};",
+          "}"
+        ].join("\n"));
+
+        const envelope = executeProgramRequest({
+          runId: "procedure-row",
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"],
+          source: catalog.invocationSource("row", { count: 4 }),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertEqual(envelope.plan.commands.length, 4);
+        assertDeepEqual(envelope.plan.result.value, {
+          count: 4,
+          planned: 4
+        });
+      },
+
+      "console define lista mostra executa e exporta por nome"() {
+        const calls = [];
+        const catalog = new ProcedureCatalog();
+        const console = createProgramConsole(calls, {
+          procedures: catalog
+        });
+
+        return console.execute(
+          "procedure define tower ({height=8}={}) => height"
+        ).then(() => console.execute("procedure list"))
+          .then(listEntries => {
+            assertEqual(listEntries[0].result.count, 1);
+            return console.execute(
+              'procedure run tower {"height":12}'
+            );
+          })
+          .then(() => {
+            assertEqual(calls.length, 1);
+            assert(calls[0].source.includes('"height":12'));
+            return console.execute("procedure show tower");
+          })
+          .then(showEntries => {
+            assert(
+              showEntries[0].result.source.includes("height=8")
+            );
+            return console.execute("procedure export");
+          })
+          .then(exportEntries => {
+            assertEqual(
+              exportEntries[0].result.schemaVersion,
+              PROCEDURE_LIBRARY_SCHEMA_VERSION
+            );
+          });
+      },
+
+      "comandos administrativos em linhas distintas são sequenciais"() {
+        const calls = [];
+        const commits = [];
+        const console = createProgramConsole(calls, {
+          procedures: new ProcedureCatalog(),
+          plan: {
+            planVersion: PROGRAM_PLAN_VERSION,
+            runId: "multiline-plan",
+            baseVersion: 0,
+            seed: 0,
+            commands: [{
+              sequence: 0,
+              command: SPATIAL_CREATE_COMMAND,
+              args: {}
+            }],
+            result: null
+          },
+          execute(id, args) {
+            commits.push({ id, args: structuredClone(args) });
+            return { changed: true };
+          }
+        });
+
+        return console.execute("program return 'planned'")
+          .then(() => console.execute("plan status\nplan commit"))
+          .then(entries => {
+            assertEqual(entries.length, 2);
+            assertEqual(entries[0].result.pending, true);
+            assertEqual(entries[1].result.changed, true);
+            assertEqual(commits.length, 1);
+            assertEqual(commits[0].id, "program.plan.commit");
+          });
       }
     },
 
@@ -5540,30 +5707,37 @@ function createGeometryConsole(calls) {
   });
 }
 
-function createProgramConsole(calls) {
+function createProgramConsole(calls, {
+  procedures = null,
+  plan = null,
+  execute = null
+} = {}) {
   return new DevConsole({
     editor: { selection: new Selection() },
-    sandbox: { baseVersion: 0 },
+    sandbox: { revision: 0 },
     region: {},
     renderer: {},
     getDiagnostics: () => ({}),
     commands: {
       describe: () => [],
-      execute() {
+      execute(id, args) {
+        if (execute) return execute(id, args);
         throw new Error("Sessão matemática não usa comandos de cena.");
       }
     },
     programs: {
       run(request) {
         calls.push(structuredClone(request));
-        return Promise.resolve({
+        return Promise.resolve(plan ?? {
+          commands: [],
           result: { value: "ok", output: [] }
         });
       },
       snapshot: () => ({ state: "idle" }),
       reset: () => ({ state: "idle" }),
       cancel: () => ({ cancelled: false })
-    }
+    },
+    procedures
   });
 }
 

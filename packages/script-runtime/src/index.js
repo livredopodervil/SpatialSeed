@@ -32,3 +32,7 @@ export {
 export {
   SpatialPlanCommitService
 } from "./SpatialPlanCommitService.js";
+export {
+  ProcedureCatalog,
+  PROCEDURE_LIBRARY_SCHEMA_VERSION
+} from "./ProcedureCatalog.js";
