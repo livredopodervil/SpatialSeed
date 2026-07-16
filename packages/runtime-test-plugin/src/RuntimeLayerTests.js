@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0025d";
+} from "../../devtools/src/DevConsole.js?build=20260716-0025e";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -111,6 +111,10 @@ import {
   BrowserProjectFileGateway,
   isPlatformBlock
 } from "../../../apps/web/file-interop/BrowserProjectFileGateway.js";
+import {
+  formatPwaBuildLabel,
+  workerBuild
+} from "../../../apps/web/pwa/registerPwa.js";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260716-0024i";
@@ -2099,6 +2103,46 @@ assets: {
           message=error.message;
         }
         assertEqual(message,"Objeto sem appearanceId: box.");
+      }
+    },
+
+    "pwa-status": {
+      "extrai build do service worker controlador"() {
+        assertEqual(
+          workerBuild(
+            "https://example.test/SpatialSeed/service-worker.js?build=0025e"
+          ),
+          "0025e"
+        );
+        assertEqual(workerBuild("https://example.test/worker.js"),null);
+        assertEqual(workerBuild(null),null);
+      },
+
+      "rótulo denuncia cache controlador anterior"() {
+        const label=formatPwaBuildLabel({
+          version:"0.1.0",
+          build:"0025e",
+          channel:"test"
+        },{
+          controllerBuild:"0025d",
+          updatePending:true,
+          waitingBuild:"0025e"
+        });
+        assertEqual(
+          label,
+          "v0.1.0 · build 0025e · cache 0025d · feche para atualizar"
+        );
+      },
+
+      "rótulo permanece conciso quando cache e publicação coincidem"() {
+        assertEqual(formatPwaBuildLabel({
+          version:"0.1.0",
+          build:"0025e",
+          channel:"test"
+        },{
+          controllerBuild:"0025e",
+          updatePending:false
+        }),"v0.1.0 · build 0025e");
       }
     },
 

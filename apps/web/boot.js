@@ -3,7 +3,6 @@ import {
   loadBuildInfo
 } from "./BuildInfo.js";
 import { loadUiConfiguration } from "./UiConfiguration.js";
-import { registerPwa } from "./pwa/registerPwa.js";
 
 const $=id => document.getElementById(id);
 
@@ -16,13 +15,35 @@ try {
   await loadStylesheet(buildInfo);
 
   const cacheKey=encodeURIComponent(buildInfo.build);
-  const { startApplication }=await import(
-    `./main.js?build=${cacheKey}`
-  );
+  const [{ startApplication },pwaModule]=await Promise.all([
+    import(`./main.js?build=${cacheKey}`),
+    import(`./pwa/registerPwa.js?build=${cacheKey}`)
+  ]);
   await startApplication(buildInfo,uiConfiguration);
-  registerPwa(buildInfo);
+  pwaModule.registerPwa(buildInfo,{
+    onStateChange: state => exposePwaState(
+      buildInfo,
+      state,
+      pwaModule.formatPwaBuildLabel
+    )
+  });
 } catch (error) {
   showFatalError(error);
+}
+
+function exposePwaState(buildInfo,state,formatLabel) {
+  const content=$("build-content");
+  content.textContent=formatLabel(buildInfo,state);
+  content.title=[
+    `Publicado: ${state.publishedBuild}`,
+    `Cache controlador: ${state.controllerBuild ?? "rede"}`,
+    `Ativo: ${state.activeBuild ?? "ausente"}`,
+    `Aguardando: ${state.waitingBuild ?? "ausente"}`
+  ].join("\n");
+  document.documentElement.dataset.controllerBuild =
+    state.controllerBuild ?? "network";
+  document.documentElement.dataset.updatePending =
+    state.updatePending ? "true" : "false";
 }
 
 function exposeBuildInfo(buildInfo) {

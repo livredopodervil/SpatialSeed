@@ -31,7 +31,10 @@ forem encerradas.
 ## Diagnóstico no navegador
 
 Após a inicialização, `window.__SPATIAL_SEED_PWA__` informa se o recurso é
-suportado, se o registro foi concluído, o escopo controlado e eventual erro.
+suportado, se o registro foi concluído, o escopo controlado, builds ativo,
+controlador e aguardando, além de eventual erro. Se o manifesto publicado for
+mais novo que o cache que controla a página, o rodapé mostra explicitamente
+`cache … · feche para atualizar`.
 
 Service workers exigem HTTPS, exceto em origens locais como
 `http://127.0.0.1`. O servidor de desenvolvimento continua útil porque módulos
