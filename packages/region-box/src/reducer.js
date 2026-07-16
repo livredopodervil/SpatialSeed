@@ -1,6 +1,8 @@
 import {
   applyWorldTransforms,
   groupNodes,
+  hierarchySubtreeIds,
+  HierarchyIndex,
   reparentPreservingWorld
 } from "../../scene-hierarchy/src/index.js";
 
@@ -194,7 +196,10 @@ export function boxRegionReducer(state, command) {
         if (existingIds.has(object.id)) {
           throw new Error(`Duplicate object id: ${object.id}`);
         }
+        existingIds.add(object.id);
       }
+
+      new HierarchyIndex([...state.objects,...incoming]);
 
       return {
         state: Object.freeze({
@@ -211,8 +216,9 @@ export function boxRegionReducer(state, command) {
     }
 
     case "selection.delete": {
-      const ids = new Set(command.ids ?? []);
-      if (!ids.size) return { state, changes: [] };
+      const requestedIds=command.ids ?? [];
+      if (!requestedIds.length) return { state, changes: [] };
+      const ids=new Set(hierarchySubtreeIds(state.objects,requestedIds));
 
       const removed = state.objects.filter(object => ids.has(object.id));
       if (!removed.length) return { state, changes: [] };

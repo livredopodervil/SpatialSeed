@@ -79,6 +79,8 @@ import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260715-0022b";
 import {
+  cloneHierarchySubtrees,
+  hierarchySubtreeIds,
   HierarchyIndex
 } from "../../scene-hierarchy/src/index.js";
 import {
@@ -1624,6 +1626,163 @@ assets: {
         assertDeepEqual(sandbox.getState(),before);
         assertEqual(sandbox.redo(),true);
         assertDeepEqual(sandbox.getState(),transformed);
+      }
+    },
+
+    "hierarchy-subtree-lifecycle": {
+      "clonagem profunda remapeia todos os parentIds internos"() {
+        const nodes=[
+          {id:"group",kind:"group",position:[4,2,1],pivot:[0,0,0]},
+          {id:"inner",kind:"group",parentId:"group",position:[1,0,0]},
+          {id:"box",kind:"box",parentId:"inner",position:[2,0,0]}
+        ];
+        const cloned=cloneHierarchySubtrees(nodes,{
+          rootIds:["group"],
+          copies:1,
+          createId:({sourceId}) => `copy-${sourceId}`
+        });
+        const hierarchy=new HierarchyIndex([...nodes,...cloned.objects]);
+
+        assertDeepEqual(cloned.duplicatedRootIds,["copy-group"]);
+        assertEqual(hierarchy.parentOf("copy-group"),null);
+        assertEqual(hierarchy.parentOf("copy-inner"),"copy-group");
+        assertEqual(hierarchy.parentOf("copy-box"),"copy-inner");
+        assertMatricesNear(
+          hierarchy.worldMatrixOf("copy-box"),
+          hierarchy.worldMatrixOf("box")
+        );
+      },
+
+      "múltiplas cópias usam subárvores completamente independentes"() {
+        const nodes=[
+          {id:"group",kind:"group"},
+          {id:"box",kind:"box",parentId:"group"}
+        ];
+        const cloned=cloneHierarchySubtrees(nodes,{
+          rootIds:["group"],
+          copies:3,
+          createId:({sourceId,copyIndex}) => `${copyIndex}-${sourceId}`
+        });
+        const hierarchy=new HierarchyIndex([...nodes,...cloned.objects]);
+
+        assertDeepEqual(
+          cloned.duplicatedRootIds,
+          ["1-group","2-group","3-group"]
+        );
+        assertEqual(hierarchy.parentOf("1-box"),"1-group");
+        assertEqual(hierarchy.parentOf("2-box"),"2-group");
+        assertEqual(hierarchy.parentOf("3-box"),"3-group");
+      },
+
+      "limite considera cópias vezes tamanho da subárvore"() {
+        const nodes=[
+          {id:"group",kind:"group"},
+          {id:"box",kind:"box",parentId:"group"}
+        ];
+        assertThrowsCode(
+          () => cloneHierarchySubtrees(nodes,{
+            rootIds:["group"],
+            copies:3,
+            maxNodes:5,
+            createId:({sourceId,copyIndex}) => `${copyIndex}-${sourceId}`
+          }),
+          "DUPLICATE_LIMIT_EXCEEDED"
+        );
+      },
+
+      "expansão de exclusão inclui descendentes uma única vez"() {
+        const nodes=[
+          {id:"group",kind:"group"},
+          {id:"inner",kind:"group",parentId:"group"},
+          {id:"box",kind:"box",parentId:"inner"},
+          {id:"loose",kind:"box"}
+        ];
+        assertDeepEqual(
+          hierarchySubtreeIds(nodes,["group","inner","box"]),
+          ["group","inner","box"]
+        );
+      },
+
+      "duplicar grupo seleciona raízes e preserva filhos"() {
+        const sandbox=createGroupTransformSandbox();
+        const editor=new EditorState();
+        editor.selection.replace({
+          kind:"object",
+          regionId:"region-main",
+          objectId:"group"
+        });
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"region-main"
+        });
+        const result=operations.duplicateMany(2);
+        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
+
+        assertEqual(result.createdCount,4);
+        assertEqual(result.duplicateIds.length,2);
+        assertDeepEqual(
+          editor.selection.snapshot().members.map(member => member.objectId),
+          result.duplicateIds
+        );
+        for (const rootId of result.duplicateIds) {
+          assertEqual(hierarchy.childrenOf(rootId).length,1);
+        }
+      },
+
+      "duplicate count afim transforma raízes e leva os filhos"() {
+        const sandbox=createGroupTransformSandbox();
+        const editor=new EditorState();
+        editor.selection.replace({
+          kind:"object",
+          regionId:"region-main",
+          objectId:"group"
+        });
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"region-main"
+        });
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const childBefore=before.worldMatrixOf("child");
+        const result=operations.duplicateAffine(3,[
+          {type:"move",value:[2,0,0]}
+        ]);
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+
+        assertEqual(result.createdCount,6);
+        assertEqual(result.duplicateIds.length,3);
+        for (const [index,rootId] of result.duplicateIds.entries()) {
+          const childId=after.childrenOf(rootId)[0];
+          const expected=multiplyMatrices(
+            composeTransform({position:[2*(index+1),0,0]}),
+            childBefore
+          );
+          assertMatricesNear(after.worldMatrixOf(childId),expected);
+        }
+      },
+
+      "excluir grupo remove subárvore e undo restaura tudo"() {
+        const sandbox=createGroupTransformSandbox();
+        const before=sandbox.getState();
+        const editor=new EditorState();
+        editor.selection.replace({
+          kind:"object",
+          regionId:"region-main",
+          objectId:"group"
+        });
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"region-main"
+        });
+        const result=operations.deleteSelection();
+
+        assertDeepEqual(result.deletedIds,["group","child"]);
+        assertEqual(sandbox.getSnapshot().objects.length,0);
+        assertEqual(editor.selection.empty,true);
+        assertEqual(sandbox.undo(),true);
+        assertDeepEqual(sandbox.getState(),before);
       }
     },
 
