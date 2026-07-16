@@ -41,6 +41,11 @@ controlador e aguardando, além de eventual erro. Se o manifesto publicado for
 mais novo que o cache que controla a página, o rodapé mostra explicitamente
 `cache … · feche para atualizar`.
 
+O menu **Projeto** oferece a ação de instalação. Em navegadores Chromium ela
+usa o prompt nativo quando o navegador declara a aplicação elegível; em outros
+contextos, mostra o caminho pelo menu do navegador. Quando executado em modo
+standalone, o controle informa que o aplicativo já está instalado.
+
 Service workers exigem HTTPS, exceto em origens locais como
 `http://127.0.0.1`. O servidor de desenvolvimento continua útil porque módulos
 ES, import maps e service workers dependem das regras de uma origem HTTP.

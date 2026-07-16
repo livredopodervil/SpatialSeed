@@ -71,7 +71,8 @@
         "items": [
           "project-save",
           "project-open",
-          "project-new"
+          "project-new",
+          "pwa-install"
         ]
       }
     ],

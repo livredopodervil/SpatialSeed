@@ -8,6 +8,7 @@ export function bindWebInterface({
   web,
   buildInfo,
   uiConfiguration,
+  pwaInstallController = null,
   documentRoot = document
 }) {
   const $ = id => documentRoot.getElementById(id);
@@ -52,6 +53,23 @@ export function bindWebInterface({
     root: documentRoot,
     configuration: uiConfiguration?.toolbar
   });
+  const installButton = $("pwa-install");
+  const installLabels = {
+    available: "Instalar aplicativo",
+    installing: "Finalizando instalação…",
+    installed: "Aplicativo instalado",
+    manual: "Como instalar"
+  };
+  const refreshInstallButton = state => {
+    const mode = state?.mode ?? "manual";
+    installButton.textContent = installLabels[mode] ?? installLabels.manual;
+    installButton.disabled = mode === "installing" || mode === "installed";
+    installButton.dataset.installMode = mode;
+  };
+  const unsubscribeInstall = pwaInstallController?.subscribe(
+    refreshInstallButton
+  ) ?? (() => {});
+  refreshInstallButton(pwaInstallController?.snapshot());
   const sceneExit = uiConfiguration?.presentation?.sceneExit ?? {
     corner: "top-left",
     size: 64
@@ -455,6 +473,26 @@ export function bindWebInterface({
     }
   });
 
+  installButton.addEventListener("click", async () => {
+    try {
+      const result = await pwaInstallController?.requestInstall() ?? {
+        outcome: "manual"
+      };
+      if (result.outcome === "manual") {
+        browserWindow.alert(
+          "Abra o menu do navegador e escolha “Instalar aplicativo” ou " +
+          "“Adicionar à tela inicial”. No Safari, use o menu Compartilhar."
+        );
+      } else if (result.outcome === "accepted") {
+        showNotice("Instalação autorizada pelo usuário.");
+      } else if (result.outcome === "dismissed") {
+        showNotice("Instalação cancelada.");
+      }
+    } catch (error) {
+      showError(error);
+    }
+  });
+
   function loadProjectText(text) {
     const result = execute("project.open", { text });
     if (result?.loaded) {
@@ -776,6 +814,8 @@ export function bindWebInterface({
       unsubscribeEditor();
       unsubscribeSelection();
       unsubscribeWorld();
+      unsubscribeInstall();
+      pwaInstallController?.dispose();
       marquee.dispose();
       document.removeEventListener(
         "fullscreenchange",

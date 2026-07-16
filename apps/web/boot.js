@@ -3,8 +3,10 @@ import {
   loadBuildInfo
 } from "./BuildInfo.js";
 import { loadUiConfiguration } from "./UiConfiguration.js";
+import { PwaInstallController } from "./pwa/PwaInstallController.js";
 
 const $=id => document.getElementById(id);
+const pwaInstallController=new PwaInstallController({windowRef:window});
 
 try {
   const [buildInfo,uiConfiguration]=await Promise.all([
@@ -19,7 +21,7 @@ try {
     import(`./main.js?build=${cacheKey}`),
     import(`./pwa/registerPwa.js?build=${cacheKey}`)
   ]);
-  await startApplication(buildInfo,uiConfiguration);
+  await startApplication(buildInfo,uiConfiguration,{pwaInstallController});
   pwaModule.registerPwa(buildInfo,{
     onStateChange: state => exposePwaState(
       buildInfo,

@@ -15,6 +15,7 @@
     "apps/web/index.html",
     "apps/web/main.js",
     "apps/web/manifest.webmanifest",
+    "apps/web/pwa/PwaInstallController.js",
     "apps/web/pwa/registerPwa.js",
     "apps/web/service-worker.js",
     "apps/web/style.css",

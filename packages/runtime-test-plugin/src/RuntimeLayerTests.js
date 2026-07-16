@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0025f";
+} from "../../devtools/src/DevConsole.js?build=20260716-0025g";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -116,6 +116,9 @@ import {
   resolvePwaLocations,
   workerBuild
 } from "../../../apps/web/pwa/registerPwa.js";
+import {
+  PwaInstallController
+} from "../../../apps/web/pwa/PwaInstallController.js";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260716-0024i";
@@ -2136,12 +2139,52 @@ assets: {
         );
       },
 
+      "controlador expõe prompt somente depois da elegibilidade"() {
+        const windowRef=createPwaInstallWindow();
+        const controller=new PwaInstallController({windowRef});
+        let prevented=false;
+        let prompted=false;
+        assertEqual(controller.snapshot().mode,"manual");
+
+        controller.onBeforeInstallPrompt({
+          preventDefault() { prevented=true; },
+          prompt() {
+            prompted=true;
+            return Promise.resolve({outcome:"accepted"});
+          }
+        });
+        assertEqual(prevented,true);
+        assertEqual(controller.snapshot().mode,"available");
+        assertEqual(controller.snapshot().canPrompt,true);
+
+        controller.requestInstall();
+        assertEqual(prompted,true);
+        assertEqual(controller.snapshot().mode,"installing");
+        controller.dispose();
+      },
+
+      "modo standalone e evento de instalação atualizam o estado"() {
+        const standalone=new PwaInstallController({
+          windowRef:createPwaInstallWindow({standalone:true})
+        });
+        assertEqual(standalone.snapshot().mode,"installed");
+        standalone.dispose();
+
+        const controller=new PwaInstallController({
+          windowRef:createPwaInstallWindow()
+        });
+        controller.onAppInstalled();
+        assertEqual(controller.snapshot().installed,true);
+        assertEqual(controller.snapshot().canPrompt,false);
+        controller.dispose();
+      },
+
       "extrai build do service worker controlador"() {
         assertEqual(
           workerBuild(
-            "https://example.test/SpatialSeed/apps/web/service-worker.js?build=0025f"
+            "https://example.test/SpatialSeed/apps/web/service-worker.js?build=0025g"
           ),
-          "0025f"
+          "0025g"
         );
         assertEqual(workerBuild("https://example.test/worker.js"),null);
         assertEqual(workerBuild(null),null);
@@ -2150,28 +2193,28 @@ assets: {
       "rótulo denuncia cache controlador anterior"() {
         const label=formatPwaBuildLabel({
           version:"0.1.0",
-          build:"0025f",
+          build:"0025g",
           channel:"test"
         },{
           controllerBuild:"0025d",
           updatePending:true,
-          waitingBuild:"0025f"
+          waitingBuild:"0025g"
         });
         assertEqual(
           label,
-          "v0.1.0 · build 0025f · cache 0025d · feche para atualizar"
+          "v0.1.0 · build 0025g · cache 0025d · feche para atualizar"
         );
       },
 
       "rótulo permanece conciso quando cache e publicação coincidem"() {
         assertEqual(formatPwaBuildLabel({
           version:"0.1.0",
-          build:"0025f",
+          build:"0025g",
           channel:"test"
         },{
-          controllerBuild:"0025f",
+          controllerBuild:"0025g",
           updatePending:false
-        }),"v0.1.0 · build 0025f");
+        }),"v0.1.0 · build 0025g");
       }
     },
 
@@ -4877,6 +4920,22 @@ function assertNear(actual, expected, epsilon = 1e-9) {
     Math.abs(actual - expected) <= epsilon,
     `Esperado aproximadamente ${expected}, recebido ${actual}.`
   );
+}
+
+function createPwaInstallWindow({ standalone=false }={}) {
+  const listeners=new Map();
+  return {
+    navigator:{standalone:false},
+    matchMedia() { return {matches:standalone}; },
+    addEventListener(type,listener) {
+      const current=listeners.get(type) ?? new Set();
+      current.add(listener);
+      listeners.set(type,current);
+    },
+    removeEventListener(type,listener) {
+      listeners.get(type)?.delete(listener);
+    }
+  };
 }
 
 function dot3(a, b) {
