@@ -7,6 +7,16 @@ import {
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
 import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
+import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
+import {
+  affectedHierarchyIds,
+  applyProjectedWorldMatrix,
+  isRenderableSceneNode,
+  projectedSelectionIds,
+  renderableSubtreeIds,
+  selectionReferenceWorldPosition,
+  selectionUnitId
+} from "./WorldTransformProjection.js?build=20260715-0023d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 
@@ -27,6 +37,7 @@ export class ThreeRegionRenderer {
   #selectionOperation = "replace";
   #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
   #batchCapacity = 65536;
+  #hierarchy = new HierarchyIndex([]);
 
   #incrementalDiagnostics = {
     fullUpdates: 0,
@@ -34,6 +45,19 @@ export class ThreeRegionRenderer {
     objectsCreated: 0,
     objectsUpdated: 0,
     objectsDeleted: 0
+  };
+  #transformLifecycleDiagnostics = {
+    sessionsStarted:0,
+    previews:0,
+    commits:0,
+    rollbacks:0,
+    selectionRootCount:0,
+    previewObjectCount:0,
+    renderablePreviewCount:0,
+    lastPreviewMs:0,
+    maxPreviewMs:0,
+    lastCommitMs:0,
+    lastError:null
   };
   #transformConfig = {
     size: 1.25,
@@ -167,6 +191,8 @@ export class ThreeRegionRenderer {
 
     this.transform.addEventListener("dragging-changed", event => {
       this.orbit.enabled = !event.value;
+      if (event.value) this.#beginSession();
+      else if (this.#session) this.#commitSession();
     });
     this.transform.addEventListener("mouseDown", () => this.#beginSession());
     this.transform.addEventListener("objectChange", () => this.#previewSession());
@@ -212,13 +238,15 @@ export class ThreeRegionRenderer {
   }
 
   selectScreenRect(rectangle, operation = this.#selectionOperation) {
-    const r = this.canvas.getBoundingClientRect(), members = [];
+    const r = this.canvas.getBoundingClientRect(), byId = new Map();
     for (const [objectId, proxy] of this.#meshes) {
+      if (proxy.userData.logicalOnly) continue;
       const p = proxy.getWorldPosition(new THREE.Vector3()).project(this.camera);
       if (p.z < -1 || p.z > 1) continue;
       const x=(p.x+1)*.5*r.width,y=(1-p.y)*.5*r.height;
-      if(x>=rectangle.left&&x<=rectangle.right&&y>=rectangle.top&&y<=rectangle.bottom)members.push({kind:"object",regionId:"region-main",objectId});
+      if(x>=rectangle.left&&x<=rectangle.right&&y>=rectangle.top&&y<=rectangle.bottom){const selectedId=this.#hierarchy.has(objectId)?selectionUnitId(this.#hierarchy,objectId):objectId;byId.set(selectedId,{kind:"object",regionId:"region-main",objectId:selectedId})}
     }
+    const members=[...byId.values()];
     this.#applySelectionMembers(members, operation);
     return { operation, selected: members.length, selection: this.selection.snapshot() };
   }
@@ -249,11 +277,16 @@ export class ThreeRegionRenderer {
   update(state) {
     this.#incrementalDiagnostics.fullUpdates += 1;
     const seen = new Set();
+    const hierarchy = new HierarchyIndex(state.objects);
+    this.#hierarchy = hierarchy;
 
     for (const rawObject of state.objects) {
       const object = this.#projectObject(rawObject);
       seen.add(object.id);
-      this.#upsertObject(object);
+      this.#upsertObject(
+        object,
+        hierarchy.worldMatrixOf(rawObject.id)
+      );
     }
 
     for (const id of [...this.#meshes.keys()]) {
@@ -265,7 +298,12 @@ export class ThreeRegionRenderer {
 
   applyChanges(state, changes = []) {
     this.#incrementalDiagnostics.incrementalUpdates += 1;
-    let fallbackById = null;
+    const hierarchy = new HierarchyIndex(state.objects);
+    this.#hierarchy = hierarchy;
+    const byId = new Map(
+      state.objects.map(object => [object.id,object])
+    );
+    const affectedIds = affectedHierarchyIds(hierarchy,changes);
 
     for (const change of changes) {
       const id = change.objectId;
@@ -273,24 +311,21 @@ export class ThreeRegionRenderer {
 
       if (change.type === "object-deleted") {
         this.#removeObject(id);
-        continue;
       }
+    }
 
-      let rawObject = change.object;
-
-      if (!rawObject) {
-        fallbackById ??= new Map(
-          state.objects.map(object => [object.id, object])
-        );
-        rawObject = fallbackById.get(id);
-      }
+    for (const id of affectedIds) {
+      const rawObject = byId.get(id);
 
       if (!rawObject) {
         this.#removeObject(id);
         continue;
       }
 
-      this.#upsertObject(this.#projectObject(rawObject));
+      this.#upsertObject(
+        this.#projectObject(rawObject),
+        hierarchy.worldMatrixOf(id)
+      );
     }
 
     this.#finishSceneUpdate();
@@ -303,14 +338,14 @@ export class ThreeRegionRenderer {
     };
   }
 
-  #upsertObject(object) {
+  #upsertObject(object, worldMatrix) {
     let proxy = this.#meshes.get(object.id);
 
     if (!proxy) {
       proxy = new THREE.Object3D();
       proxy.userData.objectId = object.id;
       proxy.userData.batchKey = null;
-      proxy.userData.size = [...object.size];
+      proxy.userData.size = object.size ? [...object.size] : [0,0,0];
       proxy.userData.appearanceId = object.appearanceId;
       proxy.userData.instanceColor =
         object.instanceState?.color ?? null;
@@ -320,15 +355,21 @@ export class ThreeRegionRenderer {
       this.#incrementalDiagnostics.objectsUpdated += 1;
     }
 
-    proxy.userData.size = [...object.size];
+    proxy.userData.size = object.size ? [...object.size] : [0,0,0];
 
     if (!this.#session) {
-      proxy.position.fromArray(object.position);
-      proxy.quaternion.fromArray(object.rotation);
-      proxy.scale.fromArray(object.scale);
-      proxy.updateMatrix();
-      proxy.updateMatrixWorld(true);
+      applyProjectedWorldMatrix(proxy,worldMatrix);
     }
+
+    if (!isRenderableSceneNode(object)) {
+      if (proxy.userData.batchKey) {
+        this.#removeFromBatch(object.id,proxy.userData.batchKey);
+        proxy.userData.batchKey=null;
+      }
+      proxy.userData.logicalOnly=true;
+      return;
+    }
+    proxy.userData.logicalOnly=false;
 
     const nextBatchKey = this.#batchKeyFor(object);
 
@@ -491,7 +532,7 @@ export class ThreeRegionRenderer {
   }
 
   #updateBatchMatrix(objectId, proxy) {
-    proxy.updateMatrix();
+    if (proxy.matrixAutoUpdate) proxy.updateMatrix();
     return this.#batchManager.update(objectId, proxy.matrix);
   }
 
@@ -504,6 +545,18 @@ export class ThreeRegionRenderer {
     return target.applyMatrix4(proxy.matrixWorld);
   }
 
+  #worldBoundsForObjectId(objectId, target = new THREE.Box3()) {
+    target.makeEmpty();
+    if (!this.#hierarchy.has(objectId)) return target;
+
+    for (const id of renderableSubtreeIds(this.#hierarchy,objectId)) {
+      const proxy=this.#meshes.get(id);
+      if (!proxy) continue;
+      target.union(this.#worldBoundsForProxy(proxy,new THREE.Box3()));
+    }
+    return target;
+  }
+
   #storeEditedPivot(position) {
     const world = position.toArray();
 
@@ -511,13 +564,9 @@ export class ThreeRegionRenderer {
       const activeId =
         this.#selectionSnapshot?.activeMember?.objectId;
 
-      const activeMesh = this.#meshes.get(activeId);
+      const center=this.#selectionReferencePosition(activeId);
 
-      if (activeMesh) {
-        const center = activeMesh.getWorldPosition(
-          new THREE.Vector3()
-        );
-
+      if (center) {
         const offset = new THREE.Vector3()
           .fromArray(world)
           .sub(center)
@@ -544,8 +593,11 @@ export class ThreeRegionRenderer {
   }
 
   #beginSession() {
+    if (this.#session) return;
+
     if (this.editorState.pivot.editing) {
       this.#session = { kind: "pivot" };
+      this.#transformLifecycleDiagnostics.sessionsStarted += 1;
       return;
     }
 
@@ -561,18 +613,48 @@ export class ThreeRegionRenderer {
     };
 
     const objects = new Map();
+    const previewObjects = new Map();
     for (const member of members) {
       const mesh = this.#meshes.get(member.objectId);
       if (!mesh) continue;
       mesh.updateMatrixWorld(true);
       objects.set(member.objectId, { matrixWorld: mesh.matrixWorld.clone() });
+
     }
 
-    this.#session = { kind: "selection", initialAnchor, objects };
+    const previewIds=projectedSelectionIds(
+      this.#hierarchy,
+      members.map(member => member.objectId)
+    );
+    for (const previewId of previewIds) {
+      const previewMesh=this.#meshes.get(previewId);
+      if (!previewMesh) continue;
+      previewMesh.updateMatrixWorld(true);
+      previewObjects.set(previewId,{
+        matrixWorld:previewMesh.matrixWorld.clone()
+      });
+    }
+
+    this.#session = {
+      kind:"selection",
+      initialAnchor,
+      objects,
+      previewObjects
+    };
+    const diagnostics=this.#transformLifecycleDiagnostics;
+    diagnostics.sessionsStarted += 1;
+    diagnostics.selectionRootCount=objects.size;
+    diagnostics.previewObjectCount=previewObjects.size;
+    diagnostics.renderablePreviewCount=[...previewObjects.keys()]
+      .filter(id => !this.#meshes.get(id)?.userData.logicalOnly)
+      .length;
+    diagnostics.lastError=null;
   }
 
   #previewSession() {
     if (!this.#session) return;
+
+    const startedAt=performance.now();
 
     if (this.#session.kind === "pivot") {
       this.#storeEditedPivot(this.transformAnchor.position);
@@ -591,57 +673,62 @@ export class ThreeRegionRenderer {
     );
     const delta = current.clone().multiply(initial.clone().invert());
 
-    for (const [objectId, snapshot] of this.#session.objects) {
+    for (const [objectId, snapshot] of this.#session.previewObjects) {
       const mesh = this.#meshes.get(objectId);
       if (!mesh) continue;
       const result = delta.clone().multiply(snapshot.matrixWorld);
-      result.decompose(mesh.position, mesh.quaternion, mesh.scale);
-      mesh.updateMatrix();
-      mesh.updateMatrixWorld(true);
+      applyProjectedWorldMatrix(mesh,result.toArray());
       this.#updateBatchMatrix(objectId, mesh);
     }
+    this.#flushBatchBounds();
+    this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
+    const elapsed=performance.now()-startedAt;
+    const diagnostics=this.#transformLifecycleDiagnostics;
+    diagnostics.previews += 1;
+    diagnostics.lastPreviewMs=elapsed;
+    diagnostics.maxPreviewMs=Math.max(diagnostics.maxPreviewMs,elapsed);
   }
 
   #commitSession() {
     if (!this.#session) return;
+    const startedAt=performance.now();
+    const session=this.#session;
+    this.#session=null;
 
-    if (this.#session.kind === "pivot") {
-      this.#storeEditedPivot(this.transformAnchor.position);
-      this.#session = null;
-      this.#rebuildAnchor();
-      return;
-    }
-
-    const transforms = [];
-    for (const [objectId] of this.#session.objects) {
-      const mesh = this.#meshes.get(objectId);
-      if (!mesh) continue;
-      transforms.push({
-        id: objectId,
-        position: mesh.position.toArray(),
-        rotation: mesh.quaternion.toArray(),
-        scale: mesh.scale.toArray()
-      });
-    }
-
-    this.#session = null;
-
-    if (
-      this.#transformConfig.gridLock &&
-      this.#transformConfig.translationSnap
-    ) {
-      const step = this.#transformConfig.translationSnap;
-
-      for (const transform of transforms) {
-        transform.position = transform.position.map(
-          value => Math.round(value / step) * step
-        );
+    try {
+      if (session.kind === "pivot") {
+        this.#storeEditedPivot(this.transformAnchor.position);
+        this.#transformLifecycleDiagnostics.commits += 1;
+        return;
       }
-    }
 
-    if (transforms.length) {
-      this.dispatch({
-        type: "selection.transform",
+      const transforms = [];
+      for (const [objectId] of session.objects) {
+        const mesh = this.#meshes.get(objectId);
+        if (!mesh) continue;
+        transforms.push({
+          id: objectId,
+          worldMatrix: mesh.matrix.toArray()
+        });
+      }
+
+      if (
+        this.#transformConfig.gridLock &&
+        this.#transformConfig.translationSnap
+      ) {
+        const step = this.#transformConfig.translationSnap;
+
+        for (const transform of transforms) {
+          for (const index of [12,13,14]) {
+            transform.worldMatrix[index]=
+              Math.round(transform.worldMatrix[index]/step)*step;
+          }
+        }
+      }
+
+      const changed=!transforms.length || this.dispatch({
+        type: "selection.transform-world",
         selection: this.#selectionSnapshot,
         pivot: {
           policy: this.editorState.pivot.policy,
@@ -649,20 +736,48 @@ export class ThreeRegionRenderer {
         },
         transforms
       });
-    }
 
-    this.transformAnchor.quaternion.identity();
-    this.transformAnchor.scale.set(1, 1, 1);
-    this.#rebuildAnchor();
+      if (!changed) this.#restorePreviewSession(session);
+      this.#transformLifecycleDiagnostics.commits += 1;
+      this.#transformLifecycleDiagnostics.lastError=null;
+    } catch (error) {
+      this.#restorePreviewSession(session);
+      const diagnostics=this.#transformLifecycleDiagnostics;
+      diagnostics.rollbacks += 1;
+      diagnostics.lastError={
+        code:error?.code ?? "TRANSFORM_COMMIT_FAILED",
+        message:error?.message ?? String(error)
+      };
+      console.error("Transform session rolled back",error);
+    } finally {
+      this.transformAnchor.quaternion.identity();
+      this.transformAnchor.scale.set(1, 1, 1);
+      this.#rebuildAnchor();
+      this.#transformLifecycleDiagnostics.lastCommitMs=
+        performance.now()-startedAt;
+    }
+  }
+
+  #restorePreviewSession(session) {
+    if (session?.kind !== "selection") return;
+    for (const [objectId,snapshot] of session.previewObjects) {
+      const mesh=this.#meshes.get(objectId);
+      if (!mesh) continue;
+      applyProjectedWorldMatrix(mesh,snapshot.matrixWorld.toArray());
+      this.#updateBatchMatrix(objectId,mesh);
+    }
+    this.#flushBatchBounds();
+    this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
   }
 
   #calculatePivot() {
     const members = this.#selectionSnapshot?.members ?? [];
-    const meshes = members
-      .map(member => this.#meshes.get(member.objectId))
+    const references = members
+      .map(member => this.#selectionReferencePosition(member.objectId))
       .filter(Boolean);
 
-    if (!meshes.length) return null;
+    if (!references.length) return null;
 
     const policy = this.editorState.pivot.policy;
 
@@ -674,11 +789,10 @@ export class ThreeRegionRenderer {
         const activeId =
           this.#selectionSnapshot?.activeMember?.objectId;
 
-        const activeMesh = this.#meshes.get(activeId);
+        const activePosition=this.#selectionReferencePosition(activeId);
 
-        if (activeMesh) {
-          return activeMesh
-            .getWorldPosition(new THREE.Vector3())
+        if (activePosition) {
+          return activePosition
             .add(
               new THREE.Vector3().fromArray(
                 this.editorState.pivot.relativeOffset
@@ -696,17 +810,17 @@ export class ThreeRegionRenderer {
       const activeId =
         this.#selectionSnapshot?.activeMember?.objectId;
 
-      const activeMesh =
-        this.#meshes.get(activeId) ?? meshes.at(-1);
+      const activePosition=
+        this.#selectionReferencePosition(activeId) ?? references.at(-1);
 
-      return activeMesh.getWorldPosition(new THREE.Vector3());
+      return activePosition.clone();
     }
 
     if (policy === "bounds") {
       const bounds = new THREE.Box3().makeEmpty();
 
-      for (const mesh of meshes) {
-        bounds.union(this.#worldBoundsForProxy(mesh));
+      for (const member of members) {
+        bounds.union(this.#worldBoundsForObjectId(member.objectId));
       }
 
       return bounds.getCenter(new THREE.Vector3());
@@ -714,11 +828,18 @@ export class ThreeRegionRenderer {
 
     const median = new THREE.Vector3();
 
-    for (const mesh of meshes) {
-      median.add(mesh.getWorldPosition(new THREE.Vector3()));
+    for (const position of references) {
+      median.add(position);
     }
 
-    return median.multiplyScalar(1 / meshes.length);
+    return median.multiplyScalar(1 / references.length);
+  }
+
+  #selectionReferencePosition(objectId) {
+    if (!objectId || !this.#hierarchy.has(objectId)) return null;
+    return new THREE.Vector3().fromArray(
+      selectionReferenceWorldPosition(this.#hierarchy,objectId)
+    );
   }
 
   #rebuildAnchor() {
@@ -736,9 +857,11 @@ export class ThreeRegionRenderer {
     const activeId = this.#selectionSnapshot?.activeMember?.objectId;
     const activeMesh = this.#meshes.get(activeId);
 
-    if (!this.editorState.pivot.editing &&
-        this.selection.orientationPolicy === "local" &&
-        activeMesh) {
+    const alignToActive=
+      this.selection.orientationPolicy === "local" ||
+      this.editorState.tool.mode === "scale";
+
+    if (!this.editorState.pivot.editing && alignToActive && activeMesh) {
       this.transformAnchor.quaternion.copy(activeMesh.quaternion);
     } else {
       this.transformAnchor.quaternion.identity();
@@ -759,10 +882,7 @@ export class ThreeRegionRenderer {
     const bounds = new THREE.Box3().makeEmpty();
 
     for (const member of this.#selectionSnapshot.members) {
-      const mesh = this.#meshes.get(member.objectId);
-      if (!mesh) continue;
-
-      bounds.union(this.#worldBoundsForProxy(mesh));
+      bounds.union(this.#worldBoundsForObjectId(member.objectId));
     }
 
     if (bounds.isEmpty()) {
@@ -837,16 +957,21 @@ export class ThreeRegionRenderer {
       axis: this.transform.axis,
       dragging: this.transform.dragging,
       pivotPolicy: this.editorState.pivot.policy,
-      pivotPosition: this.transformAnchor.position.toArray(),
-      selection: this.#selectionSnapshot
+      pivotPosition: this.getSelectionPivotPosition(),
+      selection: this.#selectionSnapshot,
+      lifecycle:structuredClone(this.#transformLifecycleDiagnostics)
     };
+  }
+
+  getSelectionPivotPosition() {
+    return this.#calculatePivot()?.toArray() ?? null;
   }
 
   #updateSelectionAppearance() {
     const selected=new Set((this.#selectionSnapshot?.members??[]).map(m=>m.objectId));
     const activeId=this.#selectionSnapshot?.activeMember?.objectId;
     for(const [id,h] of this.#selectionHelpers){if(!selected.has(id)){this.scene.remove(h);h.geometry?.dispose?.();h.material?.dispose?.();this.#selectionHelpers.delete(id)}}
-    for(const id of selected){const proxy=this.#meshes.get(id);if(!proxy)continue;let h=this.#selectionHelpers.get(id);if(!h){h=new THREE.Box3Helper(new THREE.Box3(),id===activeId?0xffd166:0x8faaff);h.renderOrder=999;h.material.depthTest=false;h.material.depthWrite=false;this.#selectionHelpers.set(id,h);this.scene.add(h)}h.box.copy(this.#worldBoundsForProxy(proxy));h.material.color.set(id===activeId?0xffd166:0x8faaff);h.visible=true}
+    for(const id of selected){const proxy=this.#meshes.get(id);if(!proxy)continue;let h=this.#selectionHelpers.get(id);if(!h){h=new THREE.Box3Helper(new THREE.Box3(),id===activeId?0xffd166:0x8faaff);h.renderOrder=999;h.material.depthTest=false;h.material.depthWrite=false;this.#selectionHelpers.set(id,h);this.scene.add(h)}h.box.copy(this.#worldBoundsForObjectId(id));h.material.color.set(id===activeId?0xffd166:0x8faaff);h.visible=!h.box.isEmpty()}
     for(const id of this.#selectedVisualIds)if(!selected.has(id))this.#applyObjectInstanceColor(id);
     this.#selectedVisualIds=selected;
   }
@@ -908,7 +1033,7 @@ export class ThreeRegionRenderer {
       false
     );
 
-    const hitIds=[...new Set(hits.map(h=>this.#batchManager.objectFromHit(h)).filter(Boolean))];
+    const hitIds=[...new Set(hits.map(h=>this.#batchManager.objectFromHit(h)).filter(Boolean).map(id=>this.#hierarchy.has(id)?selectionUnitId(this.#hierarchy,id):id))];
     const objectId=this.#cycledHitId(hitIds,event.clientX,event.clientY);
     this.#inputDiagnostics.objectHits=hitIds.length;
 

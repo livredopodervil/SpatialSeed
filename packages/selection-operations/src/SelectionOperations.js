@@ -1,5 +1,10 @@
 import * as THREE from "three";
 import {
+  cloneHierarchySubtrees,
+  hierarchySubtreeIds,
+  HierarchyIndex
+} from "../../scene-hierarchy/src/index.js";
+import {
   resolveAffineOperations,
   composeAffineStep,
   affineCopies,
@@ -42,6 +47,84 @@ export class SelectionOperations {
     return this.duplicateMany(1);
   }
 
+  group({
+    groupId=crypto.randomUUID(),
+    name=null,
+    anchorWorldPosition,
+    pivot=[0,0,0]
+  }={}) {
+    const targetIds=this.editor.selection.snapshot().members
+      .map(member => member.objectId);
+
+    if (!targetIds.length) {
+      return {
+        changed:false,
+        groupId:null,
+        targetIds:[],
+        reason:"selection-empty"
+      };
+    }
+
+    const changed=this.sandbox.dispatch({
+      type:"selection.group",
+      groupId,
+      targetIds,
+      name,
+      anchorWorldPosition,
+      pivot
+    });
+
+    if (changed) {
+      this.#selectIds([groupId]);
+      this.pendingDuplicate=null;
+    }
+
+    return {
+      changed,
+      groupId:changed ? groupId : null,
+      targetIds:[...targetIds]
+    };
+  }
+
+  ungroup() {
+    const state=this.sandbox.getSnapshot();
+    const hierarchy=new HierarchyIndex(state.objects);
+    const selectedIds=this.editor.selection.snapshot().members
+      .map(member => member.objectId);
+    const requestedGroups=selectedIds.filter(id =>
+      hierarchy.node(id).kind === "group"
+    );
+
+    if (!requestedGroups.length) {
+      return {
+        changed:false,
+        groupIds:[],
+        promotedIds:[],
+        reason:"selection-has-no-groups"
+      };
+    }
+
+    const groupIds=[...hierarchy.canonicalizeSelection(requestedGroups)];
+    const promotedIds=groupIds.flatMap(id => [...hierarchy.childrenOf(id)]);
+    const passthroughIds=selectedIds.filter(id =>
+      !groupIds.includes(id) &&
+      !groupIds.some(groupId => hierarchy.ancestorsOf(id).includes(groupId))
+    );
+    const nextSelectionIds=[...new Set([...passthroughIds,...promotedIds])];
+    const changed=this.sandbox.dispatch({
+      type:"selection.ungroup",
+      groupIds
+    });
+
+    if (changed) {
+      if (nextSelectionIds.length) this.#selectIds(nextSelectionIds);
+      else this.editor.selection.clear();
+      this.pendingDuplicate=null;
+    }
+
+    return {changed,groupIds,promotedIds};
+  }
+
   duplicateMany(count = 1) {
     const copies = Number(count);
     if (!Number.isInteger(copies) || copies < 1 || copies > 100000) {
@@ -49,37 +132,37 @@ export class SelectionOperations {
     }
 
     const sourceObjects = this.#selectedObjects();
-    const duplicates = [];
-
-    for (let copyIndex = 1; copyIndex <= copies; copyIndex += 1) {
-      for (const object of sourceObjects) {
-        duplicates.push({
-          ...structuredClone(object),
-          id: crypto.randomUUID(),
-          name: copyName(object.name ?? object.id, copyIndex)
-        });
+    const cloned=cloneHierarchySubtrees(
+      this.sandbox.getSnapshot().objects,
+      {
+        rootIds:sourceObjects.map(object => object.id),
+        copies,
+        createId:() => crypto.randomUUID(),
+        rename:({name,copyIndex}) => copyName(name,copyIndex)
       }
-    }
+    );
+    const duplicates=[...cloned.objects];
 
     const changed = this.sandbox.dispatch({
       type: "selection.duplicate",
       source: copies === 1 ? "selection-operations" : "selection-duplicate-many",
-      sourceIds: sourceObjects.map(object => object.id),
+      sourceIds: [...cloned.sourceRootIds],
       copyCount: copies,
       objects: duplicates
     });
 
     if (!changed) return { changed: false, duplicateIds: [] };
 
-    const duplicateIds = duplicates.map(object => object.id);
+    const duplicateIds = [...cloned.duplicatedRootIds];
     this.#selectIds(duplicateIds);
+    const duplicateRoots=this.#objectsByIds(duplicateIds);
 
     this.pendingDuplicate = {
-      sourceIds: sourceObjects.map(object => object.id),
+      sourceIds: [...cloned.sourceRootIds],
       duplicateIds,
       pivotBefore: this.#selectionPivot(sourceObjects),
       initialTransforms: Object.fromEntries(
-        duplicates.map(object => [object.id, snapshotTransform(object)])
+        duplicateRoots.map(object => [object.id, snapshotTransform(object)])
       ),
       transformedIds: []
     };
@@ -89,7 +172,8 @@ export class SelectionOperations {
       copyCount: copies,
       sourceCount: sourceObjects.length,
       createdCount: duplicates.length,
-      duplicateIds
+      duplicateIds,
+      createdIds:duplicates.map(object => object.id)
     };
   }
 
@@ -125,8 +209,7 @@ export class SelectionOperations {
         );
 
     const pivot = [...resolved.pivot.effective];
-    const duplicates = [];
-    const frontierIds = [];
+    const transformsByRootAndCopy=new Map();
 
     for (const object of sourceObjects) {
       const transforms = parametric
@@ -142,23 +225,40 @@ export class SelectionOperations {
         : affineCopies(object, copies, step);
 
       for (const transform of transforms) {
-        const duplicate = {
-          ...structuredClone(object),
-          id: crypto.randomUUID(),
-          name: copyName(object.name ?? object.id, transform.index),
-          position: transform.position,
-          rotation: transform.rotation,
-          scale: transform.scale
-        };
-        duplicates.push(duplicate);
-        if (transform.index === copies) frontierIds.push(duplicate.id);
+        transformsByRootAndCopy.set(
+          `${transform.index}:${object.id}`,
+          transform
+        );
       }
     }
+
+    const cloned=cloneHierarchySubtrees(
+      this.sandbox.getSnapshot().objects,
+      {
+        rootIds:sourceObjects.map(object => object.id),
+        copies,
+        createId:() => crypto.randomUUID(),
+        rename:({name,copyIndex}) => copyName(name,copyIndex),
+        transformRoot:({clone,sourceId,copyIndex}) => {
+          const transform=transformsByRootAndCopy.get(
+            `${copyIndex}:${sourceId}`
+          );
+          return {
+            ...clone,
+            position:transform.position,
+            rotation:transform.rotation,
+            scale:transform.scale
+          };
+        }
+      }
+    );
+    const duplicates=[...cloned.objects];
+    const frontierIds=[...cloned.copies.at(-1).rootIds];
 
     const changed = this.sandbox.dispatch({
       type: "selection.duplicate",
       source: "selection-affine-duplicate",
-      sourceIds: sourceObjects.map(object => object.id),
+      sourceIds: [...cloned.sourceRootIds],
       copyCount: copies,
       affineOperations:
         structuredClone(resolved.operations),
@@ -173,7 +273,7 @@ export class SelectionOperations {
 
     if (!changed) return { changed: false, duplicateIds: [] };
 
-    const duplicateIds = duplicates.map(object => object.id);
+    const duplicateIds = [...cloned.duplicatedRootIds];
     this.#selectIds(frontierIds);
     this.pendingDuplicate = null;
 
@@ -189,9 +289,7 @@ export class SelectionOperations {
             structuredClone(resolved.pivot),
           pivotBefore: pivot,
           pivotAfter: this.#selectionPivot(
-            duplicates.filter(object =>
-              frontierIds.includes(object.id)
-            )
+            this.#objectsByIds(frontierIds)
           )
         }
       : null;
@@ -202,6 +300,7 @@ export class SelectionOperations {
       sourceCount: sourceObjects.length,
       createdCount: duplicates.length,
       duplicateIds,
+      createdIds:duplicates.map(object => object.id),
       selectedIds: frontierIds,
       parametric,
       ...(step
@@ -253,27 +352,32 @@ export class SelectionOperations {
 
     const delta = new THREE.Matrix4().fromArray(this.lastDuplicate.deltaMatrix);
 
-    const duplicates = sourceObjects.map(object => {
-      const result = delta.clone().multiply(matrixFromObject(object));
-      return {
-        ...structuredClone(object),
-        id: crypto.randomUUID(),
-        name: `${object.name ?? object.id} cópia`,
-        ...decomposeMatrix(result)
-      };
-    });
+    const cloned=cloneHierarchySubtrees(
+      this.sandbox.getSnapshot().objects,
+      {
+        rootIds:sourceObjects.map(object => object.id),
+        copies:1,
+        createId:() => crypto.randomUUID(),
+        rename:({name}) => `${name} cópia`,
+        transformRoot:({clone,source}) => {
+          const result=delta.clone().multiply(matrixFromObject(source));
+          return {...clone,...decomposeMatrix(result)};
+        }
+      }
+    );
+    const duplicates=[...cloned.objects];
 
     const changed = this.sandbox.dispatch({
       type: "selection.duplicate",
       source: "selection-repeat",
-      sourceIds: sourceObjects.map(object => object.id),
+      sourceIds: [...cloned.sourceRootIds],
       deltaMatrix: [...this.lastDuplicate.deltaMatrix],
       objects: duplicates
     });
 
     if (!changed) return { changed: false };
 
-    const duplicateIds = duplicates.map(object => object.id);
+    const duplicateIds = [...cloned.duplicatedRootIds];
     this.#selectIds(duplicateIds);
 
     this.lastDuplicate = {
@@ -282,7 +386,9 @@ export class SelectionOperations {
       duplicateIds,
       repeatSourceIds: duplicateIds,
       pivotBefore: this.#selectionPivot(sourceObjects),
-      pivotAfter: this.#selectionPivot(duplicates)
+      pivotAfter: this.#selectionPivot(
+        this.#objectsByIds(duplicateIds)
+      )
     };
 
     return {
@@ -293,14 +399,20 @@ export class SelectionOperations {
   }
 
   deleteSelection() {
-    const ids = this.editor.selection.snapshot().members.map(member => member.objectId);
-    if (!ids.length) {
+    const selectedIds = this.editor.selection.snapshot().members
+      .map(member => member.objectId);
+    if (!selectedIds.length) {
       return {
         changed: false,
         deletedIds: [],
         reason: "selection-empty"
       };
     }
+
+    const ids=[...hierarchySubtreeIds(
+      this.sandbox.getSnapshot().objects,
+      selectedIds
+    )];
 
     const changed = this.sandbox.dispatch({
       type: "selection.delete",

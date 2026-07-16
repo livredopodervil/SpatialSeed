@@ -87,6 +87,10 @@ export class AppearanceRuntime {
   }
 
   attachLegacyObject(object, options = {}) {
+    if (isLogicalSceneNode(object)) {
+      return Object.freeze(structuredClone(object));
+    }
+
     if (object.material) {
       const created = this.internLegacyMaterial(
         object.material,
@@ -121,6 +125,7 @@ export class AppearanceRuntime {
   }
 
   projectObject(object) {
+    if (isLogicalSceneNode(object)) return object;
     if (object.material) return object;
 
     return {
@@ -133,6 +138,7 @@ export class AppearanceRuntime {
     return {
       ...scene,
       objects: (scene.objects ?? []).map(object => {
+        if (isLogicalSceneNode(object)) return object;
         if (object.material) return object;
 
         return {
@@ -179,6 +185,10 @@ export class AppearanceRuntime {
       }
     }
   }
+}
+
+function isLogicalSceneNode(object) {
+  return object?.kind === "group";
 }
 
 function toLegacyMaterial(material, texture) {

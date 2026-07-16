@@ -1,5 +1,9 @@
 # Cronograma por marcos
 
+## Prioridade atual: hierarquia e famílias geométricas
+
+Concluir o ciclo de grupos com desagrupamento de um nível e, na etapa seguinte, ampliar o `GeometryRegistry` com novas famílias paramétricas sem acoplar geometria, propriedades, comandos e renderização.
+
 ## 1. Estabilizar 0019g-c2
 Registrar commit e tag, enviar ao GitHub, testar seleção, transformações, exclusão, undo/redo, salvar/abrir e cenas grandes.
 
@@ -17,3 +21,7 @@ README, publicação estática, PWA, cache offline, testes multiplataforma e pac
 
 ## 6. Plugins e autoinspeção
 Navegador de arquivos, árvore do projeto, editor textual, plugins, comandos para agentes e integração segura com Git.
+
+## Prioridade futura: persistência compacta
+
+Manter compatibilidade com o schema atual e evoluir em três etapas: JSON compacto, contêiner `.spatialseed` comprimido com abertura retrocompatível e schema procedural/instanciado capaz de preservar protótipos, transforms ou receitas sem expandir matrizes regulares.

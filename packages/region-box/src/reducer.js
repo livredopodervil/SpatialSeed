@@ -1,3 +1,12 @@
+import {
+  applyWorldTransforms,
+  groupNodes,
+  hierarchySubtreeIds,
+  HierarchyIndex,
+  reparentPreservingWorld,
+  ungroupNodes
+} from "../../scene-hierarchy/src/index.js";
+
 function updateById(objects, id, updater) {
   const index = objects.findIndex(object => object.id === id);
   if (index < 0) return objects;
@@ -188,7 +197,10 @@ export function boxRegionReducer(state, command) {
         if (existingIds.has(object.id)) {
           throw new Error(`Duplicate object id: ${object.id}`);
         }
+        existingIds.add(object.id);
       }
+
+      new HierarchyIndex([...state.objects,...incoming]);
 
       return {
         state: Object.freeze({
@@ -205,8 +217,9 @@ export function boxRegionReducer(state, command) {
     }
 
     case "selection.delete": {
-      const ids = new Set(command.ids ?? []);
-      if (!ids.size) return { state, changes: [] };
+      const requestedIds=command.ids ?? [];
+      if (!requestedIds.length) return { state, changes: [] };
+      const ids=new Set(hierarchySubtreeIds(state.objects,requestedIds));
 
       const removed = state.objects.filter(object => ids.has(object.id));
       if (!removed.length) return { state, changes: [] };
@@ -241,6 +254,87 @@ export function boxRegionReducer(state, command) {
           objectId: transform.id,
           source: "selection"
         }))
+      };
+    }
+
+    case "selection.transform-world": {
+      const objects=applyWorldTransforms(
+        state.objects,
+        command.transforms ?? []
+      );
+
+      if (objects === state.objects) return { state, changes: [] };
+
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: command.transforms.map(transform => ({
+          type: "object-transform",
+          objectId: transform.id,
+          source: "selection-world"
+        }))
+      };
+    }
+
+    case "hierarchy.reparent": {
+      const objects=reparentPreservingWorld(state.objects,{
+        id: command.id,
+        parentId: command.parentId
+      });
+
+      if (objects === state.objects) return { state, changes: [] };
+
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [{
+          type: "hierarchy-reparented",
+          objectId: command.id,
+          parentId: command.parentId ?? null
+        }]
+      };
+    }
+
+    case "selection.group": {
+      const result=groupNodes(state.objects,{
+        groupId:command.groupId,
+        targetIds:command.targetIds,
+        name:command.name,
+        anchorWorldPosition:command.anchorWorldPosition,
+        pivot:command.pivot
+      });
+
+      return {
+        state:Object.freeze({
+          ...state,
+          objects:result.nodes
+        }),
+        changes:[{
+          type:"hierarchy-grouped",
+          objectId:result.group.id,
+          targetIds:result.targetIds
+        }]
+      };
+    }
+
+    case "selection.ungroup": {
+      const result=ungroupNodes(state.objects,{
+        groupIds:command.groupIds
+      });
+      if (!result.groupIds.length) return {state,changes:[]};
+
+      return {
+        state:Object.freeze({...state,objects:result.nodes}),
+        changes:[
+          ...result.groupIds.map(objectId => ({
+            type:"object-deleted",
+            objectId,
+            source:"selection.ungroup"
+          })),
+          ...result.promotedIds.map(objectId => ({
+            type:"object-transform",
+            objectId,
+            source:"selection.ungroup"
+          }))
+        ]
       };
     }
 
