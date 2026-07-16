@@ -958,6 +958,90 @@ assets: {
       }
     },
 
+    "hierarchy-reparent": {
+      "preserva transform mundial ao trocar de pai"() {
+        const sandbox=createHierarchySandbox();
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects)
+          .worldMatrixOf("moving");
+
+        assertEqual(sandbox.dispatch({
+          type:"hierarchy.reparent",
+          id:"moving",
+          parentId:"target"
+        }),true);
+
+        const state=sandbox.getSnapshot();
+        const after=new HierarchyIndex(state.objects).worldMatrixOf("moving");
+        assertMatricesNear(after,before);
+        assertEqual(findHierarchyNode(state,"moving").parentId,"target");
+      },
+      "preserva transform mundial de toda a subárvore"() {
+        const sandbox=createHierarchySandbox();
+        const beforeHierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const movingBefore=beforeHierarchy.worldMatrixOf("moving");
+        const childBefore=beforeHierarchy.worldMatrixOf("nested");
+
+        sandbox.dispatch({
+          type:"hierarchy.reparent",
+          id:"moving",
+          parentId:"target"
+        });
+
+        const afterHierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertMatricesNear(afterHierarchy.worldMatrixOf("moving"),movingBefore);
+        assertMatricesNear(afterHierarchy.worldMatrixOf("nested"),childBefore);
+      },
+      "desfazer restaura pai e transform local"() {
+        const sandbox=createHierarchySandbox();
+        const before=sandbox.getState();
+        sandbox.dispatch({
+          type:"hierarchy.reparent",
+          id:"moving",
+          parentId:"target"
+        });
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,1);
+        assertEqual(sandbox.undo(),true);
+        assertDeepEqual(sandbox.getState(),before);
+      },
+      "mesmo pai não cria histórico"() {
+        const sandbox=createHierarchySandbox();
+        assertEqual(sandbox.dispatch({
+          type:"hierarchy.reparent",
+          id:"moving",
+          parentId:"source"
+        }),false);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+      "ciclo falha sem alterar estado ou histórico"() {
+        const sandbox=createHierarchySandbox();
+        const before=sandbox.getState();
+        assertThrowsCode(
+          () => sandbox.dispatch({
+            type:"hierarchy.reparent",
+            id:"source",
+            parentId:"nested"
+          }),
+          "HIERARCHY_CYCLE"
+        );
+        assertDeepEqual(sandbox.getState(),before);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+      "cisalhamento falha sem aproximar o transform"() {
+        const sandbox=createShearHierarchySandbox();
+        const before=sandbox.getState();
+        assertThrowsCode(
+          () => sandbox.dispatch({
+            type:"hierarchy.reparent",
+            id:"rotated-child",
+            parentId:null
+          }),
+          "NON_TRS_TRANSFORM"
+        );
+        assertDeepEqual(sandbox.getState(),before);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      }
+    },
+
 "resource-audit": {
   "conta aparência compartilhada"() {
     const audit = new ResourceAudit({
@@ -2863,4 +2947,76 @@ function hierarchyFixture() {
     {id:"sibling",parentId:"root",position:[-1,0,0]},
     {id:"loose",position:[0,5,0]}
   ];
+}
+
+function createHierarchySandbox() {
+  const objects=[
+    {
+      id:"source",
+      position:[5,0,0],
+      rotation:eulerQuaternion([0,0,30]),
+      scale:[1,1,1]
+    },
+    {
+      id:"target",
+      position:[-2,3,1],
+      rotation:eulerQuaternion([0,0,-20]),
+      scale:[2,2,2]
+    },
+    {
+      id:"moving",
+      parentId:"source",
+      position:[1,2,0],
+      rotation:eulerQuaternion([10,0,15]),
+      scale:[0.5,0.5,0.5]
+    },
+    {
+      id:"nested",
+      parentId:"moving",
+      position:[0,0,4],
+      rotation:[0,0,0,1],
+      scale:[1,1,1]
+    }
+  ];
+  const region=new Region(
+    {id:"hierarchy-test",type:"box-region"},
+    {schemaVersion:1,objects}
+  );
+  return new Sandbox(region,boxRegionReducer);
+}
+
+function createShearHierarchySandbox() {
+  const region=new Region(
+    {id:"hierarchy-shear-test",type:"box-region"},
+    {
+      schemaVersion:1,
+      objects:[
+        {
+          id:"scaled-parent",
+          position:[0,0,0],
+          rotation:[0,0,0,1],
+          scale:[2,1,1]
+        },
+        {
+          id:"rotated-child",
+          parentId:"scaled-parent",
+          position:[0,0,0],
+          rotation:eulerQuaternion([0,0,45]),
+          scale:[1,1,1]
+        }
+      ]
+    }
+  );
+  return new Sandbox(region,boxRegionReducer);
+}
+
+function findHierarchyNode(state, id) {
+  return state.objects.find(object => object.id === id);
+}
+
+function assertMatricesNear(actual, expected, epsilon = 1e-9) {
+  assertEqual(actual.length,expected.length);
+  for (let index=0; index<actual.length; index+=1) {
+    assertNear(actual[index],expected[index],epsilon);
+  }
 }

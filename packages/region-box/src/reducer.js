@@ -1,3 +1,7 @@
+import {
+  reparentPreservingWorld
+} from "../../scene-hierarchy/src/index.js";
+
 function updateById(objects, id, updater) {
   const index = objects.findIndex(object => object.id === id);
   if (index < 0) return objects;
@@ -241,6 +245,24 @@ export function boxRegionReducer(state, command) {
           objectId: transform.id,
           source: "selection"
         }))
+      };
+    }
+
+    case "hierarchy.reparent": {
+      const objects=reparentPreservingWorld(state.objects,{
+        id: command.id,
+        parentId: command.parentId
+      });
+
+      if (objects === state.objects) return { state, changes: [] };
+
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [{
+          type: "hierarchy-reparented",
+          objectId: command.id,
+          parentId: command.parentId ?? null
+        }]
       };
     }
 
