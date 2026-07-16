@@ -15,3 +15,10 @@ export {
 export {
   createBrowserProgramWorker
 } from "./createBrowserProgramWorker.js";
+export {
+  ProgramSessionKernel,
+  createSesSessionEvaluator
+} from "./ProgramSessionKernel.js";
+export {
+  createBrowserProgramSessionWorker
+} from "./createBrowserProgramSessionWorker.js";

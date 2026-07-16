@@ -128,6 +128,8 @@ import {
   PROGRAM_PLAN_VERSION,
   ProgramRunController,
   PROGRAM_WORKER_PROTOCOL_VERSION,
+  ProgramSessionKernel,
+  createBrowserProgramSessionWorker,
   createBrowserProgramWorker,
   createSeededRandom,
   executeProgramRequest
@@ -608,6 +610,111 @@ export function createRuntimeLayerTests() {
         assertEqual(created.length, 1);
         assertEqual(created[0].options.type, "module");
         assertEqual(created[0].options.name, "program-test");
+      }
+    },
+
+    "program-session": {
+      "estado explícito persiste entre avaliações"() {
+        const session = createTrustedProgramSession();
+        const first = session.execute({
+          runId: "session-state-1",
+          source: "session.radius = 12",
+          mode: "expression"
+        });
+        const second = session.execute({
+          runId: "session-state-2",
+          source: "session.radius * 2",
+          mode: "expression"
+        });
+
+        assertEqual(first.type, "program.completed");
+        assertEqual(second.plan.result.value, 24);
+        assertDeepEqual(session.snapshot(), {
+          state: "active",
+          revision: 2,
+          keys: ["radius"]
+        });
+      },
+
+      "funções do usuário permanecem dentro da sessão"() {
+        const session = createTrustedProgramSession();
+        session.execute({
+          runId: "session-function-1",
+          source: [
+            "session.polygon = n => n * (n - 3) / 2;",
+            "return 'polygon';"
+          ].join("\n"),
+          mode: "program"
+        });
+        const result = session.execute({
+          runId: "session-function-2",
+          source: "session.polygon(8)",
+          mode: "expression"
+        });
+
+        assertEqual(result.plan.result.value, 20);
+      },
+
+      "objetos abstratos podem ser mantidos sem atravessar o Worker"() {
+        const session = createTrustedProgramSession();
+        session.execute({
+          runId: "session-object-1",
+          source: [
+            "session.city = {",
+            "  blocks: [{ height: 3 }, { height: 8 }],",
+            "  tallest() { return max(...this.blocks.map(x => x.height)); }",
+            "};",
+            "return 'city';"
+          ].join("\n"),
+          mode: "program"
+        });
+        const result = session.execute({
+          runId: "session-object-2",
+          source: "session.city.tallest()",
+          mode: "expression"
+        });
+
+        assertEqual(result.plan.result.value, 8);
+      },
+
+      "falha invalida a sessão inteira"() {
+        const session = createTrustedProgramSession();
+        const failed = session.execute({
+          runId: "session-failure",
+          source: "throw new Error('broken')",
+          mode: "program"
+        });
+
+        assertEqual(failed.type, "program.failed");
+        assertEqual(session.snapshot().state, "invalid");
+        assertThrowsMessage(
+          () => session.execute({
+            runId: "session-after-failure",
+            source: "1 + 1"
+          }),
+          "Sessão de programa foi invalidada"
+        );
+      },
+
+      "fábrica solicita Worker de sessão modular"() {
+        const created = [];
+        class WorkerFixture {
+          constructor(url, options) {
+            created.push({ url: String(url), options });
+          }
+        }
+
+        createBrowserProgramSessionWorker({
+          WorkerClass: WorkerFixture,
+          workerUrl: new URL(
+            "https://example.test/ProgramSessionWorker.js"
+          ),
+          name: "session-test"
+        });
+
+        assertEqual(created.length, 1);
+        assertEqual(created[0].options.type, "module");
+        assertEqual(created[0].options.name, "session-test");
       }
     },
 
@@ -5360,6 +5467,12 @@ function evaluateTrustedFixture(source, endowments) {
   );
 
   return evaluator(...values);
+}
+
+function createTrustedProgramSession() {
+  return new ProgramSessionKernel({
+    evaluate: evaluateTrustedFixture
+  });
 }
 
 function assert(condition, message = "Falha de asserção.") {
