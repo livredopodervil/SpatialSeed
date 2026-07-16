@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import {
   cloneHierarchySubtrees,
-  hierarchySubtreeIds
+  hierarchySubtreeIds,
+  HierarchyIndex
 } from "../../scene-hierarchy/src/index.js";
 import {
   resolveAffineOperations,
@@ -83,6 +84,45 @@ export class SelectionOperations {
       groupId:changed ? groupId : null,
       targetIds:[...targetIds]
     };
+  }
+
+  ungroup() {
+    const state=this.sandbox.getSnapshot();
+    const hierarchy=new HierarchyIndex(state.objects);
+    const selectedIds=this.editor.selection.snapshot().members
+      .map(member => member.objectId);
+    const requestedGroups=selectedIds.filter(id =>
+      hierarchy.node(id).kind === "group"
+    );
+
+    if (!requestedGroups.length) {
+      return {
+        changed:false,
+        groupIds:[],
+        promotedIds:[],
+        reason:"selection-has-no-groups"
+      };
+    }
+
+    const groupIds=[...hierarchy.canonicalizeSelection(requestedGroups)];
+    const promotedIds=groupIds.flatMap(id => [...hierarchy.childrenOf(id)]);
+    const passthroughIds=selectedIds.filter(id =>
+      !groupIds.includes(id) &&
+      !groupIds.some(groupId => hierarchy.ancestorsOf(id).includes(groupId))
+    );
+    const nextSelectionIds=[...new Set([...passthroughIds,...promotedIds])];
+    const changed=this.sandbox.dispatch({
+      type:"selection.ungroup",
+      groupIds
+    });
+
+    if (changed) {
+      if (nextSelectionIds.length) this.#selectIds(nextSelectionIds);
+      else this.editor.selection.clear();
+      this.pendingDuplicate=null;
+    }
+
+    return {changed,groupIds,promotedIds};
   }
 
   duplicateMany(count = 1) {

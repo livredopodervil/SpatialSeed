@@ -197,6 +197,7 @@ export function bindWebInterface({
       $("edit-pivot").disabled = empty;
       $("duplicate-selection").disabled = empty;
       $("group-selection").disabled = empty;
+      $("ungroup-selection").disabled = empty;
       $("delete-selection").disabled = empty;
       $("inspector").disabled = empty;
       refreshUi();
@@ -358,6 +359,11 @@ export function bindWebInterface({
   $("group-selection").addEventListener(
     "click",
     () => execute("selection.group")
+  );
+
+  $("ungroup-selection").addEventListener(
+    "click",
+    () => execute("selection.ungroup")
   );
 
   $("repeat-duplicate").addEventListener(

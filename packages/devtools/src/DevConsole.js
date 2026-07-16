@@ -132,6 +132,10 @@ export class DevConsole {
       case "group":
         return this.#group(tokens);
 
+      case "ungroup":
+        this.#expectMaximum(tokens,0,"ungroup");
+        return this.commands.execute("selection.ungroup");
+
       case "repeat":
         this.#expectMaximum(tokens, 0, "repeat");
         return this.commands.execute("selection.repeat");
@@ -193,6 +197,7 @@ export class DevConsole {
         "scale sx sy sz",
         "duplicate",
         "group [nome]",
+        "ungroup",
         "duplicate count N [move|rotate|scale|pivot|matrix ...]",
         '  expressões: duplicate count 24 move "3*cos(i*pi/12)" 0 "3*sin(i*pi/12)"',
         '  rotação: rotate 0 "i*pi/12 rad" 0',

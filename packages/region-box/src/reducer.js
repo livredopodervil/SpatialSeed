@@ -3,7 +3,8 @@ import {
   groupNodes,
   hierarchySubtreeIds,
   HierarchyIndex,
-  reparentPreservingWorld
+  reparentPreservingWorld,
+  ungroupNodes
 } from "../../scene-hierarchy/src/index.js";
 
 function updateById(objects, id, updater) {
@@ -311,6 +312,29 @@ export function boxRegionReducer(state, command) {
           objectId:result.group.id,
           targetIds:result.targetIds
         }]
+      };
+    }
+
+    case "selection.ungroup": {
+      const result=ungroupNodes(state.objects,{
+        groupIds:command.groupIds
+      });
+      if (!result.groupIds.length) return {state,changes:[]};
+
+      return {
+        state:Object.freeze({...state,objects:result.nodes}),
+        changes:[
+          ...result.groupIds.map(objectId => ({
+            type:"object-deleted",
+            objectId,
+            source:"selection.ungroup"
+          })),
+          ...result.promotedIds.map(objectId => ({
+            type:"object-transform",
+            objectId,
+            source:"selection.ungroup"
+          }))
+        ]
       };
     }
 

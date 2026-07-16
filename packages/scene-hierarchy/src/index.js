@@ -6,3 +6,4 @@ export {
   cloneHierarchySubtrees,
   hierarchySubtreeIds
 } from "./SubtreeLifecycle.js";
+export { ungroupNodes } from "./Ungroup.js";

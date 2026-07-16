@@ -81,7 +81,8 @@ import {
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
-  HierarchyIndex
+  HierarchyIndex,
+  ungroupNodes
 } from "../../scene-hierarchy/src/index.js";
 import {
   affectedHierarchyIds,
@@ -1781,6 +1782,156 @@ assets: {
         assertDeepEqual(result.deletedIds,["group","child"]);
         assertEqual(sandbox.getSnapshot().objects.length,0);
         assertEqual(editor.selection.empty,true);
+        assertEqual(sandbox.undo(),true);
+        assertDeepEqual(sandbox.getState(),before);
+      }
+    },
+
+    "hierarchy-ungroup": {
+      "remove um nível e preserva transforms mundiais"() {
+        const sandbox=createGroupTransformSandbox();
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const childWorld=before.worldMatrixOf("child");
+
+        assertEqual(sandbox.dispatch({
+          type:"selection.ungroup",
+          groupIds:["group"]
+        }),true);
+
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertEqual(after.has("group"),false);
+        assertEqual(after.parentOf("child"),null);
+        assertMatricesNear(after.worldMatrixOf("child"),childWorld);
+      },
+
+      "grupo aninhado é promovido sem desagrupar dois níveis"() {
+        const sandbox=createGroupTransformSandbox({nested:true});
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const innerWorld=before.worldMatrixOf("inner");
+        const childWorld=before.worldMatrixOf("child");
+
+        sandbox.dispatch({
+          type:"selection.ungroup",
+          groupIds:["group","inner"]
+        });
+
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertEqual(after.has("group"),false);
+        assertEqual(after.has("inner"),true);
+        assertEqual(after.parentOf("inner"),null);
+        assertEqual(after.parentOf("child"),"inner");
+        assertMatricesNear(after.worldMatrixOf("inner"),innerWorld);
+        assertMatricesNear(after.worldMatrixOf("child"),childWorld);
+      },
+
+      "grupos irmãos são removidos na mesma operação"() {
+        const nodes=[
+          {id:"g1",kind:"group",position:[1,0,0]},
+          {id:"a",kind:"box",parentId:"g1",position:[2,0,0]},
+          {id:"g2",kind:"group",position:[-1,0,0]},
+          {id:"b",kind:"box",parentId:"g2",position:[-2,0,0]}
+        ];
+        const before=new HierarchyIndex(nodes);
+        const result=ungroupNodes(nodes,{groupIds:["g1","g2"]});
+        const after=new HierarchyIndex(result.nodes);
+
+        assertDeepEqual(result.groupIds,["g1","g2"]);
+        assertDeepEqual(result.promotedIds,["a","b"]);
+        assertMatricesNear(after.worldMatrixOf("a"),before.worldMatrixOf("a"));
+        assertMatricesNear(after.worldMatrixOf("b"),before.worldMatrixOf("b"));
+      },
+
+      "grupo vazio é removido sem criar referências"() {
+        const result=ungroupNodes([
+          {id:"empty",kind:"group"},
+          {id:"box",kind:"box"}
+        ],{groupIds:["empty"]});
+        assertDeepEqual(result.groupIds,["empty"]);
+        assertDeepEqual(result.promotedIds,[]);
+        assertDeepEqual(result.nodes.map(node => node.id),["box"]);
+      },
+
+      "cisalhamento impossível falha antes de alterar estado"() {
+        const region=new Region(
+          {id:"ungroup-shear",type:"box-region"},
+          {schemaVersion:1,objects:[
+            {
+              id:"group",
+              kind:"group",
+              scale:[2,1,1]
+            },
+            {
+              id:"child",
+              kind:"box",
+              parentId:"group",
+              rotation:eulerQuaternion([0,0,45])
+            }
+          ]}
+        );
+        const sandbox=new Sandbox(region,boxRegionReducer);
+        const before=sandbox.getState();
+        assertThrowsCode(
+          () => sandbox.dispatch({
+            type:"selection.ungroup",
+            groupIds:["group"]
+          }),
+          "NON_TRS_TRANSFORM"
+        );
+        assertDeepEqual(sandbox.getState(),before);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+
+      "superfície seleciona filhos promovidos"() {
+        const sandbox=createGroupTransformSandbox();
+        const editor=new EditorState();
+        editor.selection.replace({
+          kind:"object",
+          regionId:"region-main",
+          objectId:"group"
+        });
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"region-main"
+        });
+        const result=operations.ungroup();
+
+        assertEqual(result.changed,true);
+        assertDeepEqual(result.promotedIds,["child"]);
+        assertDeepEqual(
+          editor.selection.snapshot().members.map(member => member.objectId),
+          ["child"]
+        );
+      },
+
+      "seleção sem grupo é no-op explícito"() {
+        const sandbox=createGroupTransformSandbox();
+        const editor=new EditorState();
+        editor.selection.replace({
+          kind:"object",
+          regionId:"region-main",
+          objectId:"child"
+        });
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"region-main"
+        });
+        const result=operations.ungroup();
+
+        assertEqual(result.changed,false);
+        assertEqual(result.reason,"selection-has-no-groups");
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+
+      "desagrupar e undo restauram uma operação única"() {
+        const sandbox=createGroupTransformSandbox();
+        const before=sandbox.getState();
+        sandbox.dispatch({
+          type:"selection.ungroup",
+          groupIds:["group"]
+        });
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,1);
         assertEqual(sandbox.undo(),true);
         assertDeepEqual(sandbox.getState(),before);
       }

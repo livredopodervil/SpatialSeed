@@ -69,6 +69,9 @@ export function createEditorCommands({
           renderer.getSelectionPivotPosition()
       })
     )
+    .register("selection.ungroup", () =>
+      selectionOperations.ungroup()
+    )
     .register("selection.duplicateMany", ({ count }) =>
       selectionOperations.duplicateMany(count)
     )
