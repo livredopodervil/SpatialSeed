@@ -62,3 +62,7 @@ export function selectionUnitId(hierarchy, id) {
   }
   return selectedId;
 }
+
+export function selectionReferenceWorldPosition(hierarchy, id) {
+  return hierarchy.worldPivotOf(id);
+}

@@ -14,6 +14,7 @@ import {
   isRenderableSceneNode,
   projectedSubtreeIds,
   renderableSubtreeIds,
+  selectionReferenceWorldPosition,
   selectionUnitId
 } from "./WorldTransformProjection.js?build=20260715-0023d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -548,13 +549,9 @@ export class ThreeRegionRenderer {
       const activeId =
         this.#selectionSnapshot?.activeMember?.objectId;
 
-      const activeMesh = this.#meshes.get(activeId);
+      const center=this.#selectionReferencePosition(activeId);
 
-      if (activeMesh) {
-        const center = activeMesh.getWorldPosition(
-          new THREE.Vector3()
-        );
-
+      if (center) {
         const offset = new THREE.Vector3()
           .fromArray(world)
           .sub(center)
@@ -714,11 +711,11 @@ export class ThreeRegionRenderer {
 
   #calculatePivot() {
     const members = this.#selectionSnapshot?.members ?? [];
-    const meshes = members
-      .map(member => this.#meshes.get(member.objectId))
+    const references = members
+      .map(member => this.#selectionReferencePosition(member.objectId))
       .filter(Boolean);
 
-    if (!meshes.length) return null;
+    if (!references.length) return null;
 
     const policy = this.editorState.pivot.policy;
 
@@ -730,11 +727,10 @@ export class ThreeRegionRenderer {
         const activeId =
           this.#selectionSnapshot?.activeMember?.objectId;
 
-        const activeMesh = this.#meshes.get(activeId);
+        const activePosition=this.#selectionReferencePosition(activeId);
 
-        if (activeMesh) {
-          return activeMesh
-            .getWorldPosition(new THREE.Vector3())
+        if (activePosition) {
+          return activePosition
             .add(
               new THREE.Vector3().fromArray(
                 this.editorState.pivot.relativeOffset
@@ -752,10 +748,10 @@ export class ThreeRegionRenderer {
       const activeId =
         this.#selectionSnapshot?.activeMember?.objectId;
 
-      const activeMesh =
-        this.#meshes.get(activeId) ?? meshes.at(-1);
+      const activePosition=
+        this.#selectionReferencePosition(activeId) ?? references.at(-1);
 
-      return activeMesh.getWorldPosition(new THREE.Vector3());
+      return activePosition.clone();
     }
 
     if (policy === "bounds") {
@@ -770,11 +766,18 @@ export class ThreeRegionRenderer {
 
     const median = new THREE.Vector3();
 
-    for (const mesh of meshes) {
-      median.add(mesh.getWorldPosition(new THREE.Vector3()));
+    for (const position of references) {
+      median.add(position);
     }
 
-    return median.multiplyScalar(1 / meshes.length);
+    return median.multiplyScalar(1 / references.length);
+  }
+
+  #selectionReferencePosition(objectId) {
+    if (!objectId || !this.#hierarchy.has(objectId)) return null;
+    return new THREE.Vector3().fromArray(
+      selectionReferenceWorldPosition(this.#hierarchy,objectId)
+    );
   }
 
   #rebuildAnchor() {

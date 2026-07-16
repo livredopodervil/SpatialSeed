@@ -180,6 +180,21 @@ export class HierarchyIndex {
     return this.#worldMatrices.get(id);
   }
 
+  worldPointOf(id, point = [0,0,0]) {
+    const [x,y,z]=vector3(point,"Ponto local inválido.");
+    const matrix=this.worldMatrixOf(id);
+    return Object.freeze([
+      matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12],
+      matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13],
+      matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]
+    ]);
+  }
+
+  worldPivotOf(id) {
+    const node=this.node(id);
+    return this.worldPointOf(id,node.pivot ?? [0,0,0]);
+  }
+
   #assertKnown(id) {
     if (!this.#nodes.has(id)) {
       throw new HierarchyError(
@@ -227,4 +242,13 @@ function requiredId(value, message) {
 function optionalId(value) {
   if (value === null || value === undefined || value === "") return null;
   return requiredId(value,"Identificador de pai inválido.");
+}
+
+function vector3(value, message) {
+  if (!Array.isArray(value) || value.length !== 3) {
+    throw new TypeError(message);
+  }
+  const result=value.map(Number);
+  if (!result.every(Number.isFinite)) throw new TypeError(message);
+  return result;
 }

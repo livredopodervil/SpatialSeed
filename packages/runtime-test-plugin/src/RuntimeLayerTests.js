@@ -31,6 +31,7 @@ import {
   InstanceBatchManager
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
 import {
+  aroundPivot,
   composeAffineOperations,
   affineCopies,
   composeTransform,
@@ -86,6 +87,7 @@ import {
   isRenderableSceneNode,
   projectedSubtreeIds,
   renderableSubtreeIds,
+  selectionReferenceWorldPosition,
   selectionUnitId
 } from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
 import {
@@ -979,6 +981,24 @@ assets: {
         const world=decomposeTransformStrict(hierarchy.worldMatrixOf("child"));
         assertDeepEqual(world.position.map(roundAffine),[11,4,3]);
       },
+      "projeta pivô local no espaço mundial"() {
+        const hierarchy=new HierarchyIndex([
+          {id:"root",position:[10,0,0]},
+          {
+            id:"group",
+            kind:"group",
+            parentId:"root",
+            position:[1,2,0],
+            rotation:eulerQuaternion([0,0,90]),
+            scale:[2,2,2],
+            pivot:[1,0,0]
+          }
+        ]);
+        assertDeepEqual(
+          hierarchy.worldPivotOf("group").map(roundAffine),
+          [11,4,0]
+        );
+      },
       "cache mundial reutiliza referência imutável"() {
         const hierarchy=new HierarchyIndex(hierarchyFixture());
         const first=hierarchy.worldMatrixOf("child");
@@ -1414,6 +1434,145 @@ assets: {
       }
     },
 
+    "hierarchy-group-transform": {
+      "translação move pivô e subárvore pelo mesmo delta"() {
+        const sandbox=createGroupTransformSandbox();
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const pivotBefore=before.worldPivotOf("group");
+        const childBefore=before.worldMatrixOf("child");
+        const delta=composeTransform({position:[3,-1,2]});
+
+        commitWorldDelta(sandbox,"group",delta);
+
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertDeepEqual(
+          after.worldPivotOf("group").map(roundAffine),
+          transformPointForTest(delta,pivotBefore).map(roundAffine)
+        );
+        assertMatricesNear(
+          after.worldMatrixOf("child"),
+          multiplyMatrices(delta,childBefore)
+        );
+      },
+
+      "rotação mantém o pivô e gira toda a subárvore"() {
+        const sandbox=createGroupTransformSandbox();
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const pivot=before.worldPivotOf("group");
+        const childBefore=before.worldMatrixOf("child");
+        const delta=aroundPivot(
+          composeTransform({rotation:eulerQuaternion([0,0,90])}),
+          pivot
+        );
+
+        commitWorldDelta(sandbox,"group",delta);
+
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertDeepEqual(after.worldPivotOf("group").map(roundAffine),pivot);
+        assertMatricesNear(
+          after.worldMatrixOf("child"),
+          multiplyMatrices(delta,childBefore)
+        );
+      },
+
+      "escala mantém o pivô e escala toda a subárvore"() {
+        const sandbox=createGroupTransformSandbox();
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const pivot=before.worldPivotOf("group");
+        const childBefore=before.worldMatrixOf("child");
+        const delta=aroundPivot(
+          composeTransform({scale:[2,3,0.5]}),
+          pivot
+        );
+
+        commitWorldDelta(sandbox,"group",delta);
+
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertDeepEqual(after.worldPivotOf("group").map(roundAffine),pivot);
+        assertMatricesNear(
+          after.worldMatrixOf("child"),
+          multiplyMatrices(delta,childBefore)
+        );
+      },
+
+      "sequência mover girar e escalar mantém resultado exato"() {
+        const sandbox=createGroupTransformSandbox();
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const pivot=before.worldPivotOf("group");
+        const childBefore=before.worldMatrixOf("child");
+        const rotateAndScale=aroundPivot(
+          composeTransform({
+            rotation:eulerQuaternion([0,0,45]),
+            scale:[1.5,1.5,1.5]
+          }),
+          pivot
+        );
+        const delta=multiplyMatrices(
+          composeTransform({position:[-2,4,1]}),
+          rotateAndScale
+        );
+
+        commitWorldDelta(sandbox,"group",delta);
+
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertDeepEqual(
+          after.worldPivotOf("group").map(roundAffine),
+          transformPointForTest(delta,pivot).map(roundAffine)
+        );
+        assertMatricesNear(
+          after.worldMatrixOf("child"),
+          multiplyMatrices(delta,childBefore)
+        );
+      },
+
+      "grupo aninhado preserva relações locais internas"() {
+        const sandbox=createGroupTransformSandbox({nested:true});
+        const stateBefore=sandbox.getSnapshot();
+        const innerBefore=findHierarchyNode(stateBefore,"inner");
+        const childBefore=findHierarchyNode(stateBefore,"child");
+        const hierarchyBefore=new HierarchyIndex(stateBefore.objects);
+        const childWorldBefore=hierarchyBefore.worldMatrixOf("child");
+        const pivot=hierarchyBefore.worldPivotOf("group");
+        const delta=aroundPivot(
+          composeTransform({
+            rotation:eulerQuaternion([0,45,0]),
+            scale:[2,2,2]
+          }),
+          pivot
+        );
+
+        commitWorldDelta(sandbox,"group",delta);
+
+        const stateAfter=sandbox.getSnapshot();
+        const hierarchyAfter=new HierarchyIndex(stateAfter.objects);
+        assertDeepEqual(findHierarchyNode(stateAfter,"inner"),innerBefore);
+        assertDeepEqual(findHierarchyNode(stateAfter,"child"),childBefore);
+        assertMatricesNear(
+          hierarchyAfter.worldMatrixOf("child"),
+          multiplyMatrices(delta,childWorldBefore)
+        );
+        assertDeepEqual(hierarchyAfter.worldPivotOf("group").map(roundAffine),pivot);
+      },
+
+      "undo e redo restauram transform e pivô exatamente"() {
+        const sandbox=createGroupTransformSandbox();
+        const before=sandbox.getState();
+        const hierarchy=new HierarchyIndex(before.objects);
+        const pivot=hierarchy.worldPivotOf("group");
+        const delta=aroundPivot(
+          composeTransform({scale:[2,2,2]}),
+          pivot
+        );
+
+        commitWorldDelta(sandbox,"group",delta);
+        const transformed=sandbox.getState();
+        assertEqual(sandbox.undo(),true);
+        assertDeepEqual(sandbox.getState(),before);
+        assertEqual(sandbox.redo(),true);
+        assertDeepEqual(sandbox.getState(),transformed);
+      }
+    },
+
     "build-info": {
       "normaliza e congela manifesto explícito"() {
         const info=normalizeBuildInfo({
@@ -1444,6 +1603,21 @@ assets: {
     },
 
     "hierarchy-group-visuals": {
+      "referência do gizmo coincide com pivô mundial do grupo"() {
+        const hierarchy=new HierarchyIndex([{
+          id:"group",
+          kind:"group",
+          position:[4,2,1],
+          rotation:eulerQuaternion([0,0,90]),
+          scale:[2,2,2],
+          pivot:[1,0,0]
+        }]);
+        assertDeepEqual(
+          selectionReferenceWorldPosition(hierarchy,"group")
+            .map(roundAffine),
+          [4,4,1]
+        );
+      },
       "preview de grupo inclui toda a subárvore uma vez"() {
         const hierarchy=new HierarchyIndex([
           {id:"outer",kind:"group"},
@@ -3476,6 +3650,65 @@ function assertThrowsCode(callback, expectedCode) {
 
 function round(value) {
   return Math.round(value * 1000) / 1000;
+}
+
+function createGroupTransformSandbox({nested=false}={}) {
+  const group={
+    id:"group",
+    kind:"group",
+    position:[4,2,1],
+    rotation:[0,0,0,1],
+    scale:[1,1,1],
+    pivot:[1,0,0]
+  };
+  const child={
+    id:"child",
+    kind:"box",
+    parentId:nested ? "inner" : "group",
+    position:[3,1,0],
+    rotation:eulerQuaternion([0,0,15]),
+    scale:[1,1,1],
+    size:[2,2,2]
+  };
+  const objects=nested
+    ? [
+        group,
+        {
+          id:"inner",
+          kind:"group",
+          parentId:"group",
+          position:[1,0,2],
+          rotation:eulerQuaternion([0,0,30]),
+          scale:[1,1,1],
+          pivot:[0,0,0]
+        },
+        child
+      ]
+    : [group,child];
+  const region=new Region(
+    {id:"group-transform-test",type:"box-region"},
+    {schemaVersion:1,objects}
+  );
+  return new Sandbox(region,boxRegionReducer);
+}
+
+function commitWorldDelta(sandbox, objectId, delta) {
+  const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
+  return sandbox.dispatch({
+    type:"selection.transform-world",
+    transforms:[{
+      id:objectId,
+      worldMatrix:multiplyMatrices(delta,hierarchy.worldMatrixOf(objectId))
+    }]
+  });
+}
+
+function transformPointForTest(matrix, [x,y,z]) {
+  return [
+    matrix[0]*x+matrix[4]*y+matrix[8]*z+matrix[12],
+    matrix[1]*x+matrix[5]*y+matrix[9]*z+matrix[13],
+    matrix[2]*x+matrix[6]*y+matrix[10]*z+matrix[14]
+  ];
 }
 
 function hierarchyFixture() {
