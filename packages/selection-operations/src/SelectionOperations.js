@@ -42,6 +42,45 @@ export class SelectionOperations {
     return this.duplicateMany(1);
   }
 
+  group({
+    groupId=crypto.randomUUID(),
+    name=null,
+    anchorWorldPosition,
+    pivot=[0,0,0]
+  }={}) {
+    const targetIds=this.editor.selection.snapshot().members
+      .map(member => member.objectId);
+
+    if (!targetIds.length) {
+      return {
+        changed:false,
+        groupId:null,
+        targetIds:[],
+        reason:"selection-empty"
+      };
+    }
+
+    const changed=this.sandbox.dispatch({
+      type:"selection.group",
+      groupId,
+      targetIds,
+      name,
+      anchorWorldPosition,
+      pivot
+    });
+
+    if (changed) {
+      this.#selectIds([groupId]);
+      this.pendingDuplicate=null;
+    }
+
+    return {
+      changed,
+      groupId:changed ? groupId : null,
+      targetIds:[...targetIds]
+    };
+  }
+
   duplicateMany(count = 1) {
     const copies = Number(count);
     if (!Number.isInteger(copies) || copies < 1 || copies > 100000) {

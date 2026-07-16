@@ -85,7 +85,8 @@ import {
   applyProjectedWorldMatrix,
   isRenderableSceneNode,
   projectedSubtreeIds,
-  renderableSubtreeIds
+  renderableSubtreeIds,
+  selectionUnitId
 } from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
 import {
   formatBuildLabel,
@@ -1421,6 +1422,109 @@ assets: {
           renderableSubtreeIds(hierarchy,"box"),
           ["box"]
         );
+      }
+    },
+
+    "hierarchy-group-surfaces": {
+      "operação agrupa seleção e seleciona o novo grupo"() {
+        const sandbox=createHierarchySandbox();
+        const editor=new EditorState();
+        editor.selection.replaceMany([
+          {kind:"object",regionId:"region-main",objectId:"moving"},
+          {kind:"object",regionId:"region-main",objectId:"nested"}
+        ]);
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"region-main"
+        });
+        const result=operations.group({
+          groupId:"surface-group",
+          name:"Grupo de superfície",
+          anchorWorldPosition:[6,2,0]
+        });
+        const group=findHierarchyNode(
+          sandbox.getSnapshot(),
+          "surface-group"
+        );
+        assertEqual(result.changed,true);
+        assertEqual(group.kind,"group");
+        assertEqual(group.name,"Grupo de superfície");
+        assertDeepEqual(
+          editor.selection.snapshot().members.map(member => member.objectId),
+          ["surface-group"]
+        );
+      },
+      "âncora explícita coincide com o pivô mundial"() {
+        const sandbox=createHierarchySandbox();
+        const editor=new EditorState();
+        editor.selection.replace({
+          kind:"object",
+          regionId:"region-main",
+          objectId:"moving"
+        });
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"region-main"
+        });
+        operations.group({
+          groupId:"pivot-group",
+          anchorWorldPosition:[7,8,9]
+        });
+        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const world=hierarchy.worldMatrixOf("pivot-group");
+        assertDeepEqual(
+          [world[12],world[13],world[14]].map(roundAffine),
+          [7,8,9]
+        );
+      },
+      "seleção vazia não cria grupo nem histórico"() {
+        const sandbox=createHierarchySandbox();
+        const editor=new EditorState();
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"region-main"
+        });
+        const result=operations.group({groupId:"unused"});
+        assertEqual(result.changed,false);
+        assertEqual(result.reason,"selection-empty");
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+      "console traduz group para a mesma entrada runtime"() {
+        const calls=[];
+        const console=new DevConsole({
+          editor:{selection:new Selection()},
+          sandbox:{},
+          region:{},
+          renderer:{},
+          getDiagnostics:() => ({}),
+          commands:{
+            describe:() => [],
+            execute(id,args) {
+              calls.push({id,args});
+              return {changed:true,groupId:"console-group"};
+            }
+          }
+        });
+        const entry=console.execute('group "Cidade Procedural"')[0];
+        assertEqual(entry.ok,true);
+        assertDeepEqual(calls,[{
+          id:"selection.group",
+          args:{name:"Cidade Procedural"}
+        }]);
+      },
+      "clique em descendente resolve o grupo mais externo"() {
+        const hierarchy=new HierarchyIndex([
+          {id:"outer",kind:"group"},
+          {id:"inner",kind:"group",parentId:"outer"},
+          {id:"box",kind:"box",parentId:"inner"},
+          {id:"loose",kind:"box"}
+        ]);
+        assertEqual(selectionUnitId(hierarchy,"box"),"outer");
+        assertEqual(selectionUnitId(hierarchy,"inner"),"outer");
+        assertEqual(selectionUnitId(hierarchy,"loose"),"loose");
       }
     },
 

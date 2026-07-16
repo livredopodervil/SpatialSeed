@@ -61,6 +61,14 @@ export function createEditorCommands({
     .register("selection.duplicate", () =>
       selectionOperations.duplicate()
     )
+    .register("selection.group", (args = {}) =>
+      selectionOperations.group({
+        ...args,
+        anchorWorldPosition:
+          args.anchorWorldPosition ??
+          renderer.getSelectionPivotPosition()
+      })
+    )
     .register("selection.duplicateMany", ({ count }) =>
       selectionOperations.duplicateMany(count)
     )

@@ -129,6 +129,9 @@ export class DevConsole {
       case "duplicate":
         return this.#duplicate(tokens);
 
+      case "group":
+        return this.#group(tokens);
+
       case "repeat":
         this.#expectMaximum(tokens, 0, "repeat");
         return this.commands.execute("selection.repeat");
@@ -189,6 +192,7 @@ export class DevConsole {
         "rotate xDeg yDeg zDeg",
         "scale sx sy sz",
         "duplicate",
+        "group [nome]",
         "duplicate count N [move|rotate|scale|pivot|matrix ...]",
         '  expressões: duplicate count 24 move "3*cos(i*pi/12)" 0 "3*sin(i*pi/12)"',
         '  rotação: rotate 0 "i*pi/12 rad" 0',
@@ -230,6 +234,14 @@ export class DevConsole {
     return this.commands.execute("object.create.box", {
       position: tokens.map(value => this.#number(value))
     });
+  }
+
+  #group(tokens) {
+    const name=tokens.join(" ").trim();
+    return this.commands.execute(
+      "selection.group",
+      name ? { name } : {}
+    );
   }
 
   #property(tokens) {

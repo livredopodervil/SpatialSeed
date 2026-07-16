@@ -13,7 +13,8 @@ import {
   applyProjectedWorldMatrix,
   isRenderableSceneNode,
   projectedSubtreeIds,
-  renderableSubtreeIds
+  renderableSubtreeIds,
+  selectionUnitId
 } from "./WorldTransformProjection.js?build=20260715-0023d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -221,13 +222,15 @@ export class ThreeRegionRenderer {
   }
 
   selectScreenRect(rectangle, operation = this.#selectionOperation) {
-    const r = this.canvas.getBoundingClientRect(), members = [];
+    const r = this.canvas.getBoundingClientRect(), byId = new Map();
     for (const [objectId, proxy] of this.#meshes) {
+      if (proxy.userData.logicalOnly) continue;
       const p = proxy.getWorldPosition(new THREE.Vector3()).project(this.camera);
       if (p.z < -1 || p.z > 1) continue;
       const x=(p.x+1)*.5*r.width,y=(1-p.y)*.5*r.height;
-      if(x>=rectangle.left&&x<=rectangle.right&&y>=rectangle.top&&y<=rectangle.bottom)members.push({kind:"object",regionId:"region-main",objectId});
+      if(x>=rectangle.left&&x<=rectangle.right&&y>=rectangle.top&&y<=rectangle.bottom){const selectedId=this.#hierarchy.has(objectId)?selectionUnitId(this.#hierarchy,objectId):objectId;byId.set(selectedId,{kind:"object",regionId:"region-main",objectId:selectedId})}
     }
+    const members=[...byId.values()];
     this.#applySelectionMembers(members, operation);
     return { operation, selected: members.length, selection: this.selection.snapshot() };
   }
@@ -887,9 +890,13 @@ export class ThreeRegionRenderer {
       axis: this.transform.axis,
       dragging: this.transform.dragging,
       pivotPolicy: this.editorState.pivot.policy,
-      pivotPosition: this.transformAnchor.position.toArray(),
+      pivotPosition: this.getSelectionPivotPosition(),
       selection: this.#selectionSnapshot
     };
+  }
+
+  getSelectionPivotPosition() {
+    return this.#calculatePivot()?.toArray() ?? null;
   }
 
   #updateSelectionAppearance() {
@@ -958,7 +965,7 @@ export class ThreeRegionRenderer {
       false
     );
 
-    const hitIds=[...new Set(hits.map(h=>this.#batchManager.objectFromHit(h)).filter(Boolean))];
+    const hitIds=[...new Set(hits.map(h=>this.#batchManager.objectFromHit(h)).filter(Boolean).map(id=>this.#hierarchy.has(id)?selectionUnitId(this.#hierarchy,id):id))];
     const objectId=this.#cycledHitId(hitIds,event.clientX,event.clientY);
     this.#inputDiagnostics.objectHits=hitIds.length;
 

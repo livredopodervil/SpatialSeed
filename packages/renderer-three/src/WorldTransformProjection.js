@@ -48,3 +48,17 @@ export function renderableSubtreeIds(hierarchy, id) {
     )
   );
 }
+
+export function selectionUnitId(hierarchy, id) {
+  hierarchy.node(id);
+  let selectedId=id;
+  let cursor=id;
+
+  while (cursor !== null) {
+    if (hierarchy.node(cursor).kind === "group") {
+      selectedId=cursor;
+    }
+    cursor=hierarchy.parentOf(cursor);
+  }
+  return selectedId;
+}
