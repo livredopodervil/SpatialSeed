@@ -245,3 +245,230 @@ input[data-scrubbable="true"]{
     height:min(58vh,560px);
   }
 }
+
+/* 0024f — composição declarativa e compacta da barra */
+.ss-toolbar-menu{
+  position:relative;
+}
+.ss-toolbar-menu>summary{
+  list-style:none;
+  cursor:pointer;
+  border:1px solid #ffffff2b;
+  background:#111827e8;
+  color:#fff;
+  border-radius:999px;
+  padding:.48rem .75rem;
+  white-space:nowrap;
+}
+.ss-toolbar-menu>summary::-webkit-details-marker{display:none}
+.ss-toolbar-menu>summary::after{
+  content:"▾";
+  margin-left:.38rem;
+  font-size:.72em;
+  opacity:.75;
+}
+.ss-toolbar-menu[open]>summary{
+  outline:2px solid #ffffff66;
+  background:#263a59f2;
+}
+.ss-toolbar-menu-content{
+  position:absolute;
+  top:calc(100% + .38rem);
+  left:0;
+  display:grid;
+  grid-template-columns:minmax(12rem,auto);
+  gap:.32rem;
+  min-width:13rem;
+  max-height:min(70dvh,36rem);
+  overflow:auto;
+  padding:.48rem;
+  border:1px solid #ffffff28;
+  border-radius:12px;
+  background:#08101af8;
+  box-shadow:0 .7rem 2rem #0009;
+  backdrop-filter:blur(12px);
+}
+.ss-toolbar-menu-content>button,
+.ss-toolbar-menu-content>select{
+  width:100%;
+  min-width:0;
+  text-align:left;
+  border-radius:8px;
+}
+.ss-toolbar-menu-content>select{text-align-last:left}
+@media(max-width:700px){
+  #toolbar{
+    overflow:visible;
+  }
+  #toolbar>#status{
+    position:fixed;
+    top:var(--ss-toolbar-clearance,3.4rem);
+    right:.55rem;
+    max-width:70vw;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    pointer-events:none;
+  }
+  #toolbar:has(.ss-toolbar-menu[open])>#status{opacity:0}
+  .ss-toolbar-menu>summary{
+    font-size:.73rem;
+    padding:.42rem .56rem;
+  }
+  .ss-toolbar-menu-content{
+    position:fixed;
+    top:var(--ss-toolbar-clearance,3.35rem);
+    left:.45rem;
+    right:.45rem;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    min-width:0;
+    max-height:60dvh;
+  }
+}
+
+/* 0024g — criação geométrica e retorno da cena */
+#geometry-create-panel{
+  position:fixed;
+  z-index:28;
+  top:var(--ss-toolbar-clearance,4rem);
+  right:.55rem;
+  width:min(430px,calc(100vw - 1.1rem));
+  max-height:calc(100dvh - var(--ss-toolbar-clearance,4rem) - .55rem);
+  overflow:auto;
+  border:1px solid #ffffff22;
+  border-radius:14px;
+  background:#08101af7;
+}
+#geometry-create-panel>header{
+  position:sticky;
+  top:0;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.65rem;
+  border-bottom:1px solid #ffffff18;
+  background:#08101af7;
+}
+#geometry-create-panel>header strong{flex:1}
+#geometry-create-form{display:grid;gap:.65rem;padding:.7rem}
+#geometry-create-form fieldset{
+  margin:0;
+  border:1px solid #ffffff18;
+  border-radius:10px;
+}
+.geometry-field{
+  display:grid;
+  grid-template-columns:9rem minmax(0,1fr);
+  gap:.5rem;
+  align-items:center;
+}
+.geometry-field input,.geometry-field select,
+.geometry-vector input{
+  width:100%;
+  min-width:0;
+  padding:.42rem;
+  border:1px solid #ffffff22;
+  border-radius:8px;
+  background:#02060c;
+  color:#edf4ff;
+}
+.geometry-field-editor{min-width:0}
+.geometry-vector{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.35rem;
+}
+[data-geometry-parameters]{display:grid;gap:.55rem}
+[data-geometry-result]{
+  min-height:1.5rem;
+  color:#91a4bc;
+  overflow-wrap:anywhere;
+}
+[data-geometry-result][data-status="error"]{color:#ff9b9b}
+.geometry-series{display:grid;gap:.55rem}
+.geometry-series small{color:#91a4bc;line-height:1.4}
+#scene-exit-hotspot{display:none}
+body.ss-scene-only #scene-exit-hotspot{
+  display:block!important;
+  position:fixed;
+  z-index:2000;
+  width:var(--ss-scene-exit-size,64px);
+  height:var(--ss-scene-exit-size,64px);
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  opacity:0;
+  touch-action:manipulation;
+}
+#scene-exit-hotspot[data-corner="top-left"]{top:0;left:0}
+#scene-exit-hotspot[data-corner="top-right"]{top:0;right:0}
+#scene-exit-hotspot[data-corner="bottom-left"]{bottom:0;left:0}
+#scene-exit-hotspot[data-corner="bottom-right"]{right:0;bottom:0}
+
+/* 0024h — disposição da barra e orientação do modo cena */
+.ss-toolbar-drag-handle{display:none;cursor:grab;touch-action:none}
+.ss-toolbar-drag-handle:active{cursor:grabbing}
+#toolbar[data-layout="vertical"]{
+  right:auto;
+  bottom:.45rem;
+  width:max-content;
+  max-width:min(12rem,45vw);
+  flex-direction:column;
+  flex-wrap:nowrap;
+  align-items:stretch;
+  align-content:flex-start;
+  overflow-y:auto;
+  padding-right:.15rem;
+}
+#toolbar[data-layout="vertical"]>button,
+#toolbar[data-layout="vertical"]>.ss-toolbar-menu>summary{
+  width:100%;
+  text-align:center;
+}
+#toolbar[data-layout="vertical"] .ss-toolbar-menu-content{
+  position:fixed;
+  top:.45rem;
+  left:var(--ss-toolbar-left-clearance,8rem);
+  right:.45rem;
+  grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));
+  max-height:calc(100dvh - .9rem);
+}
+#toolbar[data-layout="floating"]{
+  right:auto;
+  width:min(42rem,calc(100vw - 1rem));
+  padding:.38rem;
+  border:1px solid #ffffff24;
+  border-radius:14px;
+  background:#08101adf;
+  box-shadow:0 .7rem 2rem #0008;
+  backdrop-filter:blur(10px);
+}
+#toolbar[data-layout="floating"]>.ss-toolbar-drag-handle{display:inline-block}
+#toolbar[data-layout="vertical"]>#status,
+#toolbar[data-layout="floating"]>#status{display:none}
+html[data-toolbar-layout="vertical"] #selection-panel{
+  left:var(--ss-toolbar-left-clearance,.55rem);
+  width:min(350px,calc(100vw - var(--ss-toolbar-left-clearance,.55rem) - .55rem));
+}
+#scene-help-dialog{
+  width:min(26rem,calc(100vw - 2rem));
+  padding:0;
+  border:1px solid #ffffff2b;
+  border-radius:16px;
+  background:#0b111bf8;
+  color:#edf4ff;
+  box-shadow:0 1rem 4rem #000c;
+}
+#scene-help-dialog::backdrop{background:#02060cb8;backdrop-filter:blur(3px)}
+#scene-help-dialog form{display:grid;gap:.85rem;padding:1.1rem}
+#scene-help-dialog h2,#scene-help-dialog p{margin:0}
+#scene-help-dialog p{line-height:1.45;color:#cbd7e8}
+#scene-help-dialog kbd{
+  padding:.1rem .35rem;
+  border:1px solid #ffffff2b;
+  border-radius:5px;
+  background:#02060c;
+}
+.scene-help-choice{display:flex;gap:.5rem;align-items:center}

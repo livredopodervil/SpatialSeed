@@ -1,9 +1,10 @@
-import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields } from "../../../packages/ui-widgets/src/index.js?build=20260714-0021b";
+import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024i";
 
 export function bindWebInterface({
   runtime,
   web,
   buildInfo,
+  uiConfiguration,
   documentRoot = document
 }) {
   const $ = id => documentRoot.getElementById(id);
@@ -34,8 +35,67 @@ export function bindWebInterface({
   let statusTimer = null;
   let latestSelection = runtime.query("selection.snapshot");
   let latestEditor = runtime.query("editor.snapshot");
+  const toolbarBinding = composeToolbar({
+    root: documentRoot,
+    configuration: uiConfiguration?.toolbar
+  });
+  const sceneExit = uiConfiguration?.presentation?.sceneExit ?? {
+    corner: "top-left",
+    size: 64
+  };
+  $("scene-exit-hotspot").dataset.corner = sceneExit.corner;
+  $("scene-exit-hotspot").style.setProperty(
+    "--ss-scene-exit-size",
+    `${sceneExit.size}px`
+  );
+  const sceneHelpDialog = $("scene-help-dialog");
+  const sceneHelpSuppress = $("scene-help-suppress");
+  const sceneHelpStorageKey = sceneExit.helpStorageKey;
+  const cornerLabels = {
+    "top-left":"superior esquerdo",
+    "top-right":"superior direito",
+    "bottom-left":"inferior esquerdo",
+    "bottom-right":"inferior direito"
+  };
+  $("scene-help-message").textContent =
+    `Para restaurar a interface, toque no canto ${
+      cornerLabels[sceneExit.corner]
+    } da cena.`;
+  const isSceneHelpSuppressed = () => {
+    try {
+      return localStorage.getItem(sceneHelpStorageKey) === "suppressed";
+    } catch {
+      return false;
+    }
+  };
+  const showSceneHelp = ({ manual = false } = {}) => {
+    const suppressed = isSceneHelpSuppressed();
+    if (suppressed && !manual) return false;
+    sceneHelpSuppress.checked = suppressed;
+    if (typeof sceneHelpDialog.showModal === "function") {
+      if (!sceneHelpDialog.open) sceneHelpDialog.showModal();
+    } else {
+      sceneHelpDialog.setAttribute("open", "");
+    }
+    return true;
+  };
+  sceneHelpDialog.addEventListener("close", () => {
+    try {
+      if (sceneHelpSuppress.checked) {
+        localStorage.setItem(sceneHelpStorageKey, "suppressed");
+      } else {
+        localStorage.removeItem(sceneHelpStorageKey);
+      }
+    } catch {}
+  });
+  sceneHelpDialog.addEventListener("cancel", event => {
+    event.preventDefault();
+    sceneHelpDialog.close();
+    if (sceneOnly) setSceneOnly(false);
+  });
   const panelManager = new FloatingPanelManager({
-    root: documentRoot
+    root: documentRoot,
+    storageKey: uiConfiguration?.panels?.storageKey
   });
   for (const selector of [
     "#outline",
@@ -44,9 +104,14 @@ export function bindWebInterface({
     "#developer-panel",
     "#console-panel",
     "#inspector-panel",
-    "#transform-tools-panel"
+    "#transform-tools-panel",
+    "#geometry-create-panel"
   ]) {
-    panelManager.register(selector);
+    panelManager.register(selector, {
+      defaultLayout: uiConfiguration?.panels?.items?.[
+        selector.replace(/^#/, "")
+      ]
+    });
   }
   attachScrubbableFields(documentRoot);
   const marquee=new SelectionMarquee({canvas:$("world"),element:$("selection-marquee"),onComplete:r=>renderer.selectScreenRect(r,latestEditor.selectionOperation)});
@@ -283,12 +348,14 @@ export function bindWebInterface({
   );
 
   $("structure").addEventListener("click", () => {
-    $("outline").hidden = !$("outline").hidden;
+    $("outline").hidden
+      ? panelManager.show("#outline")
+      : panelManager.hide("#outline");
   });
 
   $("close-outline").addEventListener(
     "click",
-    () => { $("outline").hidden = true; }
+    () => panelManager.hide("#outline")
   );
 
   $("project-save").addEventListener("click", () => {
@@ -343,12 +410,12 @@ export function bindWebInterface({
     $("diagnostic-content").value =
       JSON.stringify(diagnostics, null, 2);
 
-    $("diagnostic-panel").hidden = false;
+    panelManager.show("#diagnostic-panel");
   });
 
   $("close-diagnostics").addEventListener(
     "click",
-    () => { $("diagnostic-panel").hidden = true; }
+    () => panelManager.hide("#diagnostic-panel")
   );
 
   $("duplicate-selection").addEventListener(
@@ -377,23 +444,32 @@ export function bindWebInterface({
   );
 
   $("transform-tools").addEventListener("click", () => {
-    $("transform-tools-panel").hidden = false;
+    panelManager.show("#transform-tools-panel");
     transformToolPanel.refresh();
   });
 
   $("close-transform-tools").addEventListener(
     "click",
-    () => { $("transform-tools-panel").hidden = true; }
+    () => panelManager.hide("#transform-tools-panel")
+  );
+
+  $("geometry-create").addEventListener("click", () => {
+    panelManager.show("#geometry-create-panel");
+  });
+
+  $("close-geometry-create").addEventListener(
+    "click",
+    () => panelManager.hide("#geometry-create-panel")
   );
 
   $("inspector").addEventListener("click", () => {
-    $("inspector-panel").hidden = false;
+    panelManager.show("#inspector-panel");
     objectInspector.refresh();
   });
 
   $("close-inspector").addEventListener(
     "click",
-    () => { $("inspector-panel").hidden = true; }
+    () => panelManager.hide("#inspector-panel")
   );
 
   $("developer").addEventListener("click", () => {
@@ -506,6 +582,7 @@ export function bindWebInterface({
   }
 
   function setSceneOnly(enabled) {
+    const entering = Boolean(enabled) && !sceneOnly;
     sceneOnly = Boolean(enabled);
     documentRoot.body.classList.toggle("ss-scene-only", sceneOnly);
     $("scene-only").dataset.active = sceneOnly ? "true" : "false";
@@ -513,6 +590,7 @@ export function bindWebInterface({
       "aria-pressed",
       sceneOnly ? "true" : "false"
     );
+    if (entering) showSceneHelp();
     return sceneOnly;
   }
 
@@ -549,6 +627,14 @@ export function bindWebInterface({
     "click",
     () => setSceneOnly(!sceneOnly)
   );
+  $("scene-exit-hotspot").addEventListener(
+    "click",
+    () => setSceneOnly(false)
+  );
+  $("scene-help").addEventListener(
+    "click",
+    () => showSceneHelp({ manual:true })
+  );
   $("viewport-fullscreen").addEventListener(
     "click",
     toggleViewportFullscreen
@@ -559,6 +645,7 @@ export function bindWebInterface({
   );
 
   documentRoot.addEventListener("keydown", event => {
+    if (sceneHelpDialog.open) return;
     if (isTextEditingTarget(event.target)) return;
 
     if (event.key === "Tab") {
@@ -583,17 +670,17 @@ export function bindWebInterface({
   $("review").addEventListener("click", () => {
     $("review-content").textContent =
       JSON.stringify(sandbox.createProposal(), null, 2);
-    $("review-panel").hidden = false;
+    panelManager.show("#review-panel");
   });
 
   $("close-review").addEventListener(
     "click",
-    () => { $("review-panel").hidden = true; }
+    () => panelManager.hide("#review-panel")
   );
 
   $("cancel-proposal").addEventListener(
     "click",
-    () => { $("review-panel").hidden = true; }
+    () => panelManager.hide("#review-panel")
   );
 
   $("confirm-proposal").addEventListener("click", () => {
@@ -605,7 +692,7 @@ export function bindWebInterface({
 
     if (result.accepted) {
       sandbox.rebaseFromRegion();
-      $("review-panel").hidden = true;
+      panelManager.hide("#review-panel");
     }
   });
 
@@ -627,6 +714,7 @@ export function bindWebInterface({
         "fullscreenchange",
         refreshFullscreenButton
       );
+      toolbarBinding.dispose();
       panelManager.dispose();
     }
   });

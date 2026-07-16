@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "profile": "touch-compact",
+  "toolbar": {
+    "layout": "horizontal",
+    "storageKey": "spatialseed.ui.toolbar.v1",
+    "primary": [
+      "tool-navigate",
+      "tool-select",
+      "tool-translate",
+      "tool-rotate",
+      "tool-scale",
+      "multi-select",
+      "duplicate-selection",
+      "repeat-duplicate",
+      "delete-selection",
+      "geometry-create",
+      "scene-only",
+      "viewport-fullscreen"
+    ],
+    "menus": [
+      {
+        "id": "transform",
+        "label": "Transformar",
+        "items": [
+          "space",
+          "transform-tools"
+        ]
+      },
+      {
+        "id": "selection",
+        "label": "Seleção",
+        "items": [
+          "selection-replace",
+          "selection-add",
+          "selection-remove",
+          "selection-toggle",
+          "area-selection",
+          "clear-selection",
+          "pivot-policy",
+          "edit-pivot"
+        ]
+      },
+      {
+        "id": "edit",
+        "label": "Editar",
+        "items": [
+          "group-selection",
+          "ungroup-selection",
+          "undo",
+          "redo"
+        ]
+      },
+      {
+        "id": "panels",
+        "label": "Painéis",
+        "items": [
+          "structure",
+          "review",
+          "diagnostics",
+          "developer",
+          "console",
+          "inspector",
+          "toolbar-layout",
+          "scene-help"
+        ]
+      },
+      {
+        "id": "project",
+        "label": "Projeto",
+        "items": [
+          "project-save",
+          "project-open",
+          "project-new"
+        ]
+      }
+    ],
+    "hidden": ["add-box"]
+  },
+  "panels": {
+    "storageKey": "spatialseed.ui.layout.v2",
+    "items": {
+      "outline": { "anchor": "right", "top": "toolbar", "width": 430, "height": 520 },
+      "review-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 420 },
+      "diagnostic-panel": { "anchor": "right", "top": "toolbar", "width": 520, "height": 520 },
+      "developer-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
+      "console-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
+      "inspector-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
+      "transform-tools-panel": { "anchor": "left", "top": "toolbar", "width": 410, "height": 540 },
+      "geometry-create-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 }
+    }
+  },
+  "presentation": {
+    "transform": {
+      "size": 0.8,
+      "showX": true,
+      "showY": true,
+      "showZ": true,
+      "showVertices": false,
+      "vertexSize": 5
+    },
+    "sceneExit": {
+      "corner": "top-left",
+      "size": 64,
+      "helpStorageKey": "spatialseed.ui.scene-help.v1"
+    }
+  }
+}

@@ -7,6 +7,7 @@ import {
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
 import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
+import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
 import {
   affectedHierarchyIds,
@@ -28,6 +29,7 @@ export class ThreeRegionRenderer {
   #tap = null;
   #textureLoader = new THREE.TextureLoader();
   #projectObject = object => object;
+  #geometryRegistry = null;
   #resourceCache = new ThreeResourceCache({ textureLoader: this.#textureLoader });
   #materialCache = new BatchMaterialCache({ resourceCache: this.#resourceCache });
   #batchManager = null;
@@ -93,17 +95,23 @@ export class ThreeRegionRenderer {
       dispatch,
       selection,
       editorState,
+      geometryRegistry = createDefaultGeometryRegistry(),
       projectObject = object => object
     }
   ) {
     if (typeof dispatch !== "function") throw new TypeError("dispatch must be a function");
     if (!selection?.subscribe) throw new TypeError("selection object is incompatible");
     if (!editorState?.subscribe) throw new TypeError("editorState object is incompatible");
+    if (!geometryRegistry?.key || !geometryRegistry?.create ||
+        !geometryRegistry?.describeLegacyObject) {
+      throw new TypeError("geometryRegistry object is incompatible");
+    }
 
     this.canvas = canvas;
     this.dispatch = dispatch;
     this.selection = selection;
     this.editorState = editorState;
+    this.#geometryRegistry = geometryRegistry;
     this.#projectObject =
       typeof projectObject === "function"
         ? projectObject
@@ -346,6 +354,7 @@ export class ThreeRegionRenderer {
       proxy.userData.objectId = object.id;
       proxy.userData.batchKey = null;
       proxy.userData.size = object.size ? [...object.size] : [0,0,0];
+      proxy.userData.localBounds = null;
       proxy.userData.appearanceId = object.appearanceId;
       proxy.userData.instanceColor =
         object.instanceState?.color ?? null;
@@ -386,9 +395,7 @@ export class ThreeRegionRenderer {
     proxy.userData.instanceColor =
       object.instanceState?.color ?? null;
 
-    if (!this.#selectedVisualIds.has(object.id)) {
-      this.#applyObjectInstanceColor(object.id);
-    }
+    this.#applyObjectInstanceColor(object.id);
   }
 
   #removeObject(id) {
@@ -420,17 +427,30 @@ export class ThreeRegionRenderer {
   }
 
   #batchKeyFor(object) {
-    return JSON.stringify([object.kind, object.size, object.appearanceId]);
+    const descriptor=this.#geometryRegistry.describeLegacyObject(object);
+    const renderProfile=this.#geometryRegistry.renderProfile(descriptor);
+    return JSON.stringify([
+      this.#geometryRegistry.key(descriptor),
+      object.appearanceId,
+      renderProfile.side
+    ]);
   }
 
   #addToBatch(object, proxy, batchKey) {
     let batch = this.#batchManager.getBatch(batchKey);
 
     if (!batch) {
-      const geometry = this.#resourceCache.acquireBox(object.size);
+      const descriptor=this.#geometryRegistry.describeLegacyObject(object);
+      const renderProfile=this.#geometryRegistry.renderProfile(descriptor);
+      const geometryKey=this.#geometryRegistry.key(descriptor);
+      const geometry = this.#resourceCache.acquireGeometry(
+        geometryKey,
+        () => this.#geometryRegistry.create(descriptor)
+      );
       const material = this.#materialCache.acquire({
         appearanceId: object.appearanceId,
-        material: object.material
+        material: object.material,
+        renderProfile
       });
 
       try {
@@ -447,9 +467,10 @@ export class ThreeRegionRenderer {
         batch = added.batch;
         batch.mesh.userData.geometryCacheKey = geometry.key;
         batch.mesh.userData.appearanceId = object.appearanceId;
+        batch.mesh.userData.materialCacheKey = material.key;
       } catch (error) {
         this.#resourceCache.releaseGeometry(geometry.key);
-        this.#materialCache.release(object.appearanceId);
+        this.#materialCache.release(material.key);
         throw error;
       }
     } else {
@@ -466,7 +487,19 @@ export class ThreeRegionRenderer {
     }
 
     proxy.userData.batchKey = batchKey;
+    this.#storeGeometryBounds(proxy,batch.geometry);
     this.#applyObjectInstanceColor(object.id);
+  }
+
+  #storeGeometryBounds(proxy,geometry) {
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    const bounds=geometry.boundingBox;
+    proxy.userData.localBounds=bounds
+      ? {
+          min:bounds.min.toArray(),
+          max:bounds.max.toArray()
+        }
+      : null;
   }
 
   #removeFromBatch(objectId, batchKey) {
@@ -483,6 +516,7 @@ export class ThreeRegionRenderer {
       batch.mesh.userData.geometryCacheKey
     );
     this.#materialCache.release(
+      batch.mesh.userData.materialCacheKey ??
       batch.mesh.userData.appearanceId
     );
     this.#batchManager.deleteBatch(batchKey);
@@ -537,10 +571,16 @@ export class ThreeRegionRenderer {
   }
 
   #worldBoundsForProxy(proxy, target = new THREE.Box3()) {
-    const size = proxy.userData.size ?? [1, 1, 1];
-    const half = new THREE.Vector3(size[0] / 2, size[1] / 2, size[2] / 2);
-    target.min.copy(half).multiplyScalar(-1);
-    target.max.copy(half);
+    const localBounds=proxy.userData.localBounds;
+    if (localBounds) {
+      target.min.fromArray(localBounds.min);
+      target.max.fromArray(localBounds.max);
+    } else {
+      const size = proxy.userData.size ?? [1, 1, 1];
+      const half = new THREE.Vector3(size[0] / 2, size[1] / 2, size[2] / 2);
+      target.min.copy(half).multiplyScalar(-1);
+      target.max.copy(half);
+    }
     proxy.updateMatrixWorld(true);
     return target.applyMatrix4(proxy.matrixWorld);
   }

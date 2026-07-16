@@ -3,7 +3,8 @@ import {
 } from "./CanonicalValue.js";
 
 import {
-  contentId
+  contentId,
+  contentIdFromCanonical
 } from "./ContentId.js";
 
 export class AssetStore {
@@ -17,8 +18,11 @@ export class AssetStore {
       retain = true
     } = {}
   ) {
+    const canonical =
+      canonicalStringify(value);
+
     const id =
-      contentId(kind, value);
+      contentIdFromCanonical(kind, canonical);
 
     const existing =
       this.#records.get(id);
@@ -30,9 +34,6 @@ export class AssetStore {
 
       return snapshot(existing);
     }
-
-    const canonical =
-      canonicalStringify(value);
 
     const record = {
       id,
@@ -78,6 +79,15 @@ export class AssetStore {
       positiveInteger(count);
 
     return snapshot(record);
+  }
+
+  retainReferences(id, count = 1) {
+    const record = this.#require(id);
+    record.references += positiveInteger(count);
+    return Object.freeze({
+      id: record.id,
+      references: record.references
+    });
   }
 
   release(

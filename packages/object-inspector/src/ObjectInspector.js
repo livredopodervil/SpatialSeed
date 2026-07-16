@@ -3,7 +3,7 @@ import {
   normalizeHexColor,
   parsePropertyInput,
   propertyComponentCount
-} from "../../property-registry/src/index.js?build=20260715-0022b";
+} from "../../property-registry/src/index.js?build=20260716-0024d";
 
 const GROUP_LABELS = Object.freeze({
   object: "Identificação",
@@ -319,8 +319,19 @@ export class ObjectInspector {
     }
 
     const input = inputs[0];
-    input.value = mixed ? "" : formatPropertyValue(descriptor, value);
-    input.placeholder = mixed ? "valores diferentes" : "";
+    const embeddedTexture =
+      descriptor.id === "texture.src" &&
+      typeof value === "string" &&
+      value.startsWith("data:");
+
+    input.value = mixed || embeddedTexture
+      ? ""
+      : formatPropertyValue(descriptor, value);
+    input.placeholder = mixed
+      ? "valores diferentes"
+      : embeddedTexture
+        ? embeddedTextureLabel(value)
+        : "";
 
     if (descriptor.valueType === "color" && inputs[1]) {
       inputs[1].value = mixed || value === null
@@ -420,4 +431,13 @@ function statusText(property, descriptor) {
   }
   if (property.value === null) return "Sem valor próprio";
   return property.editable ? "" : "Somente leitura";
+}
+
+function embeddedTextureLabel(source) {
+  const bytes = Math.ceil(String(source).length * 0.75);
+  const kibibytes = bytes / 1024;
+  const size = kibibytes >= 1024
+    ? `${(kibibytes / 1024).toFixed(1)} MiB`
+    : `${Math.max(1, Math.round(kibibytes))} KiB`;
+  return `imagem incorporada · ${size}`;
 }

@@ -108,17 +108,26 @@ function applyPropertyUpdates(objects, command) {
 export function boxRegionReducer(state, command) {
   switch (command.type) {
     case "object.create": {
+      const geometry = command.geometry
+        ? freezeGeometry(command.geometry)
+        : null;
       const object = Object.freeze({
         id: command.id,
-        kind: "box",
+        kind: command.kind ?? geometry?.type ?? "box",
         name: command.name ?? command.id,
         position: command.position ?? [0, 1, 0],
-        rotation: [0, 0, 0, 1],
+        rotation: Object.freeze([...(command.rotation ?? [0, 0, 0, 1])]),
         scale: [1, 1, 1],
-        size: command.size ?? [2, 2, 2],
-        material: Object.freeze({
-          color: command.color ?? "#6699cc"
-        }),
+        ...(geometry
+          ? { geometry }
+          : { size: command.size ?? [2, 2, 2] }),
+        ...(command.appearanceId
+          ? { appearanceId: String(command.appearanceId) }
+          : {
+              material: Object.freeze({
+                color: command.color ?? "#6699cc"
+              })
+            }),
         instanceState: freezeInstanceState(
           command.instanceState
         )
@@ -343,6 +352,18 @@ export function boxRegionReducer(state, command) {
   }
 }
 
+function freezeGeometry(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Descritor de geometria inválido.");
+  }
+
+  return Object.freeze(Object.fromEntries(
+    Object.entries(structuredClone(value)).map(([key, entry]) => [
+      key,
+      Array.isArray(entry) ? Object.freeze(entry) : entry
+    ])
+  ));
+}
 
 function freezeInstanceState(value = {}) {
   const state = { ...value };

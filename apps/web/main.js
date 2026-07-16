@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 
-export async function startApplication(buildInfo) {
+export async function startApplication(buildInfo, uiConfiguration) {
   const cacheKey=encodeURIComponent(buildInfo.build);
   const [runtimeModule,interfaceModule]=await Promise.all([
     import(`./bootstrap/createWebRuntime.js?build=${cacheKey}`),
@@ -11,11 +11,16 @@ export async function startApplication(buildInfo) {
     canvas: $("world"),
     outlineRoot: $("outline-content"),
     transformToolsRoot: $("transform-tools-panel"),
+    geometryCreationRoot: $("geometry-create-panel"),
     inspectorRoot: $("inspector-panel"),
-    buildInfo
+    buildInfo,
+    uiConfiguration
   });
 
-  const interfaceBinding = interfaceModule.bindWebInterface(application);
+  const interfaceBinding = interfaceModule.bindWebInterface({
+    ...application,
+    uiConfiguration
+  });
 
   application.runtime.onDispose(() =>
     interfaceBinding.dispose()

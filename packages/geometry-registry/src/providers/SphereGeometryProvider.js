@@ -2,6 +2,13 @@ import * as THREE from "three";
 
 export const SphereGeometryProvider = Object.freeze({
   type: "sphere",
+  topology: "closed-solid",
+  label: "Esfera",
+  parameters: Object.freeze([
+    Object.freeze({id:"radius",label:"Raio",type:"number",default:1,minimum:0.001}),
+    Object.freeze({id:"widthSegments",label:"Segmentos horizontais",type:"integer",default:24,minimum:3}),
+    Object.freeze({id:"heightSegments",label:"Segmentos verticais",type:"integer",default:16,minimum:2})
+  ]),
 
   normalize(input = {}) {
     return Object.freeze({

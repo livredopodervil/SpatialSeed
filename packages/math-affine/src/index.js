@@ -6,3 +6,4 @@ export {
   aroundPivot, validateMatrix, validateAffineMatrix
 } from "./Matrix4.js";
 export { composeAffineOperations, affineCopies } from "./AffineSequence.js";
+export { resolvePlacementFrame } from "./PlacementFrame.js";

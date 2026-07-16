@@ -61,6 +61,17 @@ export class GeometryRegistry {
     return provider.create(descriptor);
   }
 
+  renderProfile(input) {
+    const descriptor = this.normalize(input);
+    const provider = this.provider(descriptor.type);
+    const topology = provider.topology ?? "closed-solid";
+
+    return Object.freeze({
+      topology,
+      side: topology === "open-surface" ? "double" : "front"
+    });
+  }
+
   describeLegacyObject(object) {
     if (object?.geometry) {
       return this.normalize(object.geometry);
@@ -81,6 +92,18 @@ export class GeometryRegistry {
   list() {
     return [...this.#providers.keys()];
   }
+
+  describe() {
+    return [...this.#providers.values()].map(provider => Object.freeze({
+      type: provider.type,
+      label: provider.label ?? provider.type,
+      topology: provider.topology ?? "closed-solid",
+      parameters: Object.freeze(
+        structuredClone(provider.parameters ?? [])
+          .map(parameter => Object.freeze(parameter))
+      )
+    }));
+  }
 }
 
 function validateProvider(provider) {
@@ -90,6 +113,15 @@ function validateProvider(provider) {
 
   if (!String(provider.type ?? "").trim()) {
     throw new TypeError("Provider sem type.");
+  }
+
+  if (
+    provider.topology !== undefined &&
+    !["closed-solid", "open-surface"].includes(provider.topology)
+  ) {
+    throw new TypeError(
+      `Topologia geométrica inválida: ${provider.topology}.`
+    );
   }
 
   for (const method of ["normalize", "create"]) {

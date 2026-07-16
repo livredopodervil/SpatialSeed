@@ -19,7 +19,11 @@ import { Region } from "../../core/src/Region.js";
 import { Sandbox } from "../../core/src/Sandbox.js";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
-import { RefCountCache, textureKey } from "../../renderer-resource-cache/src/index.js";
+import {
+  RefCountCache,
+  textureKey,
+  ThreeResourceCache
+} from "../../renderer-resource-cache/src/index.js";
 import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
 import {
   InstanceBatchIndex
@@ -40,7 +44,8 @@ import {
   eulerQuaternion,
   identityMatrix,
   invertAffineMatrix,
-  multiplyMatrices
+  multiplyMatrices,
+  resolvePlacementFrame
 } from "../../math-affine/src/index.js";
 import {
   compileAffineExpression,
@@ -56,28 +61,29 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260714-0021c-diagnostics";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024i";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260715-0022a";
+} from "../../region-box/src/reducer.js?build=20260716-0024d";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
   SphereGeometryProvider,
   CylinderGeometryProvider,
   PlaneGeometryProvider,
+  PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260714-0020b-a";
+} from "../../geometry-registry/src/index.js?build=20260716-0024g";
 import {
   normalizeHexColor,
   parsePropertyInput,
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260715-0022b";
+} from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260715-0022b";
+} from "../../devtools/src/DevConsole.js?build=20260716-0024i";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -98,6 +104,10 @@ import {
   formatBuildLabel,
   normalizeBuildInfo
 } from "../../../apps/web/BuildInfo.js";
+import {
+  normalizeUiConfiguration
+} from "../../ui-config/src/index.js?build=20260716-0024i";
+import { fnv1a64 } from "../../asset-store/src/index.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -349,6 +359,12 @@ export function createRuntimeLayerTests() {
     },
 
 assets: {
+  "hash FNV-1a preserva identificadores conhecidos"() {
+    assertEqual(fnv1a64(""), "cbf29ce484222325");
+    assertEqual(fnv1a64("hello"), "a430d84680aabd0b");
+    assertEqual(fnv1a64("ação"), "74b2e70b31a1c349");
+  },
+
   "textura idêntica é armazenada uma vez"() {
     const graph = new AppearanceGraph();
 
@@ -1966,6 +1982,68 @@ assets: {
       }
     },
 
+    "ui-configuration": {
+      "normaliza composição sem conhecer comandos"() {
+        const configuration=normalizeUiConfiguration({
+          schemaVersion:1,
+          profile:"test",
+          toolbar:{
+            primary:["tool-select"],
+            menus:[{id:"edit",label:"Editar",items:["undo"]}]
+          },
+          panels:{items:{inspector:{anchor:"right",width:420}}},
+          presentation:{transform:{size:0.8}}
+        });
+        assertDeepEqual(configuration.toolbar.primary,["tool-select"]);
+        assertEqual(configuration.toolbar.layout,"horizontal");
+        assertEqual(configuration.toolbar.menus[0].items[0],"undo");
+        assertEqual(configuration.panels.items.inspector.anchor,"right");
+        assertEqual(configuration.presentation.transform.size,0.8);
+        assertEqual(configuration.presentation.sceneExit.corner,"top-left");
+        assertEqual(
+          configuration.presentation.sceneExit.helpStorageKey,
+          "spatialseed.ui.scene-help.v1"
+        );
+        assertEqual(Object.isFrozen(configuration),true);
+      },
+      "rejeita controle repetido entre grupos"() {
+        let failed=false;
+        try {
+          normalizeUiConfiguration({
+            toolbar:{
+              primary:["undo"],
+              menus:[{id:"edit",label:"Editar",items:["undo"]}]
+            }
+          });
+        } catch (error) {
+          failed=/duplicado/.test(error.message);
+        }
+        assertEqual(failed,true);
+      },
+      "rejeita disposição desconhecida da barra"() {
+        let failed=false;
+        try {
+          normalizeUiConfiguration({toolbar:{layout:"diagonal"}});
+        } catch (error) {
+          failed=/toolbar\.layout/.test(error.message);
+        }
+        assertEqual(failed,true);
+      },
+      "normaliza preferências visuais separadas da barra"() {
+        const configuration=normalizeUiConfiguration({
+          presentation:{transform:{size:0.6,showX:false,vertexSize:7}}
+        });
+        assertDeepEqual(configuration.presentation.transform,{
+          size:0.6,
+          showX:false,
+          showY:true,
+          showZ:true,
+          showVertices:false,
+          vertexSize:7
+        });
+      }
+    },
+
     "hierarchy-group-visuals": {
       "referência do gizmo coincide com pivô mundial do grupo"() {
         const hierarchy=new HierarchyIndex([{
@@ -2304,6 +2382,51 @@ assets: {
         });
 
         assert(first !== second);
+      },
+
+      "cache genérico compartilha geometria registrada"() {
+        const registry=createDefaultGeometryRegistry();
+        const descriptor=registry.normalize({
+          type:"polygon",
+          sides:6,
+          radius:2
+        });
+        const key=registry.key(descriptor);
+        const cache=new ThreeResourceCache();
+        let creates=0;
+        const create=() => {
+          creates+=1;
+          return registry.create(descriptor);
+        };
+        const first=cache.acquireGeometry(key,create);
+        const second=cache.acquireGeometry(key,create);
+
+        assertEqual(creates,1);
+        assertEqual(first.value,second.value);
+        assertEqual(cache.stats().geometries.references,2);
+        cache.releaseGeometry(first.key);
+        cache.releaseGeometry(second.key);
+        assertEqual(cache.stats().geometries.entries,0);
+      },
+
+      "descarte adiado permite troca transacional de textura"() {
+        let creates = 0;
+        let disposes = 0;
+        const cache = new RefCountCache({
+          deferDisposal: true,
+          create() {
+            creates += 1;
+            return { dispose() { disposes += 1; } };
+          }
+        });
+
+        const first = cache.acquire("texture-a");
+        cache.release(first.key);
+        const replacement = cache.acquire("texture-a");
+
+        assertEqual(creates, 1);
+        assertEqual(disposes, 0);
+        assertEqual(first.value, replacement.value);
       }
     },
 
@@ -2596,6 +2719,43 @@ assets: {
 
         cache.release("appearance-a");
         cache.release("appearance-b");
+      },
+
+      "mesma aparência separa sólido e superfície aberta"() {
+        const resourceCache = {
+          acquireTexture() {
+            return null;
+          },
+          releaseTexture() {
+            return true;
+          }
+        };
+        const cache = new BatchMaterialCache({ resourceCache });
+
+        const solid = cache.acquire({
+          appearanceId: "appearance-shared",
+          material: { color: "#ffffff" },
+          renderProfile: {
+            topology: "closed-solid",
+            side: "front"
+          }
+        });
+        const surface = cache.acquire({
+          appearanceId: "appearance-shared",
+          material: { color: "#ffffff" },
+          renderProfile: {
+            topology: "open-surface",
+            side: "double"
+          }
+        });
+
+        assert(solid.value.material !== surface.value.material);
+        assertEqual(solid.value.material.side, THREE.FrontSide);
+        assertEqual(surface.value.material.side, THREE.DoubleSide);
+        assertEqual(cache.stats().entries, 2);
+
+        cache.release(solid.key);
+        cache.release(surface.key);
       }
     },
 
@@ -2739,6 +2899,63 @@ assets: {
           assertDeepEqual(material.texture.offset, [0.25, 0.5]);
           assertEqual(material.texture.wrap, "mirror");
         }
+      },
+
+      "textura em lote é internada uma vez por aparência de origem"() {
+        const fixture = createPropertyFixture({ sameAppearance: true });
+        fixture.selection.replaceMany([
+          { regionId: "region-properties", objectId: "a" },
+          { regionId: "region-properties", objectId: "b" }
+        ]);
+        const original = fixture.appearanceRuntime
+          .internLegacyMaterial
+          .bind(fixture.appearanceRuntime);
+        let internCalls = 0;
+        fixture.appearanceRuntime.internLegacyMaterial = (...args) => {
+          internCalls += 1;
+          return original(...args);
+        };
+
+        fixture.service.setSelection({
+          "texture.src": "data:image/png;base64," + "A".repeat(4096)
+        });
+        const objects = fixture.sandbox.getState().objects;
+
+        assertEqual(internCalls, 1);
+        assertEqual(objects[0].appearanceId, objects[1].appearanceId);
+        assertEqual(
+          fixture.appearanceRuntime.graph.assets
+            .get(objects[0].appearanceId).references,
+          2
+        );
+      },
+
+      "alterar cor preserva parâmetros da textura"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "a"
+        });
+
+        fixture.service.setSelection({
+          "texture.src": "data:image/png;base64,AAAA",
+          "texture.repeat": [3, 4],
+          "texture.offset": [0.2, 0.3],
+          "texture.rotationDeg": 25,
+          "texture.wrap": "mirror"
+        });
+        fixture.service.setSelection({
+          "appearance.color": "#ff3300"
+        });
+        const object = fixture.sandbox.getState().objects[0];
+        const material = fixture.appearanceRuntime
+          .legacyMaterial(object.appearanceId);
+
+        assertEqual(material.color, "#ff3300");
+        assertDeepEqual(material.texture.repeat, [3, 4]);
+        assertDeepEqual(material.texture.offset, [0.2, 0.3]);
+        assertEqual(material.texture.rotationDeg, 25);
+        assertEqual(material.texture.wrap, "mirror");
       },
 
       "remoção de cor de instância também é uma operação em lote"() {
@@ -2891,7 +3108,268 @@ assets: {
       }
     },
 
+    "placement-frame": {
+      "planos canônicos orientam a normal local"() {
+        assertDeepEqual(resolvePlacementFrame({ plane: "xy" }).normal, [0, 0, 1]);
+        assertDeepEqual(resolvePlacementFrame({ plane: "xz" }).normal, [0, 1, 0]);
+        assertDeepEqual(resolvePlacementFrame({ plane: "yz" }).normal, [1, 0, 0]);
+      },
+
+      "normal sem tangente produz base ortonormal estável"() {
+        const frame = resolvePlacementFrame({
+          origin: [1, 2, 3],
+          normal: [1, 1, 0]
+        });
+
+        assertDeepEqual(frame.origin, [1, 2, 3]);
+        assertNear(dot3(frame.normal, frame.tangent), 0);
+        assertNear(Math.hypot(...frame.normal), 1);
+        assertNear(Math.hypot(...frame.tangent), 1);
+        assertNear(Math.hypot(...frame.bitangent), 1);
+      },
+
+      "normal e tangente preservam a orientação solicitada"() {
+        const frame = resolvePlacementFrame({
+          normal: [0, 1, 0],
+          tangent: [1, 1, 0]
+        });
+
+        assertDeepEqual(frame.normal.map(roundAffine), [0, 1, 0]);
+        assertDeepEqual(frame.tangent.map(roundAffine), [1, 0, 0]);
+        assertEqual(frame.mode, "normal-tangent");
+      },
+
+      "três pontos definem origem plano e direção"() {
+        const frame = resolvePlacementFrame({
+          points: [[2, 3, 4], [4, 3, 4], [2, 3, 7]]
+        });
+
+        assertDeepEqual(frame.origin, [2, 3, 4]);
+        assertDeepEqual(frame.tangent.map(roundAffine), [1, 0, 0]);
+        assertDeepEqual(frame.normal.map(roundAffine), [0, -1, 0]);
+        assertEqual(frame.mode, "points");
+      },
+
+      "três pontos colineares são rejeitados"() {
+        let rejected = false;
+        try {
+          resolvePlacementFrame({
+            points: [[0, 0, 0], [1, 0, 0], [2, 0, 0]]
+          });
+        } catch {
+          rejected = true;
+        }
+        assertEqual(rejected, true);
+      }
+    },
+
+    "geometry-creation": {
+      "help anuncia apenas famílias criáveis"() {
+        const console = createGeometryConsole([]);
+        const result = console.execute("help create")[0];
+        const text = JSON.stringify(result.result);
+
+        assertEqual(result.ok, true);
+        for (const type of ["box", "sphere", "cylinder", "plane", "polygon"]) {
+          assert(text.includes(type));
+        }
+      },
+
+      "console compila polígono com plano origem e cor"() {
+        const calls = [];
+        const console = createGeometryConsole(calls);
+        const result = console.execute(
+          "create polygon 6 radius 2 plane xz origin 4 5 6 color #3af"
+        )[0];
+
+        assertEqual(result.ok, true);
+        assertEqual(calls[0].id, "object.create.geometry");
+        assertDeepEqual(calls[0].args.geometry, {
+          type: "polygon",
+          sides: 6,
+          radius: 2,
+          startAngleDeg: 0
+        });
+        assertDeepEqual(calls[0].args.placement, {
+          origin:[4,5,6],
+          plane:"xz",
+          normal:null,
+          tangent:null,
+          points:null
+        });
+        assertEqual(calls[0].args.color, "#33aaff");
+      },
+
+      "console alcança todas as famílias registradas"() {
+        const calls = [];
+        const console = createGeometryConsole(calls);
+
+        for (const source of [
+          "create sphere radius 2",
+          "create cylinder radius 1 height 3",
+          "create plane size 4 5 plane yz",
+          "create polygon sides 8 radius 2",
+          "create box size 1 2 3 origin 0 1 0"
+        ]) {
+          assertEqual(console.execute(source)[0].ok, true);
+        }
+
+        assertDeepEqual(
+          calls.map(call => call.args.geometry.type),
+          ["sphere", "cylinder", "plane", "polygon", "box"]
+        );
+      },
+
+      "console expõe a mesma série afim do painel"() {
+        const calls=[];
+        const console=createGeometryConsole(calls);
+        const result=console.execute(
+          "create box size 1 1 1 count 4 move 2 0 0 rotate 0 5 0"
+        )[0];
+        assertEqual(result.ok,true);
+        assertEqual(calls[0].id,"object.create.geometrySeries");
+        assertEqual(calls[0].args.count,4);
+        assertDeepEqual(calls[0].args.operations,[
+          {type:"move",value:[2,0,0]},
+          {type:"rotate",value:[0,5,0]}
+        ]);
+      },
+
+      "operação normaliza e persiste descritor genérico"() {
+        const region = new Region(
+          { id: "geometry-region", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        const appearanceRuntime = new AppearanceRuntime();
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: "geometry-region",
+          geometryRegistry: createDefaultGeometryRegistry(),
+          appearanceRuntime
+        });
+
+        const result = operations.createGeometry({
+          geometry: { type: "polygon", sides: 7, radius: 2 },
+          position: [1, 2, 3]
+        });
+        const object = sandbox.getSnapshot().objects[0];
+
+        assertEqual(result.changed, true);
+        assertEqual(object.kind, "polygon");
+        assertEqual(Boolean(object.appearanceId), true);
+        assertEqual("material" in object, false);
+        assertDeepEqual(object.position, [1, 2, 3]);
+        assertDeepEqual(object.geometry, {
+          type: "polygon",
+          sides: 7,
+          radius: 2,
+          startAngleDeg: 0
+        });
+        assertDeepEqual(
+          editor.selection.snapshot().members.map(member => member.objectId),
+          [object.id]
+        );
+      },
+
+      "operação resolve o mesmo referencial do console e do painel"() {
+        const region = new Region(
+          { id: "geometry-placement", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const operations = new SelectionOperations({
+          editor:new EditorState(),
+          sandbox,
+          regionId:"geometry-placement",
+          geometryRegistry:createDefaultGeometryRegistry(),
+          appearanceRuntime:new AppearanceRuntime()
+        });
+        operations.createGeometry({
+          geometry:{type:"polygon",sides:5},
+          placement:{origin:[4,5,6],plane:"xz"}
+        });
+        const object=sandbox.getState().objects[0];
+        assertDeepEqual(object.position,[4,5,6]);
+        assertNear(Math.abs(object.rotation[0]),Math.SQRT1_2);
+      },
+
+      "série afim cria semente e cópias em uma operação atômica"() {
+        const region=new Region(
+          {id:"geometry-series",type:"box-region"},
+          {schemaVersion:1,objects:[]}
+        );
+        const sandbox=new Sandbox(region,boxRegionReducer);
+        const editor=new EditorState();
+        const operations=new SelectionOperations({
+          editor,
+          sandbox,
+          regionId:"geometry-series",
+          geometryRegistry:createDefaultGeometryRegistry(),
+          appearanceRuntime:new AppearanceRuntime()
+        });
+        const result=operations.createGeometrySeries({
+          geometry:{type:"box",size:[1,1,1]},
+          position:[0,0,0],
+          count:4,
+          operations:[{type:"move",value:[2,0,0]}]
+        });
+        assertEqual(result.count,4);
+        assertDeepEqual(
+          sandbox.getState().objects.map(object => object.position),
+          [[0,0,0],[2,0,0],[4,0,0],[6,0,0]]
+        );
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,1);
+        assertEqual(
+          editor.selection.snapshot().activeMember.objectId,
+          result.activeId
+        );
+      },
+
+      "expressão afim inválida não insere a semente"() {
+        const region=new Region(
+          {id:"geometry-series-invalid",type:"box-region"},
+          {schemaVersion:1,objects:[]}
+        );
+        const sandbox=new Sandbox(region,boxRegionReducer);
+        const operations=new SelectionOperations({
+          editor:new EditorState(),
+          sandbox,
+          regionId:"geometry-series-invalid",
+          geometryRegistry:createDefaultGeometryRegistry(),
+          appearanceRuntime:new AppearanceRuntime()
+        });
+        let rejected=false;
+        try {
+          operations.createGeometrySeries({
+            geometry:{type:"sphere"},
+            count:3,
+            operations:[{type:"move",value:["unknown(",0,0]}]
+          });
+        } catch {
+          rejected=true;
+        }
+        assertEqual(rejected,true);
+        assertEqual(sandbox.getState().objects.length,0);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      }
+    },
+
     "geometry-registry": {
+      "descrição expõe famílias e parâmetros sem UI acoplada"() {
+        const descriptions=createDefaultGeometryRegistry().describe();
+        assertDeepEqual(
+          descriptions.map(description => description.type),
+          ["box","sphere","cylinder","plane","polygon"]
+        );
+        assertEqual(
+          descriptions.find(description => description.type === "sphere")
+            .parameters.some(parameter => parameter.id === "radius"),
+          true
+        );
+      },
       "registro normaliza caixa legada"() {
         const registry = createDefaultGeometryRegistry();
 
@@ -2933,11 +3411,30 @@ assets: {
           { type: "box", size: [1, 2, 3] },
           { type: "sphere", radius: 1 },
           { type: "cylinder", radius: 1, height: 2 },
-          { type: "plane", width: 2, height: 3 }
+          { type: "plane", width: 2, height: 3 },
+          { type: "polygon", sides: 7, radius: 2 }
         ]) {
           const geometry = registry.create(descriptor);
           assert(geometry?.isBufferGeometry === true);
           geometry.dispose();
+        }
+      },
+
+      "topologia distingue sólidos de superfícies abertas"() {
+        const registry = createDefaultGeometryRegistry();
+
+        for (const type of ["box", "sphere", "cylinder"]) {
+          assertDeepEqual(registry.renderProfile({ type }), {
+            topology: "closed-solid",
+            side: "front"
+          });
+        }
+
+        for (const type of ["plane", "polygon"]) {
+          assertDeepEqual(registry.renderProfile({ type }), {
+            topology: "open-surface",
+            side: "double"
+          });
         }
       },
 
@@ -2963,7 +3460,9 @@ assets: {
           { type: "box", size: [1, 0, 1] },
           { type: "sphere", radius: -1 },
           { type: "cylinder", height: 0 },
-          { type: "plane", width: 0 }
+          { type: "plane", width: 0 },
+          { type: "polygon", sides: 2 },
+          { type: "polygon", radius: 0 }
         ]) {
           let rejected = false;
 
@@ -2975,6 +3474,84 @@ assets: {
 
           assertEqual(rejected, true);
         }
+      },
+
+      "polígono regular normaliza ângulos equivalentes"() {
+        const registry=createDefaultGeometryRegistry();
+        assertDeepEqual(
+          registry.normalize({
+            type:"polygon",
+            sides:5,
+            radius:2,
+            startAngleDeg:-90
+          }),
+          {
+            type:"polygon",
+            sides:5,
+            radius:2,
+            startAngleDeg:270
+          }
+        );
+        assertEqual(
+          registry.key({
+            type:"polygon",
+            sides:5,
+            radius:2,
+            startAngleDeg:0
+          }),
+          registry.key({
+            type:"polygon",
+            sides:5,
+            radius:2,
+            startAngleDeg:360
+          })
+        );
+      },
+
+      "polígono produz triangulação plana com UV"() {
+        const descriptor=PolygonGeometryProvider.normalize({
+          sides:5,
+          radius:2,
+          startAngleDeg:90
+        });
+        const geometry=PolygonGeometryProvider.create(descriptor);
+        const position=geometry.getAttribute("position");
+
+        assertEqual(geometry.index.count,15);
+        assertEqual(Boolean(geometry.getAttribute("normal")),true);
+        assertEqual(Boolean(geometry.getAttribute("uv")),true);
+        let maximumRadius=0;
+        for (let index=0; index<position.count; index+=1) {
+          assertNear(position.getZ(index),0,1e-12);
+          maximumRadius=Math.max(
+            maximumRadius,
+            Math.hypot(position.getX(index),position.getY(index))
+          );
+        }
+        assertNear(maximumRadius,2,1e-6);
+        geometry.dispose();
+      },
+
+      "objeto com descriptor explícito resolve polígono"() {
+        const registry=createDefaultGeometryRegistry();
+        assertDeepEqual(
+          registry.describeLegacyObject({
+            id:"polygon-a",
+            kind:"polygon",
+            geometry:{
+              type:"polygon",
+              sides:3,
+              radius:4,
+              startAngleDeg:30
+            }
+          }),
+          {
+            type:"polygon",
+            sides:3,
+            radius:4,
+            startAngleDeg:30
+          }
+        );
       }
     },
 
@@ -3736,13 +4313,20 @@ assets: {
   };
 }
 
-function createPropertyFixture({ instanceColor = null } = {}) {
+function createPropertyFixture({
+  instanceColor = null,
+  sameAppearance = false
+} = {}) {
   const appearanceRuntime = new AppearanceRuntime();
   const scene = appearanceRuntime.normalizeScene({
     schemaVersion: 1,
     objects: [
       propertyObject("a", "#112233", instanceColor),
-      propertyObject("b", "#445566", instanceColor)
+      propertyObject(
+        "b",
+        sameAppearance ? "#112233" : "#445566",
+        instanceColor
+      )
     ]
   });
   const region = new Region(
@@ -3800,6 +4384,23 @@ function createPropertyConsole(fixture) {
           return fixture.service.inspectSelection();
         }
         throw new Error(`Consulta inesperada: ${id}.`);
+      }
+    }
+  });
+}
+
+function createGeometryConsole(calls) {
+  return new DevConsole({
+    editor: { selection: new Selection() },
+    sandbox: {},
+    region: {},
+    renderer: {},
+    getDiagnostics: () => ({}),
+    commands: {
+      describe: () => [],
+      execute(id, args) {
+        calls.push({ id, args });
+        return { changed: true };
       }
     }
   });
@@ -4033,6 +4634,10 @@ function assertNear(actual, expected, epsilon = 1e-9) {
     Math.abs(actual - expected) <= epsilon,
     `Esperado aproximadamente ${expected}, recebido ${actual}.`
   );
+}
+
+function dot3(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
 function assertThrowsCode(callback, expectedCode) {

@@ -2,6 +2,11 @@ import * as THREE from "three";
 
 export const BoxGeometryProvider = Object.freeze({
   type: "box",
+  topology: "closed-solid",
+  label: "Caixa",
+  parameters: Object.freeze([
+    Object.freeze({id:"size",label:"Dimensões",type:"vector3",default:[1,1,1],minimum:0.001})
+  ]),
 
   normalize(input = {}) {
     return Object.freeze({

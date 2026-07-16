@@ -24,5 +24,9 @@ export {
 } from "./providers/PlaneGeometryProvider.js";
 
 export {
+  PolygonGeometryProvider
+} from "./providers/PolygonGeometryProvider.js";
+
+export {
   createDefaultGeometryRegistry
 } from "./createDefaultGeometryRegistry.js";

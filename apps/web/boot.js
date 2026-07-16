@@ -2,11 +2,15 @@ import {
   formatBuildLabel,
   loadBuildInfo
 } from "./BuildInfo.js";
+import { loadUiConfiguration } from "./UiConfiguration.js";
 
 const $=id => document.getElementById(id);
 
 try {
-  const buildInfo=await loadBuildInfo();
+  const [buildInfo,uiConfiguration]=await Promise.all([
+    loadBuildInfo(),
+    loadUiConfiguration()
+  ]);
   exposeBuildInfo(buildInfo);
   await loadStylesheet(buildInfo);
 
@@ -14,7 +18,7 @@ try {
   const { startApplication }=await import(
     `./main.js?build=${cacheKey}`
   );
-  await startApplication(buildInfo);
+  await startApplication(buildInfo,uiConfiguration);
 } catch (error) {
   showFatalError(error);
 }

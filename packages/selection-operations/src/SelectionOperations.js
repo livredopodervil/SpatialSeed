@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { resolvePlacementFrame } from "../../math-affine/src/index.js";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -16,10 +17,18 @@ import {
 export class SelectionOperations {
   static apiVersion = "selection-operations-v2";
 
-  constructor({ editor, sandbox, regionId }) {
+  constructor({
+    editor,
+    sandbox,
+    regionId,
+    geometryRegistry = null,
+    appearanceRuntime = null
+  }) {
     this.editor = editor;
     this.sandbox = sandbox;
     this.regionId = regionId;
+    this.geometryRegistry = geometryRegistry;
+    this.appearanceRuntime = appearanceRuntime;
     this.pendingDuplicate = null;
     this.lastDuplicate = null;
 
@@ -37,10 +46,152 @@ export class SelectionOperations {
       name: name || `Caixa ${index}`,
       position: [...position],
       size: [...size],
-      color
+      ...this.#creationAppearance(color)
     });
     if (changed) this.#selectIds([id]);
     return { changed, id };
+  }
+
+  createGeometry({
+    name = null,
+    geometry,
+    position = [0, 0, 0],
+    rotation = [0, 0, 0, 1],
+    placement = null,
+    color = "#6699cc"
+  } = {}) {
+    if (!this.geometryRegistry) {
+      throw new Error("Registro de geometrias indisponível.");
+    }
+
+    const descriptor = this.geometryRegistry.normalize(geometry);
+    const frame = placement === null
+      ? null
+      : resolvePlacementFrame(placement);
+    const id = crypto.randomUUID();
+    const index = this.sandbox.getSnapshot().objects.length + 1;
+    const label = geometryLabel(descriptor.type);
+    const changed = this.sandbox.dispatch({
+      type: "object.create",
+      id,
+      kind: descriptor.type,
+      name: name || `${label} ${index}`,
+      position: [...(frame?.origin ?? position)],
+      rotation: [...(frame?.rotation ?? rotation)],
+      geometry: descriptor,
+      ...this.#creationAppearance(color)
+    });
+
+    if (changed) this.#selectIds([id]);
+    return { changed, id, geometry: descriptor };
+  }
+
+  createGeometrySeries({
+    name = null,
+    geometry,
+    position = [0, 0, 0],
+    rotation = [0, 0, 0, 1],
+    placement = null,
+    color = "#6699cc",
+    count = 1,
+    operations = []
+  } = {}) {
+    if (!this.geometryRegistry) {
+      throw new Error("Registro de geometrias indisponível.");
+    }
+    const total = Number(count);
+    if (!Number.isInteger(total) || total < 1 || total > 100000) {
+      throw new RangeError("A quantidade total deve estar entre 1 e 100000.");
+    }
+    if (!Array.isArray(operations)) {
+      throw new TypeError("Operações afins devem formar uma lista.");
+    }
+
+    const descriptor = this.geometryRegistry.normalize(geometry);
+    const frame = placement === null ? null : resolvePlacementFrame(placement);
+    const seedPosition = [...(frame?.origin ?? position)];
+    const seedRotation = [...(frame?.rotation ?? rotation)];
+    const id = crypto.randomUUID();
+    const index = this.sandbox.getSnapshot().objects.length + 1;
+    const baseName = name || `${geometryLabel(descriptor.type)} ${index}`;
+    const seedTransform = {
+      id,
+      position: seedPosition,
+      rotation: seedRotation,
+      scale: [1, 1, 1]
+    };
+
+    const copies = total - 1;
+    let transforms = [];
+    let resolvedOperations = [];
+    if (copies > 0 && operations.length) {
+      const pivotContext = {
+        defaultPivot: [...seedPosition],
+        medianPivot: [...seedPosition],
+        boundsPivot: [...seedPosition],
+        activePosition: [...seedPosition]
+      };
+      const resolved = resolveAffineOperations(operations, pivotContext);
+      resolvedOperations = resolved.operations;
+      const parametric = hasAffineExpressions(resolvedOperations);
+      transforms = parametric
+        ? affineProgramCopies(seedTransform, copies, resolvedOperations, {
+            defaultPivot: pivotContext.defaultPivot
+          })
+        : affineCopies(
+            seedTransform,
+            copies,
+            composeAffineStep(
+              resolvedOperations,
+              pivotContext.defaultPivot
+            )
+          );
+    } else if (copies > 0) {
+      transforms = Array.from({ length: copies }, (_, copyIndex) => ({
+        index: copyIndex,
+        position: [...seedTransform.position],
+        rotation: [...seedTransform.rotation],
+        scale: [...seedTransform.scale]
+      }));
+    }
+
+    const appearance = this.#creationAppearance(color);
+    const seed = {
+      ...seedTransform,
+      kind: descriptor.type,
+      name: baseName,
+      geometry: descriptor,
+      ...(appearance.appearanceId
+        ? { appearanceId: appearance.appearanceId }
+        : { material: { color: appearance.color } }),
+      instanceState: {}
+    };
+    const created = [seed, ...transforms.map((transform, copyIndex) => ({
+      ...structuredClone(seed),
+      id: crypto.randomUUID(),
+      name: copyName(baseName, copyIndex),
+      position: [...transform.position],
+      rotation: [...transform.rotation],
+      scale: [...transform.scale]
+    }))];
+    const changed = this.sandbox.dispatch({
+      type: "selection.duplicate",
+      source: "geometry-affine-series",
+      sourceIds: [id],
+      copyCount: copies,
+      affineOperations: structuredClone(resolvedOperations),
+      objects: created
+    });
+
+    if (changed) this.#selectIds([created.at(-1).id]);
+    return {
+      changed,
+      id,
+      geometry: descriptor,
+      count: total,
+      createdIds: created.map(object => object.id),
+      activeId: created.at(-1).id
+    };
   }
 
   duplicate() {
@@ -749,6 +900,13 @@ export class SelectionOperations {
     );
   }
 
+  #creationAppearance(color) {
+    if (!this.appearanceRuntime) return { color };
+
+    const created = this.appearanceRuntime.internLegacyMaterial({ color });
+    return { appearanceId: created.appearanceId };
+  }
+
 }
 
 function hasAffineExpressions(operations) {
@@ -765,6 +923,16 @@ function copyName(name, copyIndex) {
     .replace(/(?:\s+#\d+)+$/u, "")
     .replace(/(?:\s+cópia)+$/u, "");
   return `${base} #${copyIndex + 1}`;
+}
+
+function geometryLabel(type) {
+  return ({
+    box: "Caixa",
+    sphere: "Esfera",
+    cylinder: "Cilindro",
+    plane: "Plano",
+    polygon: "Polígono"
+  })[type] ?? "Objeto";
 }
 
 function snapshotTransform(object) {

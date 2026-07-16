@@ -6,11 +6,17 @@ export class ThreeResourceCache {
     this.textureLoader = textureLoader;
 
     this.geometries = new RefCountCache({
-      create: (_, descriptor) =>
-        new THREE.BoxGeometry(...descriptor.size)
+      create: (_, descriptor) => {
+        const geometry=descriptor.create();
+        if (!geometry?.isBufferGeometry) {
+          throw new TypeError("Factory deve produzir BufferGeometry.");
+        }
+        return geometry;
+      }
     });
 
     this.textures = new RefCountCache({
+      deferDisposal: true,
       create: (_, descriptor) =>
         loadTexture(this.textureLoader, descriptor)
     });
@@ -19,7 +25,17 @@ export class ThreeResourceCache {
   acquireBox(size) {
     const normalized = normalizeVector(size, 3, [1, 1, 1]);
     const key = "box:" + normalized.join(",");
-    return this.geometries.acquire(key, { size: normalized });
+    return this.acquireGeometry(
+      key,
+      () => new THREE.BoxGeometry(...normalized)
+    );
+  }
+
+  acquireGeometry(key, create) {
+    if (typeof create !== "function") {
+      throw new TypeError("Geometria exige uma factory.");
+    }
+    return this.geometries.acquire(key,{create});
   }
 
   releaseGeometry(key) {

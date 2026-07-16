@@ -23,31 +23,33 @@ export class BatchMaterialCache {
     });
   }
 
-  acquire({ appearanceId, material }) {
+  acquire({ appearanceId, material, renderProfile = null }) {
     const descriptor = {
       appearanceId: String(appearanceId),
-      material: normalizeMaterial(material)
+      material: normalizeMaterial(material),
+      renderProfile: normalizeRenderProfile(renderProfile)
     };
 
     return this.materials.acquire(
-      descriptor.appearanceId,
+      materialCacheKey(descriptor.appearanceId, descriptor.renderProfile),
       descriptor
     );
   }
 
-  release(appearanceId) {
-    return this.materials.release(appearanceId);
+  release(cacheKey) {
+    return this.materials.release(cacheKey);
   }
 
   stats() {
     return this.materials.stats();
   }
 
-  #createMaterial({ material }) {
+  #createMaterial({ material, renderProfile }) {
     const threeMaterial = new THREE.MeshStandardMaterial({
       color: material.color,
       opacity: material.opacity,
-      transparent: material.transparent
+      transparent: material.transparent,
+      side: threeSide(renderProfile.side)
     });
 
     const acquiredTexture =
@@ -90,4 +92,30 @@ function normalizeMaterial(material = {}) {
     transparent: Boolean(material.transparent),
     texture: material.texture ?? null
   };
+}
+
+function normalizeRenderProfile(profile = null) {
+  const side = String(profile?.side ?? "front").toLowerCase();
+  if (!["front", "back", "double"].includes(side)) {
+    throw new TypeError(`Face de renderização inválida: ${side}.`);
+  }
+
+  return Object.freeze({
+    topology: String(profile?.topology ?? "closed-solid"),
+    side
+  });
+}
+
+function materialCacheKey(appearanceId, profile) {
+  return profile.side === "front"
+    ? appearanceId
+    : `${appearanceId}|side:${profile.side}`;
+}
+
+function threeSide(side) {
+  return ({
+    front: THREE.FrontSide,
+    back: THREE.BackSide,
+    double: THREE.DoubleSide
+  })[side];
 }
