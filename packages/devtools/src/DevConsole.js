@@ -1,6 +1,10 @@
 import {
+  normalizeHexColor,
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
+import {
+  resolvePlacementFrame
+} from "../../math-affine/src/index.js";
 
 export class DevConsole {
   static apiVersion = "dev-console-v4";
@@ -72,8 +76,8 @@ export class DevConsole {
 
     switch (command) {
       case "help":
-        this.#expectMaximum(tokens, 0, "help");
-        return this.#help();
+        this.#expectMaximum(tokens, 1, "help [create]");
+        return this.#help(tokens[0]);
 
       case "commands":
         this.#expectMaximum(tokens, 0, "commands");
@@ -181,7 +185,14 @@ export class DevConsole {
     }
   }
 
-  #help() {
+  #help(topic = null) {
+    if (topic !== null) {
+      if (String(topic).toLowerCase() === "create") {
+        return this.#createHelp();
+      }
+      throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
+    }
+
     return {
       syntax: "Separe comandos por ponto e vírgula ou por quebra de linha.",
       commands: [
@@ -190,7 +201,10 @@ export class DevConsole {
         "benchmark scene 1000 5 100",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
-        "create box [x y z]",
+        "runtime test placement-frame|geometry-creation|geometry-registry|all",
+        "help create",
+        "create help",
+        "create box|sphere|cylinder|plane|polygon ...",
         "position x y z",
         "move dx dy dz",
         "rotate xDeg yDeg zDeg",
@@ -229,16 +243,185 @@ export class DevConsole {
   }
 
   #create(tokens) {
-    if (tokens.shift()?.toLowerCase() !== "box") {
-      throw new Error("Uso: create box [x y z]");
+    const type = tokens.shift()?.toLowerCase();
+
+    if (!type || type === "help") {
+      this.#expectMaximum(tokens, 0, "create help");
+      return this.#createHelp();
     }
-    if (tokens.length === 0) {
+
+    if (type === "box" && tokens.length === 0) {
       return this.commands.execute("object.create.box");
     }
-    this.#expectExact(tokens, 3, "create box x y z");
-    return this.commands.execute("object.create.box", {
-      position: tokens.map(value => this.#number(value))
+
+    if (
+      type === "box" &&
+      tokens.length === 3 &&
+      tokens.every(value => Number.isFinite(Number(value)))
+    ) {
+      return this.commands.execute("object.create.box", {
+        position: tokens.map(value => this.#number(value))
+      });
+    }
+
+    const supported = ["box", "sphere", "cylinder", "plane", "polygon"];
+    if (!supported.includes(type)) {
+      throw new Error(
+        `Geometria desconhecida: ${type ?? "(vazia)"}. Use create help.`
+      );
+    }
+
+    const geometry = defaultGeometry(type);
+    const placement = {
+      origin: [0, type === "plane" || type === "polygon" ? 0.02 : 1, 0],
+      plane: type === "plane" || type === "polygon" ? "xz" : "xy",
+      normal: null,
+      tangent: null,
+      points: null
+    };
+    let color = "#6699cc";
+    let planeWasSet = false;
+
+    if (type === "polygon" && tokens.length && isNumericToken(tokens[0])) {
+      geometry.sides = this.#integerAtLeast(tokens.shift(), 3, "sides");
+    }
+
+    while (tokens.length) {
+      const option = tokens.shift().toLowerCase();
+
+      if (option === "origin") {
+        placement.origin = this.#takeNumbers(tokens, 3, "origin x y z");
+        continue;
+      }
+      if (option === "plane") {
+        const plane = tokens.shift()?.toLowerCase();
+        if (!plane) throw new Error("Uso: plane xy|xz|yz");
+        placement.plane = plane;
+        planeWasSet = true;
+        continue;
+      }
+      if (option === "normal") {
+        placement.normal = this.#takeNumbers(tokens, 3, "normal nx ny nz");
+        continue;
+      }
+      if (option === "tangent") {
+        placement.tangent = this.#takeNumbers(tokens, 3, "tangent tx ty tz");
+        continue;
+      }
+      if (option === "points") {
+        const values = this.#takeNumbers(
+          tokens,
+          9,
+          "points x0 y0 z0 x1 y1 z1 x2 y2 z2"
+        );
+        placement.points = [values.slice(0, 3), values.slice(3, 6), values.slice(6, 9)];
+        continue;
+      }
+      if (option === "color") {
+        const value = tokens.shift();
+        if (!value) throw new Error("Uso: color #rrggbb");
+        color = normalizeHexColor(value);
+        continue;
+      }
+
+      this.#geometryOption(type, geometry, option, tokens);
+    }
+
+    if (planeWasSet && placement.normal !== null) {
+      throw new Error("Use plane ou normal; não combine os dois referenciais.");
+    }
+
+    const frame = resolvePlacementFrame(placement);
+    return this.commands.execute("object.create.geometry", {
+      geometry,
+      position: [...frame.origin],
+      rotation: [...frame.rotation],
+      color
     });
+  }
+
+  #geometryOption(type, geometry, option, tokens) {
+    if (option === "size" && type === "box") {
+      geometry.size = this.#takePositive(tokens, 3, "size x y z");
+      return;
+    }
+    if (option === "size" && type === "plane") {
+      [geometry.width, geometry.height] = this.#takePositive(
+        tokens, 2, "size width height"
+      );
+      return;
+    }
+    if (option === "radius" && ["sphere", "cylinder", "polygon"].includes(type)) {
+      const radius = this.#positive(tokens.shift());
+      if (type === "cylinder") {
+        geometry.radiusTop = radius;
+        geometry.radiusBottom = radius;
+      } else {
+        geometry.radius = radius;
+      }
+      return;
+    }
+    if (option === "top" && type === "cylinder") {
+      geometry.radiusTop = this.#nonNegative(tokens.shift(), "top");
+      return;
+    }
+    if (option === "bottom" && type === "cylinder") {
+      geometry.radiusBottom = this.#nonNegative(tokens.shift(), "bottom");
+      return;
+    }
+    if (option === "height" && type === "cylinder") {
+      geometry.height = this.#positive(tokens.shift());
+      return;
+    }
+    if (option === "sides" && type === "polygon") {
+      geometry.sides = this.#integerAtLeast(tokens.shift(), 3, "sides");
+      return;
+    }
+    if (option === "angle" && type === "polygon") {
+      geometry.startAngleDeg = this.#number(tokens.shift());
+      return;
+    }
+    if (option === "segments" && type === "sphere") {
+      geometry.widthSegments = this.#integerAtLeast(tokens.shift(), 3, "widthSegments");
+      geometry.heightSegments = this.#integerAtLeast(tokens.shift(), 2, "heightSegments");
+      return;
+    }
+    if (option === "segments" && type === "cylinder") {
+      geometry.radialSegments = this.#integerAtLeast(tokens.shift(), 3, "radialSegments");
+      return;
+    }
+    if (option === "segments" && type === "plane") {
+      geometry.widthSegments = this.#integerAtLeast(tokens.shift(), 1, "widthSegments");
+      geometry.heightSegments = this.#integerAtLeast(tokens.shift(), 1, "heightSegments");
+      return;
+    }
+
+    throw new Error(`Opção inválida para ${type}: ${option}. Use create help.`);
+  }
+
+  #createHelp() {
+    return {
+      usage: [
+        "create box [x y z]",
+        "create box size sx sy sz [origin x y z] [color #rrggbb]",
+        "create sphere [radius r] [segments largura altura] [origin x y z] [color #rrggbb]",
+        "create cylinder [radius r|top r bottom r] [height h] [segments n] [origin x y z] [color #rrggbb]",
+        "create plane [size largura altura] [segments x y] [referencial] [color #rrggbb]",
+        "create polygon [n|sides n] [radius r] [angle graus] [referencial] [color #rrggbb]"
+      ],
+      placement: [
+        "plane xy|xz|yz [origin x y z]",
+        "origin x y z normal nx ny nz [tangent tx ty tz]",
+        "points x0 y0 z0 x1 y1 z1 x2 y2 z2"
+      ],
+      examples: [
+        "create polygon 6 radius 2 plane xz origin 0 0 0 color #33aaff",
+        "create polygon sides 5 radius 1.5 origin 0 2 0 normal 1 1 0 tangent 0 0 1",
+        "create plane size 6 4 points 0 0 0 6 0 0 0 3 2",
+        "create sphere radius 1.5 segments 32 20 origin 0 2 0",
+        "create cylinder top 0 bottom 1.5 height 4 segments 32 origin 3 2 0"
+      ]
+    };
   }
 
   #group(tokens) {
@@ -578,7 +761,7 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|viewer|editor|clock|simulation|assets|project-assets|appearance-runtime|normalized-runtime|incremental-runtime|batch-selection|affine-math|resource-audit|render-resource-cache|instance-batches|batch-material-cache|geometry-registry|property-contract|affine-pivot|runtime-api|instanced-renderer|affine-repeat|all"
+        "Uso: runtime test help|placement-frame|geometry-creation|geometry-registry|all"
       );
     }
 
@@ -752,6 +935,34 @@ export class DevConsole {
     return number;
   }
 
+  #takeNumbers(tokens, count, usage) {
+    if (tokens.length < count) throw new Error(`Uso: ${usage}`);
+    return Array.from({ length: count }, () =>
+      this.#number(tokens.shift())
+    );
+  }
+
+  #takePositive(tokens, count, usage) {
+    if (tokens.length < count) throw new Error(`Uso: ${usage}`);
+    return Array.from({ length: count }, () =>
+      this.#positive(tokens.shift())
+    );
+  }
+
+  #integerAtLeast(value, minimum, name) {
+    const number = this.#number(value);
+    if (!Number.isInteger(number) || number < minimum) {
+      throw new Error(`${name} deve ser inteiro maior ou igual a ${minimum}.`);
+    }
+    return number;
+  }
+
+  #nonNegative(value, name) {
+    const number = this.#number(value);
+    if (number < 0) throw new Error(`${name} não pode ser negativo.`);
+    return number;
+  }
+
   #positive(value) {
     const number = this.#number(value);
     if (number <= 0) {
@@ -769,6 +980,33 @@ export class DevConsole {
       throw new Error(`Argumentos inesperados. Uso: ${usage}.`);
     }
   }
+}
+
+function defaultGeometry(type) {
+  switch (type) {
+    case "box":
+      return { type, size: [2, 2, 2] };
+    case "sphere":
+      return { type, radius: 1, widthSegments: 24, heightSegments: 16 };
+    case "cylinder":
+      return {
+        type,
+        radiusTop: 1,
+        radiusBottom: 1,
+        height: 2,
+        radialSegments: 24
+      };
+    case "plane":
+      return { type, width: 2, height: 2 };
+    case "polygon":
+      return { type, sides: 6, radius: 1, startAngleDeg: 0 };
+    default:
+      throw new Error(`Geometria desconhecida: ${type}.`);
+  }
+}
+
+function isNumericToken(value) {
+  return String(value ?? "").trim() !== "" && Number.isFinite(Number(value));
 }
 
 function splitStatements(source) {

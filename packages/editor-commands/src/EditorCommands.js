@@ -46,6 +46,9 @@ export function createEditorCommands({
     .register("object.create.box", args =>
       selectionOperations.createBox(args)
     )
+    .register("object.create.geometry", args =>
+      selectionOperations.createGeometry(args)
+    )
     .register("selection.position", ({ position }) =>
       selectionOperations.setSelectionPosition(position)
     )

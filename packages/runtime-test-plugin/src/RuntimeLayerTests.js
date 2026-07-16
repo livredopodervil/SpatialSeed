@@ -44,7 +44,8 @@ import {
   eulerQuaternion,
   identityMatrix,
   invertAffineMatrix,
-  multiplyMatrices
+  multiplyMatrices,
+  resolvePlacementFrame
 } from "../../math-affine/src/index.js";
 import {
   compileAffineExpression,
@@ -60,11 +61,11 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260714-0021c-diagnostics";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024c";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260715-0022a";
+} from "../../region-box/src/reducer.js?build=20260716-0024c";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -73,7 +74,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260714-0020b-a";
+} from "../../geometry-registry/src/index.js?build=20260716-0024c";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -82,7 +83,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260715-0022b";
+} from "../../devtools/src/DevConsole.js?build=20260716-0024c";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -2921,6 +2922,149 @@ assets: {
       }
     },
 
+    "placement-frame": {
+      "planos canônicos orientam a normal local"() {
+        assertDeepEqual(resolvePlacementFrame({ plane: "xy" }).normal, [0, 0, 1]);
+        assertDeepEqual(resolvePlacementFrame({ plane: "xz" }).normal, [0, 1, 0]);
+        assertDeepEqual(resolvePlacementFrame({ plane: "yz" }).normal, [1, 0, 0]);
+      },
+
+      "normal sem tangente produz base ortonormal estável"() {
+        const frame = resolvePlacementFrame({
+          origin: [1, 2, 3],
+          normal: [1, 1, 0]
+        });
+
+        assertDeepEqual(frame.origin, [1, 2, 3]);
+        assertNear(dot3(frame.normal, frame.tangent), 0);
+        assertNear(Math.hypot(...frame.normal), 1);
+        assertNear(Math.hypot(...frame.tangent), 1);
+        assertNear(Math.hypot(...frame.bitangent), 1);
+      },
+
+      "normal e tangente preservam a orientação solicitada"() {
+        const frame = resolvePlacementFrame({
+          normal: [0, 1, 0],
+          tangent: [1, 1, 0]
+        });
+
+        assertDeepEqual(frame.normal.map(roundAffine), [0, 1, 0]);
+        assertDeepEqual(frame.tangent.map(roundAffine), [1, 0, 0]);
+        assertEqual(frame.mode, "normal-tangent");
+      },
+
+      "três pontos definem origem plano e direção"() {
+        const frame = resolvePlacementFrame({
+          points: [[2, 3, 4], [4, 3, 4], [2, 3, 7]]
+        });
+
+        assertDeepEqual(frame.origin, [2, 3, 4]);
+        assertDeepEqual(frame.tangent.map(roundAffine), [1, 0, 0]);
+        assertDeepEqual(frame.normal.map(roundAffine), [0, -1, 0]);
+        assertEqual(frame.mode, "points");
+      },
+
+      "três pontos colineares são rejeitados"() {
+        let rejected = false;
+        try {
+          resolvePlacementFrame({
+            points: [[0, 0, 0], [1, 0, 0], [2, 0, 0]]
+          });
+        } catch {
+          rejected = true;
+        }
+        assertEqual(rejected, true);
+      }
+    },
+
+    "geometry-creation": {
+      "help anuncia apenas famílias criáveis"() {
+        const console = createGeometryConsole([]);
+        const result = console.execute("help create")[0];
+        const text = JSON.stringify(result.result);
+
+        assertEqual(result.ok, true);
+        for (const type of ["box", "sphere", "cylinder", "plane", "polygon"]) {
+          assert(text.includes(type));
+        }
+      },
+
+      "console compila polígono com plano origem e cor"() {
+        const calls = [];
+        const console = createGeometryConsole(calls);
+        const result = console.execute(
+          "create polygon 6 radius 2 plane xz origin 4 5 6 color #3af"
+        )[0];
+
+        assertEqual(result.ok, true);
+        assertEqual(calls[0].id, "object.create.geometry");
+        assertDeepEqual(calls[0].args.geometry, {
+          type: "polygon",
+          sides: 6,
+          radius: 2,
+          startAngleDeg: 0
+        });
+        assertDeepEqual(calls[0].args.position, [4, 5, 6]);
+        assertEqual(calls[0].args.color, "#33aaff");
+        assertNear(Math.abs(calls[0].args.rotation[0]), Math.SQRT1_2);
+      },
+
+      "console alcança todas as famílias registradas"() {
+        const calls = [];
+        const console = createGeometryConsole(calls);
+
+        for (const source of [
+          "create sphere radius 2",
+          "create cylinder radius 1 height 3",
+          "create plane size 4 5 plane yz",
+          "create polygon sides 8 radius 2",
+          "create box size 1 2 3 origin 0 1 0"
+        ]) {
+          assertEqual(console.execute(source)[0].ok, true);
+        }
+
+        assertDeepEqual(
+          calls.map(call => call.args.geometry.type),
+          ["sphere", "cylinder", "plane", "polygon", "box"]
+        );
+      },
+
+      "operação normaliza e persiste descritor genérico"() {
+        const region = new Region(
+          { id: "geometry-region", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: "geometry-region",
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+
+        const result = operations.createGeometry({
+          geometry: { type: "polygon", sides: 7, radius: 2 },
+          position: [1, 2, 3]
+        });
+        const object = sandbox.getSnapshot().objects[0];
+
+        assertEqual(result.changed, true);
+        assertEqual(object.kind, "polygon");
+        assertDeepEqual(object.position, [1, 2, 3]);
+        assertDeepEqual(object.geometry, {
+          type: "polygon",
+          sides: 7,
+          radius: 2,
+          startAngleDeg: 0
+        });
+        assertDeepEqual(
+          editor.selection.snapshot().members.map(member => member.objectId),
+          [object.id]
+        );
+      }
+    },
+
     "geometry-registry": {
       "registro normaliza caixa legada"() {
         const registry = createDefaultGeometryRegistry();
@@ -3916,6 +4060,23 @@ function createPropertyConsole(fixture) {
   });
 }
 
+function createGeometryConsole(calls) {
+  return new DevConsole({
+    editor: { selection: new Selection() },
+    sandbox: {},
+    region: {},
+    renderer: {},
+    getDiagnostics: () => ({}),
+    commands: {
+      describe: () => [],
+      execute(id, args) {
+        calls.push({ id, args });
+        return { changed: true };
+      }
+    }
+  });
+}
+
 function propertyObject(id, color, instanceColor) {
   return {
     id,
@@ -4144,6 +4305,10 @@ function assertNear(actual, expected, epsilon = 1e-9) {
     Math.abs(actual - expected) <= epsilon,
     `Esperado aproximadamente ${expected}, recebido ${actual}.`
   );
+}
+
+function dot3(a, b) {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
 function assertThrowsCode(callback, expectedCode) {

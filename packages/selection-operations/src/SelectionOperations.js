@@ -16,10 +16,11 @@ import {
 export class SelectionOperations {
   static apiVersion = "selection-operations-v2";
 
-  constructor({ editor, sandbox, regionId }) {
+  constructor({ editor, sandbox, regionId, geometryRegistry = null }) {
     this.editor = editor;
     this.sandbox = sandbox;
     this.regionId = regionId;
+    this.geometryRegistry = geometryRegistry;
     this.pendingDuplicate = null;
     this.lastDuplicate = null;
 
@@ -41,6 +42,36 @@ export class SelectionOperations {
     });
     if (changed) this.#selectIds([id]);
     return { changed, id };
+  }
+
+  createGeometry({
+    name = null,
+    geometry,
+    position = [0, 0, 0],
+    rotation = [0, 0, 0, 1],
+    color = "#6699cc"
+  } = {}) {
+    if (!this.geometryRegistry) {
+      throw new Error("Registro de geometrias indisponível.");
+    }
+
+    const descriptor = this.geometryRegistry.normalize(geometry);
+    const id = crypto.randomUUID();
+    const index = this.sandbox.getSnapshot().objects.length + 1;
+    const label = geometryLabel(descriptor.type);
+    const changed = this.sandbox.dispatch({
+      type: "object.create",
+      id,
+      kind: descriptor.type,
+      name: name || `${label} ${index}`,
+      position: [...position],
+      rotation: [...rotation],
+      geometry: descriptor,
+      color
+    });
+
+    if (changed) this.#selectIds([id]);
+    return { changed, id, geometry: descriptor };
   }
 
   duplicate() {
@@ -765,6 +796,16 @@ function copyName(name, copyIndex) {
     .replace(/(?:\s+#\d+)+$/u, "")
     .replace(/(?:\s+cópia)+$/u, "");
   return `${base} #${copyIndex + 1}`;
+}
+
+function geometryLabel(type) {
+  return ({
+    box: "Caixa",
+    sphere: "Esfera",
+    cylinder: "Cilindro",
+    plane: "Plano",
+    polygon: "Polígono"
+  })[type] ?? "Objeto";
 }
 
 function snapshotTransform(object) {
