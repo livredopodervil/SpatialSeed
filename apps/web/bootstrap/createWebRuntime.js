@@ -23,6 +23,9 @@ import {
   SelectionPropertyService
 } from "../../../packages/property-registry/src/index.js?build=20260715-0022b";
 import {
+  createDefaultGeometryRegistry
+} from "../../../packages/geometry-registry/src/index.js";
+import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
   RuntimeEvents,
@@ -71,6 +74,7 @@ export async function createWebRuntime({
   }
 
   const appearanceRuntime = new AppearanceRuntime();
+  const geometryRegistry=createDefaultGeometryRegistry();
   const initialScene = appearanceRuntime.normalizeScene({
     schemaVersion: 1,
     objects: [
@@ -111,6 +115,7 @@ export async function createWebRuntime({
     dispatch: dispatchRuntimeCommand,
     selection: editor.selection,
     editorState: editor,
+    geometryRegistry,
     projectObject: object =>
       appearanceRuntime.projectObject(object)
   });
@@ -289,6 +294,9 @@ export async function createWebRuntime({
     }))
     .register("properties", () =>
       propertyRegistry.describe()
+    )
+    .register("geometries", () =>
+      geometryRegistry.list()
     );
 
   commands.register(
@@ -341,6 +349,7 @@ export async function createWebRuntime({
       devConsole,
       objectInspector,
       transformToolPanel,
+      geometryRegistry,
       propertyRegistry,
       propertyService
     })

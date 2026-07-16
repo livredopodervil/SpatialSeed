@@ -19,7 +19,11 @@ import { Region } from "../../core/src/Region.js";
 import { Sandbox } from "../../core/src/Sandbox.js";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
-import { RefCountCache, textureKey } from "../../renderer-resource-cache/src/index.js";
+import {
+  RefCountCache,
+  textureKey,
+  ThreeResourceCache
+} from "../../renderer-resource-cache/src/index.js";
 import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
 import {
   InstanceBatchIndex
@@ -2305,6 +2309,31 @@ assets: {
         });
 
         assert(first !== second);
+      },
+
+      "cache genérico compartilha geometria registrada"() {
+        const registry=createDefaultGeometryRegistry();
+        const descriptor=registry.normalize({
+          type:"polygon",
+          sides:6,
+          radius:2
+        });
+        const key=registry.key(descriptor);
+        const cache=new ThreeResourceCache();
+        let creates=0;
+        const create=() => {
+          creates+=1;
+          return registry.create(descriptor);
+        };
+        const first=cache.acquireGeometry(key,create);
+        const second=cache.acquireGeometry(key,create);
+
+        assertEqual(creates,1);
+        assertEqual(first.value,second.value);
+        assertEqual(cache.stats().geometries.references,2);
+        cache.releaseGeometry(first.key);
+        cache.releaseGeometry(second.key);
+        assertEqual(cache.stats().geometries.entries,0);
       }
     },
 
@@ -3035,6 +3064,28 @@ assets: {
         }
         assertNear(maximumRadius,2,1e-6);
         geometry.dispose();
+      },
+
+      "objeto com descriptor explícito resolve polígono"() {
+        const registry=createDefaultGeometryRegistry();
+        assertDeepEqual(
+          registry.describeLegacyObject({
+            id:"polygon-a",
+            kind:"polygon",
+            geometry:{
+              type:"polygon",
+              sides:3,
+              radius:4,
+              startAngleDeg:30
+            }
+          }),
+          {
+            type:"polygon",
+            sides:3,
+            radius:4,
+            startAngleDeg:30
+          }
+        );
       }
     },
 
