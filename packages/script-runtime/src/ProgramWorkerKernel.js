@@ -4,6 +4,10 @@ import {
 import {
   PROGRAM_WORKER_PROTOCOL_VERSION
 } from "./ProgramRunController.js";
+import {
+  createSpatialPlanningFacade,
+  SPATIAL_CREATE_COMMAND
+} from "./SpatialPlanningFacade.js";
 
 const MAX_SOURCE_LENGTH = 100000;
 
@@ -23,7 +27,15 @@ export function executeProgramRequest(
     const environment = createCalculationEnvironment({
       seed: normalized.seed,
       snapshot: normalized.snapshot,
-      maxOutput: normalized.maxOutput
+      maxOutput: normalized.maxOutput,
+      spatial: normalized.allowedCommands.includes(
+        SPATIAL_CREATE_COMMAND
+      )
+        ? createSpatialPlanningFacade({
+            run,
+            geometryTypes: normalized.geometryTypes
+          })
+        : null
     });
     const value = evaluate(
       buildProgramSource(
@@ -90,7 +102,8 @@ export function buildProgramSource(source, mode = "expression") {
 export function createCalculationEnvironment({
   seed = 0,
   snapshot = null,
-  maxOutput = 100
+  maxOutput = 100,
+  spatial = null
 } = {}) {
   const outputLines = [];
   const randomSource = createSeededRandom(seed);
@@ -116,7 +129,8 @@ export function createCalculationEnvironment({
       ...math,
       math,
       print,
-      snapshot: clone(snapshot)
+      snapshot: clone(snapshot),
+      ...(spatial === null ? {} : { spatial })
     },
     output() {
       return [...outputLines];
@@ -195,6 +209,11 @@ function normalizeRequest(request) {
     snapshot: clone(request.snapshot ?? null),
     allowedCommands: Array.isArray(request.allowedCommands)
       ? [...request.allowedCommands]
+      : [],
+    geometryTypes: Array.isArray(request.geometryTypes)
+      ? request.geometryTypes.map(type =>
+          nonEmptyString(type, "geometryTypes").toLowerCase()
+        )
       : [],
     maxCommands: positiveInteger(
       request.maxCommands ?? 10000,

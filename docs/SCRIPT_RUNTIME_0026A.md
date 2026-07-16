@@ -127,5 +127,33 @@ e `return`. `session status` mostra geração, revisão e nomes persistidos.
 
 O controlador mantém um Worker saudável entre avaliações. Timeout,
 cancelamento, mensagem incompatível ou erro de programa encerram o Worker e
-descartam a sessão privada. O controlador rejeita qualquer plano que contenha
-comandos: nesta etapa a matemática continua incapaz de alterar a cena.
+descartam a sessão privada. Sem uma capability explicitamente configurada, o
+controlador rejeita qualquer plano que contenha comandos.
+
+## Planejamento espacial 0026f
+
+A capability `spatial` passa a existir somente quando o controlador autoriza
+explicitamente `object.create.geometry` e fornece a lista de famílias
+registradas. O programa pode produzir intenções como:
+
+```js
+const tower = spatial.create("box", {
+  size: [2, 8, 2],
+  position: [0, 4, 0],
+  color: "#4488ff"
+})
+return tower
+```
+
+`spatial.create` devolve um handle determinístico e insere uma intenção no
+plano. O handle identifica um objeto ainda inexistente; nesta etapa ele não é
+convertido em ID da cena.
+
+Parâmetros próprios da geometria podem ser escritos diretamente nas opções ou
+dentro de `geometry`. `name`, `position`, `rotation`, `placement` e `color` são
+separados como argumentos de criação. Geometrias ausentes das capabilities,
+valores não serializáveis e planos acima do orçamento falham fechados.
+
+O console mostra `plan.commandCount` e `plan.commands`, mas nenhum comando é
+executado. A validação contra o registro real e o commit atômico pertencem à
+etapa 0026g.

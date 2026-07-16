@@ -25,3 +25,7 @@ export {
 export {
   createBrowserProgramSessionWorker
 } from "./createBrowserProgramSessionWorker.js";
+export {
+  createSpatialPlanningFacade,
+  SPATIAL_CREATE_COMMAND
+} from "./SpatialPlanningFacade.js";

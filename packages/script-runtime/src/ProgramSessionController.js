@@ -17,6 +17,9 @@ export class ProgramSessionController {
   constructor({
     workerFactory,
     timeoutMs = 5000,
+    allowedCommands = [],
+    geometryTypes = [],
+    maxCommands = 10000,
     setTimer = (callback, delay) =>
       globalThis.setTimeout(callback, delay),
     clearTimer = timerId =>
@@ -31,6 +34,16 @@ export class ProgramSessionController {
 
     this.workerFactory = workerFactory;
     this.timeoutMs = positiveInteger(timeoutMs, "timeoutMs");
+    this.allowedCommands = normalizedStringList(
+      allowedCommands,
+      "allowedCommands"
+    );
+    this.geometryTypes = normalizedStringList(
+      geometryTypes,
+      "geometryTypes",
+      { lowercase: true }
+    );
+    this.maxCommands = positiveInteger(maxCommands, "maxCommands");
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
   }
@@ -62,8 +75,9 @@ export class ProgramSessionController {
       source: String(source),
       mode: normalizeMode(mode),
       snapshot,
-      allowedCommands: [],
-      maxCommands: 1,
+      allowedCommands: this.allowedCommands,
+      geometryTypes: this.geometryTypes,
+      maxCommands: this.maxCommands,
       maxOutput: positiveInteger(maxOutput, "maxOutput")
     });
     const worker = this.#ensureWorker();
@@ -185,7 +199,12 @@ export class ProgramSessionController {
       keys: Object.freeze([...this.#keys]),
       sessionAlive: this.#worker !== null,
       runId: this.#active?.request.runId ?? null,
-      lastError: this.#lastError
+      lastError: this.#lastError,
+      capabilities: Object.freeze({
+        commands: this.allowedCommands,
+        geometries: this.geometryTypes,
+        maxCommands: this.maxCommands
+      })
     });
   }
 
@@ -298,11 +317,26 @@ function validateSessionEnvelope(envelope, request) {
   ) {
     throw new Error("Plano de programa pertence a outra execução.");
   }
-  if (
-    !Array.isArray(envelope.plan.commands) ||
-    envelope.plan.commands.length !== 0
-  ) {
-    throw new Error("Sessão matemática não pode emitir comandos de cena.");
+  if (!Array.isArray(envelope.plan.commands)) {
+    throw new Error("Plano não contém lista de comandos.");
+  }
+  if (envelope.plan.commands.length > request.maxCommands) {
+    throw new Error("Plano excede o orçamento de comandos.");
+  }
+
+  const allowed = new Set(request.allowedCommands);
+  for (const [index, intent] of envelope.plan.commands.entries()) {
+    if (
+      intent?.sequence !== index ||
+      !allowed.has(intent?.command) ||
+      !intent.args ||
+      typeof intent.args !== "object" ||
+      Array.isArray(intent.args)
+    ) {
+      throw new Error(
+        `Comando de programa não autorizado na posição ${index}.`
+      );
+    }
   }
   if (
     envelope.session?.state !== "active" ||
@@ -365,4 +399,15 @@ function normalizeMode(value) {
     throw new Error(`Modo de programa desconhecido: ${mode}.`);
   }
   return mode;
+}
+
+function normalizedStringList(values, label, { lowercase = false } = {}) {
+  if (!Array.isArray(values)) {
+    throw new TypeError(`${label} deve formar uma lista.`);
+  }
+
+  return Object.freeze([...new Set(values.map(value => {
+    const normalized = nonEmptyString(value, label);
+    return lowercase ? normalized.toLowerCase() : normalized;
+  }))]);
 }

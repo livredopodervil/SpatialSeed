@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0025g";
+} from "../../devtools/src/DevConsole.js?build=20260716-0026f";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -130,6 +130,7 @@ import {
   PROGRAM_WORKER_PROTOCOL_VERSION,
   ProgramSessionController,
   ProgramSessionKernel,
+  SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker,
   createBrowserProgramWorker,
   createSeededRandom,
@@ -791,7 +792,7 @@ export function createRuntimeLayerTests() {
         assertEqual(harness.controller.snapshot().sessionAlive, false);
         assert(
           harness.controller.snapshot().lastError.includes(
-            "não pode emitir comandos de cena"
+            "não autorizado"
           )
         );
       },
@@ -806,6 +807,161 @@ export function createRuntimeLayerTests() {
         assertEqual(calls.length, 1);
         assertEqual(calls[0].source, source);
         assertEqual(calls[0].mode, "program");
+      }
+    },
+
+    "spatial-planning": {
+      "create produz intenção serializável sem tocar na cena"() {
+        const envelope = executeProgramRequest({
+          runId: "spatial-create",
+          baseVersion: 12,
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box", "sphere"],
+          source: [
+            "const handle = spatial.create('box', {",
+            "  size: [1, 2, 3],",
+            "  position: [4, 5, 6],",
+            "  color: '#336699'",
+            "});",
+            "return handle;"
+          ].join("\n"),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertEqual(envelope.plan.baseVersion, 12);
+        assertEqual(envelope.plan.commands.length, 1);
+        assertEqual(
+          envelope.plan.commands[0].command,
+          SPATIAL_CREATE_COMMAND
+        );
+        assertDeepEqual(
+          envelope.plan.commands[0].args.geometry,
+          { size: [1, 2, 3], type: "box" }
+        );
+        assertDeepEqual(
+          envelope.plan.commands[0].args.position,
+          [4, 5, 6]
+        );
+        assertEqual(envelope.plan.commands[0].args.color, "#336699");
+        assertDeepEqual(
+          envelope.plan.result.value,
+          envelope.plan.commands[0].args.handle
+        );
+        structuredClone(envelope.plan);
+      },
+
+      "handles repetem para mesma execução e ordem"() {
+        const request = {
+          runId: "deterministic-spatial",
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"],
+          source: [
+            "return [",
+            "  spatial.create('box'),",
+            "  spatial.create('box')",
+            "];"
+          ].join("\n"),
+          mode: "program"
+        };
+        const first = executeProgramRequest(request, {
+          evaluate: evaluateTrustedFixture
+        });
+        const second = executeProgramRequest(request, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertDeepEqual(
+          first.plan.result.value,
+          second.plan.result.value
+        );
+        assertEqual(first.plan.commands[0].args.handle.id,
+          "deterministic-spatial:object:1");
+        assertEqual(first.plan.commands[1].args.handle.id,
+          "deterministic-spatial:object:2");
+      },
+
+      "geometria fora das capacidades falha fechado"() {
+        const envelope = executeProgramRequest({
+          runId: "unsupported-spatial",
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"],
+          source: "spatial.create('mesh')"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.failed");
+        assert(envelope.error.message.includes("não permitida"));
+      },
+
+      "orçamento interrompe plano antes do comando excedente"() {
+        const envelope = executeProgramRequest({
+          runId: "budget-spatial",
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"],
+          maxCommands: 2,
+          source: [
+            "spatial.create('box');",
+            "spatial.create('box');",
+            "spatial.create('box');"
+          ].join("\n"),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.failed");
+        assert(envelope.error.message.includes("limite de 2 comandos"));
+      },
+
+      "sem capability spatial permanece ausente"() {
+        const envelope = executeProgramRequest({
+          runId: "no-spatial-capability",
+          allowedCommands: [],
+          geometryTypes: ["box"],
+          source: "typeof spatial"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.plan.result.value, "undefined");
+        assertEqual(envelope.plan.commands.length, 0);
+      },
+
+      "controlador aceita somente intenção autorizada"() {
+        const harness = createProgramSessionControllerHarness({
+          allowedCommands: [SPATIAL_CREATE_COMMAND],
+          geometryTypes: ["box"]
+        });
+        harness.controller.run({
+          runId: "authorized-spatial",
+          source: "spatial.create('box')",
+          mode: "program"
+        }).catch(() => {});
+        harness.worker.emit(
+          "message",
+          sessionCompletedEnvelope({
+            runId: "authorized-spatial",
+            revision: 1,
+            commands: [{
+              sequence: 0,
+              command: SPATIAL_CREATE_COMMAND,
+              args: {
+                handle: {
+                  kind: "object",
+                  id: "authorized-spatial:object:1"
+                },
+                geometry: { type: "box" }
+              }
+            }]
+          })
+        );
+
+        assertEqual(harness.controller.snapshot().state, "idle");
+        assertEqual(harness.worker.terminations, 0);
       }
     },
 
@@ -5524,7 +5680,7 @@ function createProgramControllerHarness() {
   };
 }
 
-function createProgramSessionControllerHarness() {
+function createProgramSessionControllerHarness(options = {}) {
   const worker = new FakeProgramWorker();
   let timeoutCallback = null;
   let creations = 0;
@@ -5538,7 +5694,8 @@ function createProgramSessionControllerHarness() {
       timeoutCallback = callback;
       return 23;
     },
-    clearTimer() {}
+    clearTimer() {},
+    ...options
   });
 
   return {

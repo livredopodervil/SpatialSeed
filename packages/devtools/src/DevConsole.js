@@ -142,6 +142,12 @@ export class DevConsole {
     return {
       value: plan.result?.value ?? null,
       output: plan.result?.output ?? [],
+      plan: {
+        runId: plan.runId,
+        baseVersion: plan.baseVersion,
+        commandCount: plan.commands?.length ?? 0,
+        commands: plan.commands ?? []
+      },
       session: this.programs.snapshot()
     };
   }
@@ -283,7 +289,7 @@ export class DevConsole {
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
         "runtime test placement-frame|geometry-creation|geometry-registry|" +
-        "file-interop|project-files|pwa-status|all",
+        "file-interop|project-files|pwa-status|spatial-planning|all",
         "calc expressão JavaScript",
         "program código JavaScript",
         "session status|reset|cancel|help",
@@ -339,13 +345,14 @@ export class DevConsole {
       notes: [
         "Use session.nome para valores, objetos e funções persistentes.",
         "calc avalia uma expressão; program aceita comandos e return.",
-        "A sessão matemática não possui acesso à cena."
+        "spatial cria um plano; nesta build ele ainda não altera a cena."
       ],
       examples: [
         "calc sqrt(3 ** 2 + 4 ** 2)",
         "calc session.radius = 12",
         "program session.area = r => pi * r ** 2",
         "calc session.area(session.radius)",
+        "program spatial.create('box', {size:[1,2,1], position:[0,1,0]})",
         "program for (let i=0;i<5;i+=1) print(i, random()); return 'ok'"
       ]
     };
@@ -903,7 +910,8 @@ export class DevConsole {
     if (namespace !== "test") {
       throw new Error(
         "Uso: runtime test help|placement-frame|geometry-creation|" +
-        "geometry-registry|file-interop|project-files|pwa-status|all"
+        "geometry-registry|file-interop|project-files|pwa-status|" +
+        "spatial-planning|all"
       );
     }
 

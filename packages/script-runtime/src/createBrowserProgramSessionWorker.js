@@ -1,7 +1,7 @@
 export function createBrowserProgramSessionWorker({
   WorkerClass = globalThis.Worker,
   workerUrl = new URL(
-    "./ProgramSessionWorker.js?build=20260716-0026e",
+    "./ProgramSessionWorker.js?build=20260716-0026f",
     import.meta.url
   ),
   name = "spatial-seed-program-session"
