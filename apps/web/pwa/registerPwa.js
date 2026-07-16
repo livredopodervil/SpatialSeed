@@ -27,19 +27,23 @@ export function registerPwa(buildInfo, { onStateChange = null } = {}) {
     return Promise.resolve(snapshot(state));
   }
 
-  const applicationRoot = new URL("../", import.meta.url);
-  const repositoryRoot = new URL("../../", applicationRoot);
-  const workerUrl = new URL("service-worker.js", repositoryRoot);
+  const locations = resolvePwaLocations(import.meta.url);
+  const workerUrl = new URL(locations.workerUrl);
   workerUrl.searchParams.set("build", buildInfo.build);
 
   serviceWorkers.addEventListener("controllerchange", publish);
 
   return serviceWorkers.register(workerUrl, {
-    scope: repositoryRoot.pathname
+    scope: locations.scope
   }).then(registration => {
     state.registered = true;
     state.scope = registration.scope;
     observeRegistration(registration, state, publish);
+    retireLegacyRegistration(serviceWorkers, registration, locations)
+      .catch(error => console.warn(
+        "Spatial Seed: registro PWA legado não pôde ser removido.",
+        error
+      ));
     publish();
     return snapshot(state);
   }).catch(error => {
@@ -47,6 +51,18 @@ export function registerPwa(buildInfo, { onStateChange = null } = {}) {
     publish();
     console.warn("Spatial Seed: modo offline indisponível.", error);
     return snapshot(state);
+  });
+}
+
+export function resolvePwaLocations(moduleUrl) {
+  const applicationRoot = new URL("../", moduleUrl);
+  const repositoryRoot = new URL("../../", applicationRoot);
+  return Object.freeze({
+    applicationRoot: applicationRoot.href,
+    repositoryRoot: repositoryRoot.href,
+    workerUrl: new URL("service-worker.js", applicationRoot).href,
+    legacyWorkerUrl: new URL("service-worker.js", repositoryRoot).href,
+    scope: applicationRoot.pathname
   });
 }
 
@@ -100,6 +116,55 @@ function observeRegistration(registration, state, publish) {
   };
   registration.addEventListener("updatefound", refresh);
   refresh();
+}
+
+async function retireLegacyRegistration(
+  serviceWorkers,
+  currentRegistration,
+  locations
+) {
+  if (locations.workerUrl === locations.legacyWorkerUrl) return false;
+  await waitForActiveWorker(currentRegistration);
+  const registrations = await serviceWorkers.getRegistrations();
+  let retired = false;
+  for (const registration of registrations) {
+    if (registration === currentRegistration) continue;
+    if (!registrationUsesScript(registration, locations.legacyWorkerUrl)) {
+      continue;
+    }
+    retired = await registration.unregister() || retired;
+  }
+  return retired;
+}
+
+function waitForActiveWorker(registration) {
+  if (registration.active) return Promise.resolve(registration.active);
+  const worker = registration.installing ?? registration.waiting;
+  if (!worker) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const onStateChange = () => {
+      if (worker.state !== "activated" && worker.state !== "redundant") return;
+      worker.removeEventListener("statechange", onStateChange);
+      resolve(worker.state === "activated" ? worker : null);
+    };
+    worker.addEventListener("statechange", onStateChange);
+    onStateChange();
+  });
+}
+
+function registrationUsesScript(registration, expectedUrl) {
+  const expected = workerIdentity(expectedUrl);
+  return [
+    registration.active,
+    registration.waiting,
+    registration.installing
+  ].some(worker => workerIdentity(worker?.scriptURL) === expected);
+}
+
+function workerIdentity(value) {
+  if (!value) return null;
+  const url = new URL(value);
+  return `${url.origin}${url.pathname}`;
 }
 
 function publishState(state, { serviceWorkers, onStateChange }) {

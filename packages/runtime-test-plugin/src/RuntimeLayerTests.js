@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0025e";
+} from "../../devtools/src/DevConsole.js?build=20260716-0025f";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -113,6 +113,7 @@ import {
 } from "../../../apps/web/file-interop/BrowserProjectFileGateway.js";
 import {
   formatPwaBuildLabel,
+  resolvePwaLocations,
   workerBuild
 } from "../../../apps/web/pwa/registerPwa.js";
 import {
@@ -2107,12 +2108,40 @@ assets: {
     },
 
     "pwa-status": {
+      "escopo local permanece limitado à aplicação"() {
+        const locations=resolvePwaLocations(
+          "http://127.0.0.1:8082/apps/web/pwa/registerPwa.js"
+        );
+        assertEqual(locations.applicationRoot,"http://127.0.0.1:8082/apps/web/");
+        assertEqual(locations.repositoryRoot,"http://127.0.0.1:8082/");
+        assertEqual(
+          locations.workerUrl,
+          "http://127.0.0.1:8082/apps/web/service-worker.js"
+        );
+        assertEqual(locations.scope,"/apps/web/");
+      },
+
+      "prefixo do GitHub Pages é preservado nos caminhos PWA"() {
+        const locations=resolvePwaLocations(
+          "https://livredopodervil.github.io/SpatialSeed/apps/web/pwa/registerPwa.js"
+        );
+        assertEqual(
+          locations.workerUrl,
+          "https://livredopodervil.github.io/SpatialSeed/apps/web/service-worker.js"
+        );
+        assertEqual(locations.scope,"/SpatialSeed/apps/web/");
+        assertEqual(
+          locations.legacyWorkerUrl,
+          "https://livredopodervil.github.io/SpatialSeed/service-worker.js"
+        );
+      },
+
       "extrai build do service worker controlador"() {
         assertEqual(
           workerBuild(
-            "https://example.test/SpatialSeed/service-worker.js?build=0025e"
+            "https://example.test/SpatialSeed/apps/web/service-worker.js?build=0025f"
           ),
-          "0025e"
+          "0025f"
         );
         assertEqual(workerBuild("https://example.test/worker.js"),null);
         assertEqual(workerBuild(null),null);
@@ -2121,28 +2150,28 @@ assets: {
       "rótulo denuncia cache controlador anterior"() {
         const label=formatPwaBuildLabel({
           version:"0.1.0",
-          build:"0025e",
+          build:"0025f",
           channel:"test"
         },{
           controllerBuild:"0025d",
           updatePending:true,
-          waitingBuild:"0025e"
+          waitingBuild:"0025f"
         });
         assertEqual(
           label,
-          "v0.1.0 · build 0025e · cache 0025d · feche para atualizar"
+          "v0.1.0 · build 0025f · cache 0025d · feche para atualizar"
         );
       },
 
       "rótulo permanece conciso quando cache e publicação coincidem"() {
         assertEqual(formatPwaBuildLabel({
           version:"0.1.0",
-          build:"0025e",
+          build:"0025f",
           channel:"test"
         },{
-          controllerBuild:"0025e",
+          controllerBuild:"0025f",
           updatePending:false
-        }),"v0.1.0 · build 0025e");
+        }),"v0.1.0 · build 0025f");
       }
     },
 

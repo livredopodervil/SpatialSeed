@@ -18,7 +18,7 @@ EXCLUDED = {OUTPUT}
 
 
 def collect_files() -> list[str]:
-    files = {"service-worker.js"}
+    files = set()
     for source_root in SOURCE_ROOTS:
         for path in source_root.rglob("*"):
             if path.is_file() and path.suffix in ALLOWED_SUFFIXES and path not in EXCLUDED:

@@ -6,8 +6,8 @@ Ela não altera o runtime espacial nem introduz uma segunda via de comandos.
 ## Escopo
 
 - manifesto instalável com ícones de 192 e 512 pixels;
-- service worker na raiz do repositório, capaz de controlar `apps/web`,
-  `packages` e `vendor`;
+- service worker em `apps/web`, com controle limitado à aplicação e cache dos
+  recursos compartilhados em `packages` e `vendor`;
 - cache versionado pelo `build-info.json`, sem versão duplicada no HTML;
 - consulta de versão pela rede primeiro, para que um cache antigo não impeça
   a descoberta de uma atualização;
@@ -27,6 +27,11 @@ O primeiro acesso ainda requer rede. Depois que o service worker concluir a
 instalação, os módulos do aplicativo ficam disponíveis no cache do navegador.
 A atualização entra em vigor com segurança quando as abas da versão anterior
 forem encerradas.
+
+O arquivo `service-worker.js` da raiz é apenas uma ponte de migração: instalações
+da 0025 anteriores ao escopo restrito o recebem, removem o registro amplo e passam
+a usar `apps/web/service-worker.js`. Ele não intercepta requisições nem mantém um
+segundo cache.
 
 ## Diagnóstico no navegador
 
