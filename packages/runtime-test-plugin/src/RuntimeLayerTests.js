@@ -83,7 +83,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0024i";
+} from "../../devtools/src/DevConsole.js?build=20260716-0025b";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -104,6 +104,9 @@ import {
   formatBuildLabel,
   normalizeBuildInfo
 } from "../../../apps/web/BuildInfo.js";
+import {
+  BrowserProjectFileGateway
+} from "../../../apps/web/file-interop/BrowserProjectFileGateway.js";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260716-0024i";
@@ -1979,6 +1982,53 @@ assets: {
           () => normalizeBuildInfo({version:"0.1.0"}),
           "INVALID_BUILD_INFO"
         );
+      }
+    },
+
+    "file-interop": {
+      "capacidades distinguem API nativa e fallback"() {
+        const fallback=createFileGatewayHarness();
+        assertDeepEqual(fallback.gateway.capabilities(),{
+          nativeOpen:false,
+          nativeSave:false,
+          fallbackOpen:true,
+          fallbackSave:true
+        });
+
+        const native=createFileGatewayHarness({
+          showOpenFilePicker() {},
+          showSaveFilePicker() {}
+        });
+        assertEqual(native.gateway.capabilities().nativeOpen,true);
+        assertEqual(native.gateway.capabilities().nativeSave,true);
+      },
+
+      "download compatível permanece disponível sem seletor nativo"() {
+        const harness=createFileGatewayHarness();
+        harness.gateway.save({
+          prepared:true,
+          filename:"teste.spatialseed",
+          mediaType:"application/json",
+          text:"{\"format\":\"spatial-seed\"}",
+          bytes:25
+        });
+
+        assertDeepEqual(harness.calls,[
+          "url:create",
+          "dom:append",
+          "link:click",
+          "link:remove",
+          "timer:1000",
+          "url:revoke:blob:test"
+        ]);
+        assertEqual(harness.link.download,"teste.spatialseed");
+      },
+
+      "novo projeto descarta referência de arquivo anterior"() {
+        const harness=createFileGatewayHarness();
+        harness.gateway.fileHandle={name:"anterior.spatialseed"};
+        harness.gateway.reset();
+        assertEqual(harness.gateway.fileHandle,null);
       }
     },
 
@@ -4550,6 +4600,56 @@ function createBridge() {
       };
     }
   });
+}
+
+function createFileGatewayHarness(windowOverrides={}) {
+  const calls=[];
+  const link={
+    href:"",
+    download:"",
+    click() { calls.push("link:click"); },
+    remove() { calls.push("link:remove"); }
+  };
+  const windowRef={
+    setTimeout(callback,delay) {
+      calls.push(`timer:${delay}`);
+      callback();
+    },
+    ...windowOverrides
+  };
+  const documentRef={
+    body:{
+      appendChild(value) {
+        assertEqual(value,link);
+        calls.push("dom:append");
+      }
+    },
+    createElement(tag) {
+      assertEqual(tag,"a");
+      return link;
+    }
+  };
+  const urlApi={
+    createObjectURL() {
+      calls.push("url:create");
+      return "blob:test";
+    },
+    revokeObjectURL(url) {
+      calls.push(`url:revoke:${url}`);
+    }
+  };
+  class TestBlob {
+    constructor(parts) {
+      this.size=parts.join("").length;
+    }
+  }
+  const gateway=new BrowserProjectFileGateway({
+    windowRef,
+    documentRef,
+    urlApi,
+    BlobCtor:TestBlob
+  });
+  return {gateway,calls,link};
 }
 
 export function runRuntimeTests(suites, requested = "all") {

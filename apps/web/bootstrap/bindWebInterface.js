@@ -1,4 +1,7 @@
 import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024i";
+import {
+  BrowserProjectFileGateway
+} from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0025b";
 
 export function bindWebInterface({
   runtime,
@@ -27,6 +30,13 @@ export function bindWebInterface({
     location: location.href,
     userAgent: navigator.userAgent
   };
+  const browserWindow = documentRoot.defaultView ?? window;
+  const projectFiles = new BrowserProjectFileGateway({
+    windowRef: browserWindow,
+    documentRef: documentRoot
+  });
+  browserWindow.__SPATIAL_SEED_FILE_INTEROP__ =
+    projectFiles.capabilities();
 
   const consoleLines = [];
   const consoleInputHistory = [];
@@ -358,16 +368,35 @@ export function bindWebInterface({
     () => panelManager.hide("#outline")
   );
 
-  $("project-save").addEventListener("click", () => {
-    const result = execute("project.save");
-    if (result?.downloaded) {
-      showNotice(`Projeto salvo: ${result.filename}`);
+  $("project-save").addEventListener("click", async () => {
+    const project = execute("project.save");
+    if (!project?.prepared) return;
+
+    try {
+      const result = await projectFiles.save(project);
+      if (result.saved) {
+        showNotice(`Projeto salvo: ${result.filename}`);
+      }
+    } catch (error) {
+      showError(error);
     }
   });
 
   $("project-open").addEventListener(
     "click",
-    () => $("project-file-input").click()
+    async () => {
+      if (!projectFiles.capabilities().nativeOpen) {
+        $("project-file-input").click();
+        return;
+      }
+
+      try {
+        const opened = await projectFiles.open();
+        if (opened.opened) loadProjectText(opened.text);
+      } catch (error) {
+        showError(error);
+      }
+    }
   );
 
   $("project-file-input").addEventListener(
@@ -377,15 +406,11 @@ export function bindWebInterface({
       if (!file) return;
 
       try {
-        const text = await file.text();
-        const result = execute("project.open", { text });
-
-        if (result?.loaded) {
-          showNotice(
-            `Projeto aberto: ${result.name} ` +
-            `(${result.objectCount} objetos)`
-          );
-        }
+        projectFiles.reset();
+        const opened = await projectFiles.readFile(file);
+        loadProjectText(opened.text);
+      } catch (error) {
+        showError(error);
       } finally {
         event.target.value = "";
       }
@@ -398,8 +423,24 @@ export function bindWebInterface({
     )) return;
 
     const result = execute("project.new");
-    if (result?.created) showNotice("Novo projeto criado.");
+    if (result?.created) {
+      projectFiles.reset();
+      showNotice("Novo projeto criado.");
+    }
   });
+
+  function loadProjectText(text) {
+    const result = execute("project.open", { text });
+    if (result?.loaded) {
+      showNotice(
+        `Projeto aberto: ${result.name} ` +
+        `(${result.objectCount} objetos)`
+      );
+    } else {
+      projectFiles.reset();
+    }
+    return result;
+  }
 
   $("diagnostics").addEventListener("click", () => {
     Object.assign(

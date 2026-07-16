@@ -1,7 +1,7 @@
 import {
   createRuntimeLayerTests,
   runRuntimeTests
-} from "./RuntimeLayerTests.js?build=20260716-0024i";
+} from "./RuntimeLayerTests.js?build=20260716-0025b";
 
 export const manifest = Object.freeze({
   id: "runtime-layer-tests",
@@ -34,6 +34,7 @@ export function activateRuntimeTestPlugin({ commands }) {
         "runtime test placement-frame",
         "runtime test geometry-creation",
         "runtime test geometry-registry",
+        "runtime test file-interop",
         "runtime test ui-configuration",
         "runtime test all"
       ],

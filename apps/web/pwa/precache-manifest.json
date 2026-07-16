@@ -8,6 +8,7 @@
     "apps/web/bootstrap/createWebRuntime.js",
     "apps/web/build-info.json",
     "apps/web/config/ui.default.json",
+    "apps/web/file-interop/BrowserProjectFileGateway.js",
     "apps/web/icons/icon-192.png",
     "apps/web/icons/icon-512.png",
     "apps/web/icons/spatial-seed.svg",
