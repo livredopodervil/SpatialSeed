@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 export const CylinderGeometryProvider = Object.freeze({
   type: "cylinder",
+  topology: "closed-solid",
 
   normalize(input = {}) {
     return Object.freeze({

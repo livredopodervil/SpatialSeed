@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 export const PolygonGeometryProvider = Object.freeze({
   type: "polygon",
+  topology: "open-surface",
 
   normalize(input = {}) {
     return Object.freeze({

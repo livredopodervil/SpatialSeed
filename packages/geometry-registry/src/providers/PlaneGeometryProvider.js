@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 export const PlaneGeometryProvider = Object.freeze({
   type: "plane",
+  topology: "open-surface",
 
   normalize(input = {}) {
     return Object.freeze({

@@ -428,9 +428,11 @@ export class ThreeRegionRenderer {
 
   #batchKeyFor(object) {
     const descriptor=this.#geometryRegistry.describeLegacyObject(object);
+    const renderProfile=this.#geometryRegistry.renderProfile(descriptor);
     return JSON.stringify([
       this.#geometryRegistry.key(descriptor),
-      object.appearanceId
+      object.appearanceId,
+      renderProfile.side
     ]);
   }
 
@@ -439,6 +441,7 @@ export class ThreeRegionRenderer {
 
     if (!batch) {
       const descriptor=this.#geometryRegistry.describeLegacyObject(object);
+      const renderProfile=this.#geometryRegistry.renderProfile(descriptor);
       const geometryKey=this.#geometryRegistry.key(descriptor);
       const geometry = this.#resourceCache.acquireGeometry(
         geometryKey,
@@ -446,7 +449,8 @@ export class ThreeRegionRenderer {
       );
       const material = this.#materialCache.acquire({
         appearanceId: object.appearanceId,
-        material: object.material
+        material: object.material,
+        renderProfile
       });
 
       try {
@@ -463,9 +467,10 @@ export class ThreeRegionRenderer {
         batch = added.batch;
         batch.mesh.userData.geometryCacheKey = geometry.key;
         batch.mesh.userData.appearanceId = object.appearanceId;
+        batch.mesh.userData.materialCacheKey = material.key;
       } catch (error) {
         this.#resourceCache.releaseGeometry(geometry.key);
-        this.#materialCache.release(object.appearanceId);
+        this.#materialCache.release(material.key);
         throw error;
       }
     } else {
@@ -511,6 +516,7 @@ export class ThreeRegionRenderer {
       batch.mesh.userData.geometryCacheKey
     );
     this.#materialCache.release(
+      batch.mesh.userData.materialCacheKey ??
       batch.mesh.userData.appearanceId
     );
     this.#batchManager.deleteBatch(batchKey);

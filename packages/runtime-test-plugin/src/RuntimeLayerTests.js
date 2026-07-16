@@ -74,7 +74,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260716-0024c";
+} from "../../geometry-registry/src/index.js?build=20260716-0024e";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -2654,6 +2654,43 @@ assets: {
 
         cache.release("appearance-a");
         cache.release("appearance-b");
+      },
+
+      "mesma aparência separa sólido e superfície aberta"() {
+        const resourceCache = {
+          acquireTexture() {
+            return null;
+          },
+          releaseTexture() {
+            return true;
+          }
+        };
+        const cache = new BatchMaterialCache({ resourceCache });
+
+        const solid = cache.acquire({
+          appearanceId: "appearance-shared",
+          material: { color: "#ffffff" },
+          renderProfile: {
+            topology: "closed-solid",
+            side: "front"
+          }
+        });
+        const surface = cache.acquire({
+          appearanceId: "appearance-shared",
+          material: { color: "#ffffff" },
+          renderProfile: {
+            topology: "open-surface",
+            side: "double"
+          }
+        });
+
+        assert(solid.value.material !== surface.value.material);
+        assertEqual(solid.value.material.side, THREE.FrontSide);
+        assertEqual(surface.value.material.side, THREE.DoubleSide);
+        assertEqual(cache.stats().entries, 2);
+
+        cache.release(solid.key);
+        cache.release(surface.key);
       }
     },
 
@@ -3201,6 +3238,24 @@ assets: {
           const geometry = registry.create(descriptor);
           assert(geometry?.isBufferGeometry === true);
           geometry.dispose();
+        }
+      },
+
+      "topologia distingue sólidos de superfícies abertas"() {
+        const registry = createDefaultGeometryRegistry();
+
+        for (const type of ["box", "sphere", "cylinder"]) {
+          assertDeepEqual(registry.renderProfile({ type }), {
+            topology: "closed-solid",
+            side: "front"
+          });
+        }
+
+        for (const type of ["plane", "polygon"]) {
+          assertDeepEqual(registry.renderProfile({ type }), {
+            topology: "open-surface",
+            side: "double"
+          });
         }
       },
 

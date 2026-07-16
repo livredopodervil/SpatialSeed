@@ -2,6 +2,7 @@ import * as THREE from "three";
 
 export const SphereGeometryProvider = Object.freeze({
   type: "sphere",
+  topology: "closed-solid",
 
   normalize(input = {}) {
     return Object.freeze({
