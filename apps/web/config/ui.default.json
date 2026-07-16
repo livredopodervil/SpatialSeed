@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "profile": "touch-compact",
+  "toolbar": {
+    "primary": [
+      "tool-navigate",
+      "tool-select",
+      "tool-translate",
+      "scene-only",
+      "viewport-fullscreen"
+    ],
+    "menus": [
+      {
+        "id": "transform",
+        "label": "Transformar",
+        "items": [
+          "tool-rotate",
+          "tool-scale",
+          "space",
+          "transform-tools"
+        ]
+      },
+      {
+        "id": "selection",
+        "label": "Seleção",
+        "items": [
+          "selection-replace",
+          "selection-add",
+          "selection-remove",
+          "selection-toggle",
+          "area-selection",
+          "multi-select",
+          "clear-selection",
+          "pivot-policy",
+          "edit-pivot"
+        ]
+      },
+      {
+        "id": "edit",
+        "label": "Editar",
+        "items": [
+          "add-box",
+          "duplicate-selection",
+          "group-selection",
+          "ungroup-selection",
+          "repeat-duplicate",
+          "delete-selection",
+          "undo",
+          "redo"
+        ]
+      },
+      {
+        "id": "panels",
+        "label": "Painéis",
+        "items": [
+          "structure",
+          "review",
+          "diagnostics",
+          "developer",
+          "console",
+          "inspector"
+        ]
+      },
+      {
+        "id": "project",
+        "label": "Projeto",
+        "items": [
+          "project-save",
+          "project-open",
+          "project-new"
+        ]
+      }
+    ],
+    "hidden": []
+  },
+  "panels": {
+    "storageKey": "spatialseed.ui.layout.v2",
+    "items": {
+      "outline": { "anchor": "right", "top": 64, "width": 430, "height": 520 },
+      "review-panel": { "anchor": "right", "top": 64, "width": 430, "height": 420 },
+      "diagnostic-panel": { "anchor": "right", "top": 64, "width": 520, "height": 520 },
+      "developer-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
+      "console-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
+      "inspector-panel": { "anchor": "right", "top": 64, "width": 430, "height": 620 },
+      "transform-tools-panel": { "anchor": "left", "top": 64, "width": 410, "height": 540 }
+    }
+  },
+  "presentation": {
+    "transform": {
+      "size": 0.8,
+      "showX": true,
+      "showY": true,
+      "showZ": true,
+      "showVertices": false,
+      "vertexSize": 5
+    }
+  }
+}

@@ -1,9 +1,10 @@
-import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields } from "../../../packages/ui-widgets/src/index.js?build=20260714-0021b";
+import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024f";
 
 export function bindWebInterface({
   runtime,
   web,
   buildInfo,
+  uiConfiguration,
   documentRoot = document
 }) {
   const $ = id => documentRoot.getElementById(id);
@@ -34,8 +35,13 @@ export function bindWebInterface({
   let statusTimer = null;
   let latestSelection = runtime.query("selection.snapshot");
   let latestEditor = runtime.query("editor.snapshot");
+  const toolbarBinding = composeToolbar({
+    root: documentRoot,
+    configuration: uiConfiguration?.toolbar
+  });
   const panelManager = new FloatingPanelManager({
-    root: documentRoot
+    root: documentRoot,
+    storageKey: uiConfiguration?.panels?.storageKey
   });
   for (const selector of [
     "#outline",
@@ -46,7 +52,11 @@ export function bindWebInterface({
     "#inspector-panel",
     "#transform-tools-panel"
   ]) {
-    panelManager.register(selector);
+    panelManager.register(selector, {
+      defaultLayout: uiConfiguration?.panels?.items?.[
+        selector.replace(/^#/, "")
+      ]
+    });
   }
   attachScrubbableFields(documentRoot);
   const marquee=new SelectionMarquee({canvas:$("world"),element:$("selection-marquee"),onComplete:r=>renderer.selectScreenRect(r,latestEditor.selectionOperation)});
@@ -627,6 +637,7 @@ export function bindWebInterface({
         "fullscreenchange",
         refreshFullscreenButton
       );
+      toolbarBinding.dispose();
       panelManager.dispose();
     }
   });

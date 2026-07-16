@@ -104,6 +104,9 @@ import {
   formatBuildLabel,
   normalizeBuildInfo
 } from "../../../apps/web/BuildInfo.js";
+import {
+  normalizeUiConfiguration
+} from "../../ui-config/src/index.js?build=20260716-0024f";
 import { fnv1a64 } from "../../asset-store/src/index.js";
 
 export function createRuntimeLayerTests() {
@@ -1976,6 +1979,53 @@ assets: {
           () => normalizeBuildInfo({version:"0.1.0"}),
           "INVALID_BUILD_INFO"
         );
+      }
+    },
+
+    "ui-configuration": {
+      "normaliza composição sem conhecer comandos"() {
+        const configuration=normalizeUiConfiguration({
+          schemaVersion:1,
+          profile:"test",
+          toolbar:{
+            primary:["tool-select"],
+            menus:[{id:"edit",label:"Editar",items:["undo"]}]
+          },
+          panels:{items:{inspector:{anchor:"right",width:420}}},
+          presentation:{transform:{size:0.8}}
+        });
+        assertDeepEqual(configuration.toolbar.primary,["tool-select"]);
+        assertEqual(configuration.toolbar.menus[0].items[0],"undo");
+        assertEqual(configuration.panels.items.inspector.anchor,"right");
+        assertEqual(configuration.presentation.transform.size,0.8);
+        assertEqual(Object.isFrozen(configuration),true);
+      },
+      "rejeita controle repetido entre grupos"() {
+        let failed=false;
+        try {
+          normalizeUiConfiguration({
+            toolbar:{
+              primary:["undo"],
+              menus:[{id:"edit",label:"Editar",items:["undo"]}]
+            }
+          });
+        } catch (error) {
+          failed=/duplicado/.test(error.message);
+        }
+        assertEqual(failed,true);
+      },
+      "mantém preferências visuais fora do projeto"() {
+        const configuration=normalizeUiConfiguration({
+          presentation:{transform:{size:0.6,showX:false,vertexSize:7}}
+        });
+        assertDeepEqual(configuration.presentation.transform,{
+          size:0.6,
+          showX:false,
+          showY:true,
+          showZ:true,
+          showVertices:false,
+          vertexSize:7
+        });
       }
     },
 

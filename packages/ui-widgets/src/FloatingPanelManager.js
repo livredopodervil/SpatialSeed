@@ -57,7 +57,7 @@ export class FloatingPanelManager {
     );
 
     this.#panels.set(panel.id, panel);
-    this.#restore(panel);
+    this.#restore(panel, options.defaultLayout);
     this.bringToFront(panel);
 
     const observer = new ResizeObserver(() => this.#save(panel));
@@ -244,9 +244,14 @@ export class FloatingPanelManager {
     } catch {}
   }
 
-  #restore(panel) {
+  #restore(panel, defaultLayout = null) {
     const saved = this.#layout()[panel.id];
-    if (!saved) return;
+    if (!saved && !defaultLayout) return;
+
+    if (!saved) {
+      this.#applyDefaultLayout(panel, defaultLayout);
+      return;
+    }
 
     panel.style.right = "auto";
     panel.style.bottom = "auto";
@@ -262,6 +267,28 @@ export class FloatingPanelManager {
     )}px`;
     panel.style.width = `${Math.max(220, saved.width)}px`;
     panel.style.height = `${Math.max(120, saved.height)}px`;
+  }
+
+  #applyDefaultLayout(panel, layout) {
+    const anchor = layout.anchor === "right" ? "right" : "left";
+    const opposite = anchor === "right" ? "left" : "right";
+    panel.style[opposite] = "auto";
+    panel.style[anchor] = ".55rem";
+
+    if (layout.top != null) {
+      panel.style.top = `${layout.top}px`;
+      panel.style.bottom = "auto";
+    } else if (layout.bottom != null) {
+      panel.style.bottom = `${layout.bottom}px`;
+      panel.style.top = "auto";
+    }
+
+    if (layout.width != null) {
+      panel.style.width = `min(${layout.width}px, calc(100vw - 1.1rem))`;
+    }
+    if (layout.height != null) {
+      panel.style.height = `min(${layout.height}px, calc(100dvh - 1.1rem))`;
+    }
   }
 }
 
