@@ -20,5 +20,8 @@ export {
   createSesSessionEvaluator
 } from "./ProgramSessionKernel.js";
 export {
+  ProgramSessionController
+} from "./ProgramSessionController.js";
+export {
   createBrowserProgramSessionWorker
 } from "./createBrowserProgramSessionWorker.js";

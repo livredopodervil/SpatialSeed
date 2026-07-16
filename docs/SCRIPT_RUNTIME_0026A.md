@@ -88,13 +88,14 @@ namespace permanecem disponíveis nas avaliações seguintes:
 
 ```js
 session.radius = 12
-session.area = radius => pi * radius ** 2; return "area"
+session.area = radius => pi * radius ** 2
 session.area(session.radius)
 ```
 
-Definições de função usam o modo `program` e devolvem um valor serializável;
-a função permanece privada no Worker e por isso não pode ser o próprio valor
-de retorno.
+Definições de função usam o modo `program`. Sem `return`, o programa devolve
+`undefined`, enquanto a função permanece privada no Worker e disponível na
+sessão. Funções não podem ser o próprio valor de retorno porque não atravessam
+`structuredClone`.
 
 O namespace explícito evita reescrever JavaScript e torna claro o que pertence
 à sessão. Declarações temporárias continuam locais ao programa. O Worker de
@@ -105,3 +106,26 @@ Uma falha invalida a sessão inteira. O controlador da próxima etapa encerrará
 o Worker nesse caso, assim como em cancelamento ou timeout; portanto nenhuma
 execução parcialmente concluída será reutilizada. Reiniciar a sessão descarta
 apenas seus cálculos privados e não afeta o mundo editorial.
+
+## Console matemático 0026e
+
+O console passa a controlar o Worker persistente pelas seguintes superfícies:
+
+```text
+calc sqrt(3 ** 2 + 4 ** 2)
+calc session.radius = 12
+program session.area = r => pi * r ** 2
+calc session.area(session.radius)
+session status
+session reset
+session cancel
+```
+
+`calc` avalia uma expressão. `program` preserva todo o texto após o prefixo,
+inclusive quebras de linha e pontos e vírgulas, e aceita estruturas de controle
+e `return`. `session status` mostra geração, revisão e nomes persistidos.
+
+O controlador mantém um Worker saudável entre avaliações. Timeout,
+cancelamento, mensagem incompatível ou erro de programa encerram o Worker e
+descartam a sessão privada. O controlador rejeita qualquer plano que contenha
+comandos: nesta etapa a matemática continua incapaz de alterar a cena.

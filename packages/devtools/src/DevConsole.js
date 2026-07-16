@@ -13,7 +13,8 @@ export class DevConsole {
     getDiagnostics,
     onOutput,
     commands,
-    queries = null
+    queries = null,
+    programs = null
   }) {
     this.editor = editor;
     this.sandbox = sandbox;
@@ -23,12 +24,18 @@ export class DevConsole {
     this.onOutput = onOutput;
     this.commands = commands;
     this.queries = queries;
+    this.programs = programs;
+    this.programSequence = 0;
     this.history = [];
   }
 
   execute(source) {
     const input = String(source ?? "").trim();
     if (!input) return [];
+
+    if (isProgramConsoleInput(input)) {
+      return this.#executeProgramInput(input);
+    }
 
     const lines = splitStatements(input);
 
@@ -64,6 +71,79 @@ export class DevConsole {
     }
 
     return results;
+  }
+
+  async #executeProgramInput(input) {
+    try {
+      const result = await this.#programCommand(input);
+      const entry = {
+        timestamp: new Date().toISOString(),
+        input,
+        ok: true,
+        result
+      };
+      this.history.push(entry);
+      this.onOutput?.({ type: "result", input, result });
+      return [entry];
+    } catch (error) {
+      const entry = {
+        timestamp: new Date().toISOString(),
+        input,
+        ok: false,
+        error: error?.message ?? String(error)
+      };
+      this.history.push(entry);
+      this.onOutput?.({
+        type: "error",
+        input,
+        error: entry.error
+      });
+      return [entry];
+    }
+  }
+
+  async #programCommand(input) {
+    if (!this.programs) {
+      throw new Error("Sessão de programas indisponível.");
+    }
+
+    const separator = input.search(/\s/);
+    const command = (separator < 0 ? input : input.slice(0, separator))
+      .toLowerCase();
+    const source = separator < 0 ? "" : input.slice(separator).trim();
+
+    if (command === "session") {
+      const action = (source || "status").toLowerCase();
+
+      if (action === "status") return this.programs.snapshot();
+      if (action === "reset") return this.programs.reset();
+      if (action === "cancel") return this.programs.cancel();
+      if (action === "help") return this.#programHelp();
+
+      throw new Error("Uso: session status|reset|cancel|help.");
+    }
+
+    if (!source) {
+      throw new Error(
+        command === "calc"
+          ? "Uso: calc expressão JavaScript."
+          : "Uso: program código JavaScript."
+      );
+    }
+
+    const plan = await this.programs.run({
+      runId: `console-session-${++this.programSequence}`,
+      baseVersion: Number(this.sandbox?.baseVersion ?? 0),
+      seed: 0,
+      source,
+      mode: command === "calc" ? "expression" : "program"
+    });
+
+    return {
+      value: plan.result?.value ?? null,
+      output: plan.result?.output ?? [],
+      session: this.programs.snapshot()
+    };
   }
 
   #executeLine(line) {
@@ -186,6 +266,11 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "create") {
         return this.#createHelp();
       }
+      if (["calc", "program", "session"].includes(
+        String(topic).toLowerCase()
+      )) {
+        return this.#programHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -199,6 +284,9 @@ export class DevConsole {
         "test help|all|sandbox|reducer|commands|project",
         "runtime test placement-frame|geometry-creation|geometry-registry|" +
         "file-interop|project-files|pwa-status|all",
+        "calc expressão JavaScript",
+        "program código JavaScript",
+        "session status|reset|cancel|help",
         "help create",
         "create help",
         "create box|sphere|cylinder|plane|polygon ...",
@@ -235,6 +323,30 @@ export class DevConsole {
         "gizmo",
         "undo",
         "redo"
+      ]
+    };
+  }
+
+  #programHelp() {
+    return {
+      usage: [
+        "calc expressão JavaScript",
+        "program código JavaScript",
+        "session status",
+        "session reset",
+        "session cancel"
+      ],
+      notes: [
+        "Use session.nome para valores, objetos e funções persistentes.",
+        "calc avalia uma expressão; program aceita comandos e return.",
+        "A sessão matemática não possui acesso à cena."
+      ],
+      examples: [
+        "calc sqrt(3 ** 2 + 4 ** 2)",
+        "calc session.radius = 12",
+        "program session.area = r => pi * r ** 2",
+        "calc session.area(session.radius)",
+        "program for (let i=0;i<5;i+=1) print(i, random()); return 'ok'"
       ]
     };
   }
@@ -1037,6 +1149,10 @@ function defaultGeometry(type) {
 
 function isNumericToken(value) {
   return String(value ?? "").trim() !== "" && Number.isFinite(Number(value));
+}
+
+function isProgramConsoleInput(source) {
+  return /^(calc|program|session)(?:\s|$)/i.test(String(source));
 }
 
 function splitStatements(source) {

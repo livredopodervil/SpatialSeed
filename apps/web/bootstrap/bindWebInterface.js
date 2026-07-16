@@ -606,8 +606,8 @@ export function bindWebInterface({
     }
 
     consoleHistoryIndex = consoleInputHistory.length;
-    devConsole.execute(input);
-    refreshDeveloperPanel();
+    Promise.resolve(devConsole.execute(input))
+      .finally(refreshDeveloperPanel);
   });
 
   $("console-help").addEventListener("click", () => {

@@ -128,6 +128,7 @@ import {
   PROGRAM_PLAN_VERSION,
   ProgramRunController,
   PROGRAM_WORKER_PROTOCOL_VERSION,
+  ProgramSessionController,
   ProgramSessionKernel,
   createBrowserProgramSessionWorker,
   createBrowserProgramWorker,
@@ -715,6 +716,96 @@ export function createRuntimeLayerTests() {
         assertEqual(created.length, 1);
         assertEqual(created[0].options.type, "module");
         assertEqual(created[0].options.name, "session-test");
+      },
+
+      "controlador reutiliza Worker após resultados válidos"() {
+        const harness = createProgramSessionControllerHarness();
+
+        harness.controller.run({
+          runId: "persistent-run-1",
+          source: "session.value = 4"
+        }).catch(() => {});
+        harness.worker.emit(
+          "message",
+          sessionCompletedEnvelope({
+            runId: "persistent-run-1",
+            revision: 1,
+            keys: ["value"]
+          })
+        );
+        harness.controller.run({
+          runId: "persistent-run-2",
+          source: "session.value * 2"
+        }).catch(() => {});
+        harness.worker.emit(
+          "message",
+          sessionCompletedEnvelope({
+            runId: "persistent-run-2",
+            revision: 2,
+            keys: ["value"]
+          })
+        );
+
+        assertEqual(harness.workerCreations(), 1);
+        assertEqual(harness.worker.terminations, 0);
+        assertEqual(harness.controller.snapshot().revision, 2);
+        assertDeepEqual(harness.controller.snapshot().keys, ["value"]);
+      },
+
+      "timeout destrói a sessão sem tocar em plano algum"() {
+        const harness = createProgramSessionControllerHarness();
+        harness.controller.run({
+          runId: "persistent-slow",
+          source: "for (;;) {}",
+          mode: "program"
+        }).catch(() => {});
+
+        harness.fireTimeout();
+
+        assertEqual(harness.controller.snapshot().state, "timed-out");
+        assertEqual(harness.controller.snapshot().sessionAlive, false);
+        assertEqual(harness.worker.terminations, 1);
+      },
+
+      "controlador rejeita qualquer comando vindo da matemática"() {
+        const harness = createProgramSessionControllerHarness();
+        harness.controller.run({
+          runId: "forbidden-command",
+          source: "1"
+        }).catch(() => {});
+
+        harness.worker.emit(
+          "message",
+          sessionCompletedEnvelope({
+            runId: "forbidden-command",
+            revision: 1,
+            commands: [{
+              sequence: 0,
+              command: "object.create.box",
+              args: {}
+            }]
+          })
+        );
+
+        assertEqual(harness.controller.snapshot().state, "failed");
+        assertEqual(harness.controller.snapshot().sessionAlive, false);
+        assert(
+          harness.controller.snapshot().lastError.includes(
+            "não pode emitir comandos de cena"
+          )
+        );
+      },
+
+      "console entrega programa completo sem separar ponto e vírgula"() {
+        const calls = [];
+        const console = createProgramConsole(calls);
+        const source = "session.f = x => x ** 2; return 'f'";
+
+        console.execute(`program ${source}`);
+
+        assertEqual(calls.length, 1);
+        assertEqual(calls[0].source, source);
+        assertEqual(calls[0].mode, "program");
       }
     },
 
@@ -5128,6 +5219,33 @@ function createGeometryConsole(calls) {
   });
 }
 
+function createProgramConsole(calls) {
+  return new DevConsole({
+    editor: { selection: new Selection() },
+    sandbox: { baseVersion: 0 },
+    region: {},
+    renderer: {},
+    getDiagnostics: () => ({}),
+    commands: {
+      describe: () => [],
+      execute() {
+        throw new Error("Sessão matemática não usa comandos de cena.");
+      }
+    },
+    programs: {
+      run(request) {
+        calls.push(structuredClone(request));
+        return Promise.resolve({
+          result: { value: "ok", output: [] }
+        });
+      },
+      snapshot: () => ({ state: "idle" }),
+      reset: () => ({ state: "idle" }),
+      cancel: () => ({ cancelled: false })
+    }
+  });
+}
+
 function propertyObject(id, color, instanceColor) {
   return {
     id,
@@ -5406,6 +5524,36 @@ function createProgramControllerHarness() {
   };
 }
 
+function createProgramSessionControllerHarness() {
+  const worker = new FakeProgramWorker();
+  let timeoutCallback = null;
+  let creations = 0;
+  const controller = new ProgramSessionController({
+    workerFactory() {
+      creations += 1;
+      return worker;
+    },
+    timeoutMs: 5000,
+    setTimer(callback) {
+      timeoutCallback = callback;
+      return 23;
+    },
+    clearTimer() {}
+  });
+
+  return {
+    controller,
+    worker,
+    workerCreations: () => creations,
+    fireTimeout() {
+      if (!timeoutCallback) {
+        throw new Error("Timeout de sessão não foi registrado.");
+      }
+      timeoutCallback();
+    }
+  };
+}
+
 class FakeProgramWorker {
   constructor() {
     this.listeners = new Map();
@@ -5454,6 +5602,27 @@ function programCompletedEnvelope({
       seed: 0,
       commands: structuredClone(commands),
       result: null
+    }
+  };
+}
+
+function sessionCompletedEnvelope({
+  runId,
+  baseVersion = 0,
+  revision,
+  keys = [],
+  commands = []
+}) {
+  return {
+    ...programCompletedEnvelope({
+      runId,
+      baseVersion,
+      commands
+    }),
+    session: {
+      state: "active",
+      revision,
+      keys: structuredClone(keys)
     }
   };
 }

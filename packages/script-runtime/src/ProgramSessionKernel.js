@@ -37,7 +37,10 @@ export class ProgramSessionKernel {
       this.#state = "invalid";
     }
 
-    return envelope;
+    return Object.freeze({
+      ...envelope,
+      session: this.snapshot()
+    });
   }
 
   snapshot() {

@@ -109,6 +109,7 @@
     "packages/scene-hierarchy/src/index.js",
     "packages/script-runtime/src/DisposableProgramRun.js",
     "packages/script-runtime/src/ProgramRunController.js",
+    "packages/script-runtime/src/ProgramSessionController.js",
     "packages/script-runtime/src/ProgramSessionKernel.js",
     "packages/script-runtime/src/ProgramSessionWorker.js",
     "packages/script-runtime/src/ProgramWorker.js",
