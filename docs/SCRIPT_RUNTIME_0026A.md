@@ -211,6 +211,7 @@ versionada para que uma etapa posterior possa conectá-la ao sistema de
 arquivos sem misturar transporte, armazenamento e execução.
 
 Entradas administrativas escritas em linhas separadas, como `plan status`
-seguido por `plan commit`, são executadas sequencialmente. Blocos `program`,
-`calc` e `procedure define` continuam sendo preservados integralmente, pois
-suas quebras de linha pertencem ao código-fonte.
+seguido por `plan commit` ou `procedure list` seguido por `procedure show`, são
+executadas sequencialmente. Blocos `program`, `calc`, `procedure define` e
+`procedure import` continuam sendo preservados integralmente, pois suas
+quebras de linha pertencem ao código-fonte.

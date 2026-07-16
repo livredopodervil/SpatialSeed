@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0026h";
+} from "../../devtools/src/DevConsole.js?build=20260716-0026h1";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -917,22 +917,17 @@ export function createRuntimeLayerTests() {
 
         return console.execute(
           "procedure define tower ({height=8}={}) => height"
-        ).then(() => console.execute("procedure list"))
-          .then(listEntries => {
-            assertEqual(listEntries[0].result.count, 1);
-            return console.execute(
-              'procedure run tower {"height":12}'
-            );
-          })
-          .then(() => {
+        ).then(() => console.execute([
+          "procedure list",
+          "procedure show tower",
+          'procedure run tower {"height":12}'
+        ].join("\n")))
+          .then(entries => {
+            assertEqual(entries.length, 3);
+            assertEqual(entries[0].result.count, 1);
+            assert(entries[1].result.source.includes("height=8"));
             assertEqual(calls.length, 1);
             assert(calls[0].source.includes('"height":12'));
-            return console.execute("procedure show tower");
-          })
-          .then(showEntries => {
-            assert(
-              showEntries[0].result.source.includes("height=8")
-            );
             return console.execute("procedure export");
           })
           .then(exportEntries => {

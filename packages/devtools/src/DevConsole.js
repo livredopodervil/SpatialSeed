@@ -1375,10 +1375,15 @@ function splitProgramConsoleInputs(source) {
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean);
+  const preservesMultilineSource =
+    /^(calc|program|procedure\s+(define|import))(?:\s|$)/i.test(input);
 
   if (
+    !preservesMultilineSource &&
     lines.length > 1 &&
-    lines.every(line => /^(plan|session)(?:\s|$)/i.test(line))
+    lines.every(line =>
+      /^(plan|session|procedure)(?:\s|$)/i.test(line)
+    )
   ) {
     return lines;
   }
