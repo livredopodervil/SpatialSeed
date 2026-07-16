@@ -7,6 +7,11 @@ import {
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
 import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
+import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
+import {
+  affectedHierarchyIds,
+  applyProjectedWorldMatrix
+} from "./WorldTransformProjection.js?build=20260715-0023d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 
@@ -249,11 +254,15 @@ export class ThreeRegionRenderer {
   update(state) {
     this.#incrementalDiagnostics.fullUpdates += 1;
     const seen = new Set();
+    const hierarchy = new HierarchyIndex(state.objects);
 
     for (const rawObject of state.objects) {
       const object = this.#projectObject(rawObject);
       seen.add(object.id);
-      this.#upsertObject(object);
+      this.#upsertObject(
+        object,
+        hierarchy.worldMatrixOf(rawObject.id)
+      );
     }
 
     for (const id of [...this.#meshes.keys()]) {
@@ -265,7 +274,11 @@ export class ThreeRegionRenderer {
 
   applyChanges(state, changes = []) {
     this.#incrementalDiagnostics.incrementalUpdates += 1;
-    let fallbackById = null;
+    const hierarchy = new HierarchyIndex(state.objects);
+    const byId = new Map(
+      state.objects.map(object => [object.id,object])
+    );
+    const affectedIds = affectedHierarchyIds(hierarchy,changes);
 
     for (const change of changes) {
       const id = change.objectId;
@@ -273,24 +286,21 @@ export class ThreeRegionRenderer {
 
       if (change.type === "object-deleted") {
         this.#removeObject(id);
-        continue;
       }
+    }
 
-      let rawObject = change.object;
-
-      if (!rawObject) {
-        fallbackById ??= new Map(
-          state.objects.map(object => [object.id, object])
-        );
-        rawObject = fallbackById.get(id);
-      }
+    for (const id of affectedIds) {
+      const rawObject = byId.get(id);
 
       if (!rawObject) {
         this.#removeObject(id);
         continue;
       }
 
-      this.#upsertObject(this.#projectObject(rawObject));
+      this.#upsertObject(
+        this.#projectObject(rawObject),
+        hierarchy.worldMatrixOf(id)
+      );
     }
 
     this.#finishSceneUpdate();
@@ -303,7 +313,7 @@ export class ThreeRegionRenderer {
     };
   }
 
-  #upsertObject(object) {
+  #upsertObject(object, worldMatrix) {
     let proxy = this.#meshes.get(object.id);
 
     if (!proxy) {
@@ -323,11 +333,7 @@ export class ThreeRegionRenderer {
     proxy.userData.size = [...object.size];
 
     if (!this.#session) {
-      proxy.position.fromArray(object.position);
-      proxy.quaternion.fromArray(object.rotation);
-      proxy.scale.fromArray(object.scale);
-      proxy.updateMatrix();
-      proxy.updateMatrixWorld(true);
+      applyProjectedWorldMatrix(proxy,worldMatrix);
     }
 
     const nextBatchKey = this.#batchKeyFor(object);
@@ -491,7 +497,7 @@ export class ThreeRegionRenderer {
   }
 
   #updateBatchMatrix(objectId, proxy) {
-    proxy.updateMatrix();
+    if (proxy.matrixAutoUpdate) proxy.updateMatrix();
     return this.#batchManager.update(objectId, proxy.matrix);
   }
 

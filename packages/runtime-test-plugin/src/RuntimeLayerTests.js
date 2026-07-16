@@ -80,6 +80,10 @@ import {
 import {
   HierarchyIndex
 } from "../../scene-hierarchy/src/index.js";
+import {
+  affectedHierarchyIds,
+  applyProjectedWorldMatrix
+} from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
 
 export function createRuntimeLayerTests() {
   return {
@@ -1039,6 +1043,32 @@ assets: {
         );
         assertDeepEqual(sandbox.getState(),before);
         assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      }
+    },
+
+    "hierarchical-render-projection": {
+      "projeta matriz mundial hierárquica no proxy"() {
+        const hierarchy=new HierarchyIndex(hierarchyFixture());
+        const matrix=hierarchy.worldMatrixOf("child");
+        const proxy=applyProjectedWorldMatrix(new THREE.Object3D(),matrix);
+        assertMatricesNear(proxy.matrix.toArray(),matrix);
+        assertMatricesNear(proxy.matrixWorld.toArray(),matrix);
+      },
+      "preserva matriz com cisalhamento sem recomposição TRS"() {
+        const shear=[1,0,0,0, 0.5,1,0,0, 0,0,1,0, 3,2,1,1];
+        const proxy=applyProjectedWorldMatrix(new THREE.Object3D(),shear);
+        assertEqual(proxy.matrixAutoUpdate,false);
+        assertMatricesNear(proxy.matrix.toArray(),shear);
+      },
+      "alteração de ancestral invalida somente sua subárvore"() {
+        const hierarchy=new HierarchyIndex(hierarchyFixture());
+        assertDeepEqual(
+          affectedHierarchyIds(hierarchy,[{
+            type:"object-transform",
+            objectId:"group"
+          }]),
+          ["group","child"]
+        );
       }
     },
 
