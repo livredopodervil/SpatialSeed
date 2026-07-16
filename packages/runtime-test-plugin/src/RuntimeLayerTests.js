@@ -105,7 +105,8 @@ import {
   normalizeBuildInfo
 } from "../../../apps/web/BuildInfo.js";
 import {
-  BrowserProjectFileGateway
+  BrowserProjectFileGateway,
+  isPlatformBlock
 } from "../../../apps/web/file-interop/BrowserProjectFileGateway.js";
 import {
   normalizeUiConfiguration
@@ -2005,7 +2006,7 @@ assets: {
 
       "download compatível permanece disponível sem seletor nativo"() {
         const harness=createFileGatewayHarness();
-        harness.gateway.save({
+        harness.gateway.saveFallback({
           prepared:true,
           filename:"teste.spatialseed",
           mediaType:"application/json",
@@ -2029,6 +2030,14 @@ assets: {
         harness.gateway.fileHandle={name:"anterior.spatialseed"};
         harness.gateway.reset();
         assertEqual(harness.gateway.fileHandle,null);
+      },
+
+      "bloqueio da plataforma não é confundido com cancelamento"() {
+        assertEqual(isPlatformBlock({name:"NotAllowedError"}),true);
+        assertEqual(isPlatformBlock({name:"SecurityError"}),true);
+        assertEqual(isPlatformBlock({name:"NotSupportedError"}),true);
+        assertEqual(isPlatformBlock({name:"AbortError"}),false);
+        assertEqual(isPlatformBlock(new TypeError("programação")),false);
       }
     },
 

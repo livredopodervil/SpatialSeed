@@ -1,7 +1,7 @@
 import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024i";
 import {
   BrowserProjectFileGateway
-} from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0025b";
+} from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0025c";
 
 export function bindWebInterface({
   runtime,
@@ -35,8 +35,11 @@ export function bindWebInterface({
     windowRef: browserWindow,
     documentRef: documentRoot
   });
-  browserWindow.__SPATIAL_SEED_FILE_INTEROP__ =
-    projectFiles.capabilities();
+  const refreshProjectFileCapabilities = () => {
+    browserWindow.__SPATIAL_SEED_FILE_INTEROP__ =
+      projectFiles.capabilities();
+  };
+  refreshProjectFileCapabilities();
 
   const consoleLines = [];
   const consoleInputHistory = [];
@@ -373,12 +376,28 @@ export function bindWebInterface({
     if (!project?.prepared) return;
 
     try {
-      const result = await projectFiles.save(project);
+      let result = await projectFiles.save(project);
+      if (result.fallbackRequired) {
+        const approved = browserWindow.confirm(
+          "O Chrome deste aparelho oferece um seletor nativo, " +
+          "mas não permite usá-lo neste contexto. " +
+          "Deseja salvar por download compatível?"
+        );
+        if (!approved) return;
+        result = projectFiles.saveFallback(project, {
+          fallbackReason: result.fallbackReason
+        });
+      }
       if (result.saved) {
-        showNotice(`Projeto salvo: ${result.filename}`);
+        const mode = result.fallbackReason
+          ? " · download compatível"
+          : "";
+        showNotice(`Projeto salvo: ${result.filename}${mode}`);
       }
     } catch (error) {
       showError(error);
+    } finally {
+      refreshProjectFileCapabilities();
     }
   });
 
@@ -392,9 +411,16 @@ export function bindWebInterface({
 
       try {
         const opened = await projectFiles.open();
-        if (opened.opened) loadProjectText(opened.text);
+        if (opened.opened) {
+          loadProjectText(opened.text);
+        } else if (opened.fallbackRequired) {
+          showNotice("Usando seletor de arquivos compatível.");
+          $("project-file-input").click();
+        }
       } catch (error) {
         showError(error);
+      } finally {
+        refreshProjectFileCapabilities();
       }
     }
   );

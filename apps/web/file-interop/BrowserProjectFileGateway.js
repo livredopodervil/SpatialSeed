@@ -16,12 +16,19 @@ export class BrowserProjectFileGateway {
     this.urlApi = urlApi;
     this.BlobCtor = BlobCtor;
     this.fileHandle = null;
+    this.nativeOpenBlocked = false;
+    this.nativeSaveBlocked = false;
+    this.fallbackSaveApproved = false;
   }
 
   capabilities() {
     return Object.freeze({
-      nativeOpen: typeof this.window.showOpenFilePicker === "function",
-      nativeSave: typeof this.window.showSaveFilePicker === "function",
+      nativeOpen:
+        !this.nativeOpenBlocked &&
+        typeof this.window.showOpenFilePicker === "function",
+      nativeSave:
+        !this.nativeSaveBlocked &&
+        typeof this.window.showSaveFilePicker === "function",
       fallbackOpen: true,
       fallbackSave: true
     });
@@ -46,6 +53,15 @@ export class BrowserProjectFileGateway {
       return { ...result, method: "native-picker" };
     } catch (error) {
       if (isAbort(error)) return { opened: false, cancelled: true };
+      if (isPlatformBlock(error)) {
+        this.nativeOpenBlocked = true;
+        this.fileHandle = null;
+        return {
+          opened: false,
+          fallbackRequired: true,
+          fallbackReason: error.name
+        };
+      }
       throw error;
     }
   }
@@ -66,9 +82,24 @@ export class BrowserProjectFileGateway {
   async save(payload, { saveAs = false } = {}) {
     const project = normalizePayload(payload);
     if (this.capabilities().nativeSave) {
-      return this.#saveNative(project, { saveAs });
+      try {
+        return await this.#saveNative(project, { saveAs });
+      } catch (error) {
+        if (!isPlatformBlock(error)) throw error;
+        this.nativeSaveBlocked = true;
+        return fallbackRequest(error.name);
+      }
+    }
+    if (this.nativeSaveBlocked && !this.fallbackSaveApproved) {
+      return fallbackRequest("platform-blocked");
     }
     return this.#download(project);
+  }
+
+  saveFallback(payload, { fallbackReason = "platform-blocked" } = {}) {
+    const project = normalizePayload(payload);
+    this.fallbackSaveApproved = true;
+    return this.#download(project, { fallbackReason });
   }
 
   reset() {
@@ -107,7 +138,7 @@ export class BrowserProjectFileGateway {
     }
   }
 
-  #download(project) {
+  #download(project, { fallbackReason = null } = {}) {
     const blob = new this.BlobCtor([project.text], {
       type: project.mediaType
     });
@@ -124,7 +155,8 @@ export class BrowserProjectFileGateway {
       downloaded: true,
       filename: project.filename,
       bytes: blob.size,
-      method: "download"
+      method: "download",
+      fallbackReason
     };
   }
 }
@@ -153,4 +185,20 @@ function normalizePayload(payload) {
 
 function isAbort(error) {
   return error?.name === "AbortError";
+}
+
+function fallbackRequest(reason) {
+  return {
+    saved: false,
+    fallbackRequired: true,
+    fallbackReason: reason
+  };
+}
+
+export function isPlatformBlock(error) {
+  return [
+    "NotAllowedError",
+    "SecurityError",
+    "NotSupportedError"
+  ].includes(error?.name);
 }
