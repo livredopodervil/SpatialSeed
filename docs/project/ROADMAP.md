@@ -25,3 +25,11 @@ Navegador de arquivos, árvore do projeto, editor textual, plugins, comandos par
 ## Prioridade futura: persistência compacta
 
 Manter compatibilidade com o schema atual e evoluir em três etapas: JSON compacto, contêiner `.spatialseed` comprimido com abertura retrocompatível e schema procedural/instanciado capaz de preservar protótipos, transforms ou receitas sem expandir matrizes regulares.
+
+## Prioridade futura: recuperação automática local
+
+Preservar a última sessão do editor em IndexedDB, gravando apenas comandos
+confirmados e nunca previews transitórios. A recuperação deve ser atômica,
+versionada, postergada após alterações e apresentada ao usuário como opção ao
+iniciar. Texturas e outros blobs grandes poderão migrar para OPFS, mantendo
+Salvar/Abrir como formato portátil e proteção contra limpeza dos dados locais.
