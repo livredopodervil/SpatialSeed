@@ -37,8 +37,12 @@ export async function createWebRuntime({
   outlineRoot,
   transformToolsRoot,
   inspectorRoot,
-  onConsoleOutput
+  onConsoleOutput,
+  buildInfo
 }) {
+  if (!buildInfo?.build || !buildInfo?.version) {
+    throw new TypeError("createWebRuntime exige buildInfo válido.");
+  }
   validateApis();
 
   const modules = new ModuleRegistry();
@@ -235,7 +239,9 @@ export async function createWebRuntime({
       editor.snapshot()
     )
     .register("runtime.status", () => ({
-      build: "20260715-0022b",
+      build: buildInfo.build,
+      version: buildInfo.version,
+      channel: buildInfo.channel,
       regionVersion: region.version,
       baseVersion: sandbox.baseVersion,
       dirty: sandbox.dirty,
@@ -244,7 +250,9 @@ export async function createWebRuntime({
       objectCount: sandbox.getState().objects.length
     }))
     .register("developer.state", () => ({
-      build: "20260715-0022b",
+      build: buildInfo.build,
+      version: buildInfo.version,
+      channel: buildInfo.channel,
       selection: editor.selection.snapshot(),
       editor: editor.snapshot(),
       input: renderer.getInputDiagnostics(),
@@ -321,6 +329,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeSandbox);
 
   return Object.freeze({
+    buildInfo,
     runtime,
     web: Object.freeze({
       region,

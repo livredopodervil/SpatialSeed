@@ -1,10 +1,9 @@
 import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields } from "../../../packages/ui-widgets/src/index.js?build=20260714-0021b";
 
-const BUILD = "20260715-0022b";
-
 export function bindWebInterface({
   runtime,
   web,
+  buildInfo,
   documentRoot = document
 }) {
   const $ = id => documentRoot.getElementById(id);
@@ -21,7 +20,9 @@ export function bindWebInterface({
   } = web;
 
   const diagnostics = {
-    build: BUILD,
+    build: buildInfo.build,
+    version: buildInfo.version,
+    channel: buildInfo.channel,
     location: location.href,
     userAgent: navigator.userAgent
   };

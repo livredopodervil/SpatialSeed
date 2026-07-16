@@ -1,32 +1,30 @@
-import { createWebRuntime } from "./bootstrap/createWebRuntime.js?build=20260715-0022b";
-import { bindWebInterface } from "./bootstrap/bindWebInterface.js?build=20260715-0022b";
-
-const BUILD = "20260715-0022b";
 const $ = id => document.getElementById(id);
 
-function showFatalError(error) {
-  $("error-box").hidden = false;
-  $("error-box").textContent = error?.stack || String(error);
-  $("status").textContent = "Falha na inicialização";
-  console.error(error);
-}
+export async function startApplication(buildInfo) {
+  const cacheKey=encodeURIComponent(buildInfo.build);
+  const [runtimeModule,interfaceModule]=await Promise.all([
+    import(`./bootstrap/createWebRuntime.js?build=${cacheKey}`),
+    import(`./bootstrap/bindWebInterface.js?build=${cacheKey}`)
+  ]);
 
-try {
-  const application = await createWebRuntime({
+  const application = await runtimeModule.createWebRuntime({
     canvas: $("world"),
     outlineRoot: $("outline-content"),
     transformToolsRoot: $("transform-tools-panel"),
-    inspectorRoot: $("inspector-panel")
+    inspectorRoot: $("inspector-panel"),
+    buildInfo
   });
 
-  const interfaceBinding = bindWebInterface(application);
+  const interfaceBinding = interfaceModule.bindWebInterface(application);
 
   application.runtime.onDispose(() =>
     interfaceBinding.dispose()
   );
 
   window.__SPATIAL_SEED__ = Object.freeze({
-    build: BUILD,
+    build: buildInfo.build,
+    version: buildInfo.version,
+    channel: buildInfo.channel,
     apiVersion: application.runtime.constructor.apiVersion,
     execute: (id, args) =>
       application.runtime.execute(id, args),
@@ -41,6 +39,5 @@ try {
     dispose: () =>
       application.runtime.dispose()
   });
-} catch (error) {
-  showFatalError(error);
+  return application;
 }

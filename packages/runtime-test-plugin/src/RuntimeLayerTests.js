@@ -85,6 +85,10 @@ import {
   applyProjectedWorldMatrix,
   isRenderableSceneNode
 } from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
+import {
+  formatBuildLabel,
+  normalizeBuildInfo
+} from "../../../apps/web/BuildInfo.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -1346,6 +1350,35 @@ assets: {
         assertEqual(sandbox.getHistoryDiagnostics().commandCount,1);
         sandbox.undo();
         assertDeepEqual(sandbox.getState(),before);
+      }
+    },
+
+    "build-info": {
+      "normaliza e congela manifesto explícito"() {
+        const info=normalizeBuildInfo({
+          version:"0.1.0",
+          build:"test-build",
+          channel:"test"
+        });
+        assertDeepEqual(info,{
+          version:"0.1.0",
+          build:"test-build",
+          channel:"test"
+        });
+        assertEqual(Object.isFrozen(info),true);
+      },
+      "formata versão e build para a interface"() {
+        assertEqual(formatBuildLabel({
+          version:"0.1.0",
+          build:"test-build",
+          channel:"test"
+        }),"v0.1.0 · build test-build");
+      },
+      "rejeita manifesto incompleto"() {
+        assertThrowsCode(
+          () => normalizeBuildInfo({version:"0.1.0"}),
+          "INVALID_BUILD_INFO"
+        );
       }
     },
 
