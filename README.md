@@ -10,7 +10,7 @@ bash install-vendor.sh
 python -m http.server 8080 --bind 127.0.0.1
 ```
 
-Abra `http://127.0.0.1:8080`.
+Abra `http://127.0.0.1:8082/apps/web/`.
 
 Controles:
 - um dedo: orbitar;
