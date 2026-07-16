@@ -16,6 +16,7 @@ export class ThreeResourceCache {
     });
 
     this.textures = new RefCountCache({
+      deferDisposal: true,
       create: (_, descriptor) =>
         loadTexture(this.textureLoader, descriptor)
     });

@@ -47,6 +47,51 @@ export class AppearanceRuntime {
     return result;
   }
 
+  retainAppearance(appearanceId, count = 1) {
+    const amount = Number(count);
+    if (!Number.isInteger(amount) || amount < 1) {
+      throw new RangeError("Quantidade de referências deve ser inteira positiva.");
+    }
+
+    const resolved = this.graph.resolveAppearance(appearanceId);
+    if (!resolved) {
+      throw new Error(`Aparência inexistente: ${appearanceId}.`);
+    }
+
+    this.graph.assets.retain(resolved.appearance.id, amount);
+    this.graph.assets.retain(resolved.material.id, amount);
+    if (resolved.texture) {
+      this.graph.assets.retain(resolved.texture.id, amount);
+    }
+
+    return Object.freeze({
+      appearanceId: resolved.appearance.id,
+      retained: amount
+    });
+  }
+
+  retainAppearanceReferences({
+    appearanceId,
+    materialId,
+    textureId = null
+  }, count = 1) {
+    const amount = Number(count);
+    if (!Number.isInteger(amount) || amount < 1) {
+      throw new RangeError("Quantidade de referências deve ser inteira positiva.");
+    }
+
+    this.graph.assets.retainReferences(String(appearanceId), amount);
+    this.graph.assets.retainReferences(String(materialId), amount);
+    if (textureId) {
+      this.graph.assets.retainReferences(String(textureId), amount);
+    }
+
+    return Object.freeze({
+      appearanceId: String(appearanceId),
+      retained: amount
+    });
+  }
+
   resolve(appearanceId) {
     const id = String(appearanceId);
     if (this.#resolved.has(id)) return this.#resolved.get(id);

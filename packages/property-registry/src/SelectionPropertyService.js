@@ -75,6 +75,7 @@ export class SelectionPropertyService {
     }
 
     const context = this.#context();
+    const appearanceCache = new Map();
     const updates = objects.flatMap(object => {
       const changedProperties = Object.fromEntries(
         Object.entries(normalizedPatch).filter(([id, value]) => {
@@ -86,7 +87,11 @@ export class SelectionPropertyService {
       return Object.keys(changedProperties).length
         ? [{
             id: object.id,
-            patch: this.#buildObjectPatch(object, changedProperties)
+            patch: this.#buildObjectPatch(
+              object,
+              changedProperties,
+              appearanceCache
+            )
           }]
         : [];
     });
@@ -116,9 +121,9 @@ export class SelectionPropertyService {
     });
   }
 
-  #buildObjectPatch(object, propertyPatch) {
+  #buildObjectPatch(object, propertyPatch, appearanceCache = new Map()) {
     const patch = {};
-    let material = null;
+    const appearanceValues = [];
 
     for (const [id, value] of Object.entries(propertyPatch)) {
       const descriptor = this.registry.require(id);
@@ -133,14 +138,32 @@ export class SelectionPropertyService {
         patch.instanceState ??= {};
         setPath(patch.instanceState, descriptor.path, value);
       } else if (descriptor.scope === "appearance") {
-        material ??= this.#editableMaterial(object);
-        applyAppearanceValue(material, descriptor.path, value);
+        appearanceValues.push({ descriptor, value });
       }
     }
 
-    if (material) {
-      const created = this.appearanceRuntime.internLegacyMaterial(material);
-      patch.appearanceId = created.appearanceId;
+    if (appearanceValues.length) {
+      const sourceKey = object.appearanceId
+        ? `appearance:${object.appearanceId}`
+        : `material:${JSON.stringify(object.material ?? {})}`;
+      const cachedAppearance = appearanceCache.get(sourceKey);
+
+      if (cachedAppearance) {
+        this.appearanceRuntime.retainAppearanceReferences(cachedAppearance);
+        patch.appearanceId = cachedAppearance.appearanceId;
+      } else {
+        const material = this.#editableMaterial(object);
+        for (const { descriptor, value } of appearanceValues) {
+          applyAppearanceValue(material, descriptor.path, value);
+        }
+        const created = this.appearanceRuntime.internLegacyMaterial(material);
+        appearanceCache.set(sourceKey, Object.freeze({
+          appearanceId: created.appearanceId,
+          materialId: created.material.id,
+          textureId: created.texture?.id ?? null
+        }));
+        patch.appearanceId = created.appearanceId;
+      }
     }
 
     return patch;
@@ -236,5 +259,12 @@ function uniqueIds(values) {
 }
 
 function equalValue(left, right) {
+  if (Object.is(left, right)) return true;
+  if (
+    left === null || right === null ||
+    typeof left !== "object" || typeof right !== "object"
+  ) {
+    return false;
+  }
   return JSON.stringify(left) === JSON.stringify(right);
 }

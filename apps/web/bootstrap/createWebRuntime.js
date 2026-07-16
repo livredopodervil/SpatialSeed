@@ -3,25 +3,25 @@ import { Region } from "../../../packages/core/src/Region.js?build=20260714-0020
 import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260714-0020b-a";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260714-0020b-a";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024c";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260714-0020b-a";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260716-0024d";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260716-0024c";
-import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260715-0022b";
+import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260716-0024d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260716-0024c";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260716-0024d";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260716-0024c";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260714-0020b-a";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260714-0020b-a";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260714-0020b-a";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260716-0024c";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260714-0020b-a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260716-0024d";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
 import {
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260715-0022b";
+} from "../../../packages/property-registry/src/index.js?build=20260716-0024d";
 import {
   createDefaultGeometryRegistry
 } from "../../../packages/geometry-registry/src/index.js";
@@ -125,7 +125,8 @@ export async function createWebRuntime({
     editor,
     sandbox,
     regionId: region.descriptor.id,
-    geometryRegistry
+    geometryRegistry,
+    appearanceRuntime
   });
 
   const projectService = new ProjectService({

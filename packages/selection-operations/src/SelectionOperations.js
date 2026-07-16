@@ -16,11 +16,18 @@ import {
 export class SelectionOperations {
   static apiVersion = "selection-operations-v2";
 
-  constructor({ editor, sandbox, regionId, geometryRegistry = null }) {
+  constructor({
+    editor,
+    sandbox,
+    regionId,
+    geometryRegistry = null,
+    appearanceRuntime = null
+  }) {
     this.editor = editor;
     this.sandbox = sandbox;
     this.regionId = regionId;
     this.geometryRegistry = geometryRegistry;
+    this.appearanceRuntime = appearanceRuntime;
     this.pendingDuplicate = null;
     this.lastDuplicate = null;
 
@@ -38,7 +45,7 @@ export class SelectionOperations {
       name: name || `Caixa ${index}`,
       position: [...position],
       size: [...size],
-      color
+      ...this.#creationAppearance(color)
     });
     if (changed) this.#selectIds([id]);
     return { changed, id };
@@ -67,7 +74,7 @@ export class SelectionOperations {
       position: [...position],
       rotation: [...rotation],
       geometry: descriptor,
-      color
+      ...this.#creationAppearance(color)
     });
 
     if (changed) this.#selectIds([id]);
@@ -778,6 +785,13 @@ export class SelectionOperations {
       })),
       { activeObjectId: ids.at(-1) ?? null }
     );
+  }
+
+  #creationAppearance(color) {
+    if (!this.appearanceRuntime) return { color };
+
+    const created = this.appearanceRuntime.internLegacyMaterial({ color });
+    return { appearanceId: created.appearanceId };
   }
 
 }

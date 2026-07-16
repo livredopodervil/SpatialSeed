@@ -1,12 +1,17 @@
 export class RefCountCache {
   #records = new Map();
 
-  constructor({ create, dispose = value => value?.dispose?.() }) {
+  constructor({
+    create,
+    dispose = value => value?.dispose?.(),
+    deferDisposal = false
+  }) {
     if (typeof create !== "function") {
       throw new TypeError("RefCountCache exige função create.");
     }
     this.create = create;
     this.dispose = dispose;
+    this.deferDisposal = Boolean(deferDisposal);
   }
 
   acquire(key, context = null) {
@@ -67,8 +72,24 @@ export class RefCountCache {
     if (record.refs > 0) return true;
 
     if (record.value) {
-      this.dispose(record.value, record.key);
-      this.#records.delete(record.key);
+      if (this.deferDisposal) {
+        record.disposeWhenReady = true;
+        queueMicrotask(() => {
+          const current = this.#records.get(record.key);
+          if (
+            current !== record ||
+            record.refs > 0 ||
+            !record.disposeWhenReady
+          ) {
+            return;
+          }
+          this.dispose(record.value, record.key);
+          this.#records.delete(record.key);
+        });
+      } else {
+        this.dispose(record.value, record.key);
+        this.#records.delete(record.key);
+      }
     } else {
       record.disposeWhenReady = true;
     }

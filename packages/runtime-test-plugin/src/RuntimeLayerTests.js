@@ -61,11 +61,11 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024c";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024d";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260716-0024c";
+} from "../../region-box/src/reducer.js?build=20260716-0024d";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -80,7 +80,7 @@ import {
   parsePropertyInput,
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260715-0022b";
+} from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260716-0024c";
@@ -104,6 +104,7 @@ import {
   formatBuildLabel,
   normalizeBuildInfo
 } from "../../../apps/web/BuildInfo.js";
+import { fnv1a64 } from "../../asset-store/src/index.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -355,6 +356,12 @@ export function createRuntimeLayerTests() {
     },
 
 assets: {
+  "hash FNV-1a preserva identificadores conhecidos"() {
+    assertEqual(fnv1a64(""), "cbf29ce484222325");
+    assertEqual(fnv1a64("hello"), "a430d84680aabd0b");
+    assertEqual(fnv1a64("ação"), "74b2e70b31a1c349");
+  },
+
   "textura idêntica é armazenada uma vez"() {
     const graph = new AppearanceGraph();
 
@@ -2335,6 +2342,26 @@ assets: {
         cache.releaseGeometry(first.key);
         cache.releaseGeometry(second.key);
         assertEqual(cache.stats().geometries.entries,0);
+      },
+
+      "descarte adiado permite troca transacional de textura"() {
+        let creates = 0;
+        let disposes = 0;
+        const cache = new RefCountCache({
+          deferDisposal: true,
+          create() {
+            creates += 1;
+            return { dispose() { disposes += 1; } };
+          }
+        });
+
+        const first = cache.acquire("texture-a");
+        cache.release(first.key);
+        const replacement = cache.acquire("texture-a");
+
+        assertEqual(creates, 1);
+        assertEqual(disposes, 0);
+        assertEqual(first.value, replacement.value);
       }
     },
 
@@ -2772,6 +2799,63 @@ assets: {
         }
       },
 
+      "textura em lote é internada uma vez por aparência de origem"() {
+        const fixture = createPropertyFixture({ sameAppearance: true });
+        fixture.selection.replaceMany([
+          { regionId: "region-properties", objectId: "a" },
+          { regionId: "region-properties", objectId: "b" }
+        ]);
+        const original = fixture.appearanceRuntime
+          .internLegacyMaterial
+          .bind(fixture.appearanceRuntime);
+        let internCalls = 0;
+        fixture.appearanceRuntime.internLegacyMaterial = (...args) => {
+          internCalls += 1;
+          return original(...args);
+        };
+
+        fixture.service.setSelection({
+          "texture.src": "data:image/png;base64," + "A".repeat(4096)
+        });
+        const objects = fixture.sandbox.getState().objects;
+
+        assertEqual(internCalls, 1);
+        assertEqual(objects[0].appearanceId, objects[1].appearanceId);
+        assertEqual(
+          fixture.appearanceRuntime.graph.assets
+            .get(objects[0].appearanceId).references,
+          2
+        );
+      },
+
+      "alterar cor preserva parâmetros da textura"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "a"
+        });
+
+        fixture.service.setSelection({
+          "texture.src": "data:image/png;base64,AAAA",
+          "texture.repeat": [3, 4],
+          "texture.offset": [0.2, 0.3],
+          "texture.rotationDeg": 25,
+          "texture.wrap": "mirror"
+        });
+        fixture.service.setSelection({
+          "appearance.color": "#ff3300"
+        });
+        const object = fixture.sandbox.getState().objects[0];
+        const material = fixture.appearanceRuntime
+          .legacyMaterial(object.appearanceId);
+
+        assertEqual(material.color, "#ff3300");
+        assertDeepEqual(material.texture.repeat, [3, 4]);
+        assertDeepEqual(material.texture.offset, [0.2, 0.3]);
+        assertEqual(material.texture.rotationDeg, 25);
+        assertEqual(material.texture.wrap, "mirror");
+      },
+
       "remoção de cor de instância também é uma operação em lote"() {
         const fixture = createPropertyFixture({ instanceColor: "#112233" });
         fixture.selection.replaceMany([
@@ -3036,11 +3120,13 @@ assets: {
         );
         const sandbox = new Sandbox(region, boxRegionReducer);
         const editor = new EditorState();
+        const appearanceRuntime = new AppearanceRuntime();
         const operations = new SelectionOperations({
           editor,
           sandbox,
           regionId: "geometry-region",
-          geometryRegistry: createDefaultGeometryRegistry()
+          geometryRegistry: createDefaultGeometryRegistry(),
+          appearanceRuntime
         });
 
         const result = operations.createGeometry({
@@ -3051,6 +3137,8 @@ assets: {
 
         assertEqual(result.changed, true);
         assertEqual(object.kind, "polygon");
+        assertEqual(Boolean(object.appearanceId), true);
+        assertEqual("material" in object, false);
         assertDeepEqual(object.position, [1, 2, 3]);
         assertDeepEqual(object.geometry, {
           type: "polygon",
@@ -3991,13 +4079,20 @@ assets: {
   };
 }
 
-function createPropertyFixture({ instanceColor = null } = {}) {
+function createPropertyFixture({
+  instanceColor = null,
+  sameAppearance = false
+} = {}) {
   const appearanceRuntime = new AppearanceRuntime();
   const scene = appearanceRuntime.normalizeScene({
     schemaVersion: 1,
     objects: [
       propertyObject("a", "#112233", instanceColor),
-      propertyObject("b", "#445566", instanceColor)
+      propertyObject(
+        "b",
+        sameAppearance ? "#112233" : "#445566",
+        instanceColor
+      )
     ]
   });
   const region = new Region(

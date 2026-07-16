@@ -121,9 +121,13 @@ export function boxRegionReducer(state, command) {
         ...(geometry
           ? { geometry }
           : { size: command.size ?? [2, 2, 2] }),
-        material: Object.freeze({
-          color: command.color ?? "#6699cc"
-        }),
+        ...(command.appearanceId
+          ? { appearanceId: String(command.appearanceId) }
+          : {
+              material: Object.freeze({
+                color: command.color ?? "#6699cc"
+              })
+            }),
         instanceState: freezeInstanceState(
           command.instanceState
         )

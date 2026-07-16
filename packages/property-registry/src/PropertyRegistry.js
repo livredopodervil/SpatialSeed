@@ -68,7 +68,7 @@ export class PropertyRegistry {
         continue;
       }
 
-      const value = structuredClone(
+      const value = clonePropertyValue(
         descriptor.read(members[0], context)
       );
       let uniform = true;
@@ -135,5 +135,18 @@ function normalizeDescriptor(input) {
 }
 
 function equalValue(left, right) {
+  if (Object.is(left, right)) return true;
+  if (
+    left === null || right === null ||
+    typeof left !== "object" || typeof right !== "object"
+  ) {
+    return false;
+  }
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function clonePropertyValue(value) {
+  return value === null || typeof value !== "object"
+    ? value
+    : structuredClone(value);
 }

@@ -395,9 +395,7 @@ export class ThreeRegionRenderer {
     proxy.userData.instanceColor =
       object.instanceState?.color ?? null;
 
-    if (!this.#selectedVisualIds.has(object.id)) {
-      this.#applyObjectInstanceColor(object.id);
-    }
+    this.#applyObjectInstanceColor(object.id);
   }
 
   #removeObject(id) {

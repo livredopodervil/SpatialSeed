@@ -5,6 +5,7 @@ export {
 
 export {
   contentId,
+  contentIdFromCanonical,
   fnv1a64
 } from "./ContentId.js";
 
