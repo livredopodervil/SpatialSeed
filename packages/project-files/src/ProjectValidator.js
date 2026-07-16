@@ -89,6 +89,7 @@ export class ProjectValidator {
 
         if (
           value.schemaVersion === 2 &&
+          object.kind !== "group" &&
           !object.appearanceId
         ) {
           throw new Error(

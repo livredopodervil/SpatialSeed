@@ -12,6 +12,10 @@ Módulos:
 
 O arquivo salva cena, objetos, materiais, texturas, editor, pivô e configuração do renderer. Não salva seleção, logs nem histórico de undo/redo.
 
+No esquema 2, objetos renderizáveis referenciam obrigatoriamente um
+`appearanceId`. Grupos lógicos não possuem aparência porque não geram geometria;
+seus filhos preservam as referências visuais e a relação `parentId`.
+
 O comando `project.save` devolve um documento preparado (`text`, `filename`,
 `mediaType` e `bytes`). A camada web decide como transportá-lo. Isso permite
 que console, interface e automações compartilhem a mesma serialização sem que o

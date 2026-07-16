@@ -64,6 +64,9 @@ import {
 } from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024i";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
+  ProjectValidator
+} from "../../project-files/src/ProjectValidator.js?build=20260716-0025d";
+import {
   boxRegionReducer
 } from "../../region-box/src/reducer.js?build=20260716-0024d";
 import {
@@ -83,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0025b";
+} from "../../devtools/src/DevConsole.js?build=20260716-0025d";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -2038,6 +2041,64 @@ assets: {
         assertEqual(isPlatformBlock({name:"NotSupportedError"}),true);
         assertEqual(isPlatformBlock({name:"AbortError"}),false);
         assertEqual(isPlatformBlock(new TypeError("programação")),false);
+      }
+    },
+
+    "project-files": {
+      "schema 2 aceita grupo lógico sem aparência"() {
+        const sourceRuntime=new AppearanceRuntime();
+        const scene=sourceRuntime.normalizeScene({
+          schemaVersion:1,
+          objects:[
+            {id:"group",kind:"group",position:[0,0,0]},
+            {
+              id:"box",
+              kind:"box",
+              parentId:"group",
+              material:{color:"#336699"}
+            }
+          ]
+        });
+        const parsed=new ProjectValidator().validate({
+          format:"spatial-seed",
+          schemaVersion:2,
+          assets:sourceRuntime.exportAssets(),
+          scene
+        });
+
+        assertEqual("appearanceId" in parsed.scene.objects[0],false);
+        assertEqual(Boolean(parsed.scene.objects[1].appearanceId),true);
+
+        const restoredRuntime=new AppearanceRuntime();
+        restoredRuntime.importAssets(parsed.assets,{replace:true});
+        const restored=restoredRuntime.normalizeScene(parsed.scene);
+        assertEqual(restored.objects[0].kind,"group");
+        assertEqual(restored.objects[1].parentId,"group");
+        assertEqual(
+          restoredRuntime.legacyMaterial(
+            restored.objects[1].appearanceId
+          ).color,
+          "#336699"
+        );
+      },
+
+      "schema 2 ainda rejeita renderizável sem aparência"() {
+        const assets=new AppearanceRuntime().exportAssets();
+        let message="";
+        try {
+          new ProjectValidator().validate({
+            format:"spatial-seed",
+            schemaVersion:2,
+            assets,
+            scene:{
+              schemaVersion:1,
+              objects:[{id:"box",kind:"box"}]
+            }
+          });
+        } catch (error) {
+          message=error.message;
+        }
+        assertEqual(message,"Objeto sem appearanceId: box.");
       }
     },
 

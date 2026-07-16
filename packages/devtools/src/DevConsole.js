@@ -197,7 +197,8 @@ export class DevConsole {
         "benchmark scene 1000 5 100",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
-        "runtime test placement-frame|geometry-creation|geometry-registry|file-interop|all",
+        "runtime test placement-frame|geometry-creation|geometry-registry|" +
+        "file-interop|project-files|all",
         "help create",
         "create help",
         "create box|sphere|cylinder|plane|polygon ...",
@@ -790,7 +791,7 @@ export class DevConsole {
     if (namespace !== "test") {
       throw new Error(
         "Uso: runtime test help|placement-frame|geometry-creation|" +
-        "geometry-registry|file-interop|all"
+        "geometry-registry|file-interop|project-files|all"
       );
     }
 

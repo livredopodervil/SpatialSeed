@@ -1,5 +1,5 @@
 import { ProjectSerializer } from "./ProjectSerializer.js";
-import { ProjectValidator } from "./ProjectValidator.js";
+import { ProjectValidator } from "./ProjectValidator.js?build=20260716-0025d";
 
 export class ProjectService {
   static apiVersion = "project-service-v4";
