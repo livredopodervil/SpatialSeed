@@ -93,6 +93,7 @@
   <button id="project-new">Novo</button>
   <button id="procedure-library-save">Exportar procedimentos</button>
   <button id="procedure-library-open">Importar procedimentos</button>
+  <button id="procedure-editor">Editor de procedimentos</button>
   <button id="pwa-install">Como instalar</button>
   <input id="project-file-input" type="file"
     accept=".spatialseed,.json,application/json" hidden>
@@ -166,6 +167,13 @@
       aria-label="Saída do console"
     ></textarea>
   </div>
+</section>
+<section id="procedure-editor-panel" hidden>
+  <header>
+    <strong>Editor de procedimentos</strong>
+    <button id="close-procedure-editor">×</button>
+  </header>
+  <div id="procedure-editor-root"></div>
 </section>
 <section id="inspector-panel" hidden>
   <header>

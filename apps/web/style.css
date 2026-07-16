@@ -221,6 +221,7 @@ body.ss-scene-only #review-panel,
 body.ss-scene-only #diagnostic-panel,
 body.ss-scene-only #developer-panel,
 body.ss-scene-only #console-panel,
+body.ss-scene-only #procedure-editor-panel,
 body.ss-scene-only #inspector-panel,
 body.ss-scene-only #transform-tools-panel,
 body.ss-scene-only #selection-marquee,
@@ -244,6 +245,141 @@ input[data-scrubbable="true"]{
     width:calc(100vw - .6rem);
     height:min(58vh,560px);
   }
+}
+
+/* 0026j — editor textual do catálogo de procedimentos */
+#procedure-editor-panel{
+  position:fixed;
+  z-index:31;
+  top:4rem;
+  left:.65rem;
+  width:min(760px,calc(100vw - 1.3rem));
+  height:min(72vh,680px);
+  border:1px solid #ffffff24;
+  border-radius:14px;
+  background:#07101bf4;
+  overflow:hidden;
+}
+#procedure-editor-panel>header{
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.58rem .65rem;
+  border-bottom:1px solid #ffffff18;
+  background:#07101bfa;
+}
+#procedure-editor-panel>header strong{flex:1}
+#procedure-editor-root{height:calc(100% - 3rem);min-height:0}
+.ss-procedure-editor{
+  --ss-procedure-editor-font-size:14px;
+  display:flex;
+  flex-direction:column;
+  gap:.55rem;
+  height:100%;
+  min-height:0;
+  padding:.65rem;
+}
+.ss-procedure-editor-toolbar,
+.ss-procedure-editor-metadata{
+  display:flex;
+  flex-wrap:wrap;
+  gap:.45rem;
+  align-items:center;
+}
+.ss-procedure-editor-toolbar select{min-width:12rem;flex:1}
+.ss-procedure-editor-toolbar select,
+.ss-procedure-editor-metadata input{
+  padding:.45rem;
+  border:1px solid #ffffff22;
+  border-radius:8px;
+  background:#02060c;
+  color:#edf4ff;
+}
+.ss-procedure-editor-metadata>label{
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+  flex:1;
+  min-width:14rem;
+}
+.ss-procedure-editor-metadata input{min-width:0;flex:1}
+.ss-procedure-font-controls{display:flex;align-items:center;gap:.3rem}
+.ss-procedure-font-controls button{min-width:2.2rem;font-weight:700}
+.ss-procedure-font-controls output{min-width:3.2rem;text-align:center;color:#b9c8dc}
+.ss-code-editor{
+  display:grid;
+  grid-template-columns:3.5rem minmax(0,1fr);
+  flex:1;
+  min-height:12rem;
+  overflow:hidden;
+  border:1px solid #ffffff24;
+  border-radius:10px;
+  background:#02060c;
+}
+.ss-code-gutter{
+  overflow:hidden;
+  padding-top:.65rem;
+  border-right:1px solid #ffffff18;
+  background:#07101b;
+  color:#70839d;
+  font:var(--ss-procedure-editor-font-size)/1.5 monospace;
+  text-align:right;
+}
+.ss-code-gutter>div{will-change:transform}
+.ss-code-gutter span{
+  display:block;
+  min-height:1.5em;
+  padding-right:.65rem;
+  box-sizing:border-box;
+}
+.ss-code-stack{position:relative;min-width:0;min-height:0;overflow:hidden}
+.ss-code-highlight,
+.ss-code-stack textarea{
+  position:absolute;
+  inset:0;
+  box-sizing:border-box;
+  width:100%;
+  height:100%;
+  margin:0;
+  padding:.65rem;
+  border:0;
+  font:var(--ss-procedure-editor-font-size)/1.5 monospace;
+  tab-size:2;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+}
+.ss-code-highlight{
+  overflow:hidden;
+  color:#dbe7f7;
+  pointer-events:none;
+}
+.ss-code-highlight code{display:block;will-change:transform}
+.ss-code-line{display:block;min-height:1.5em;white-space:pre-wrap;overflow-wrap:anywhere}
+.ss-code-stack textarea{
+  z-index:1;
+  resize:none;
+  overflow:auto;
+  background:transparent;
+  color:transparent;
+  caret-color:#fff;
+  -webkit-text-fill-color:transparent;
+}
+.ss-code-stack textarea::selection{background:#497bc477}
+.ss-token-keyword{color:#c792ea}
+.ss-token-string{color:#c3e88d}
+.ss-token-number{color:#f78c6c}
+.ss-token-comment{color:#637777;font-style:italic}
+.ss-procedure-editor-status{min-height:1.35rem;color:#9db0c9}
+.ss-procedure-editor-status[data-error="true"]{color:#ff9c9c}
+@media(max-width:700px){
+  #procedure-editor-panel{
+    top:auto;
+    bottom:.3rem;
+    left:.3rem;
+    width:calc(100vw - .6rem);
+    height:min(76vh,680px);
+  }
+  .ss-code-editor{grid-template-columns:3rem minmax(0,1fr)}
 }
 
 /* 0024f — composição declarativa e compacta da barra */

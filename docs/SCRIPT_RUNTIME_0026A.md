@@ -235,3 +235,22 @@ A importação de arquivo tenta `merge`. Fontes conflitantes não são combinada
 parcialmente; a interface pode então solicitar confirmação para substituir o
 catálogo inteiro. O mesmo contrato continua disponível no console por
 `procedure export` e `procedure import merge|replace`.
+
+## Editor do catálogo 0026j
+
+O menu Projeto passa a abrir um editor dedicado para criar, selecionar,
+alterar e excluir fontes do catálogo. O componente depende apenas da API de
+`ProcedureCatalog`; não conhece runtime, cena, renderer ou Worker e salvar uma
+fonte nunca a executa.
+
+O campo de código usa `wrap="soft"`: linhas longas são quebradas somente na
+apresentação, enquanto o valor textual conserva exatamente seus `\n` lógicos.
+A régua numera essas linhas lógicas e mede a altura ocupada por cada uma para
+continuar alinhada durante a quebra visual e o redimensionamento do painel.
+Rolagem, fonte monoespaçada e camada de realce permanecem sincronizadas.
+
+Os controles `−` e `+` ajustam a fonte entre 10 e 28 pixels e guardam a escolha
+localmente. O realce de sintaxe é deliberadamente léxico e leve: palavras-chave,
+strings, números e comentários de uma linha. A área de texto real permanece a
+fonte editável; a camada colorida é apenas visual e escapa HTML antes de
+renderizar.

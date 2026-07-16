@@ -462,7 +462,7 @@ export class DevConsole {
         "test help|all|sandbox|reducer|commands|project",
         "runtime test placement-frame|geometry-creation|geometry-registry|" +
         "file-interop|project-files|pwa-status|spatial-planning|" +
-        "spatial-plan-commit|procedure-catalog|all",
+        "spatial-plan-commit|procedure-catalog|procedure-editor|all",
         "calc expressão JavaScript",
         "program código JavaScript",
         "procedure define|list|show|run|remove|export|import|help",

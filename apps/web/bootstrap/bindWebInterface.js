@@ -21,6 +21,7 @@ export function bindWebInterface({
     modules,
     devConsole,
     procedureCatalog,
+    procedureCatalogEditor,
     objectInspector,
     transformToolPanel
   } = web;
@@ -145,6 +146,7 @@ export function bindWebInterface({
     "#diagnostic-panel",
     "#developer-panel",
     "#console-panel",
+    "#procedure-editor-panel",
     "#inspector-panel",
     "#transform-tools-panel",
     "#geometry-create-panel"
@@ -586,6 +588,15 @@ export function bindWebInterface({
   }
 
   function loadProcedureLibraryText(text) {
+    if (
+      procedureCatalogEditor.snapshot().dirty &&
+      !browserWindow.confirm(
+        "O editor contém alterações não salvas. Descartá-las e importar?"
+      )
+    ) {
+      return { changed: false, cancelled: true };
+    }
+
     let result;
     try {
       result = procedureCatalog.importText(text, { mode: "merge" });
@@ -603,6 +614,7 @@ export function bindWebInterface({
     showNotice(
       `Biblioteca importada: ${result.count} procedimentos.`
     );
+    procedureCatalogEditor.refresh({ preserveSelection: false });
     return result;
   }
 
@@ -687,6 +699,11 @@ export function bindWebInterface({
     $("console-input").focus();
   });
 
+  $("procedure-editor").addEventListener("click", () => {
+    panelManager.show("#procedure-editor-panel");
+    procedureCatalogEditor.refresh();
+  });
+
   $("close-developer").addEventListener(
     "click",
     () => panelManager.hide("#developer-panel")
@@ -695,6 +712,11 @@ export function bindWebInterface({
   $("close-console").addEventListener(
     "click",
     () => panelManager.hide("#console-panel")
+  );
+
+  $("close-procedure-editor").addEventListener(
+    "click",
+    () => panelManager.hide("#procedure-editor-panel")
   );
 
   $("console-run").addEventListener("click", () => {

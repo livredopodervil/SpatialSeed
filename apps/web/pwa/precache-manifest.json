@@ -68,6 +68,8 @@
     "packages/math-affine/src/index.js",
     "packages/object-inspector/src/ObjectInspector.js",
     "packages/plugin-api/src/ModuleRegistry.js",
+    "packages/procedure-editor/src/ProcedureCatalogEditor.js",
+    "packages/procedure-editor/src/index.js",
     "packages/project-files/src/ProjectAppearanceAdapter.js",
     "packages/project-files/src/ProjectSerializer.js",
     "packages/project-files/src/ProjectService.js",

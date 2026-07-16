@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0026i";
+} from "../../devtools/src/DevConsole.js?build=20260716-0026j";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -114,6 +114,11 @@ import {
 import {
   BrowserProcedureCatalogStore
 } from "../../../apps/web/procedures/BrowserProcedureCatalogStore.js";
+import {
+  clampEditorFontSize,
+  highlightProcedureSource,
+  logicalLineCount
+} from "../../procedure-editor/src/index.js";
 import {
   formatPwaBuildLabel,
   resolvePwaLocations,
@@ -1030,6 +1035,43 @@ export function createRuntimeLayerTests() {
             assertEqual(commits.length, 1);
             assertEqual(commits[0].id, "program.plan.commit");
           });
+      }
+    },
+
+    "procedure-editor": {
+      "numeração conta linhas lógicas e ignora quebra visual"() {
+        const longLine = "x".repeat(500);
+
+        assertEqual(logicalLineCount(longLine), 1);
+        assertEqual(logicalLineCount(`${longLine}\nreturn x`), 2);
+        assertEqual(logicalLineCount(""), 1);
+      },
+
+      "tamanho da fonte permanece em faixa acessível"() {
+        assertEqual(clampEditorFontSize(2), 10);
+        assertEqual(clampEditorFontSize(17.4), 17);
+        assertEqual(clampEditorFontSize(100), 28);
+        assertEqual(clampEditorFontSize("invalid"), 14);
+      },
+
+      "realce léxico escapa conteúdo antes de produzir marcação"() {
+        const html = highlightProcedureSource(
+          'const value = "<box>"; // comment'
+        );
+
+        assert(html.includes("ss-token-keyword"));
+        assert(html.includes("ss-token-string"));
+        assert(html.includes("ss-token-comment"));
+        assert(html.includes("&lt;box&gt;"));
+        assertEqual(html.includes("<box>"), false);
+      },
+
+      "realce mantém uma faixa para cada linha vazia"() {
+        const html = highlightProcedureSource("return 1\n\nreturn 2");
+        const lines = html.match(/ss-code-line/g) ?? [];
+
+        assertEqual(lines.length, 3);
+        assert(html.includes("&#8203;"));
       }
     },
 
