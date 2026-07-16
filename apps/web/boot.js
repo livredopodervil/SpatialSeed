@@ -3,6 +3,7 @@ import {
   loadBuildInfo
 } from "./BuildInfo.js";
 import { loadUiConfiguration } from "./UiConfiguration.js";
+import { registerPwa } from "./pwa/registerPwa.js";
 
 const $=id => document.getElementById(id);
 
@@ -19,6 +20,7 @@ try {
     `./main.js?build=${cacheKey}`
   );
   await startApplication(buildInfo,uiConfiguration);
+  registerPwa(buildInfo);
 } catch (error) {
   showFatalError(error);
 }

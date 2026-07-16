@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Spatial Seed">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1b2b"/>
+      <stop offset="1" stop-color="#07101b"/>
+    </linearGradient>
+    <linearGradient id="seed" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#78e0bd"/>
+      <stop offset="1" stop-color="#4f8eff"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#background)"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 94 396 175 256 256 116 175Z" stroke="#31516d" stroke-width="13"/>
+    <path d="M116 175v162l140 81 140-81V175" stroke="#31516d" stroke-width="13"/>
+    <path d="M256 256v162" stroke="#31516d" stroke-width="13"/>
+    <path d="M256 128c67 45 78 113 33 158-25 25-61 36-101 27 7-39 25-77 68-98" stroke="url(#seed)" stroke-width="25"/>
+    <path d="M188 313c28-3 57-16 78-40" stroke="#f0a477" stroke-width="17"/>
+  </g>
+  <circle cx="256" cy="256" r="12" fill="#f4f8ff"/>
+</svg>
