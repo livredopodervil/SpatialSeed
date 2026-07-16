@@ -12,7 +12,7 @@ import {
   affectedHierarchyIds,
   applyProjectedWorldMatrix,
   isRenderableSceneNode,
-  projectedSubtreeIds,
+  projectedSelectionIds,
   renderableSubtreeIds,
   selectionReferenceWorldPosition,
   selectionUnitId
@@ -45,6 +45,19 @@ export class ThreeRegionRenderer {
     objectsCreated: 0,
     objectsUpdated: 0,
     objectsDeleted: 0
+  };
+  #transformLifecycleDiagnostics = {
+    sessionsStarted:0,
+    previews:0,
+    commits:0,
+    rollbacks:0,
+    selectionRootCount:0,
+    previewObjectCount:0,
+    renderablePreviewCount:0,
+    lastPreviewMs:0,
+    maxPreviewMs:0,
+    lastCommitMs:0,
+    lastError:null
   };
   #transformConfig = {
     size: 1.25,
@@ -178,6 +191,8 @@ export class ThreeRegionRenderer {
 
     this.transform.addEventListener("dragging-changed", event => {
       this.orbit.enabled = !event.value;
+      if (event.value) this.#beginSession();
+      else if (this.#session) this.#commitSession();
     });
     this.transform.addEventListener("mouseDown", () => this.#beginSession());
     this.transform.addEventListener("objectChange", () => this.#previewSession());
@@ -578,8 +593,11 @@ export class ThreeRegionRenderer {
   }
 
   #beginSession() {
+    if (this.#session) return;
+
     if (this.editorState.pivot.editing) {
       this.#session = { kind: "pivot" };
+      this.#transformLifecycleDiagnostics.sessionsStarted += 1;
       return;
     }
 
@@ -602,18 +620,19 @@ export class ThreeRegionRenderer {
       mesh.updateMatrixWorld(true);
       objects.set(member.objectId, { matrixWorld: mesh.matrixWorld.clone() });
 
-      const previewIds=this.#hierarchy.has(member.objectId)
-        ? projectedSubtreeIds(this.#hierarchy,member.objectId)
-        : [member.objectId];
-      for (const previewId of previewIds) {
-        if (previewObjects.has(previewId)) continue;
-        const previewMesh=this.#meshes.get(previewId);
-        if (!previewMesh) continue;
-        previewMesh.updateMatrixWorld(true);
-        previewObjects.set(previewId,{
-          matrixWorld:previewMesh.matrixWorld.clone()
-        });
-      }
+    }
+
+    const previewIds=projectedSelectionIds(
+      this.#hierarchy,
+      members.map(member => member.objectId)
+    );
+    for (const previewId of previewIds) {
+      const previewMesh=this.#meshes.get(previewId);
+      if (!previewMesh) continue;
+      previewMesh.updateMatrixWorld(true);
+      previewObjects.set(previewId,{
+        matrixWorld:previewMesh.matrixWorld.clone()
+      });
     }
 
     this.#session = {
@@ -622,10 +641,20 @@ export class ThreeRegionRenderer {
       objects,
       previewObjects
     };
+    const diagnostics=this.#transformLifecycleDiagnostics;
+    diagnostics.sessionsStarted += 1;
+    diagnostics.selectionRootCount=objects.size;
+    diagnostics.previewObjectCount=previewObjects.size;
+    diagnostics.renderablePreviewCount=[...previewObjects.keys()]
+      .filter(id => !this.#meshes.get(id)?.userData.logicalOnly)
+      .length;
+    diagnostics.lastError=null;
   }
 
   #previewSession() {
     if (!this.#session) return;
+
+    const startedAt=performance.now();
 
     if (this.#session.kind === "pivot") {
       this.#storeEditedPivot(this.transformAnchor.position);
@@ -654,46 +683,51 @@ export class ThreeRegionRenderer {
     this.#flushBatchBounds();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
+    const elapsed=performance.now()-startedAt;
+    const diagnostics=this.#transformLifecycleDiagnostics;
+    diagnostics.previews += 1;
+    diagnostics.lastPreviewMs=elapsed;
+    diagnostics.maxPreviewMs=Math.max(diagnostics.maxPreviewMs,elapsed);
   }
 
   #commitSession() {
     if (!this.#session) return;
+    const startedAt=performance.now();
+    const session=this.#session;
+    this.#session=null;
 
-    if (this.#session.kind === "pivot") {
-      this.#storeEditedPivot(this.transformAnchor.position);
-      this.#session = null;
-      this.#rebuildAnchor();
-      return;
-    }
+    try {
+      if (session.kind === "pivot") {
+        this.#storeEditedPivot(this.transformAnchor.position);
+        this.#transformLifecycleDiagnostics.commits += 1;
+        return;
+      }
 
-    const transforms = [];
-    for (const [objectId] of this.#session.objects) {
-      const mesh = this.#meshes.get(objectId);
-      if (!mesh) continue;
-      transforms.push({
-        id: objectId,
-        worldMatrix: mesh.matrix.toArray()
-      });
-    }
+      const transforms = [];
+      for (const [objectId] of session.objects) {
+        const mesh = this.#meshes.get(objectId);
+        if (!mesh) continue;
+        transforms.push({
+          id: objectId,
+          worldMatrix: mesh.matrix.toArray()
+        });
+      }
 
-    this.#session = null;
+      if (
+        this.#transformConfig.gridLock &&
+        this.#transformConfig.translationSnap
+      ) {
+        const step = this.#transformConfig.translationSnap;
 
-    if (
-      this.#transformConfig.gridLock &&
-      this.#transformConfig.translationSnap
-    ) {
-      const step = this.#transformConfig.translationSnap;
-
-      for (const transform of transforms) {
-        for (const index of [12,13,14]) {
-          transform.worldMatrix[index]=
-            Math.round(transform.worldMatrix[index]/step)*step;
+        for (const transform of transforms) {
+          for (const index of [12,13,14]) {
+            transform.worldMatrix[index]=
+              Math.round(transform.worldMatrix[index]/step)*step;
+          }
         }
       }
-    }
 
-    if (transforms.length) {
-      this.dispatch({
+      const changed=!transforms.length || this.dispatch({
         type: "selection.transform-world",
         selection: this.#selectionSnapshot,
         pivot: {
@@ -702,11 +736,39 @@ export class ThreeRegionRenderer {
         },
         transforms
       });
-    }
 
-    this.transformAnchor.quaternion.identity();
-    this.transformAnchor.scale.set(1, 1, 1);
-    this.#rebuildAnchor();
+      if (!changed) this.#restorePreviewSession(session);
+      this.#transformLifecycleDiagnostics.commits += 1;
+      this.#transformLifecycleDiagnostics.lastError=null;
+    } catch (error) {
+      this.#restorePreviewSession(session);
+      const diagnostics=this.#transformLifecycleDiagnostics;
+      diagnostics.rollbacks += 1;
+      diagnostics.lastError={
+        code:error?.code ?? "TRANSFORM_COMMIT_FAILED",
+        message:error?.message ?? String(error)
+      };
+      console.error("Transform session rolled back",error);
+    } finally {
+      this.transformAnchor.quaternion.identity();
+      this.transformAnchor.scale.set(1, 1, 1);
+      this.#rebuildAnchor();
+      this.#transformLifecycleDiagnostics.lastCommitMs=
+        performance.now()-startedAt;
+    }
+  }
+
+  #restorePreviewSession(session) {
+    if (session?.kind !== "selection") return;
+    for (const [objectId,snapshot] of session.previewObjects) {
+      const mesh=this.#meshes.get(objectId);
+      if (!mesh) continue;
+      applyProjectedWorldMatrix(mesh,snapshot.matrixWorld.toArray());
+      this.#updateBatchMatrix(objectId,mesh);
+    }
+    this.#flushBatchBounds();
+    this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
   }
 
   #calculatePivot() {
@@ -795,9 +857,11 @@ export class ThreeRegionRenderer {
     const activeId = this.#selectionSnapshot?.activeMember?.objectId;
     const activeMesh = this.#meshes.get(activeId);
 
-    if (!this.editorState.pivot.editing &&
-        this.selection.orientationPolicy === "local" &&
-        activeMesh) {
+    const alignToActive=
+      this.selection.orientationPolicy === "local" ||
+      this.editorState.tool.mode === "scale";
+
+    if (!this.editorState.pivot.editing && alignToActive && activeMesh) {
       this.transformAnchor.quaternion.copy(activeMesh.quaternion);
     } else {
       this.transformAnchor.quaternion.identity();
@@ -894,7 +958,8 @@ export class ThreeRegionRenderer {
       dragging: this.transform.dragging,
       pivotPolicy: this.editorState.pivot.policy,
       pivotPosition: this.getSelectionPivotPosition(),
-      selection: this.#selectionSnapshot
+      selection: this.#selectionSnapshot,
+      lifecycle:structuredClone(this.#transformLifecycleDiagnostics)
     };
   }
 

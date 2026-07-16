@@ -85,6 +85,7 @@ import {
   affectedHierarchyIds,
   applyProjectedWorldMatrix,
   isRenderableSceneNode,
+  projectedSelectionIds,
   projectedSubtreeIds,
   renderableSubtreeIds,
   selectionReferenceWorldPosition,
@@ -1468,7 +1469,10 @@ assets: {
         commitWorldDelta(sandbox,"group",delta);
 
         const after=new HierarchyIndex(sandbox.getSnapshot().objects);
-        assertDeepEqual(after.worldPivotOf("group").map(roundAffine),pivot);
+        assertDeepEqual(
+          after.worldPivotOf("group").map(roundAffine),
+          pivot.map(roundAffine)
+        );
         assertMatricesNear(
           after.worldMatrixOf("child"),
           multiplyMatrices(delta,childBefore)
@@ -1493,6 +1497,56 @@ assets: {
           after.worldMatrixOf("child"),
           multiplyMatrices(delta,childBefore)
         );
+      },
+
+      "escala local de grupo rotacionado permanece TRS"() {
+        const sandbox=createGroupTransformSandbox({
+          groupRotation:eulerQuaternion([0,0,45])
+        });
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const groupWorld=before.worldMatrixOf("group");
+        const pivot=before.worldPivotOf("group");
+        const orientation=decomposeTransform(groupWorld).rotation;
+        const anchor=composeTransform({position:pivot,rotation:orientation});
+        const delta=multiplyMatrices(
+          anchor,
+          multiplyMatrices(
+            composeTransform({scale:[2,0.5,1.5]}),
+            invertAffineMatrix(anchor)
+          )
+        );
+
+        assertEqual(commitWorldDelta(sandbox,"group",delta),true);
+
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertDeepEqual(
+          after.worldPivotOf("group").map(roundAffine),
+          pivot.map(roundAffine)
+        );
+        assertDeepEqual(
+          decomposeTransformStrict(after.worldMatrixOf("group"))
+            .scale.map(roundAffine),
+          [2,0.5,1.5]
+        );
+      },
+
+      "escala mundial com cisalhamento falha sem alterar estado"() {
+        const sandbox=createGroupTransformSandbox({
+          groupRotation:eulerQuaternion([0,0,45])
+        });
+        const stateBefore=sandbox.getState();
+        const hierarchy=new HierarchyIndex(stateBefore.objects);
+        const delta=aroundPivot(
+          composeTransform({scale:[2,0.5,1]}),
+          hierarchy.worldPivotOf("group")
+        );
+
+        assertThrowsCode(
+          () => commitWorldDelta(sandbox,"group",delta),
+          "NON_TRS_TRANSFORM"
+        );
+        assertDeepEqual(sandbox.getState(),stateBefore);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
       },
 
       "sequência mover girar e escalar mantém resultado exato"() {
@@ -1653,6 +1707,40 @@ assets: {
         assertDeepEqual(
           renderableSubtreeIds(hierarchy,"box"),
           ["box"]
+        );
+      },
+      "grupo e multisseleção percorrem a mesma geometria"() {
+        const boxes=Array.from({length:1000},(_,index) => ({
+          id:`box-${index}`,
+          kind:"box",
+          parentId:"group"
+        }));
+        const hierarchy=new HierarchyIndex([
+          {id:"group",kind:"group"},
+          ...boxes
+        ]);
+        const groupTargets=projectedSelectionIds(hierarchy,["group"]);
+        const multiTargets=projectedSelectionIds(
+          hierarchy,
+          boxes.map(box => box.id)
+        );
+
+        assertEqual(groupTargets.length,1001);
+        assertEqual(multiTargets.length,1000);
+        assertEqual(
+          groupTargets.filter(id => isRenderableSceneNode(hierarchy.node(id))).length,
+          multiTargets.length
+        );
+      },
+      "alvos de preview eliminam descendentes redundantes"() {
+        const hierarchy=new HierarchyIndex([
+          {id:"outer",kind:"group"},
+          {id:"inner",kind:"group",parentId:"outer"},
+          {id:"box",kind:"box",parentId:"inner"}
+        ]);
+        assertDeepEqual(
+          projectedSelectionIds(hierarchy,["outer","inner","box"]),
+          ["outer","inner","box"]
         );
       }
     },
@@ -3652,12 +3740,15 @@ function round(value) {
   return Math.round(value * 1000) / 1000;
 }
 
-function createGroupTransformSandbox({nested=false}={}) {
+function createGroupTransformSandbox({
+  nested=false,
+  groupRotation=[0,0,0,1]
+}={}) {
   const group={
     id:"group",
     kind:"group",
     position:[4,2,1],
-    rotation:[0,0,0,1],
+    rotation:[...groupRotation],
     scale:[1,1,1],
     pivot:[1,0,0]
   };

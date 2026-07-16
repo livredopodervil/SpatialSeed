@@ -41,6 +41,22 @@ export function projectedSubtreeIds(hierarchy, id) {
   return Object.freeze([id,...hierarchy.descendantsOf(id)]);
 }
 
+export function projectedSelectionIds(hierarchy, ids = []) {
+  const result=[];
+  const seen=new Set();
+  const canonical=hierarchy.canonicalizeSelection(ids);
+
+  for (const rootId of canonical) {
+    for (const id of projectedSubtreeIds(hierarchy,rootId)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      result.push(id);
+    }
+  }
+
+  return Object.freeze(result);
+}
+
 export function renderableSubtreeIds(hierarchy, id) {
   return Object.freeze(
     projectedSubtreeIds(hierarchy,id).filter(nodeId =>
