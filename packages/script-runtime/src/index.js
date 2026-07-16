@@ -29,3 +29,6 @@ export {
   createSpatialPlanningFacade,
   SPATIAL_CREATE_COMMAND
 } from "./SpatialPlanningFacade.js";
+export {
+  SpatialPlanCommitService
+} from "./SpatialPlanCommitService.js";

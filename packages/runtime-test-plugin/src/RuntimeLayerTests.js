@@ -16,7 +16,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260716-0026g";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0026f";
+} from "../../devtools/src/DevConsole.js?build=20260716-0026g";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -130,6 +130,7 @@ import {
   PROGRAM_WORKER_PROTOCOL_VERSION,
   ProgramSessionController,
   ProgramSessionKernel,
+  SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker,
   createBrowserProgramWorker,
@@ -962,6 +963,170 @@ export function createRuntimeLayerTests() {
 
         assertEqual(harness.controller.snapshot().state, "idle");
         assertEqual(harness.worker.terminations, 0);
+      }
+    },
+
+    "spatial-plan-commit": {
+      "validação compila sem alterar mundo recursos ou histórico"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [{
+            type: "box",
+            options: {
+              size: [2, 4, 2],
+              position: [0, 2, 0],
+              color: "#4488ff"
+            }
+          }]
+        });
+        const worldBefore = fixture.sandbox.getState();
+        const assetsBefore = fixture.appearanceRuntime.exportAssets();
+
+        const compiled = fixture.service.validate(plan);
+
+        assertEqual(compiled.objects.length, 1);
+        assertDeepEqual(fixture.sandbox.getState(), worldBefore);
+        assertDeepEqual(
+          fixture.appearanceRuntime.exportAssets(),
+          assetsBefore
+        );
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          0
+        );
+      },
+
+      "commit cria lote inteiro em um único item de undo"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [
+            {
+              type: "box",
+              options: {
+                size: [1, 4, 1],
+                position: [0, 2, 0],
+                color: "#336699"
+              }
+            },
+            {
+              type: "sphere",
+              options: {
+                radius: 1.5,
+                position: [3, 1.5, 0],
+                color: "#336699"
+              }
+            }
+          ]
+        });
+
+        const result = fixture.service.commit(plan);
+
+        assertEqual(result.changed, true);
+        assertEqual(result.createdIds.length, 2);
+        assertEqual(fixture.sandbox.getState().objects.length, 2);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          1
+        );
+        assertEqual(
+          fixture.editor.selection.snapshot().members.length,
+          2
+        );
+
+        fixture.sandbox.undo();
+        assertEqual(fixture.sandbox.getState().objects.length, 0);
+      },
+
+      "aparência idêntica é deduplicada com referências corretas"() {
+        const fixture = createSpatialCommitFixture();
+        fixture.service.commit(spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: Array.from({ length: 5 }, (_, index) => ({
+            type: "box",
+            options: {
+              size: [1, 1, 1],
+              position: [index, 0.5, 0],
+              color: "#55aa77"
+            }
+          }))
+        }));
+        const objects = fixture.sandbox.getState().objects;
+        const stats = fixture.appearanceRuntime.stats().assets;
+
+        assertEqual(new Set(
+          objects.map(object => object.appearanceId)
+        ).size, 1);
+        assertEqual(stats.byKind.appearance.assets, 1);
+        assertEqual(stats.byKind.appearance.references, 5);
+        assertEqual(stats.byKind.material.assets, 1);
+        assertEqual(stats.byKind.material.references, 5);
+      },
+
+      "geometria inválida não deixa efeitos parciais"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [
+            { type: "box", options: { size: [1, 1, 1] } },
+            { type: "sphere", options: { radius: -2 } }
+          ]
+        });
+
+        assertThrowsMessage(
+          () => fixture.service.commit(plan),
+          "radius deve ser positivo"
+        );
+        assertEqual(fixture.sandbox.getState().objects.length, 0);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          0
+        );
+        assertEqual(
+          fixture.appearanceRuntime.stats().assets.assets,
+          0
+        );
+      },
+
+      "revisão local impede commit de plano obsoleto"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [{ type: "box", options: {} }]
+        });
+        fixture.sandbox.dispatch({
+          type: "object.create",
+          id: "external-object",
+          color: "#ffffff"
+        });
+
+        assertThrowsMessage(
+          () => fixture.service.commit(plan),
+          "Plano obsoleto"
+        );
+        assertEqual(fixture.sandbox.getState().objects.length, 1);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          1
+        );
+      },
+
+      "handles duplicados são rejeitados antes da transação"() {
+        const fixture = createSpatialCommitFixture();
+        const plan = spatialCreationPlan({
+          baseVersion: fixture.sandbox.revision,
+          creations: [
+            { type: "box", handleId: "same-handle", options: {} },
+            { type: "sphere", handleId: "same-handle", options: {} }
+          ]
+        });
+
+        assertThrowsMessage(
+          () => fixture.service.commit(plan),
+          "Handle espacial duplicado"
+        );
+        assertEqual(fixture.sandbox.getState().objects.length, 0);
       }
     },
 
@@ -5799,6 +5964,88 @@ function createTrustedProgramSession() {
   return new ProgramSessionKernel({
     evaluate: evaluateTrustedFixture
   });
+}
+
+function createSpatialCommitFixture() {
+  const region = new Region(
+    {
+      id: "region-spatial-commit",
+      name: "Spatial commit",
+      type: "box-region"
+    },
+    { schemaVersion: 1, objects: [] }
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const editor = { selection: new Selection() };
+  const appearanceRuntime = new AppearanceRuntime();
+  let idSequence = 0;
+  const service = new SpatialPlanCommitService({
+    sandbox,
+    editor,
+    regionId: region.descriptor.id,
+    geometryRegistry: createDefaultGeometryRegistry(),
+    appearanceRuntime,
+    createId: () => `program-object-${++idSequence}`
+  });
+
+  return {
+    region,
+    sandbox,
+    editor,
+    appearanceRuntime,
+    service
+  };
+}
+
+function spatialCreationPlan({
+  baseVersion = 0,
+  runId = "spatial-commit-run",
+  creations = []
+} = {}) {
+  return {
+    planVersion: PROGRAM_PLAN_VERSION,
+    runId,
+    baseVersion,
+    seed: 0,
+    commands: creations.map((creation, index) => ({
+      sequence: index,
+      command: SPATIAL_CREATE_COMMAND,
+      args: {
+        handle: {
+          kind: "object",
+          id: creation.handleId ?? `${runId}:object:${index + 1}`
+        },
+        geometry: {
+          ...(creation.options?.geometry ?? {}),
+          ...Object.fromEntries(
+            Object.entries(creation.options ?? {}).filter(([name]) =>
+              ![
+                "geometry",
+                "name",
+                "position",
+                "rotation",
+                "placement",
+                "color"
+              ].includes(name)
+            )
+          ),
+          type: creation.type
+        },
+        ...Object.fromEntries(
+          Object.entries(creation.options ?? {}).filter(([name]) =>
+            [
+              "name",
+              "position",
+              "rotation",
+              "placement",
+              "color"
+            ].includes(name)
+          )
+        )
+      }
+    })),
+    result: null
+  };
 }
 
 function assert(condition, message = "Falha de asserção.") {

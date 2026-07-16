@@ -113,6 +113,7 @@
     "packages/script-runtime/src/ProgramSessionKernel.js",
     "packages/script-runtime/src/ProgramSessionWorker.js",
     "packages/script-runtime/src/SpatialPlanningFacade.js",
+    "packages/script-runtime/src/SpatialPlanCommitService.js",
     "packages/script-runtime/src/ProgramWorker.js",
     "packages/script-runtime/src/ProgramWorkerKernel.js",
     "packages/script-runtime/src/createBrowserProgramSessionWorker.js",

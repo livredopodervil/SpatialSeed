@@ -26,6 +26,7 @@ export class DevConsole {
     this.queries = queries;
     this.programs = programs;
     this.programSequence = 0;
+    this.pendingProgramPlan = null;
     this.history = [];
   }
 
@@ -123,6 +124,36 @@ export class DevConsole {
       throw new Error("Uso: session status|reset|cancel|help.");
     }
 
+    if (command === "plan") {
+      const action = (source || "status").toLowerCase();
+
+      if (action === "help") return this.#programHelp();
+      if (action === "status") {
+        return this.#pendingPlanSnapshot();
+      }
+      if (action === "discard") {
+        const discarded = this.#pendingPlanSnapshot();
+        this.pendingProgramPlan = null;
+        return {
+          discarded: discarded.pending,
+          plan: discarded.plan
+        };
+      }
+      if (action === "commit") {
+        if (!this.pendingProgramPlan) {
+          throw new Error("Nenhum plano espacial está pendente.");
+        }
+        const result = this.commands.execute(
+          "program.plan.commit",
+          { plan: this.pendingProgramPlan }
+        );
+        this.pendingProgramPlan = null;
+        return result;
+      }
+
+      throw new Error("Uso: plan status|commit|discard|help.");
+    }
+
     if (!source) {
       throw new Error(
         command === "calc"
@@ -131,13 +162,23 @@ export class DevConsole {
       );
     }
 
+    if (this.pendingProgramPlan) {
+      throw new Error(
+        "Existe um plano espacial pendente. Use plan commit ou plan discard."
+      );
+    }
+
     const plan = await this.programs.run({
       runId: `console-session-${++this.programSequence}`,
-      baseVersion: Number(this.sandbox?.baseVersion ?? 0),
+      baseVersion: Number(this.sandbox?.revision ?? 0),
       seed: 0,
       source,
       mode: command === "calc" ? "expression" : "program"
     });
+
+    if (plan.commands?.length) {
+      this.pendingProgramPlan = structuredClone(plan);
+    }
 
     return {
       value: plan.result?.value ?? null,
@@ -149,6 +190,21 @@ export class DevConsole {
         commands: plan.commands ?? []
       },
       session: this.programs.snapshot()
+    };
+  }
+
+  #pendingPlanSnapshot() {
+    const plan = this.pendingProgramPlan;
+    return {
+      pending: plan !== null,
+      plan: plan === null
+        ? null
+        : {
+            runId: plan.runId,
+            baseVersion: plan.baseVersion,
+            commandCount: plan.commands.length,
+            commands: structuredClone(plan.commands)
+          }
     };
   }
 
@@ -272,7 +328,7 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "create") {
         return this.#createHelp();
       }
-      if (["calc", "program", "session"].includes(
+      if (["calc", "program", "session", "plan"].includes(
         String(topic).toLowerCase()
       )) {
         return this.#programHelp();
@@ -289,10 +345,12 @@ export class DevConsole {
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
         "runtime test placement-frame|geometry-creation|geometry-registry|" +
-        "file-interop|project-files|pwa-status|spatial-planning|all",
+        "file-interop|project-files|pwa-status|spatial-planning|" +
+        "spatial-plan-commit|all",
         "calc expressão JavaScript",
         "program código JavaScript",
         "session status|reset|cancel|help",
+        "plan status|commit|discard|help",
         "help create",
         "create help",
         "create box|sphere|cylinder|plane|polygon ...",
@@ -340,12 +398,13 @@ export class DevConsole {
         "program código JavaScript",
         "session status",
         "session reset",
-        "session cancel"
+        "session cancel",
+        "plan status|commit|discard"
       ],
       notes: [
         "Use session.nome para valores, objetos e funções persistentes.",
         "calc avalia uma expressão; program aceita comandos e return.",
-        "spatial cria um plano; nesta build ele ainda não altera a cena."
+        "spatial cria um plano; plan commit aplica a transação atomicamente."
       ],
       examples: [
         "calc sqrt(3 ** 2 + 4 ** 2)",
@@ -353,6 +412,8 @@ export class DevConsole {
         "program session.area = r => pi * r ** 2",
         "calc session.area(session.radius)",
         "program spatial.create('box', {size:[1,2,1], position:[0,1,0]})",
+        "plan status",
+        "plan commit",
         "program for (let i=0;i<5;i+=1) print(i, random()); return 'ok'"
       ]
     };
@@ -911,7 +972,7 @@ export class DevConsole {
       throw new Error(
         "Uso: runtime test help|placement-frame|geometry-creation|" +
         "geometry-registry|file-interop|project-files|pwa-status|" +
-        "spatial-planning|all"
+        "spatial-planning|spatial-plan-commit|all"
       );
     }
 
@@ -1160,7 +1221,7 @@ function isNumericToken(value) {
 }
 
 function isProgramConsoleInput(source) {
-  return /^(calc|program|session)(?:\s|$)/i.test(String(source));
+  return /^(calc|program|session|plan)(?:\s|$)/i.test(String(source));
 }
 
 function splitStatements(source) {

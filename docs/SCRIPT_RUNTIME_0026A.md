@@ -157,3 +157,29 @@ valores não serializáveis e planos acima do orçamento falham fechados.
 O console mostra `plan.commandCount` e `plan.commands`, mas nenhum comando é
 executado. A validação contra o registro real e o commit atômico pertencem à
 etapa 0026g.
+
+## Validação e commit atômico 0026g
+
+O console conserva no máximo um plano espacial pendente. As operações são:
+
+```text
+plan status
+plan commit
+plan discard
+```
+
+`SpatialPlanCommitService` confere a versão do plano, a revisão local do
+sandbox, a sequência e o tipo das intenções, a unicidade dos handles, os
+descritores no registro de geometrias, os referenciais de posicionamento e as
+cores. A validação não altera mundo, seleção, histórico ou recursos.
+
+Antes do commit, o comando agregado é executado diretamente pelo reducer como
+uma simulação pura. Somente depois dessa aprovação as aparências são internadas
+e todos os objetos são despachados juntos por um único
+`selection.duplicate`. Assim, qualquer quantidade de objetos criada pelo
+programa ocupa um único item de undo.
+
+Handles são convertidos em IDs reais apenas no processo principal. Cores iguais
+compartilham uma aparência e mantêm a contagem correta de referências. Uma
+falha antes do dispatch não deixa objetos nem recursos parciais; se a etapa de
+recursos falhar, o grafo de aparências anterior é restaurado.
