@@ -601,9 +601,7 @@ export class ThreeRegionRenderer {
       const mesh = this.#meshes.get(objectId);
       if (!mesh) continue;
       const result = delta.clone().multiply(snapshot.matrixWorld);
-      result.decompose(mesh.position, mesh.quaternion, mesh.scale);
-      mesh.updateMatrix();
-      mesh.updateMatrixWorld(true);
+      applyProjectedWorldMatrix(mesh,result.toArray());
       this.#updateBatchMatrix(objectId, mesh);
     }
   }
@@ -624,9 +622,7 @@ export class ThreeRegionRenderer {
       if (!mesh) continue;
       transforms.push({
         id: objectId,
-        position: mesh.position.toArray(),
-        rotation: mesh.quaternion.toArray(),
-        scale: mesh.scale.toArray()
+        worldMatrix: mesh.matrix.toArray()
       });
     }
 
@@ -639,15 +635,16 @@ export class ThreeRegionRenderer {
       const step = this.#transformConfig.translationSnap;
 
       for (const transform of transforms) {
-        transform.position = transform.position.map(
-          value => Math.round(value / step) * step
-        );
+        for (const index of [12,13,14]) {
+          transform.worldMatrix[index]=
+            Math.round(transform.worldMatrix[index]/step)*step;
+        }
       }
     }
 
     if (transforms.length) {
       this.dispatch({
-        type: "selection.transform",
+        type: "selection.transform-world",
         selection: this.#selectionSnapshot,
         pivot: {
           policy: this.editorState.pivot.policy,

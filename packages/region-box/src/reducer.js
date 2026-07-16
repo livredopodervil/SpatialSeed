@@ -1,4 +1,5 @@
 import {
+  applyWorldTransforms,
   reparentPreservingWorld
 } from "../../scene-hierarchy/src/index.js";
 
@@ -244,6 +245,24 @@ export function boxRegionReducer(state, command) {
           type: "object-transform",
           objectId: transform.id,
           source: "selection"
+        }))
+      };
+    }
+
+    case "selection.transform-world": {
+      const objects=applyWorldTransforms(
+        state.objects,
+        command.transforms ?? []
+      );
+
+      if (objects === state.objects) return { state, changes: [] };
+
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: command.transforms.map(transform => ({
+          type: "object-transform",
+          objectId: transform.id,
+          source: "selection-world"
         }))
       };
     }

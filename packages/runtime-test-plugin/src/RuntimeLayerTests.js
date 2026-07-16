@@ -1072,6 +1072,160 @@ assets: {
       }
     },
 
+    "hierarchy-world-commit": {
+      "converte transform mundial de filho para espaço local"() {
+        const sandbox=createHierarchySandbox();
+        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const desired=multiplyMatrices(
+          composeTransform({position:[3,-2,1]}),
+          hierarchy.worldMatrixOf("moving")
+        );
+
+        sandbox.dispatch({
+          type:"selection.transform-world",
+          transforms:[{id:"moving",worldMatrix:desired}]
+        });
+
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertMatricesNear(after.worldMatrixOf("moving"),desired);
+      },
+      "transformar ancestral mantém locals dos descendentes"() {
+        const sandbox=createHierarchySandbox();
+        const before=findHierarchyNode(sandbox.getState(),"nested");
+        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const desired=multiplyMatrices(
+          composeTransform({position:[2,0,0]}),
+          hierarchy.worldMatrixOf("moving")
+        );
+
+        sandbox.dispatch({
+          type:"selection.transform-world",
+          transforms:[{id:"moving",worldMatrix:desired}]
+        });
+
+        const nested=findHierarchyNode(sandbox.getState(),"nested");
+        assertDeepEqual(nested.position,before.position);
+        assertDeepEqual(nested.rotation,before.rotation);
+        assertDeepEqual(nested.scale,before.scale);
+      },
+      "ancestral e descendente explícitos usam o pai proposto"() {
+        const sandbox=createHierarchySandbox();
+        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
+        const delta=composeTransform({position:[4,1,-2]});
+        const movingDesired=multiplyMatrices(delta,before.worldMatrixOf("moving"));
+        const nestedDesired=multiplyMatrices(delta,before.worldMatrixOf("nested"));
+
+        sandbox.dispatch({
+          type:"selection.transform-world",
+          transforms:[
+            {id:"nested",worldMatrix:nestedDesired},
+            {id:"moving",worldMatrix:movingDesired}
+          ]
+        });
+
+        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
+        assertMatricesNear(after.worldMatrixOf("moving"),movingDesired);
+        assertMatricesNear(after.worldMatrixOf("nested"),nestedDesired);
+      },
+      "commit mundial cria uma única entrada de undo"() {
+        const sandbox=createHierarchySandbox();
+        const before=sandbox.getState();
+        const world=new HierarchyIndex(before.objects).worldMatrixOf("moving");
+        sandbox.dispatch({
+          type:"selection.transform-world",
+          transforms:[{
+            id:"moving",
+            worldMatrix:multiplyMatrices(
+              composeTransform({position:[1,0,0]}),
+              world
+            )
+          }]
+        });
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,1);
+        sandbox.undo();
+        assertDeepEqual(sandbox.getState(),before);
+      },
+      "commit mundial sem mudança não cria histórico"() {
+        const sandbox=createHierarchySandbox();
+        const world=new HierarchyIndex(sandbox.getSnapshot().objects)
+          .worldMatrixOf("moving");
+        assertEqual(sandbox.dispatch({
+          type:"selection.transform-world",
+          transforms:[{id:"moving",worldMatrix:world}]
+        }),false);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+      "alvo duplicado falha sem alterar estado"() {
+        const sandbox=createHierarchySandbox();
+        const before=sandbox.getState();
+        const world=new HierarchyIndex(before.objects).worldMatrixOf("moving");
+        assertThrowsCode(
+          () => sandbox.dispatch({
+            type:"selection.transform-world",
+            transforms:[
+              {id:"moving",worldMatrix:world},
+              {id:"moving",worldMatrix:world}
+            ]
+          }),
+          "DUPLICATE_TRANSFORM_TARGET"
+        );
+        assertDeepEqual(sandbox.getState(),before);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+      "local não representável falha atomicamente"() {
+        const sandbox=createShearHierarchySandbox();
+        const before=sandbox.getState();
+        const hierarchy=new HierarchyIndex(before.objects);
+        const shearLocal=[
+          1,0,0,0,
+          0.5,1,0,0,
+          0,0,1,0,
+          0,0,0,1
+        ];
+        const shearedWorld=multiplyMatrices(
+          hierarchy.worldMatrixOf("scaled-parent"),
+          shearLocal
+        );
+        assertThrowsCode(
+          () => sandbox.dispatch({
+            type:"selection.transform-world",
+            transforms:[{
+              id:"rotated-child",
+              worldMatrix:shearedWorld
+            }]
+          }),
+          "NON_TRS_TRANSFORM"
+        );
+        assertDeepEqual(sandbox.getState(),before);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount,0);
+      },
+      "cadeia profunda não depende da pilha de execução"() {
+        const objects=Array.from({length:2000},(_,index) => ({
+          id:`deep-${index}`,
+          parentId:index ? `deep-${index-1}` : null,
+          position:[1,0,0],
+          rotation:[0,0,0,1],
+          scale:[1,1,1]
+        }));
+        const result=boxRegionReducer(
+          {schemaVersion:1,objects},
+          {
+            type:"selection.transform-world",
+            transforms:[{
+              id:"deep-1999",
+              worldMatrix:composeTransform({position:[2001,0,0]})
+            }]
+          }
+        );
+        const world=new HierarchyIndex(result.state.objects)
+          .worldMatrixOf("deep-1999");
+        assertDeepEqual(
+          decomposeTransformStrict(world).position.map(roundAffine),
+          [2001,0,0]
+        );
+      }
+    },
+
 "resource-audit": {
   "conta aparência compartilhada"() {
     const audit = new ResourceAudit({
