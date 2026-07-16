@@ -1,3 +1,10 @@
+> **OBSOLETO — SEMENTE HISTÓRICA.** Esta síntese foi congelada no marco
+> `0019g-c2` e não representa mais capacidades, prioridades ou contagem de
+> testes do SpatialSeed. Consulte o [`README.md`](../../README.md), o índice
+> [`docs/project/README.md`](README.md) e o manifesto
+> [`apps/web/build-info.json`](../../apps/web/build-info.json). O texto abaixo
+> permanece intacto para documentar a evolução do projeto.
+
 # Semente de contexto
 
 Estamos desenvolvendo o SpatialSeed, ambiente modular para edição e criação procedural de estruturas espaciais.
