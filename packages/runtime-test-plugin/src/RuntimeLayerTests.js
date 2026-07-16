@@ -67,6 +67,7 @@ import {
   SphereGeometryProvider,
   CylinderGeometryProvider,
   PlaneGeometryProvider,
+  PolygonGeometryProvider,
   createDefaultGeometryRegistry
 } from "../../geometry-registry/src/index.js?build=20260714-0020b-a";
 import {
@@ -2933,7 +2934,8 @@ assets: {
           { type: "box", size: [1, 2, 3] },
           { type: "sphere", radius: 1 },
           { type: "cylinder", radius: 1, height: 2 },
-          { type: "plane", width: 2, height: 3 }
+          { type: "plane", width: 2, height: 3 },
+          { type: "polygon", sides: 7, radius: 2 }
         ]) {
           const geometry = registry.create(descriptor);
           assert(geometry?.isBufferGeometry === true);
@@ -2963,7 +2965,9 @@ assets: {
           { type: "box", size: [1, 0, 1] },
           { type: "sphere", radius: -1 },
           { type: "cylinder", height: 0 },
-          { type: "plane", width: 0 }
+          { type: "plane", width: 0 },
+          { type: "polygon", sides: 2 },
+          { type: "polygon", radius: 0 }
         ]) {
           let rejected = false;
 
@@ -2975,6 +2979,62 @@ assets: {
 
           assertEqual(rejected, true);
         }
+      },
+
+      "polígono regular normaliza ângulos equivalentes"() {
+        const registry=createDefaultGeometryRegistry();
+        assertDeepEqual(
+          registry.normalize({
+            type:"polygon",
+            sides:5,
+            radius:2,
+            startAngleDeg:-90
+          }),
+          {
+            type:"polygon",
+            sides:5,
+            radius:2,
+            startAngleDeg:270
+          }
+        );
+        assertEqual(
+          registry.key({
+            type:"polygon",
+            sides:5,
+            radius:2,
+            startAngleDeg:0
+          }),
+          registry.key({
+            type:"polygon",
+            sides:5,
+            radius:2,
+            startAngleDeg:360
+          })
+        );
+      },
+
+      "polígono produz triangulação plana com UV"() {
+        const descriptor=PolygonGeometryProvider.normalize({
+          sides:5,
+          radius:2,
+          startAngleDeg:90
+        });
+        const geometry=PolygonGeometryProvider.create(descriptor);
+        const position=geometry.getAttribute("position");
+
+        assertEqual(geometry.index.count,15);
+        assertEqual(Boolean(geometry.getAttribute("normal")),true);
+        assertEqual(Boolean(geometry.getAttribute("uv")),true);
+        let maximumRadius=0;
+        for (let index=0; index<position.count; index+=1) {
+          assertNear(position.getZ(index),0,1e-12);
+          maximumRadius=Math.max(
+            maximumRadius,
+            Math.hypot(position.getX(index),position.getY(index))
+          );
+        }
+        assertNear(maximumRadius,2,1e-6);
+        geometry.dispose();
       }
     },
 
