@@ -125,7 +125,9 @@ import {
 import { fnv1a64 } from "../../asset-store/src/index.js";
 import {
   DisposableProgramRun,
-  PROGRAM_PLAN_VERSION
+  PROGRAM_PLAN_VERSION,
+  ProgramRunController,
+  PROGRAM_WORKER_PROTOCOL_VERSION
 } from "../../script-runtime/src/index.js";
 
 export function createRuntimeLayerTests() {
@@ -352,6 +354,127 @@ export function createRuntimeLayerTests() {
           "excedeu o limite"
         );
         assertEqual(run.commandCount, 2);
+      },
+
+      "controlador envia pedido sem receber acesso ao runtime"() {
+        const harness = createProgramControllerHarness();
+
+        const snapshot = harness.controller.start({
+          runId: "worker-run",
+          baseVersion: 9,
+          seed: 12,
+          source: "2 + 3",
+          snapshot: { selection: ["object-a"] },
+          allowedCommands: ["objects.create"]
+        });
+
+        assertEqual(snapshot.state, "running");
+        assertEqual(harness.worker.messages.length, 1);
+        assertEqual(
+          harness.worker.messages[0].protocolVersion,
+          PROGRAM_WORKER_PROTOCOL_VERSION
+        );
+        assertEqual(
+          harness.worker.messages[0].request.source,
+          "2 + 3"
+        );
+        assertEqual(
+          "runtime" in harness.worker.messages[0].request,
+          false
+        );
+      },
+
+      "resposta válida encerra Worker e deixa plano pendente"() {
+        const harness = createProgramControllerHarness();
+        harness.controller.start({
+          runId: "completed-run",
+          baseVersion: 4
+        });
+        const envelope = programCompletedEnvelope({
+          runId: "completed-run",
+          baseVersion: 4,
+          commands: [{
+            sequence: 0,
+            command: "objects.create",
+            args: { id: "planned-a" }
+          }]
+        });
+
+        harness.worker.emit("message", envelope);
+        envelope.plan.commands[0].args.id = "tampered";
+
+        assertEqual(harness.controller.state, "ready");
+        assertEqual(harness.worker.terminations, 1);
+        const plan = harness.controller.takePlan();
+        assertEqual(plan.commands[0].args.id, "planned-a");
+        assertEqual(harness.controller.state, "idle");
+      },
+
+      "cancelamento invalida respostas tardias"() {
+        const harness = createProgramControllerHarness();
+        harness.controller.start({
+          runId: "cancel-worker",
+          baseVersion: 2
+        });
+
+        const cancelled = harness.controller.cancel();
+        harness.worker.emit(
+          "message",
+          programCompletedEnvelope({
+            runId: "cancel-worker",
+            baseVersion: 2
+          })
+        );
+
+        assertEqual(cancelled.cancelled, true);
+        assertEqual(harness.worker.terminations, 1);
+        assertEqual(harness.controller.state, "cancelled");
+        assertEqual(harness.controller.snapshot().hasPlan, false);
+      },
+
+      "timeout encerra execução sem produzir plano"() {
+        const harness = createProgramControllerHarness();
+        harness.controller.start({
+          runId: "slow-run",
+          baseVersion: 1
+        });
+
+        harness.fireTimeout();
+
+        assertEqual(harness.controller.state, "timed-out");
+        assertEqual(harness.worker.terminations, 1);
+        assertEqual(harness.controller.snapshot().hasPlan, false);
+        assert(
+          harness.controller.snapshot().lastError.includes("5000 ms")
+        );
+      },
+
+      "protocolo ou execução incompatível falha fechado"() {
+        for (const envelope of [
+          {
+            ...programCompletedEnvelope({
+              runId: "expected-run",
+              baseVersion: 3
+            }),
+            protocolVersion: "unknown-protocol"
+          },
+          programCompletedEnvelope({
+            runId: "other-run",
+            baseVersion: 3
+          })
+        ]) {
+          const harness = createProgramControllerHarness();
+          harness.controller.start({
+            runId: "expected-run",
+            baseVersion: 3
+          });
+
+          harness.worker.emit("message", envelope);
+
+          assertEqual(harness.controller.state, "failed");
+          assertEqual(harness.worker.terminations, 1);
+          assertEqual(harness.controller.snapshot().hasPlan, false);
+        }
       }
     },
 
@@ -5011,6 +5134,87 @@ export function runRuntimeTests(suites, requested = "all") {
     durationMs: round(performance.now() - startedAt),
     ok: passed === results.length,
     results
+  };
+}
+
+function createProgramControllerHarness() {
+  const worker = new FakeProgramWorker();
+  let timeoutCallback = null;
+  const clearedTimers = [];
+  const controller = new ProgramRunController({
+    workerFactory: () => worker,
+    timeoutMs: 5000,
+    setTimer(callback) {
+      timeoutCallback = callback;
+      return 17;
+    },
+    clearTimer(timerId) {
+      clearedTimers.push(timerId);
+    }
+  });
+
+  return {
+    controller,
+    worker,
+    clearedTimers,
+    fireTimeout() {
+      if (!timeoutCallback) {
+        throw new Error("Timeout não foi registrado.");
+      }
+      timeoutCallback();
+    }
+  };
+}
+
+class FakeProgramWorker {
+  constructor() {
+    this.listeners = new Map();
+    this.messages = [];
+    this.terminations = 0;
+  }
+
+  addEventListener(type, listener) {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type, listener) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  postMessage(message) {
+    this.messages.push(structuredClone(message));
+  }
+
+  terminate() {
+    this.terminations += 1;
+  }
+
+  emit(type, data) {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ data: structuredClone(data) });
+    }
+  }
+}
+
+function programCompletedEnvelope({
+  runId,
+  baseVersion,
+  commands = []
+}) {
+  return {
+    protocolVersion: PROGRAM_WORKER_PROTOCOL_VERSION,
+    type: "program.completed",
+    runId,
+    plan: {
+      planVersion: PROGRAM_PLAN_VERSION,
+      runId,
+      baseVersion,
+      seed: 0,
+      commands: structuredClone(commands),
+      result: null
+    }
   };
 }
 

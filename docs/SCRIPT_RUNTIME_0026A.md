@@ -45,6 +45,15 @@ a cena por construção, e não apenas por convenção.
 
 ## Próxima etapa
 
-Criar o controlador de execução e o Worker. O controlador manterá um token de
-execução, invalidará resultados de Workers cancelados e somente aceitará planos
-com versão-base ainda vigente.
+`ProgramRunController` implementa a primeira metade dessa etapa. Ele cria um
+Worker por execução, mantém um token privado, impõe timeout, encerra o Worker em
+qualquer estado terminal e rejeita mensagens com protocolo, execução ou
+versão-base incompatíveis.
+
+Cancelar invalida o token antes que qualquer resposta tardia possa ser aceita.
+Um plano concluído permanece fora do runtime principal até ser explicitamente
+consumido por `takePlan`; ele também pode ser descartado sem efeito.
+
+A próxima etapa criará o Worker concreto. Inicialmente ele avaliará apenas
+cálculos JavaScript sem acesso à cena e usará `DisposableProgramRun` para
+produzir o envelope aceito pelo controlador.
