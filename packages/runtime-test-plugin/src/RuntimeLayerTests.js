@@ -687,6 +687,64 @@ assets: {
     );
   },
 
+  "grupo lógico atravessa normalização sem aparência"() {
+    const runtime = new AppearanceRuntime();
+    const group = {
+      id: "group-a",
+      kind: "group",
+      parentId: null,
+      position: [1, 2, 3],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      pivot: [0.5, 0, 0]
+    };
+
+    const scene = runtime.normalizeScene({
+      schemaVersion: 1,
+      objects: [group]
+    });
+    const projected = runtime.projectObject(scene.objects[0]);
+
+    assertDeepEqual(projected, group);
+    assertEqual("appearanceId" in projected, false);
+    assertEqual("material" in projected, false);
+    assertEqual(runtime.stats().assets.assets, 0);
+  },
+
+  "fluxo de agrupamento projeta grupo e filhos"() {
+    const runtime = new AppearanceRuntime();
+    const scene = runtime.normalizeScene({
+      schemaVersion: 1,
+      objects: [
+        {
+          ...propertyObject("box-a", "#ff0000"),
+          position: [0, 0, 0]
+        },
+        {
+          ...propertyObject("box-b", "#00ff00"),
+          position: [2, 0, 0]
+        }
+      ]
+    });
+    const result = boxRegionReducer(scene, {
+      type: "selection.group",
+      groupId: "group-a",
+      targetIds: ["box-a", "box-b"]
+    });
+    const projected = result.state.objects.map(object =>
+      runtime.projectObject(object)
+    );
+    const group = projected.find(object => object.id === "group-a");
+    const child = projected.find(object => object.id === "box-a");
+    const hierarchy = new HierarchyIndex(result.state.objects);
+
+    assertEqual(group.kind, "group");
+    assertEqual("material" in group, false);
+    assert(Boolean(child.material));
+    assertEqual(hierarchy.parentOf("box-a"), "group-a");
+    assertEqual(hierarchy.parentOf("box-b"), "group-a");
+  },
+
   "stats distingue assets e cache"() {
     const runtime =
       new AppearanceRuntime();
