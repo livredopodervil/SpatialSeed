@@ -83,7 +83,9 @@ import {
 import {
   affectedHierarchyIds,
   applyProjectedWorldMatrix,
-  isRenderableSceneNode
+  isRenderableSceneNode,
+  projectedSubtreeIds,
+  renderableSubtreeIds
 } from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
 import {
   formatBuildLabel,
@@ -1378,6 +1380,46 @@ assets: {
         assertThrowsCode(
           () => normalizeBuildInfo({version:"0.1.0"}),
           "INVALID_BUILD_INFO"
+        );
+      }
+    },
+
+    "hierarchy-group-visuals": {
+      "preview de grupo inclui toda a subárvore uma vez"() {
+        const hierarchy=new HierarchyIndex([
+          {id:"outer",kind:"group"},
+          {id:"inner",kind:"group",parentId:"outer"},
+          {id:"box-a",kind:"box",parentId:"inner"},
+          {id:"box-b",kind:"box",parentId:"outer"}
+        ]);
+        assertDeepEqual(
+          projectedSubtreeIds(hierarchy,"outer"),
+          ["outer","inner","box-a","box-b"]
+        );
+      },
+      "limites agregados consideram somente geometria renderizável"() {
+        const hierarchy=new HierarchyIndex([
+          {id:"outer",kind:"group"},
+          {id:"inner",kind:"group",parentId:"outer"},
+          {id:"box-a",kind:"box",parentId:"inner"},
+          {id:"box-b",kind:"box",parentId:"outer"}
+        ]);
+        assertDeepEqual(
+          renderableSubtreeIds(hierarchy,"outer"),
+          ["box-a","box-b"]
+        );
+      },
+      "objeto comum mantém preview unitário"() {
+        const hierarchy=new HierarchyIndex([
+          {id:"box",kind:"box"}
+        ]);
+        assertDeepEqual(
+          projectedSubtreeIds(hierarchy,"box"),
+          ["box"]
+        );
+        assertDeepEqual(
+          renderableSubtreeIds(hierarchy,"box"),
+          ["box"]
         );
       }
     },

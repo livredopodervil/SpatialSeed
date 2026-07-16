@@ -11,7 +11,9 @@ import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=2026071
 import {
   affectedHierarchyIds,
   applyProjectedWorldMatrix,
-  isRenderableSceneNode
+  isRenderableSceneNode,
+  projectedSubtreeIds,
+  renderableSubtreeIds
 } from "./WorldTransformProjection.js?build=20260715-0023d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -33,6 +35,7 @@ export class ThreeRegionRenderer {
   #selectionOperation = "replace";
   #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
   #batchCapacity = 65536;
+  #hierarchy = new HierarchyIndex([]);
 
   #incrementalDiagnostics = {
     fullUpdates: 0,
@@ -256,6 +259,7 @@ export class ThreeRegionRenderer {
     this.#incrementalDiagnostics.fullUpdates += 1;
     const seen = new Set();
     const hierarchy = new HierarchyIndex(state.objects);
+    this.#hierarchy = hierarchy;
 
     for (const rawObject of state.objects) {
       const object = this.#projectObject(rawObject);
@@ -276,6 +280,7 @@ export class ThreeRegionRenderer {
   applyChanges(state, changes = []) {
     this.#incrementalDiagnostics.incrementalUpdates += 1;
     const hierarchy = new HierarchyIndex(state.objects);
+    this.#hierarchy = hierarchy;
     const byId = new Map(
       state.objects.map(object => [object.id,object])
     );
@@ -521,6 +526,18 @@ export class ThreeRegionRenderer {
     return target.applyMatrix4(proxy.matrixWorld);
   }
 
+  #worldBoundsForObjectId(objectId, target = new THREE.Box3()) {
+    target.makeEmpty();
+    if (!this.#hierarchy.has(objectId)) return target;
+
+    for (const id of renderableSubtreeIds(this.#hierarchy,objectId)) {
+      const proxy=this.#meshes.get(id);
+      if (!proxy) continue;
+      target.union(this.#worldBoundsForProxy(proxy,new THREE.Box3()));
+    }
+    return target;
+  }
+
   #storeEditedPivot(position) {
     const world = position.toArray();
 
@@ -578,14 +595,33 @@ export class ThreeRegionRenderer {
     };
 
     const objects = new Map();
+    const previewObjects = new Map();
     for (const member of members) {
       const mesh = this.#meshes.get(member.objectId);
       if (!mesh) continue;
       mesh.updateMatrixWorld(true);
       objects.set(member.objectId, { matrixWorld: mesh.matrixWorld.clone() });
+
+      const previewIds=this.#hierarchy.has(member.objectId)
+        ? projectedSubtreeIds(this.#hierarchy,member.objectId)
+        : [member.objectId];
+      for (const previewId of previewIds) {
+        if (previewObjects.has(previewId)) continue;
+        const previewMesh=this.#meshes.get(previewId);
+        if (!previewMesh) continue;
+        previewMesh.updateMatrixWorld(true);
+        previewObjects.set(previewId,{
+          matrixWorld:previewMesh.matrixWorld.clone()
+        });
+      }
     }
 
-    this.#session = { kind: "selection", initialAnchor, objects };
+    this.#session = {
+      kind:"selection",
+      initialAnchor,
+      objects,
+      previewObjects
+    };
   }
 
   #previewSession() {
@@ -608,13 +644,16 @@ export class ThreeRegionRenderer {
     );
     const delta = current.clone().multiply(initial.clone().invert());
 
-    for (const [objectId, snapshot] of this.#session.objects) {
+    for (const [objectId, snapshot] of this.#session.previewObjects) {
       const mesh = this.#meshes.get(objectId);
       if (!mesh) continue;
       const result = delta.clone().multiply(snapshot.matrixWorld);
       applyProjectedWorldMatrix(mesh,result.toArray());
       this.#updateBatchMatrix(objectId, mesh);
     }
+    this.#flushBatchBounds();
+    this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
   }
 
   #commitSession() {
@@ -719,8 +758,8 @@ export class ThreeRegionRenderer {
     if (policy === "bounds") {
       const bounds = new THREE.Box3().makeEmpty();
 
-      for (const mesh of meshes) {
-        bounds.union(this.#worldBoundsForProxy(mesh));
+      for (const member of members) {
+        bounds.union(this.#worldBoundsForObjectId(member.objectId));
       }
 
       return bounds.getCenter(new THREE.Vector3());
@@ -773,10 +812,7 @@ export class ThreeRegionRenderer {
     const bounds = new THREE.Box3().makeEmpty();
 
     for (const member of this.#selectionSnapshot.members) {
-      const mesh = this.#meshes.get(member.objectId);
-      if (!mesh) continue;
-
-      bounds.union(this.#worldBoundsForProxy(mesh));
+      bounds.union(this.#worldBoundsForObjectId(member.objectId));
     }
 
     if (bounds.isEmpty()) {
@@ -860,7 +896,7 @@ export class ThreeRegionRenderer {
     const selected=new Set((this.#selectionSnapshot?.members??[]).map(m=>m.objectId));
     const activeId=this.#selectionSnapshot?.activeMember?.objectId;
     for(const [id,h] of this.#selectionHelpers){if(!selected.has(id)){this.scene.remove(h);h.geometry?.dispose?.();h.material?.dispose?.();this.#selectionHelpers.delete(id)}}
-    for(const id of selected){const proxy=this.#meshes.get(id);if(!proxy)continue;let h=this.#selectionHelpers.get(id);if(!h){h=new THREE.Box3Helper(new THREE.Box3(),id===activeId?0xffd166:0x8faaff);h.renderOrder=999;h.material.depthTest=false;h.material.depthWrite=false;this.#selectionHelpers.set(id,h);this.scene.add(h)}h.box.copy(this.#worldBoundsForProxy(proxy));h.material.color.set(id===activeId?0xffd166:0x8faaff);h.visible=true}
+    for(const id of selected){const proxy=this.#meshes.get(id);if(!proxy)continue;let h=this.#selectionHelpers.get(id);if(!h){h=new THREE.Box3Helper(new THREE.Box3(),id===activeId?0xffd166:0x8faaff);h.renderOrder=999;h.material.depthTest=false;h.material.depthWrite=false;this.#selectionHelpers.set(id,h);this.scene.add(h)}h.box.copy(this.#worldBoundsForObjectId(id));h.material.color.set(id===activeId?0xffd166:0x8faaff);h.visible=!h.box.isEmpty()}
     for(const id of this.#selectedVisualIds)if(!selected.has(id))this.#applyObjectInstanceColor(id);
     this.#selectedVisualIds=selected;
   }

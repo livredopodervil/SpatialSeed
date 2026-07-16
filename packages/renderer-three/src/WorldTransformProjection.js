@@ -35,3 +35,16 @@ export function affectedHierarchyIds(hierarchy, changes = []) {
 export function isRenderableSceneNode(node) {
   return node?.kind !== "group";
 }
+
+export function projectedSubtreeIds(hierarchy, id) {
+  hierarchy.node(id);
+  return Object.freeze([id,...hierarchy.descendantsOf(id)]);
+}
+
+export function renderableSubtreeIds(hierarchy, id) {
+  return Object.freeze(
+    projectedSubtreeIds(hierarchy,id).filter(nodeId =>
+      isRenderableSceneNode(hierarchy.node(nodeId))
+    )
+  );
+}
