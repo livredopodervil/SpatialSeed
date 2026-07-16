@@ -127,7 +127,10 @@ import {
   DisposableProgramRun,
   PROGRAM_PLAN_VERSION,
   ProgramRunController,
-  PROGRAM_WORKER_PROTOCOL_VERSION
+  PROGRAM_WORKER_PROTOCOL_VERSION,
+  createBrowserProgramWorker,
+  createSeededRandom,
+  executeProgramRequest
 } from "../../script-runtime/src/index.js";
 
 export function createRuntimeLayerTests() {
@@ -475,6 +478,136 @@ export function createRuntimeLayerTests() {
           assertEqual(harness.worker.terminations, 1);
           assertEqual(harness.controller.snapshot().hasPlan, false);
         }
+      }
+    },
+
+    "program-evaluation": {
+      "expressão usa biblioteca matemática sem cena"() {
+        const envelope = executeProgramRequest({
+          runId: "expression-run",
+          baseVersion: 3,
+          source: "sqrt(3 ** 2 + 4 ** 2)",
+          mode: "expression",
+          allowedCommands: []
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertEqual(envelope.plan.commands.length, 0);
+        assertEqual(envelope.plan.result.value, 5);
+      },
+
+      "programa aceita funções objetos e controle de fluxo"() {
+        const envelope = executeProgramRequest({
+          runId: "language-run",
+          source: [
+            "const values = [];",
+            "const square = value => value ** 2;",
+            "for (let index = 0; index < 5; index += 1) {",
+            "  values.push(square(index));",
+            "}",
+            "return { values, sum: values.reduce((a, b) => a + b, 0) };"
+          ].join("\n"),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertDeepEqual(
+          envelope.plan.result.value,
+          { values: [0, 1, 4, 9, 16], sum: 30 }
+        );
+      },
+
+      "aleatoriedade repete sequência para a mesma semente"() {
+        const first = createSeededRandom("city-42");
+        const second = createSeededRandom("city-42");
+
+        assertDeepEqual(
+          [
+            first.random(),
+            first.random(-10, 10),
+            first.randomInt(4, 30)
+          ],
+          [
+            second.random(),
+            second.random(-10, 10),
+            second.randomInt(4, 30)
+          ]
+        );
+      },
+
+      "snapshot é somente entrada e saída precisa ser clonável"() {
+        const success = executeProgramRequest({
+          runId: "snapshot-run",
+          snapshot: { object: { position: [1, 2, 3] } },
+          source: "({ position: [...snapshot.object.position] })"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+        const failure = executeProgramRequest({
+          runId: "function-result-run",
+          source: "(() => 1)"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertDeepEqual(
+          success.plan.result.value,
+          { position: [1, 2, 3] }
+        );
+        assertEqual(failure.type, "program.failed");
+        assert(
+          failure.error.message.includes("structuredClone")
+        );
+      },
+
+      "saída é limitada e acompanha o resultado"() {
+        const success = executeProgramRequest({
+          runId: "print-run",
+          source: 'print("valor", 7)',
+          maxOutput: 1
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+        const failure = executeProgramRequest({
+          runId: "print-limit-run",
+          source: 'print("a"); print("b"); return 2;',
+          mode: "program",
+          maxOutput: 1
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertDeepEqual(
+          success.plan.result.output,
+          ["valor 7"]
+        );
+        assertEqual(failure.type, "program.failed");
+        assert(failure.error.message.includes("linhas de saída"));
+      },
+
+      "fábrica solicita Worker modular dedicado"() {
+        const created = [];
+        class WorkerFixture {
+          constructor(url, options) {
+            created.push({ url: String(url), options });
+          }
+        }
+
+        createBrowserProgramWorker({
+          WorkerClass: WorkerFixture,
+          workerUrl: new URL(
+            "https://example.test/ProgramWorker.js"
+          ),
+          name: "program-test"
+        });
+
+        assertEqual(created.length, 1);
+        assertEqual(created[0].options.type, "module");
+        assertEqual(created[0].options.name, "program-test");
       }
     },
 
@@ -5216,6 +5349,17 @@ function programCompletedEnvelope({
       result: null
     }
   };
+}
+
+function evaluateTrustedFixture(source, endowments) {
+  const names = Object.keys(endowments);
+  const values = names.map(name => endowments[name]);
+  const evaluator = new Function(
+    ...names,
+    `"use strict"; return ${source};`
+  );
+
+  return evaluator(...values);
 }
 
 function assert(condition, message = "Falha de asserção.") {

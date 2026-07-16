@@ -46,9 +46,11 @@ export class ProgramRunController {
     baseVersion = 0,
     seed = 0,
     source = "",
+    mode = "expression",
     snapshot = null,
     allowedCommands = [],
-    maxCommands = 10000
+    maxCommands = 10000,
+    maxOutput = 100
   } = {}) {
     if (this.#state === "disposed") {
       throw new Error("Controlador de programas foi descartado.");
@@ -70,6 +72,7 @@ export class ProgramRunController {
       ),
       seed,
       source: String(source),
+      mode: normalizeMode(mode),
       snapshot,
       allowedCommands: allowedCommands.map(command =>
         nonEmptyString(command, "allowedCommands")
@@ -77,6 +80,10 @@ export class ProgramRunController {
       maxCommands: positiveInteger(
         maxCommands,
         "maxCommands"
+      ),
+      maxOutput: positiveInteger(
+        maxOutput,
+        "maxOutput"
       )
     });
     const worker = this.workerFactory({
@@ -235,7 +242,13 @@ export class ProgramRunController {
       this.#finishFailure(
         token,
         "failed",
-        new Error(String(envelope.error ?? "Falha no Worker."))
+        new Error(
+          String(
+            envelope.error?.message ??
+            envelope.error ??
+            "Falha no Worker."
+          )
+        )
       );
       return true;
     }
@@ -410,4 +423,14 @@ function positiveInteger(value, label) {
   }
 
   return number;
+}
+
+function normalizeMode(value) {
+  const mode = String(value ?? "expression");
+
+  if (!["expression", "program"].includes(mode)) {
+    throw new Error(`Modo de programa desconhecido: ${mode}.`);
+  }
+
+  return mode;
 }

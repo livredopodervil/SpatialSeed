@@ -109,6 +109,9 @@
     "packages/scene-hierarchy/src/index.js",
     "packages/script-runtime/src/DisposableProgramRun.js",
     "packages/script-runtime/src/ProgramRunController.js",
+    "packages/script-runtime/src/ProgramWorker.js",
+    "packages/script-runtime/src/ProgramWorkerKernel.js",
+    "packages/script-runtime/src/createBrowserProgramWorker.js",
     "packages/script-runtime/src/index.js",
     "packages/selection-operations/src/AffineAst.js",
     "packages/selection-operations/src/AffineProgram.js",
@@ -135,6 +138,7 @@
     "vendor/addons/controls/TransformControls.js",
     "vendor/addons/loaders/GLTFLoader.js",
     "vendor/three.core.js",
+    "vendor/ses/ses.umd.min.js",
     "vendor/three.module.js"
   ]
 }

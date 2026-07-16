@@ -57,3 +57,25 @@ consumido por `takePlan`; ele também pode ser descartado sem efeito.
 A próxima etapa criará o Worker concreto. Inicialmente ele avaliará apenas
 cálculos JavaScript sem acesso à cena e usará `DisposableProgramRun` para
 produzir o envelope aceito pelo controlador.
+
+## Executor 0026c
+
+`ProgramWorker` implementa o primeiro executor concreto. Ele roda em um Worker
+modular e cria um `Compartment` SES para cada programa. Somente a biblioteca
+matemática explícita, o gerador pseudoaleatório com semente, `print` limitado e
+um snapshot clonado são fornecidos ao código.
+
+Não são fornecidos `spatial`, runtime, renderer, DOM, rede ou sistema de
+arquivos. O `Math.random` do compartimento seguro lança erro; programas devem
+usar `random`, `randomInt` e `randomSeed`, que são reproduzíveis pela semente do
+plano.
+
+Dois modos são aceitos:
+
+- `expression`: calcula uma expressão e devolve seu valor;
+- `program`: executa um corpo JavaScript síncrono, com funções, objetos e
+  estruturas de controle, e devolve o valor de `return`.
+
+Resultados e snapshots precisam atravessar `structuredClone`. Funções e outras
+referências vivas podem existir dentro do programa, mas não atravessam a
+fronteira. Programas assíncronos e comandos de cena permanecem desabilitados.
