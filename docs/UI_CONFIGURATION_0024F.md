@@ -39,3 +39,13 @@ runtime test all
 
 O próximo incremento previsto adicionará alças de redimensionamento adequadas
 a toque e importação/exportação das preferências locais.
+
+## Extensão 0024g
+
+O valor especial `"top": "toolbar"` ancora um painel abaixo da altura real da
+barra. A altura é observada continuamente, portanto quebra de linha e zoom do
+navegador não deixam o painel cobrir os controles.
+
+`presentation.sceneExit` configura a zona de toque que restaura a interface no
+modo somente cena. As opções de `corner` são `top-left`, `top-right`,
+`bottom-left` e `bottom-right`; `size` é medido em pixels CSS.

@@ -11,6 +11,7 @@ export async function startApplication(buildInfo, uiConfiguration) {
     canvas: $("world"),
     outlineRoot: $("outline-content"),
     transformToolsRoot: $("transform-tools-panel"),
+    geometryCreationRoot: $("geometry-create-panel"),
     inspectorRoot: $("inspector-panel"),
     buildInfo,
     uiConfiguration

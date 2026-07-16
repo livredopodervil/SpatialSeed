@@ -61,7 +61,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024d";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024g";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   boxRegionReducer
@@ -74,7 +74,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260716-0024e";
+} from "../../geometry-registry/src/index.js?build=20260716-0024g";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -83,7 +83,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0024c";
+} from "../../devtools/src/DevConsole.js?build=20260716-0024g";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -106,7 +106,7 @@ import {
 } from "../../../apps/web/BuildInfo.js";
 import {
   normalizeUiConfiguration
-} from "../../ui-config/src/index.js?build=20260716-0024f";
+} from "../../ui-config/src/index.js?build=20260716-0024g";
 import { fnv1a64 } from "../../asset-store/src/index.js";
 
 export function createRuntimeLayerTests() {
@@ -1998,6 +1998,7 @@ assets: {
         assertEqual(configuration.toolbar.menus[0].items[0],"undo");
         assertEqual(configuration.panels.items.inspector.anchor,"right");
         assertEqual(configuration.presentation.transform.size,0.8);
+        assertEqual(configuration.presentation.sceneExit.corner,"top-left");
         assertEqual(Object.isFrozen(configuration),true);
       },
       "rejeita controle repetido entre grupos"() {
@@ -2014,7 +2015,7 @@ assets: {
         }
         assertEqual(failed,true);
       },
-      "mantém preferências visuais fora do projeto"() {
+      "normaliza preferências visuais separadas da barra"() {
         const configuration=normalizeUiConfiguration({
           presentation:{transform:{size:0.6,showX:false,vertexSize:7}}
         });
@@ -3175,9 +3176,14 @@ assets: {
           radius: 2,
           startAngleDeg: 0
         });
-        assertDeepEqual(calls[0].args.position, [4, 5, 6]);
+        assertDeepEqual(calls[0].args.placement, {
+          origin:[4,5,6],
+          plane:"xz",
+          normal:null,
+          tangent:null,
+          points:null
+        });
         assertEqual(calls[0].args.color, "#33aaff");
-        assertNear(Math.abs(calls[0].args.rotation[0]), Math.SQRT1_2);
       },
 
       "console alcança todas as famílias registradas"() {
@@ -3237,10 +3243,44 @@ assets: {
           editor.selection.snapshot().members.map(member => member.objectId),
           [object.id]
         );
+      },
+
+      "operação resolve o mesmo referencial do console e do painel"() {
+        const region = new Region(
+          { id: "geometry-placement", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const operations = new SelectionOperations({
+          editor:new EditorState(),
+          sandbox,
+          regionId:"geometry-placement",
+          geometryRegistry:createDefaultGeometryRegistry(),
+          appearanceRuntime:new AppearanceRuntime()
+        });
+        operations.createGeometry({
+          geometry:{type:"polygon",sides:5},
+          placement:{origin:[4,5,6],plane:"xz"}
+        });
+        const object=sandbox.getState().objects[0];
+        assertDeepEqual(object.position,[4,5,6]);
+        assertNear(Math.abs(object.rotation[0]),Math.SQRT1_2);
       }
     },
 
     "geometry-registry": {
+      "descrição expõe famílias e parâmetros sem UI acoplada"() {
+        const descriptions=createDefaultGeometryRegistry().describe();
+        assertDeepEqual(
+          descriptions.map(description => description.type),
+          ["box","sphere","cylinder","plane","polygon"]
+        );
+        assertEqual(
+          descriptions.find(description => description.type === "sphere")
+            .parameters.some(parameter => parameter.id === "radius"),
+          true
+        );
+      },
       "registro normaliza caixa legada"() {
         const registry = createDefaultGeometryRegistry();
 

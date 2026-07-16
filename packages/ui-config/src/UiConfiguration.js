@@ -53,6 +53,11 @@ export function normalizeUiConfiguration(source = {}) {
       "presentation.transform.vertexSize"
     )
   });
+  const sceneExit = source.presentation?.sceneExit ?? {};
+  const corner = sceneExit.corner ?? "top-left";
+  if (!["top-left", "top-right", "bottom-left", "bottom-right"].includes(corner)) {
+    throw new RangeError("presentation.sceneExit.corner inválido.");
+  }
 
   return Object.freeze({
     schemaVersion,
@@ -70,7 +75,17 @@ export function normalizeUiConfiguration(source = {}) {
       items: Object.freeze(panelItems)
     }),
     presentation: Object.freeze({
-      transform: presentationTransform
+      transform: presentationTransform,
+      sceneExit: Object.freeze({
+        corner,
+        size: boundedNumber(
+          sceneExit.size,
+          32,
+          128,
+          64,
+          "presentation.sceneExit.size"
+        )
+      })
     })
   });
 }
@@ -85,7 +100,7 @@ function normalizePanelLayout(value = {}, path) {
   }
   return Object.freeze({
     anchor,
-    top: optionalNumber(value.top, `${path}.top`),
+    top: optionalTop(value.top, `${path}.top`),
     bottom: optionalNumber(value.bottom, `${path}.bottom`),
     width: optionalNumber(value.width, `${path}.width`),
     height: optionalNumber(value.height, `${path}.height`)
@@ -119,6 +134,10 @@ function optionalNumber(value, path) {
     throw new RangeError(`${path} deve ser um número não negativo.`);
   }
   return number;
+}
+
+function optionalTop(value, path) {
+  return value === "toolbar" ? value : optionalNumber(value, path);
 }
 
 function boundedNumber(value, minimum, maximum, fallback, path) {

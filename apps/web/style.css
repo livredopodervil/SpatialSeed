@@ -302,7 +302,7 @@ input[data-scrubbable="true"]{
   }
   #toolbar>#status{
     position:fixed;
-    top:3.4rem;
+    top:var(--ss-toolbar-clearance,3.4rem);
     right:.55rem;
     max-width:70vw;
     overflow:hidden;
@@ -317,7 +317,7 @@ input[data-scrubbable="true"]{
   }
   .ss-toolbar-menu-content{
     position:fixed;
-    top:3.35rem;
+    top:var(--ss-toolbar-clearance,3.35rem);
     left:.45rem;
     right:.45rem;
     grid-template-columns:repeat(2,minmax(0,1fr));
@@ -325,7 +325,82 @@ input[data-scrubbable="true"]{
     max-height:60dvh;
   }
 }
-@media(max-width:460px){
-  #toolbar>#status,
-  .ss-toolbar-menu-content{top:6rem}
+
+/* 0024g — criação geométrica e retorno da cena */
+#geometry-create-panel{
+  position:fixed;
+  z-index:28;
+  top:var(--ss-toolbar-clearance,4rem);
+  right:.55rem;
+  width:min(430px,calc(100vw - 1.1rem));
+  max-height:calc(100dvh - var(--ss-toolbar-clearance,4rem) - .55rem);
+  overflow:auto;
+  border:1px solid #ffffff22;
+  border-radius:14px;
+  background:#08101af7;
 }
+#geometry-create-panel>header{
+  position:sticky;
+  top:0;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.65rem;
+  border-bottom:1px solid #ffffff18;
+  background:#08101af7;
+}
+#geometry-create-panel>header strong{flex:1}
+#geometry-create-form{display:grid;gap:.65rem;padding:.7rem}
+#geometry-create-form fieldset{
+  margin:0;
+  border:1px solid #ffffff18;
+  border-radius:10px;
+}
+.geometry-field{
+  display:grid;
+  grid-template-columns:9rem minmax(0,1fr);
+  gap:.5rem;
+  align-items:center;
+}
+.geometry-field input,.geometry-field select,
+.geometry-vector input{
+  width:100%;
+  min-width:0;
+  padding:.42rem;
+  border:1px solid #ffffff22;
+  border-radius:8px;
+  background:#02060c;
+  color:#edf4ff;
+}
+.geometry-field-editor{min-width:0}
+.geometry-vector{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:.35rem;
+}
+[data-geometry-parameters]{display:grid;gap:.55rem}
+[data-geometry-result]{
+  min-height:1.5rem;
+  color:#91a4bc;
+  overflow-wrap:anywhere;
+}
+[data-geometry-result][data-status="error"]{color:#ff9b9b}
+#scene-exit-hotspot{display:none}
+body.ss-scene-only #scene-exit-hotspot{
+  display:block!important;
+  position:fixed;
+  z-index:2000;
+  width:var(--ss-scene-exit-size,64px);
+  height:var(--ss-scene-exit-size,64px);
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  opacity:0;
+  touch-action:manipulation;
+}
+#scene-exit-hotspot[data-corner="top-left"]{top:0;left:0}
+#scene-exit-hotspot[data-corner="top-right"]{top:0;right:0}
+#scene-exit-hotspot[data-corner="bottom-left"]{bottom:0;left:0}
+#scene-exit-hotspot[data-corner="bottom-right"]{right:0;bottom:0}

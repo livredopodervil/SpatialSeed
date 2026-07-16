@@ -2,10 +2,6 @@ import {
   normalizeHexColor,
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
-import {
-  resolvePlacementFrame
-} from "../../math-affine/src/index.js";
-
 export class DevConsole {
   static apiVersion = "dev-console-v4";
 
@@ -331,11 +327,9 @@ export class DevConsole {
       throw new Error("Use plane ou normal; não combine os dois referenciais.");
     }
 
-    const frame = resolvePlacementFrame(placement);
     return this.commands.execute("object.create.geometry", {
       geometry,
-      position: [...frame.origin],
-      rotation: [...frame.rotation],
+      placement,
       color
     });
   }

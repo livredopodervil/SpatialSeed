@@ -6,6 +6,7 @@
       "tool-navigate",
       "tool-select",
       "tool-translate",
+      "tool-scale",
       "scene-only",
       "viewport-fullscreen"
     ],
@@ -15,7 +16,6 @@
         "label": "Transformar",
         "items": [
           "tool-rotate",
-          "tool-scale",
           "space",
           "transform-tools"
         ]
@@ -58,7 +58,8 @@
           "diagnostics",
           "developer",
           "console",
-          "inspector"
+          "inspector",
+          "geometry-create"
         ]
       },
       {
@@ -76,13 +77,14 @@
   "panels": {
     "storageKey": "spatialseed.ui.layout.v2",
     "items": {
-      "outline": { "anchor": "right", "top": 64, "width": 430, "height": 520 },
-      "review-panel": { "anchor": "right", "top": 64, "width": 430, "height": 420 },
-      "diagnostic-panel": { "anchor": "right", "top": 64, "width": 520, "height": 520 },
+      "outline": { "anchor": "right", "top": "toolbar", "width": 430, "height": 520 },
+      "review-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 420 },
+      "diagnostic-panel": { "anchor": "right", "top": "toolbar", "width": 520, "height": 520 },
       "developer-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
       "console-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
-      "inspector-panel": { "anchor": "right", "top": 64, "width": 430, "height": 620 },
-      "transform-tools-panel": { "anchor": "left", "top": 64, "width": 410, "height": 540 }
+      "inspector-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
+      "transform-tools-panel": { "anchor": "left", "top": "toolbar", "width": 410, "height": 540 },
+      "geometry-create-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 }
     }
   },
   "presentation": {
@@ -93,6 +95,10 @@
       "showZ": true,
       "showVertices": false,
       "vertexSize": 5
+    },
+    "sceneExit": {
+      "corner": "top-left",
+      "size": 64
     }
   }
 }

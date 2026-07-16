@@ -92,6 +92,18 @@ export class GeometryRegistry {
   list() {
     return [...this.#providers.keys()];
   }
+
+  describe() {
+    return [...this.#providers.values()].map(provider => Object.freeze({
+      type: provider.type,
+      label: provider.label ?? provider.type,
+      topology: provider.topology ?? "closed-solid",
+      parameters: Object.freeze(
+        structuredClone(provider.parameters ?? [])
+          .map(parameter => Object.freeze(parameter))
+      )
+    }));
+  }
 }
 
 function validateProvider(provider) {

@@ -3,6 +3,12 @@ import * as THREE from "three";
 export const PolygonGeometryProvider = Object.freeze({
   type: "polygon",
   topology: "open-surface",
+  label: "Polígono regular",
+  parameters: Object.freeze([
+    Object.freeze({id:"sides",label:"Lados",type:"integer",default:6,minimum:3}),
+    Object.freeze({id:"radius",label:"Raio",type:"number",default:1,minimum:0.001}),
+    Object.freeze({id:"startAngleDeg",label:"Ângulo inicial (°)",type:"number",default:0})
+  ]),
 
   normalize(input = {}) {
     return Object.freeze({

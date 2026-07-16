@@ -3,6 +3,15 @@ import * as THREE from "three";
 export const CylinderGeometryProvider = Object.freeze({
   type: "cylinder",
   topology: "closed-solid",
+  label: "Cilindro / cone",
+  parameters: Object.freeze([
+    Object.freeze({id:"radiusTop",label:"Raio superior",type:"number",default:1,minimum:0}),
+    Object.freeze({id:"radiusBottom",label:"Raio inferior",type:"number",default:1,minimum:0}),
+    Object.freeze({id:"height",label:"Altura",type:"number",default:2,minimum:0.001}),
+    Object.freeze({id:"radialSegments",label:"Segmentos radiais",type:"integer",default:24,minimum:3}),
+    Object.freeze({id:"heightSegments",label:"Segmentos de altura",type:"integer",default:1,minimum:1}),
+    Object.freeze({id:"openEnded",label:"Extremidades abertas",type:"boolean",default:false})
+  ]),
 
   normalize(input = {}) {
     return Object.freeze({

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { resolvePlacementFrame } from "../../math-affine/src/index.js";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -56,6 +57,7 @@ export class SelectionOperations {
     geometry,
     position = [0, 0, 0],
     rotation = [0, 0, 0, 1],
+    placement = null,
     color = "#6699cc"
   } = {}) {
     if (!this.geometryRegistry) {
@@ -63,6 +65,9 @@ export class SelectionOperations {
     }
 
     const descriptor = this.geometryRegistry.normalize(geometry);
+    const frame = placement === null
+      ? null
+      : resolvePlacementFrame(placement);
     const id = crypto.randomUUID();
     const index = this.sandbox.getSnapshot().objects.length + 1;
     const label = geometryLabel(descriptor.type);
@@ -71,8 +76,8 @@ export class SelectionOperations {
       id,
       kind: descriptor.type,
       name: name || `${label} ${index}`,
-      position: [...position],
-      rotation: [...rotation],
+      position: [...(frame?.origin ?? position)],
+      rotation: [...(frame?.rotation ?? rotation)],
       geometry: descriptor,
       ...this.#creationAppearance(color)
     });

@@ -69,9 +69,26 @@ export function composeToolbar({ root = document, configuration }) {
   };
   toolbar.addEventListener("toggle", closeOtherMenus, true);
   toolbar.addEventListener("click", closeAfterCommand);
+  const updateClearance = () => {
+    const bottom = Math.ceil(toolbar.getBoundingClientRect().bottom + 8);
+    ownerDocument.documentElement.style.setProperty(
+      "--ss-toolbar-clearance",
+      `${bottom}px`
+    );
+    ownerDocument.dispatchEvent(new ownerDocument.defaultView.CustomEvent(
+      "spatialseed:toolbar-layout",
+      { detail: { clearance: bottom } }
+    ));
+  };
+  const resizeObserver = typeof ResizeObserver === "function"
+    ? new ResizeObserver(updateClearance)
+    : null;
+  resizeObserver?.observe(toolbar);
+  updateClearance();
 
   return Object.freeze({
     dispose() {
+      resizeObserver?.disconnect();
       toolbar.removeEventListener("toggle", closeOtherMenus, true);
       toolbar.removeEventListener("click", closeAfterCommand);
     }

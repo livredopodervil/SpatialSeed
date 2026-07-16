@@ -1,4 +1,4 @@
-import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024f";
+import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024g";
 
 export function bindWebInterface({
   runtime,
@@ -39,6 +39,15 @@ export function bindWebInterface({
     root: documentRoot,
     configuration: uiConfiguration?.toolbar
   });
+  const sceneExit = uiConfiguration?.presentation?.sceneExit ?? {
+    corner: "top-left",
+    size: 64
+  };
+  $("scene-exit-hotspot").dataset.corner = sceneExit.corner;
+  $("scene-exit-hotspot").style.setProperty(
+    "--ss-scene-exit-size",
+    `${sceneExit.size}px`
+  );
   const panelManager = new FloatingPanelManager({
     root: documentRoot,
     storageKey: uiConfiguration?.panels?.storageKey
@@ -50,7 +59,8 @@ export function bindWebInterface({
     "#developer-panel",
     "#console-panel",
     "#inspector-panel",
-    "#transform-tools-panel"
+    "#transform-tools-panel",
+    "#geometry-create-panel"
   ]) {
     panelManager.register(selector, {
       defaultLayout: uiConfiguration?.panels?.items?.[
@@ -293,12 +303,14 @@ export function bindWebInterface({
   );
 
   $("structure").addEventListener("click", () => {
-    $("outline").hidden = !$("outline").hidden;
+    $("outline").hidden
+      ? panelManager.show("#outline")
+      : panelManager.hide("#outline");
   });
 
   $("close-outline").addEventListener(
     "click",
-    () => { $("outline").hidden = true; }
+    () => panelManager.hide("#outline")
   );
 
   $("project-save").addEventListener("click", () => {
@@ -353,12 +365,12 @@ export function bindWebInterface({
     $("diagnostic-content").value =
       JSON.stringify(diagnostics, null, 2);
 
-    $("diagnostic-panel").hidden = false;
+    panelManager.show("#diagnostic-panel");
   });
 
   $("close-diagnostics").addEventListener(
     "click",
-    () => { $("diagnostic-panel").hidden = true; }
+    () => panelManager.hide("#diagnostic-panel")
   );
 
   $("duplicate-selection").addEventListener(
@@ -387,23 +399,32 @@ export function bindWebInterface({
   );
 
   $("transform-tools").addEventListener("click", () => {
-    $("transform-tools-panel").hidden = false;
+    panelManager.show("#transform-tools-panel");
     transformToolPanel.refresh();
   });
 
   $("close-transform-tools").addEventListener(
     "click",
-    () => { $("transform-tools-panel").hidden = true; }
+    () => panelManager.hide("#transform-tools-panel")
+  );
+
+  $("geometry-create").addEventListener("click", () => {
+    panelManager.show("#geometry-create-panel");
+  });
+
+  $("close-geometry-create").addEventListener(
+    "click",
+    () => panelManager.hide("#geometry-create-panel")
   );
 
   $("inspector").addEventListener("click", () => {
-    $("inspector-panel").hidden = false;
+    panelManager.show("#inspector-panel");
     objectInspector.refresh();
   });
 
   $("close-inspector").addEventListener(
     "click",
-    () => { $("inspector-panel").hidden = true; }
+    () => panelManager.hide("#inspector-panel")
   );
 
   $("developer").addEventListener("click", () => {
@@ -559,6 +580,10 @@ export function bindWebInterface({
     "click",
     () => setSceneOnly(!sceneOnly)
   );
+  $("scene-exit-hotspot").addEventListener(
+    "click",
+    () => setSceneOnly(false)
+  );
   $("viewport-fullscreen").addEventListener(
     "click",
     toggleViewportFullscreen
@@ -593,17 +618,17 @@ export function bindWebInterface({
   $("review").addEventListener("click", () => {
     $("review-content").textContent =
       JSON.stringify(sandbox.createProposal(), null, 2);
-    $("review-panel").hidden = false;
+    panelManager.show("#review-panel");
   });
 
   $("close-review").addEventListener(
     "click",
-    () => { $("review-panel").hidden = true; }
+    () => panelManager.hide("#review-panel")
   );
 
   $("cancel-proposal").addEventListener(
     "click",
-    () => { $("review-panel").hidden = true; }
+    () => panelManager.hide("#review-panel")
   );
 
   $("confirm-proposal").addEventListener("click", () => {
@@ -615,7 +640,7 @@ export function bindWebInterface({
 
     if (result.accepted) {
       sandbox.rebaseFromRegion();
-      $("review-panel").hidden = true;
+      panelManager.hide("#review-panel");
     }
   });
 
