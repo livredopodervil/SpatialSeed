@@ -34,6 +34,7 @@ repetidos em documentos vivos quando podem ser consultados diretamente.
 | [`ROADMAP.md`](ROADMAP.md) | vivo | sequência de marcos | concluídos 0022–0026 registrados; 0027 passa a ser tempo/animação |
 | [`WORKFLOW.md`](WORKFLOW.md) | vivo | branches, patches, autoria, testes e integração | reescrito para o processo real no Termux |
 | [`CHATGPT_PROJECT_INSTRUCTIONS.md`](CHATGPT_PROJECT_INSTRUCTIONS.md) | vivo | contrato para assistentes | atualizado com arquitetura, autoria e limites de autonomia |
+| [`STRATEGIC_ARCHITECTURE_REVIEW.md`](STRATEGIC_ARCHITECTURE_REVIEW.md) | vivo | auditoria crítica e gates tecnológicos | integra propostas de CRDT, QuickJS/WASM e gramáticas de forma com custos |
 | [`DOCUMENTS_TO_WRITE.md`](DOCUMENTS_TO_WRITE.md) | vivo | backlog documental | criado nesta auditoria |
 | [`CURRENT_STATE.md`](CURRENT_STATE.md) | obsoleto | snapshot do marco 0019g-c2 | cabeçalho de obsolescência; corpo preservado |
 | [`MEMORY_SEED.md`](MEMORY_SEED.md) | obsoleto | semente curta do marco 0019g-c2 | cabeçalho de obsolescência; corpo preservado |
@@ -57,6 +58,9 @@ Eles descrevem conceitos e processo, não snapshots de execução.
 
 - [`DECISIONS.md`](DECISIONS.md): registra decisões estáveis e suas
   consequências.
+- [`STRATEGIC_ARCHITECTURE_REVIEW.md`](STRATEGIC_ARCHITECTURE_REVIEW.md):
+  confronta recomendações externas com os contratos atuais, define provas de
+  conceito e estima custos de adoção.
 - [`DISTRIBUTION.md`](DISTRIBUTION.md): define publicação, instalação, cache,
   HTTP e transporte de arquivos.
 

@@ -153,8 +153,33 @@ Antes de oferecer ferramentas visuais, definir:
 - guia público para providers geométricos e propriedades;
 - manifesto de plugins e capabilities;
 - navegador de projeto sem acesso irrestrito ao sistema;
+- envelope de operações e matriz de conflitos antes da escolha de CRDT/OT;
+- prova comparativa de Yjs e Automerge sem vazar a biblioteca no domínio;
 - protocolo de snapshots, deltas e conflitos entre regiões;
 - identidade de autor, revisão e proposta distribuída.
+
+### Gates tecnológicos
+
+- QuickJS/WASM só entra como backend adicional após threat model, corpus de
+  compatibilidade e benchmark mobile contra Worker + SES;
+- P2P não substitui autoridade regional e não precede autenticação, autorização
+  e reconexão observável;
+- convergência estrutural precisa ser acompanhada por validação geométrica e
+  testes de conflitos semânticos.
+
+## 0032 — Operadores procedurais e gramáticas de forma
+
+- escopo orientado ligado a shape, frame local e pivô;
+- perfil, extrusão, `split`, repetição e seleção de componentes;
+- regras nomeadas, parâmetros e aleatoriedade com semente;
+- consultas espaciais limitadas por orçamento;
+- geração de planos inspecionáveis e commit atômico;
+- cache, regeneração incremental e receita compacta;
+- demonstração de fachada ou quarteirão paramétrico.
+
+Este marco depende de geometria 2D e identidade topológica. A API dos operadores
+precede qualquer gramática textual própria. Compatibilidade integral com CGA não
+faz parte do escopo inicial.
 
 ## Prioridades transversais
 
@@ -192,6 +217,8 @@ Estas atividades não precisam esperar um marco próprio.
 - formalizar o threat model do runtime SES;
 - definir CSP e política de dependências antes de aceitar código não confiável;
 - não confundir isolamento experimental com garantia de segurança.
+- manter a avaliação crítica e os gates tecnológicos de
+  [`STRATEGIC_ARCHITECTURE_REVIEW.md`](STRATEGIC_ARCHITECTURE_REVIEW.md).
 
 ## Itens deliberadamente adiados
 

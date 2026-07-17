@@ -306,6 +306,60 @@ estrutura procedural.
 **Motivação:** evitar arquivos de megabytes para cenas que podem ser descritas
 por poucos parâmetros, sem perder projetos existentes.
 
+## D-022 — Autoridade regional precede a tecnologia de convergência
+
+**Estado:** planejada.
+
+Colaboração distribuída preservará a região como domínio de autoridade. Antes
+de escolher CRDT, OT ou protocolo próprio, o projeto definirá um envelope de
+operação, causalidade, matriz de conflitos geométricos e política de publicação.
+
+**Motivação:** convergência de estruturas replicadas não garante validade
+geométrica, autorização ou intenção correta. Yjs e Automerge são candidatos de
+implementação, não partes antecipadas do modelo canônico.
+
+**Consequências:** transporte, merge e autoridade permanecem substituíveis;
+provas devem convergir a um hash canônico e incluir conflitos semânticos; detalhes
+da biblioteca escolhida não devem vazar para o formato `.spatialseed`.
+
+## D-023 — Isolamento de scripts possui backend substituível
+
+**Estado:** implementada para Worker + SES; avaliação de QuickJS/WASM planejada.
+
+Scripts e futuros plugins dependem de uma fronteira comum de capabilities,
+orçamento, interrupção e valores serializáveis. Worker + SES permanece vigente
+para programas planejadores. QuickJS/WASM será comparado como backend adicional
+para código de terceiros com threat model mais severo.
+
+**Motivação:** a segurança depende da autoridade concedida e de toda a ponte
+host–guest, não apenas da VM. Uma troca prematura perderia compatibilidade,
+depuração e desempenho sem comprovar redução suficiente de risco.
+
+**Consequências:** nenhum backend recebe DOM, renderer ou sandbox; a escolha
+exige corpus comum, benchmark mobile, testes negativos e registro da versão do
+executor; SES não será removido por analogia com implementações históricas de
+Realms.
+
+## D-024 — Gramáticas procedurais crescem a partir de operadores do domínio
+
+**Estado:** planejada.
+
+O SpatialSeed adotará conceitos de gramáticas de forma — escopo orientado,
+`split`, repetição, componentes, extrusão e regras — como operadores próprios
+sobre planos e identidades geométricas. Não adotará agora uma linguagem CGA
+completa nem acoplará o modelo canônico a uma engine externa.
+
+**Motivação:** os operadores dependem de curvas, perfis e topologia estável. Sua
+semântica pode ser testada primeiro pela API espacial e orquestrada pelo runtime
+JavaScript antes de justificar uma nova sintaxe.
+
+**Consequências:** receitas devem ser determinísticas, inspecionáveis e
+compactas; geração continua passando por plano e commit; gramática textual só
+entra depois que os operadores forem independentes da superfície linguística.
+
+As premissas, provas de conceito e custos destas três decisões estão detalhados
+em [`STRATEGIC_ARCHITECTURE_REVIEW.md`](STRATEGIC_ARCHITECTURE_REVIEW.md).
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.
@@ -319,6 +373,12 @@ por poucos parâmetros, sem perder projetos existentes.
   de entidades com âncora.
 - **JavaScript com acesso direto ao runtime:** rejeitada; programas planejam por
   capacidades restritas.
+- **CRDT como substituto automático da autoridade regional:** rejeitada;
+  convergência e autoridade são responsabilidades distintas.
+- **QuickJS/WASM como troca imediata e obrigatória de SES:** rejeitada; será um
+  backend candidato condicionado a threat model e benchmark.
+- **Compatibilidade integral com CGA antes de topologia e operadores próprios:**
+  rejeitada no horizonte próximo.
 
 ## Processo para novas decisões
 
