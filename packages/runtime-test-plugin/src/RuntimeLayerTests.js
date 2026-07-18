@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260718-0027b";
+} from "../../devtools/src/DevConsole.js?build=20260718-0027c";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -4379,6 +4379,89 @@ assets: {
             definition.id
           );
         }
+      },
+
+      "bloco misto despacha comandos comuns e assíncronos em ordem"() {
+        const console = createProgramConsole([], {
+          experiments: {
+            list: () => [],
+            describe: id => ({ id }),
+            plan: () => Promise.reject(new Error("não esperado"))
+          }
+        });
+
+        return console.execute("help\nexperiment list")
+          .then(entries => {
+            assertEqual(entries.length, 2);
+            assertEqual(entries[0].input, "help");
+            assertEqual(entries[0].ok, true);
+            assertEqual(entries[1].input, "experiment list");
+            assertEqual(entries[1].ok, true);
+            assertDeepEqual(entries[1].result, []);
+          });
+      },
+
+      "forma semântica curta resolve alias parâmetros e commit atômico"() {
+        const commits = [];
+        const planned = [];
+        const console = createProgramConsole([], {
+          experiments: {
+            list: () => [{ id: "math.helix" }],
+            describe: id => ({ id }),
+            plan(id, parameters) {
+              planned.push({ id, parameters: structuredClone(parameters) });
+              return Promise.resolve({
+                experiment: { id },
+                parameters,
+                plan: {
+                  runId: "semantic-helix",
+                  baseVersion: 0,
+                  commands: [{
+                    sequence: 0,
+                    command: SPATIAL_CREATE_COMMAND,
+                    args: {}
+                  }],
+                  result: { value: { count: parameters.count }, output: [] }
+                }
+              });
+            }
+          },
+          execute(id, args) {
+            commits.push({ id, args: structuredClone(args) });
+            return { changed: true };
+          }
+        });
+
+        return console.execute(
+          "experiment helix radius=4 turns=5 count=160"
+        ).then(entries => {
+          assertEqual(entries.length, 1);
+          assertEqual(entries[0].ok, true);
+          assertDeepEqual(planned, [{
+            id: "math.helix",
+            parameters: { radius: 4, turns: 5, count: 160 }
+          }]);
+          assertEqual(commits.length, 1);
+          assertEqual(commits[0].id, "program.plan.commit");
+          assertEqual(entries[0].result.commit.changed, true);
+        });
+      },
+
+      "runner aguarda asserções assíncronas antes de aprovar"() {
+        let completed = false;
+        return runRuntimeTests({
+          fixture: {
+            async "asserção assíncrona"() {
+              await Promise.resolve();
+              completed = true;
+              assertEqual(completed, true);
+            }
+          }
+        }, "fixture").then(result => {
+          assertEqual(completed, true);
+          assertEqual(result.passed, 1);
+          assertEqual(result.failed, 0);
+        });
       }
     },
 
@@ -6031,6 +6114,7 @@ function createGeometryConsole(calls) {
 
 function createProgramConsole(calls, {
   procedures = null,
+  experiments = null,
   plan = null,
   execute = null
 } = {}) {
@@ -6059,7 +6143,8 @@ function createProgramConsole(calls, {
       reset: () => ({ state: "idle" }),
       cancel: () => ({ cancelled: false })
     },
-    procedures
+    procedures,
+    experiments
   });
 }
 
@@ -6304,7 +6389,7 @@ function createExperimentDefinition() {
   };
 }
 
-export function runRuntimeTests(suites, requested = "all") {
+export async function runRuntimeTests(suites, requested = "all") {
   const selected =
     requested === "all"
       ? Object.entries(suites)
@@ -6324,7 +6409,7 @@ export function runRuntimeTests(suites, requested = "all") {
       const started = performance.now();
 
       try {
-        test();
+        await test();
         results.push({
           suite,
           test: name,
