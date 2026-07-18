@@ -24,8 +24,9 @@ renderer, região ou sandbox. O host possui o renderer declarativo da interface,
 o controlador de programas e o comando de commit.
 
 O código do experimento recebe apenas as capacidades já permitidas ao runtime
-de programas, inicialmente matemática, aleatoriedade determinística, `print`,
-snapshot clonado e `spatial.create`.
+de programas, inicialmente matemática, aleatoriedade determinística, `print` e
+`spatial.create`. O host web 0027a não copia a cena para cada execução; leitura
+espacial deverá entrar depois como capability declarada e projeção limitada.
 
 ## Definição versão 1
 

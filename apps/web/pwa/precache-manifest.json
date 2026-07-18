@@ -45,6 +45,8 @@
     "packages/editor-core/src/EditorState.js",
     "packages/editor-core/src/Selection.js",
     "packages/editor-transform-tools/src/TransformToolPanel.js",
+    "packages/experiment-plugin/src/StarterExperimentPlugin.js",
+    "packages/experiment-plugin/src/index.js",
     "packages/experiment-runtime/src/ExperimentRegistry.js",
     "packages/experiment-runtime/src/ExperimentService.js",
     "packages/experiment-runtime/src/index.js",

@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260718-0027a";
+} from "../../devtools/src/DevConsole.js?build=20260718-0027b";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -152,7 +152,15 @@ import {
   ExperimentRegistry,
   buildExperimentInvocation,
   normalizeExperimentDefinition
-} from "../../experiment-runtime/src/index.js";
+} from "../../experiment-runtime/src/index.js?build=20260718-0027b";
+import {
+  starterExperimentDefinitions,
+  starterExperimentPlugin
+} from "../../experiment-plugin/src/index.js?build=20260718-0027b";
+import {
+  ModuleRegistry,
+  selectCapabilities
+} from "../../plugin-api/src/ModuleRegistry.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -4281,6 +4289,96 @@ assets: {
 
         assertEqual(invocation, "(({ count }) => count * 2)({\"count\":6})");
         assertEqual(Function(`return ${invocation};`)(), 12);
+      }
+    },
+
+    "experiment-plugin": {
+      "capabilities entregam somente referências declaradas"() {
+        const experiments = new ExperimentRegistry();
+        const selected = selectCapabilities(
+          ["experiments"],
+          {
+            experiments,
+            renderer: { unsafe: true },
+            dom: { unsafe: true }
+          },
+          "experiment.fixture"
+        );
+
+        assertEqual(selected.experiments, experiments);
+        assertEqual(Object.hasOwn(selected, "renderer"), false);
+        assertEqual(Object.hasOwn(selected, "dom"), false);
+        assertEqual(Object.isFrozen(selected), true);
+      },
+
+      "capability ausente falha fechada"() {
+        assertThrowsMessage(
+          () => selectCapabilities(
+            ["experiments"],
+            { renderer: {} },
+            "experiment.fixture"
+          ),
+          "requires unavailable capability: experiments"
+        );
+      },
+
+      "manifesto de módulo é validado e descrito"() {
+        const registry = new ModuleRegistry()
+          .register(starterExperimentPlugin);
+        const [description] = registry.describe();
+
+        assertEqual(description.id, "experiments.starter");
+        assertDeepEqual(description.capabilities, ["experiments"]);
+        assertEqual(description.failed, false);
+        assertEqual(description.error, null);
+      },
+
+      "plugin inicial registra catálogo sem receber host inteiro"() {
+        const experiments = new ExperimentRegistry();
+        const activated = starterExperimentPlugin.activate({ experiments });
+
+        assertEqual(activated.registered, 3);
+        assertDeepEqual(
+          experiments.list().map(item => item.id).sort(),
+          ["math.helix", "math.polar-flower", "math.sine-wave"]
+        );
+      },
+
+      "fontes iniciais produzem planos determinísticos válidos"() {
+        const registry = new ExperimentRegistry();
+        starterExperimentPlugin.activate({ experiments: registry });
+        const expectedCounts = {
+          "math.helix": 96,
+          "math.polar-flower": 240,
+          "math.sine-wave": 121
+        };
+
+        for (const definition of starterExperimentDefinitions) {
+          const parameters = registry.resolveParameters(definition.id);
+          const envelope = executeProgramRequest({
+            runId: `fixture-${definition.id}`,
+            baseVersion: 7,
+            seed: 0,
+            allowedCommands: [SPATIAL_CREATE_COMMAND],
+            geometryTypes: ["box", "sphere"],
+            maxCommands: 10000,
+            source: buildExperimentInvocation(definition, parameters),
+            mode: "expression"
+          }, {
+            evaluate: evaluateTrustedFixture
+          });
+
+          assertEqual(envelope.type, "program.completed");
+          assertEqual(envelope.plan.baseVersion, 7);
+          assertEqual(
+            envelope.plan.commands.length,
+            expectedCounts[definition.id]
+          );
+          assertEqual(
+            envelope.plan.result.value.experiment,
+            definition.id
+          );
+        }
       }
     },
 

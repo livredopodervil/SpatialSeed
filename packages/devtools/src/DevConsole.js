@@ -15,7 +15,8 @@ export class DevConsole {
     commands,
     queries = null,
     programs = null,
-    procedures = null
+    procedures = null,
+    experiments = null
   }) {
     this.editor = editor;
     this.sandbox = sandbox;
@@ -27,6 +28,7 @@ export class DevConsole {
     this.queries = queries;
     this.programs = programs;
     this.procedures = procedures;
+    this.experiments = experiments;
     this.programSequence = 0;
     this.pendingProgramPlan = null;
     this.history = [];
@@ -172,6 +174,10 @@ export class DevConsole {
       return this.#procedureCommand(source);
     }
 
+    if (command === "experiment") {
+      return this.#experimentCommand(source);
+    }
+
     if (!source) {
       throw new Error(
         command === "calc"
@@ -278,6 +284,63 @@ export class DevConsole {
     throw new Error(
       "Uso: procedure define|list|show|run|remove|export|import|help."
     );
+  }
+
+  async #experimentCommand(source) {
+    if (!this.experiments) {
+      throw new Error("Catálogo de experimentos indisponível.");
+    }
+
+    const { head: action, tail } = takeHead(source);
+
+    if (!action || action === "help") return this.#experimentHelp();
+    if (action === "list") {
+      expectEmpty(tail, "experiment list");
+      return this.experiments.list();
+    }
+    if (action === "show") {
+      const { head: id, tail: extra } = takeHead(tail);
+      if (!id || extra) throw new Error("Uso: experiment show id.");
+      return this.experiments.describe(id);
+    }
+    if (action === "run") {
+      if (this.pendingProgramPlan) {
+        throw new Error(
+          "Existe um plano espacial pendente. " +
+          "Use plan commit ou plan discard."
+        );
+      }
+
+      const { head: id, tail: parameterSource } = takeHead(tail);
+      if (!id) {
+        throw new Error("Uso: experiment run id [parâmetros-JSON].");
+      }
+      const parameters = parameterSource
+        ? parseJson(parameterSource, "Parâmetros do experimento")
+        : {};
+      const result = await this.experiments.plan(id, parameters);
+      const plan = result.plan;
+
+      if (plan.commands?.length) {
+        this.pendingProgramPlan = structuredClone(plan);
+      }
+
+      return {
+        experiment: result.experiment,
+        parameters: result.parameters,
+        value: plan.result?.value ?? null,
+        output: plan.result?.output ?? [],
+        plan: {
+          runId: plan.runId,
+          baseVersion: plan.baseVersion,
+          commandCount: plan.commands?.length ?? 0,
+          commands: plan.commands ?? []
+        },
+        session: this.programs.snapshot()
+      };
+    }
+
+    throw new Error("Uso: experiment list|show|run|help.");
   }
 
   async #runProgramSource({ source, mode }) {
@@ -449,6 +512,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "procedure") {
         return this.#procedureHelp();
       }
+      if (String(topic).toLowerCase() === "experiment") {
+        return this.#experimentHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -460,13 +526,14 @@ export class DevConsole {
         "benchmark scene 1000 5 100",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
-        "runtime test experiment-contract|placement-frame|" +
+        "runtime test experiment-contract|experiment-plugin|placement-frame|" +
         "geometry-creation|geometry-registry|" +
         "file-interop|project-files|pwa-status|spatial-planning|" +
         "spatial-plan-commit|procedure-catalog|procedure-editor|all",
         "calc expressão JavaScript",
         "program código JavaScript",
         "procedure define|list|show|run|remove|export|import|help",
+        "experiment list|show|run|help",
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
         "help create",
@@ -560,6 +627,28 @@ export class DevConsole {
         "procedure define tower ({height=8}={}) => " +
           "spatial.create('box',{size:[2,height,2],position:[0,height/2,0]})",
         "procedure run tower {\"height\":12}",
+        "plan commit"
+      ]
+    };
+  }
+
+  #experimentHelp() {
+    return {
+      usage: [
+        "experiment list",
+        "experiment show id",
+        "experiment run id [parâmetros-JSON]",
+        "plan status|commit|discard"
+      ],
+      notes: [
+        "Experimentos descrevem parâmetros e uma função espacial.",
+        "run executa no mesmo Worker SES dos programas e apenas gera plano.",
+        "plan commit aplica o resultado como uma transação atômica."
+      ],
+      examples: [
+        "experiment list",
+        "experiment show math.helix",
+        "experiment run math.helix {\"turns\":4,\"count\":120}",
         "plan commit"
       ]
     };
@@ -1116,7 +1205,8 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|experiment-contract|placement-frame|" +
+        "Uso: runtime test help|experiment-contract|experiment-plugin|" +
+        "placement-frame|" +
         "geometry-creation|geometry-registry|file-interop|" +
         "project-files|pwa-status|spatial-planning|" +
         "spatial-plan-commit|all"
@@ -1368,7 +1458,7 @@ function isNumericToken(value) {
 }
 
 function isProgramConsoleInput(source) {
-  return /^(calc|program|session|plan|procedure)(?:\s|$)/i.test(
+  return /^(calc|program|session|plan|procedure|experiment)(?:\s|$)/i.test(
     String(source)
   );
 }
@@ -1386,7 +1476,7 @@ function splitProgramConsoleInputs(source) {
     !preservesMultilineSource &&
     lines.length > 1 &&
     lines.every(line =>
-      /^(plan|session|procedure)(?:\s|$)/i.test(line)
+      /^(plan|session|procedure|experiment)(?:\s|$)/i.test(line)
     )
   ) {
     return lines;

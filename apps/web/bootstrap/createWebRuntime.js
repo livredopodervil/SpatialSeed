@@ -6,7 +6,7 @@ import { EditorState } from "../../../packages/editor-core/src/EditorState.js?bu
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260716-0024e";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260718-0027a";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260718-0027b";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260716-0024d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
@@ -15,7 +15,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260716-0025d";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260714-0020b-a";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260718-0027a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260718-0027b";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -45,6 +45,13 @@ import {
 import {
   ProcedureCatalogEditor
 } from "../../../packages/procedure-editor/src/index.js?build=20260716-0026j";
+import {
+  ExperimentRegistry,
+  ExperimentService
+} from "../../../packages/experiment-runtime/src/index.js?build=20260718-0027b";
+import {
+  starterExperimentPlugin
+} from "../../../packages/experiment-plugin/src/index.js?build=20260718-0027b";
 
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -67,21 +74,25 @@ export async function createWebRuntime({
 
   const modules = new ModuleRegistry();
   const reducers = new Map();
+  const experimentRegistry = new ExperimentRegistry();
 
   modules.register({
     manifest: {
       id: "region.box",
       version: "0.5.0",
       apiVersion: "region-v1",
-      optional: false
+      optional: false,
+      capabilities: ["reducers"]
     },
     activate: async context =>
       context.reducers.set("box-region", boxRegionReducer)
   });
+  modules.register(starterExperimentPlugin);
 
   await modules.activateAll({
     eventBus: new EventBus(),
-    reducers
+    reducers,
+    experiments: experimentRegistry
   });
 
   const reducer = reducers.get("box-region");
@@ -199,6 +210,29 @@ export async function createWebRuntime({
     spatialPlanCommitService.commit(plan)
   );
 
+  const programSession = new ProgramSessionController({
+    workerFactory: () => createBrowserProgramSessionWorker(),
+    timeoutMs: 5000,
+    allowedCommands: [SPATIAL_CREATE_COMMAND],
+    geometryTypes: geometryRegistry.list(),
+    maxCommands: 10000
+  });
+  const experimentService = new ExperimentService({
+    registry: experimentRegistry,
+    programs: programSession,
+    baseVersion: () => sandbox.revision
+  });
+  commands.register(
+    "experiment.plan",
+    ({ id, parameters = {} }) =>
+      experimentService.plan(id, parameters),
+    {
+      category: "experiments",
+      mutates: false,
+      asynchronous: true
+    }
+  );
+
   activateRuntimeTestPlugin({ commands });
 
   const testService = new TestService({
@@ -234,6 +268,12 @@ export async function createWebRuntime({
     )
     .register("selection.properties.inspect", () =>
       propertyService.inspectSelection()
+    )
+    .register("experiments.describe", () =>
+      experimentService.list()
+    )
+    .register("experiment.describe", ({ id }) =>
+      experimentService.describe(id)
     );
 
   const transformToolPanel = new TransformToolPanel({
@@ -255,13 +295,6 @@ export async function createWebRuntime({
   });
   runtime.onDispose(() => geometryCreationPanel.dispose());
 
-  const programSession = new ProgramSessionController({
-    workerFactory: () => createBrowserProgramSessionWorker(),
-    timeoutMs: 5000,
-    allowedCommands: [SPATIAL_CREATE_COMMAND],
-    geometryTypes: geometryRegistry.list(),
-    maxCommands: 10000
-  });
   const procedureCatalog = new ProcedureCatalog({
     storage: new BrowserProcedureCatalogStore()
   });
@@ -288,7 +321,8 @@ export async function createWebRuntime({
       execute: (id, args) => runtime.query(id, args)
     },
     programs: programSession,
-    procedures: procedureCatalog
+    procedures: procedureCatalog,
+    experiments: experimentService
   });
 
   queries
@@ -356,6 +390,9 @@ export async function createWebRuntime({
     )
     .register("geometries", () =>
       geometryRegistry.list()
+    )
+    .register("experiments", () =>
+      experimentService.list()
     );
 
   commands.register(
@@ -414,6 +451,8 @@ export async function createWebRuntime({
       geometryRegistry,
       propertyRegistry,
       propertyService,
+      experimentRegistry,
+      experimentService,
       programSession,
       spatialPlanCommitService
     })
