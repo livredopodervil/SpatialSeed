@@ -156,6 +156,9 @@ export function createEditorCommands({
     .register("benchmark.scene", args =>
       benchmarkRunner.runScene(args)
     )
+    .register("benchmark.selection", args =>
+      renderer.benchmarkSelectionOutlines(args)
+    )
     .register("benchmark.compare", () =>
       benchmarkRunner.compare()
     )

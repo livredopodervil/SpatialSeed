@@ -604,6 +604,7 @@ export class DevConsole {
         "commands",
         "benchmark help",
         "benchmark scene 1000 5 100",
+        "benchmark selection 1000 5",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
         "runtime test experiment-contract|experiment-plugin|" +
@@ -1212,6 +1213,20 @@ export class DevConsole {
       });
     }
 
+    if (action === "selection") {
+      const objectCount = tokens.length ? this.#integer(tokens.shift()) : 1000;
+      const samples = tokens.length ? this.#integer(tokens.shift()) : 5;
+      this.#expectMaximum(
+        tokens,
+        0,
+        "benchmark selection [objetos] [amostras]"
+      );
+      return this.commands.execute("benchmark.selection", {
+        objectCount,
+        samples
+      });
+    }
+
     const id = {
       compare: "benchmark.compare",
       history: "benchmark.history",
@@ -1219,7 +1234,9 @@ export class DevConsole {
     }[action];
 
     if (!id) {
-      throw new Error("Uso: benchmark help|scene|compare|history|clear");
+      throw new Error(
+        "Uso: benchmark help|scene|selection|compare|history|clear"
+      );
     }
 
     this.#expectMaximum(tokens, 0, `benchmark ${action}`);

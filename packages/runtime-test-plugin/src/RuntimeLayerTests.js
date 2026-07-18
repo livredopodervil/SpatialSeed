@@ -61,7 +61,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260718-0027e";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260718-0027f";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260718-0027e";
+} from "../../devtools/src/DevConsole.js?build=20260718-0027f";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -104,8 +104,10 @@ import {
   selectionUnitId
 } from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
 import {
-  resolveSelectionAppearancePolicy
-} from "../../renderer-three/src/SelectionAppearancePolicy.js?build=20260718-0027e";
+  SelectionOutlineBatch,
+  benchmarkSelectionOutlines,
+  selectionOutlineInstance
+} from "../../renderer-three/src/SelectionOutlineBatch.js?build=20260718-0027f";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -156,16 +158,16 @@ import {
   ExperimentRegistry,
   buildExperimentInvocation,
   normalizeExperimentDefinition
-} from "../../experiment-runtime/src/index.js?build=20260718-0027e";
+} from "../../experiment-runtime/src/index.js?build=20260718-0027f";
 import {
   starterExperimentDefinitions,
   starterExperimentPlugin
-} from "../../experiment-plugin/src/index.js?build=20260718-0027e";
+} from "../../experiment-plugin/src/index.js?build=20260718-0027f";
 import {
   formatExperimentCommand,
   normalizeExperimentControlValue,
   summarizeExperimentPlan
-} from "../../experiment-panel/src/index.js?build=20260718-0027e";
+} from "../../experiment-panel/src/index.js?build=20260718-0027f";
 import {
   ModuleRegistry,
   selectCapabilities
@@ -5401,25 +5403,105 @@ assets: {
     },
 
     "instanced-renderer": {
-      "seleção numerosa usa orçamento constante de contornos"() {
-        assertDeepEqual(
-          resolveSelectionAppearancePolicy(48),
-          {
-            mode:"individual",
-            selectedCount:48,
-            helperBudget:48,
-            individualLimit:48
-          }
+      "seleção numerosa preserva contornos individuais em um draw call"() {
+        const batch=new SelectionOutlineBatch({capacity:4});
+        const instances=Array.from({length:500},(_,index) =>
+          selectionOutlineInstance({
+            id:`selected-${index}`,
+            bounds:new THREE.Box3(
+              new THREE.Vector3(index,0,0),
+              new THREE.Vector3(index+1,2,3)
+            ),
+            active:index===499
+          })
         );
-        assertDeepEqual(
-          resolveSelectionAppearancePolicy(500),
-          {
-            mode:"aggregate",
-            selectedCount:500,
-            helperBudget:1,
-            individualLimit:48
+        const diagnostics=batch.update(instances);
+
+        assertEqual(batch.object.isLineSegments,true);
+        assertEqual(batch.geometry.isInstancedBufferGeometry,true);
+        assertEqual(batch.geometry.instanceCount,500);
+        assertEqual(diagnostics.instanceCount,500);
+        assertEqual(diagnostics.drawCalls,1);
+        assertEqual(diagnostics.capacity,512);
+        assertEqual(diagnostics.reallocations,1);
+        const actualMatrix=batch.matrixAt(0).elements;
+        const expectedMatrix=new THREE.Matrix4()
+          .compose(
+            new THREE.Vector3(0.5,1,1.5),
+            new THREE.Quaternion(),
+            new THREE.Vector3(1,2,3)
+          )
+          .elements;
+        for(let index=0;index<16;index+=1){
+          assertNear(actualMatrix[index],expectedMatrix[index],1e-6);
+        }
+        batch.dispose();
+      },
+
+      "lote atualiza cor ativa e evita upload quando nada mudou"() {
+        const batch=new SelectionOutlineBatch({capacity:2});
+        const instances=[
+          selectionOutlineInstance({
+            id:"inactive",
+            bounds:new THREE.Box3(
+              new THREE.Vector3(0,0,0),
+              new THREE.Vector3(1,1,1)
+            )
+          }),
+          selectionOutlineInstance({
+            id:"active",
+            bounds:new THREE.Box3(
+              new THREE.Vector3(2,0,0),
+              new THREE.Vector3(3,1,1)
+            ),
+            active:true
+          })
+        ];
+        batch.update(instances);
+        const inactive=batch.colorAt(0);
+        const active=batch.colorAt(1);
+        assertEqual(inactive.getHex(),0x8faaff);
+        assertEqual(active.getHex(),0xffd166);
+        const unchanged=batch.update(instances);
+        assertEqual(unchanged.lastMatrixWrites,0);
+        assertEqual(unchanged.lastColorWrites,0);
+        assertEqual(unchanged.lastUploadedBytes,0);
+        batch.dispose();
+      },
+
+      "benchmark compara helpers legados e lote instanciado"() {
+        const result=benchmarkSelectionOutlines({
+          objectCount:32,
+          samples:2
+        });
+        assertEqual(result.resources.legacyHelpers.drawCalls,32);
+        assertEqual(result.resources.instancedBatch.drawCalls,1);
+        assertEqual(result.resources.instancedBatch.objects,1);
+        assertEqual(result.cpuPreparationMs.instancedBatch.median >= 0,true);
+      },
+
+      "console expõe benchmark de seleção com parâmetros explícitos"() {
+        const calls=[];
+        const console=new DevConsole({
+          editor:{selection:new Selection()},
+          sandbox:{},
+          region:{},
+          renderer:{},
+          getDiagnostics:()=>({}),
+          commands:{
+            describe:()=>[],
+            execute(id,args){
+              calls.push({id,args});
+              return {ok:true};
+            }
           }
-        );
+        });
+        const [entry]=console.execute("benchmark selection 250 3");
+        assertEqual(entry.ok,true);
+        assertDeepEqual(calls,[{
+          id:"benchmark.selection",
+          args:{objectCount:250,samples:3}
+        }]);
       },
       "limites acompanham instância movida"() {
         const geometry = new THREE.BoxGeometry(1, 1, 1);
