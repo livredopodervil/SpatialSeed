@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0026j";
+} from "../../devtools/src/DevConsole.js?build=20260718-0027a";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
