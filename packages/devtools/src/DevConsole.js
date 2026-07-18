@@ -460,7 +460,8 @@ export class DevConsole {
         "benchmark scene 1000 5 100",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
-        "runtime test placement-frame|geometry-creation|geometry-registry|" +
+        "runtime test experiment-contract|placement-frame|" +
+        "geometry-creation|geometry-registry|" +
         "file-interop|project-files|pwa-status|spatial-planning|" +
         "spatial-plan-commit|procedure-catalog|procedure-editor|all",
         "calc expressão JavaScript",
@@ -1115,9 +1116,10 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|placement-frame|geometry-creation|" +
-        "geometry-registry|file-interop|project-files|pwa-status|" +
-        "spatial-planning|spatial-plan-commit|all"
+        "Uso: runtime test help|experiment-contract|placement-frame|" +
+        "geometry-creation|geometry-registry|file-interop|" +
+        "project-files|pwa-status|spatial-planning|" +
+        "spatial-plan-commit|all"
       );
     }
 

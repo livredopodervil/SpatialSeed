@@ -37,6 +37,7 @@ export function activateRuntimeTestPlugin({ commands }) {
         "runtime test procedure-editor",
         "runtime test spatial-planning",
         "runtime test spatial-plan-commit",
+        "runtime test experiment-contract",
         "runtime test property-contract",
         "runtime test placement-frame",
         "runtime test geometry-creation",

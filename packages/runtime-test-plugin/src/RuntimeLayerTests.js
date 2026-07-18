@@ -147,6 +147,12 @@ import {
   createSeededRandom,
   executeProgramRequest
 } from "../../script-runtime/src/index.js";
+import {
+  EXPERIMENT_DEFINITION_VERSION,
+  ExperimentRegistry,
+  buildExperimentInvocation,
+  normalizeExperimentDefinition
+} from "../../experiment-runtime/src/index.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -4157,6 +4163,127 @@ assets: {
       }
     },
 
+    "experiment-contract": {
+      "definição declarativa é normalizada e congelada"() {
+        const definition = normalizeExperimentDefinition(
+          createExperimentDefinition()
+        );
+
+        assertEqual(
+          definition.apiVersion,
+          EXPERIMENT_DEFINITION_VERSION
+        );
+        assertEqual(definition.id, "math.test-curve");
+        assertEqual(definition.parameters[0].control, "slider");
+        assertEqual(Object.isFrozen(definition), true);
+        assertEqual(Object.isFrozen(definition.parameters[0]), true);
+      },
+
+      "registro não aceita identidade nem parâmetro duplicado"() {
+        const registry = new ExperimentRegistry();
+        const definition = createExperimentDefinition();
+        registry.register(definition);
+
+        assertThrowsMessage(
+          () => registry.register(definition),
+          "Experimento duplicado"
+        );
+        assertThrowsMessage(
+          () => normalizeExperimentDefinition({
+            ...definition,
+            parameters: [
+              definition.parameters[0],
+              definition.parameters[0]
+            ]
+          }),
+          "Parâmetro duplicado"
+        );
+      },
+
+      "registro rejeita controles e limites incompatíveis"() {
+        const definition = createExperimentDefinition();
+
+        assertThrowsMessage(
+          () => normalizeExperimentDefinition({
+            ...definition,
+            parameters: [{
+              id: "amount",
+              label: "Quantidade",
+              type: "integer",
+              control: "color",
+              default: 4
+            }]
+          }),
+          "incompatível"
+        );
+        assertThrowsMessage(
+          () => normalizeExperimentDefinition({
+            ...definition,
+            parameters: [{
+              id: "amount",
+              label: "Quantidade",
+              type: "integer",
+              min: 8,
+              max: 2,
+              default: 4
+            }]
+          }),
+          "min não pode exceder max"
+        );
+      },
+
+      "parâmetros resolvem defaults e valores de entrada"() {
+        const registry = new ExperimentRegistry()
+          .register(createExperimentDefinition());
+
+        const defaults = registry.resolveParameters("math.test-curve");
+        const custom = registry.resolveParameters("math.test-curve", {
+          count: "12",
+          color: "#0af",
+          closed: "true",
+          shape: "sphere"
+        });
+
+        assertDeepEqual(defaults, {
+          count: 8,
+          color: "#6699cc",
+          closed: false,
+          shape: "box"
+        });
+        assertDeepEqual(custom, {
+          count: 12,
+          color: "#00aaff",
+          closed: true,
+          shape: "sphere"
+        });
+      },
+
+      "parâmetro desconhecido falha sem alterar o registro"() {
+        const registry = new ExperimentRegistry()
+          .register(createExperimentDefinition());
+        const before = registry.list();
+
+        assertThrowsMessage(
+          () => registry.resolveParameters("math.test-curve", {
+            unsafe: true
+          }),
+          "Parâmetro desconhecido"
+        );
+        assertDeepEqual(registry.list(), before);
+      },
+
+      "invocação liga parâmetros à função textual"() {
+        const invocation = buildExperimentInvocation({
+          program: {
+            source: "({ count }) => count * 2"
+          }
+        }, { count: 6 });
+
+        assertEqual(invocation, "(({ count }) => count * 2)({\"count\":6})");
+        assertEqual(Function(`return ${invocation};`)(), 12);
+      }
+    },
+
     "property-contract": {
       "codec de cor normaliza formas curta e longa"() {
         assertEqual(normalizeHexColor("#AbC"), "#aabbcc");
@@ -6032,6 +6159,51 @@ function createFileGatewayHarness(windowOverrides={}) {
     BlobCtor:TestBlob
   });
   return {gateway,calls,link};
+}
+
+function createExperimentDefinition() {
+  return {
+    apiVersion: EXPERIMENT_DEFINITION_VERSION,
+    id: "math.test-curve",
+    title: "Curva de teste",
+    description: "Contrato declarativo usado pela suíte.",
+    tags: ["Matemática", "teste", "matemática"],
+    parameters: [
+      {
+        id: "count",
+        label: "Quantidade",
+        type: "integer",
+        control: "slider",
+        min: 2,
+        max: 64,
+        step: 1,
+        default: 8
+      },
+      {
+        id: "color",
+        label: "Cor",
+        type: "color",
+        default: "#6699cc"
+      },
+      {
+        id: "closed",
+        label: "Fechada",
+        type: "boolean",
+        default: false
+      },
+      {
+        id: "shape",
+        label: "Forma",
+        type: "select",
+        options: ["box", { value: "sphere", label: "Esfera" }],
+        default: "box"
+      }
+    ],
+    program: {
+      mode: "expression",
+      source: "({ count }) => count"
+    }
+  };
 }
 
 export function runRuntimeTests(suites, requested = "all") {
