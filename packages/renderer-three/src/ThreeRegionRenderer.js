@@ -24,7 +24,7 @@ import {
   SelectionOutlineBatch,
   benchmarkSelectionOutlines,
   selectionOutlineInstance
-} from "./SelectionOutlineBatch.js?build=20260718-0027f";
+} from "./SelectionOutlineBatch.js?build=20260718-0027g";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-selection-pivot-v2";
@@ -1017,6 +1017,36 @@ export class ThreeRegionRenderer {
 
   benchmarkSelectionOutlines(options = {}) {
     return benchmarkSelectionOutlines(options);
+  }
+
+  getSelectionAppearanceDiagnostics() {
+    const diagnostics = this.#selectionOutlines.diagnostics();
+    const selectedMembers =
+      this.#selectionSnapshot?.members?.length ?? 0;
+
+    return Object.freeze({
+      selectedMembers,
+      outlinesRequested: diagnostics.instanceCount,
+      outlinesSubmitted: diagnostics.submittedInstanceCount,
+      complete:
+        selectedMembers === diagnostics.instanceCount &&
+        diagnostics.instanceCount ===
+        diagnostics.submittedInstanceCount,
+      capacity: diagnostics.capacity,
+      reallocations: diagnostics.reallocations,
+      geometryReplacements: diagnostics.geometryReplacements,
+      drawCalls: diagnostics.drawCalls,
+      submittedLineSegments:
+        diagnostics.submittedLineSegments,
+      lastMatrixWrites: diagnostics.lastMatrixWrites,
+      lastColorWrites: diagnostics.lastColorWrites,
+      lastUploadedBytes: diagnostics.lastUploadedBytes,
+      memoryBytes: diagnostics.memoryBytes,
+      lastUpdateMs: diagnostics.lastUpdateMs,
+      maxUpdateMs: diagnostics.maxUpdateMs,
+      rendererInstanceLimit:
+        diagnostics.rendererInstanceLimit
+    });
   }
 
   #updateSelectionAppearance() {

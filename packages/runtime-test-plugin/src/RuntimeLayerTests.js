@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260718-0027f";
+} from "../../devtools/src/DevConsole.js?build=20260718-0027g";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -107,7 +107,7 @@ import {
   SelectionOutlineBatch,
   benchmarkSelectionOutlines,
   selectionOutlineInstance
-} from "../../renderer-three/src/SelectionOutlineBatch.js?build=20260718-0027f";
+} from "../../renderer-three/src/SelectionOutlineBatch.js?build=20260718-0027g";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -5469,6 +5469,40 @@ assets: {
         batch.dispose();
       },
 
+      "crescimento após submissão recria geometria sem limite obsoleto"() {
+        const batch=new SelectionOutlineBatch({capacity:2});
+        const instances=Array.from({length:5},(_,index) =>
+          selectionOutlineInstance({
+            id:`growth-${index}`,
+            bounds:new THREE.Box3(
+              new THREE.Vector3(index,0,0),
+              new THREE.Vector3(index+1,1,1)
+            )
+          })
+        );
+        batch.update(instances.slice(0,2));
+        const initialGeometry=batch.geometry;
+        let disposed=0;
+        initialGeometry.addEventListener("dispose",() => {
+          disposed+=1;
+        });
+
+        // O WebGLRenderer registra este limite na primeira submissão.
+        initialGeometry._maxInstanceCount=2;
+        const diagnostics=batch.update(instances);
+
+        assertEqual(batch.geometry===initialGeometry,false);
+        assertEqual(batch.object.geometry===batch.geometry,true);
+        assertEqual(disposed,1);
+        assertEqual(diagnostics.capacity,8);
+        assertEqual(diagnostics.reallocations,1);
+        assertEqual(diagnostics.geometryReplacements,1);
+        assertEqual(diagnostics.rendererInstanceLimit,null);
+        assertEqual(diagnostics.submittedInstanceCount,5);
+        assertEqual(diagnostics.submittedLineSegments,60);
+        batch.dispose();
+      },
+
       "benchmark compara helpers legados e lote instanciado"() {
         const result=benchmarkSelectionOutlines({
           objectCount:32,
@@ -5501,6 +5535,31 @@ assets: {
         assertDeepEqual(calls,[{
           id:"benchmark.selection",
           args:{objectCount:250,samples:3}
+        }]);
+      },
+
+      "console expõe diagnóstico conciso da seleção"() {
+        const calls=[];
+        const console=new DevConsole({
+          editor:{selection:new Selection()},
+          sandbox:{},
+          region:{},
+          renderer:{},
+          getDiagnostics:()=>({}),
+          commands:{
+            describe:()=>[],
+            execute(id,args){
+              calls.push({id,args});
+              return {complete:true};
+            }
+          }
+        });
+        const [entry]=console.execute("selection stats");
+        assertEqual(entry.ok,true);
+        assertDeepEqual(entry.result,{complete:true});
+        assertDeepEqual(calls,[{
+          id:"selection.stats",
+          args:undefined
         }]);
       },
       "limites acompanham instância movida"() {

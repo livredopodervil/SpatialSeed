@@ -147,6 +147,10 @@ export function createEditorCommands({
     .register(
       "runtime.resources",
       () => resourceAudit.collect()
+    )
+    .register(
+      "selection.stats",
+      () => renderer.getSelectionAppearanceDiagnostics()
     );
 
   commands

@@ -563,6 +563,9 @@ export class DevConsole {
       case "benchmark":
         return this.#benchmark(tokens);
 
+      case "selection":
+        return this.#selection(tokens);
+
       case "test":
         return this.#test(tokens);
 
@@ -605,6 +608,7 @@ export class DevConsole {
         "benchmark help",
         "benchmark scene 1000 5 100",
         "benchmark selection 1000 5",
+        "selection stats",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
         "runtime test experiment-contract|experiment-plugin|" +
@@ -1241,6 +1245,15 @@ export class DevConsole {
 
     this.#expectMaximum(tokens, 0, `benchmark ${action}`);
     return this.commands.execute(id);
+  }
+
+  #selection(tokens) {
+    const action = (tokens.shift() ?? "stats").toLowerCase();
+    if (action !== "stats") {
+      throw new Error("Uso: selection stats");
+    }
+    this.#expectMaximum(tokens, 0, "selection stats");
+    return this.commands.execute("selection.stats");
   }
 
   #test(tokens) {

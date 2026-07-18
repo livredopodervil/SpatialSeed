@@ -13,6 +13,7 @@ export class SelectionOutlineBatch {
   #diagnostics = {
     updates: 0,
     reallocations: 0,
+    geometryReplacements: 0,
     instanceCount: 0,
     capacity: 0,
     drawCalls: 0,
@@ -130,7 +131,25 @@ export class SelectionOutlineBatch {
   }
 
   diagnostics() {
-    return Object.freeze(structuredClone(this.#diagnostics));
+    const rendererInstanceLimit = Number.isFinite(
+      this.geometry?._maxInstanceCount
+    )
+      ? this.geometry._maxInstanceCount
+      : null;
+    const submittedInstanceCount = rendererInstanceLimit === null
+      ? this.geometry.instanceCount
+      : Math.min(
+          this.geometry.instanceCount,
+          rendererInstanceLimit
+        );
+
+    return Object.freeze({
+      ...structuredClone(this.#diagnostics),
+      geometryInstanceCount: this.geometry.instanceCount,
+      rendererInstanceLimit,
+      submittedInstanceCount,
+      submittedLineSegments: submittedInstanceCount * 12
+    });
   }
 
   matrixAt(index, target = new THREE.Matrix4()) {
@@ -154,13 +173,24 @@ export class SelectionOutlineBatch {
     if (required <= this.#capacity) return false;
     let next = this.#capacity;
     while (next < required) next *= 2;
-    this.#replaceInstanceAttributes(next);
+    this.#replaceInstanceAttributes(next, {
+      recreateGeometry: true
+    });
     this.#capacity = next;
     this.#diagnostics.reallocations += 1;
+    this.#diagnostics.geometryReplacements += 1;
     return true;
   }
 
-  #replaceInstanceAttributes(capacity) {
+  #replaceInstanceAttributes(
+    capacity,
+    { recreateGeometry = false } = {}
+  ) {
+    const previousGeometry = this.geometry;
+    const geometry = recreateGeometry
+      ? createOutlineGeometry()
+      : previousGeometry;
+
     this.#matrixAttribute = new THREE.InstancedBufferAttribute(
       new Float32Array(capacity * 16),
       16
@@ -169,8 +199,14 @@ export class SelectionOutlineBatch {
       new Float32Array(capacity * 3),
       3
     ).setUsage(THREE.DynamicDrawUsage);
-    this.geometry.setAttribute("instanceMatrix", this.#matrixAttribute);
-    this.geometry.setAttribute("instanceColor", this.#colorAttribute);
+    geometry.setAttribute("instanceMatrix", this.#matrixAttribute);
+    geometry.setAttribute("instanceColor", this.#colorAttribute);
+
+    if (recreateGeometry) {
+      this.geometry = geometry;
+      this.object.geometry = geometry;
+      previousGeometry.dispose();
+    }
   }
 }
 
