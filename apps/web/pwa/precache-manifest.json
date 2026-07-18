@@ -94,6 +94,7 @@
     "packages/renderer-resource-cache/src/ThreeResourceCache.js",
     "packages/renderer-resource-cache/src/index.js",
     "packages/renderer-three/src/ThreeRegionRenderer.js",
+    "packages/renderer-three/src/SelectionAppearancePolicy.js",
     "packages/renderer-three/src/WorldTransformProjection.js",
     "packages/resource-audit/src/ResourceAudit.js",
     "packages/resource-audit/src/index.js",

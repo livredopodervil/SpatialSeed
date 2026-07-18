@@ -276,6 +276,17 @@ export class SelectionOperations {
     return {changed,groupIds,promotedIds};
   }
 
+  canUngroup() {
+    const hierarchy=new HierarchyIndex(
+      this.sandbox.getSnapshot().objects
+    );
+
+    return this.editor.selection.snapshot().members.some(member =>
+      hierarchy.has(member.objectId) &&
+      hierarchy.node(member.objectId).kind === "group"
+    );
+  }
+
   duplicateMany(count = 1) {
     const copies = Number(count);
     if (!Number.isInteger(copies) || copies < 1 || copies > 100000) {

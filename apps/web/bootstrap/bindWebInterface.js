@@ -180,6 +180,9 @@ export function bindWebInterface({
     $("undo").disabled = !status.canUndo;
     $("redo").disabled = !status.canRedo;
     $("review").disabled = !status.dirty;
+    const selectionActions=runtime.query("selection.actions.describe");
+    $("group-selection").disabled=!selectionActions.canGroup;
+    $("ungroup-selection").disabled=!selectionActions.canUngroup;
     const count=latestSelection?.members?.length??0,active=latestSelection?.activeMember?.objectId??"∅",mode=latestEditor?.tool?.mode??"select",operation=latestEditor?.selectionOperation??"replace";
     $("status").textContent=`${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"}`;
   }
@@ -307,8 +310,6 @@ export function bindWebInterface({
       $("clear-selection").disabled = empty;
       $("edit-pivot").disabled = empty;
       $("duplicate-selection").disabled = empty;
-      $("group-selection").disabled = empty;
-      $("ungroup-selection").disabled = empty;
       $("delete-selection").disabled = empty;
       $("inspector").disabled = empty;
       refreshUi();

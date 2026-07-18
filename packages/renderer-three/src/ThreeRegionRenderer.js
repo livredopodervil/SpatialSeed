@@ -20,6 +20,9 @@ import {
 } from "./WorldTransformProjection.js?build=20260715-0023d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
+import {
+  resolveSelectionAppearancePolicy
+} from "./SelectionAppearancePolicy.js?build=20260718-0027e";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-selection-pivot-v2";
@@ -35,6 +38,15 @@ export class ThreeRegionRenderer {
   #batchManager = null;
   #selectedVisualIds = new Set();
   #selectionHelpers = new Map();
+  #aggregateSelectionHelper = null;
+  #selectionAppearanceDiagnostics = {
+    mode: "none",
+    selectedCount: 0,
+    helperCount: 0,
+    helperBudget: 0,
+    individualLimit: 48,
+    lastUpdateMs: 0
+  };
   #interactionMode = "select";
   #selectionOperation = "replace";
   #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
@@ -999,6 +1011,9 @@ export class ThreeRegionRenderer {
       pivotPolicy: this.editorState.pivot.policy,
       pivotPosition: this.getSelectionPivotPosition(),
       selection: this.#selectionSnapshot,
+      selectionAppearance: structuredClone(
+        this.#selectionAppearanceDiagnostics
+      ),
       lifecycle:structuredClone(this.#transformLifecycleDiagnostics)
     };
   }
@@ -1008,12 +1023,81 @@ export class ThreeRegionRenderer {
   }
 
   #updateSelectionAppearance() {
+    const started = performance.now();
     const selected=new Set((this.#selectionSnapshot?.members??[]).map(m=>m.objectId));
     const activeId=this.#selectionSnapshot?.activeMember?.objectId;
-    for(const [id,h] of this.#selectionHelpers){if(!selected.has(id)){this.scene.remove(h);h.geometry?.dispose?.();h.material?.dispose?.();this.#selectionHelpers.delete(id)}}
-    for(const id of selected){const proxy=this.#meshes.get(id);if(!proxy)continue;let h=this.#selectionHelpers.get(id);if(!h){h=new THREE.Box3Helper(new THREE.Box3(),id===activeId?0xffd166:0x8faaff);h.renderOrder=999;h.material.depthTest=false;h.material.depthWrite=false;this.#selectionHelpers.set(id,h);this.scene.add(h)}h.box.copy(this.#worldBoundsForObjectId(id));h.material.color.set(id===activeId?0xffd166:0x8faaff);h.visible=!h.box.isEmpty()}
+    const policy=resolveSelectionAppearancePolicy(selected.size);
+
+    if(policy.mode==="aggregate"){
+      this.#clearIndividualSelectionHelpers();
+      const bounds=new THREE.Box3().makeEmpty();
+      for(const id of selected){
+        if(!this.#meshes.has(id))continue;
+        bounds.union(this.#worldBoundsForObjectId(id));
+      }
+      const helper=this.#ensureAggregateSelectionHelper();
+      helper.box.copy(bounds);
+      helper.visible=!bounds.isEmpty();
+    }else{
+      if(this.#aggregateSelectionHelper){
+        this.#aggregateSelectionHelper.visible=false;
+      }
+      for(const [id,h] of this.#selectionHelpers){
+        if(!selected.has(id))this.#disposeIndividualSelectionHelper(id,h);
+      }
+      for(const id of selected){
+        const proxy=this.#meshes.get(id);
+        if(!proxy)continue;
+        let h=this.#selectionHelpers.get(id);
+        if(!h){
+          h=this.#createSelectionHelper(id===activeId?0xffd166:0x8faaff);
+          this.#selectionHelpers.set(id,h);
+          this.scene.add(h);
+        }
+        h.box.copy(this.#worldBoundsForObjectId(id));
+        h.material.color.set(id===activeId?0xffd166:0x8faaff);
+        h.visible=!h.box.isEmpty();
+      }
+    }
     for(const id of this.#selectedVisualIds)if(!selected.has(id))this.#applyObjectInstanceColor(id);
     this.#selectedVisualIds=selected;
+    this.#selectionAppearanceDiagnostics={
+      ...policy,
+      helperCount:this.#selectionHelpers.size+(
+        this.#aggregateSelectionHelper?.visible?1:0
+      ),
+      lastUpdateMs:performance.now()-started
+    };
+  }
+
+  #createSelectionHelper(color) {
+    const helper=new THREE.Box3Helper(new THREE.Box3(),color);
+    helper.renderOrder=999;
+    helper.material.depthTest=false;
+    helper.material.depthWrite=false;
+    return helper;
+  }
+
+  #ensureAggregateSelectionHelper() {
+    if(!this.#aggregateSelectionHelper){
+      this.#aggregateSelectionHelper=this.#createSelectionHelper(0xffd166);
+      this.#aggregateSelectionHelper.name="aggregate-selection-bounds";
+      this.scene.add(this.#aggregateSelectionHelper);
+    }
+    return this.#aggregateSelectionHelper;
+  }
+
+  #disposeIndividualSelectionHelper(id,helper) {
+    this.scene.remove(helper);
+    helper.geometry?.dispose?.();
+    helper.material?.dispose?.();
+    this.#selectionHelpers.delete(id);
+  }
+
+  #clearIndividualSelectionHelpers() {
+    for(const [id,helper] of [...this.#selectionHelpers]){
+      this.#disposeIndividualSelectionHelper(id,helper);
+    }
   }
 
   getInputDiagnostics() {

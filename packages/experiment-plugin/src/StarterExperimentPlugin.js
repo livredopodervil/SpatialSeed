@@ -33,7 +33,7 @@ export const starterExperimentDefinitions = deepFreeze([
     ],
     program: {
       mode: "expression",
-      source: `({radius,height,turns,count,pointRadius,color,shape}) => {
+      source: `({radius,height,turns,count,pointRadius=0.14,color,shape="sphere"}) => {
   const created=[];
   for(let i=0;i<count;i+=1){
     const u=count===1?0:i/(count-1);

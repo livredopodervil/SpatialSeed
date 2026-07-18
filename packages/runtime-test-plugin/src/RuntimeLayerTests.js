@@ -61,7 +61,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024i";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260718-0027e";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260718-0027d";
+} from "../../devtools/src/DevConsole.js?build=20260718-0027e";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -103,6 +103,9 @@ import {
   selectionReferenceWorldPosition,
   selectionUnitId
 } from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
+import {
+  resolveSelectionAppearancePolicy
+} from "../../renderer-three/src/SelectionAppearancePolicy.js?build=20260718-0027e";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -153,16 +156,16 @@ import {
   ExperimentRegistry,
   buildExperimentInvocation,
   normalizeExperimentDefinition
-} from "../../experiment-runtime/src/index.js?build=20260718-0027d";
+} from "../../experiment-runtime/src/index.js?build=20260718-0027e";
 import {
   starterExperimentDefinitions,
   starterExperimentPlugin
-} from "../../experiment-plugin/src/index.js?build=20260718-0027d";
+} from "../../experiment-plugin/src/index.js?build=20260718-0027e";
 import {
   formatExperimentCommand,
   normalizeExperimentControlValue,
   summarizeExperimentPlan
-} from "../../experiment-panel/src/index.js?build=20260718-0027d";
+} from "../../experiment-panel/src/index.js?build=20260718-0027e";
 import {
   ModuleRegistry,
   selectCapabilities
@@ -3107,6 +3110,7 @@ assets: {
           sandbox,
           regionId:"region-main"
         });
+        assertEqual(operations.canUngroup(),true);
         const result=operations.ungroup();
 
         assertEqual(result.changed,true);
@@ -3130,6 +3134,7 @@ assets: {
           sandbox,
           regionId:"region-main"
         });
+        assertEqual(operations.canUngroup(),false);
         const result=operations.ungroup();
 
         assertEqual(result.changed,false);
@@ -4387,6 +4392,36 @@ assets: {
         }
       },
 
+      "hélice com caixa tolera invocação compatível sem pointRadius"() {
+        const definition=starterExperimentDefinitions.find(
+          item => item.id === "math.helix"
+        );
+        const parameters=Object.fromEntries(
+          definition.parameters
+            .filter(parameter => parameter.id !== "pointRadius")
+            .map(parameter => [
+              parameter.id,
+              parameter.id === "shape" ? "box" : parameter.default
+            ])
+        );
+        const envelope=executeProgramRequest({
+          runId:"fixture-math.helix-box",
+          baseVersion:0,
+          seed:0,
+          allowedCommands:[SPATIAL_CREATE_COMMAND],
+          geometryTypes:["box","sphere"],
+          maxCommands:10000,
+          source:buildExperimentInvocation(definition,parameters),
+          mode:"expression"
+        },{evaluate:evaluateTrustedFixture});
+
+        assertEqual(envelope.type,"program.completed");
+        assertEqual(envelope.plan.commands.length,96);
+        for(const command of envelope.plan.commands){
+          assertDeepEqual(command.args.geometry.size,[0.28,0.28,0.28]);
+        }
+      },
+
       "bloco misto despacha comandos comuns e assíncronos em ordem"() {
         const console = createProgramConsole([], {
           experiments: {
@@ -5366,6 +5401,26 @@ assets: {
     },
 
     "instanced-renderer": {
+      "seleção numerosa usa orçamento constante de contornos"() {
+        assertDeepEqual(
+          resolveSelectionAppearancePolicy(48),
+          {
+            mode:"individual",
+            selectedCount:48,
+            helperBudget:48,
+            individualLimit:48
+          }
+        );
+        assertDeepEqual(
+          resolveSelectionAppearancePolicy(500),
+          {
+            mode:"aggregate",
+            selectedCount:500,
+            helperBudget:1,
+            individualLimit:48
+          }
+        );
+      },
       "limites acompanham instância movida"() {
         const geometry = new THREE.BoxGeometry(1, 1, 1);
         const material = new THREE.MeshBasicMaterial();
