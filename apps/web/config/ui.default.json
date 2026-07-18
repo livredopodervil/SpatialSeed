@@ -15,6 +15,7 @@
       "repeat-duplicate",
       "delete-selection",
       "geometry-create",
+      "experiment-lab",
       "scene-only",
       "viewport-fullscreen"
     ],
@@ -92,7 +93,8 @@
       "procedure-editor-panel": { "anchor": "left", "top": "toolbar", "width": 760, "height": 680 },
       "inspector-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
       "transform-tools-panel": { "anchor": "left", "top": "toolbar", "width": 410, "height": 540 },
-      "geometry-create-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 }
+      "geometry-create-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
+      "experiment-panel": { "anchor": "right", "top": "toolbar", "width": 470, "height": 680 }
     }
   },
   "presentation": {

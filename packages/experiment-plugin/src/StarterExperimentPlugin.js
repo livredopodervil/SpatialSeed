@@ -5,7 +5,7 @@ import {
   MODULE_MANIFEST_VERSION
 } from "../../plugin-api/src/ModuleRegistry.js";
 
-export const starterExperimentDefinitions = Object.freeze([
+export const starterExperimentDefinitions = deepFreeze([
   Object.freeze({
     apiVersion: EXPERIMENT_DEFINITION_VERSION,
     id: "math.helix",
@@ -212,4 +212,20 @@ function booleanParameter(id, label, value) {
     control: "toggle",
     default: value
   });
+}
+
+function deepFreeze(value, visited = new WeakSet()) {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    visited.has(value)
+  ) {
+    return value;
+  }
+
+  visited.add(value);
+  for (const child of Object.values(value)) {
+    deepFreeze(child, visited);
+  }
+  return Object.isFrozen(value) ? value : Object.freeze(value);
 }

@@ -345,24 +345,25 @@ export class DevConsole {
           `Uso: experiment ${action} id [parâmetros].`
         );
       }
-      const planned = await this.#planExperiment(id, parameterSource);
       return action === "run"
-        ? {
-            ...planned,
-            commit: this.#commitPendingPlan()
-          }
-        : planned;
+        ? this.#createExperiment(id, parameterSource)
+        : this.#planExperiment(id, parameterSource);
     }
 
     /*
      * Forma semântica curta: `experiment helix turns=4 count=120`.
      * O ciclo plan/commit permanece disponível como mecanismo avançado.
      */
-    const planned = await this.#planExperiment(action, tail);
-    return {
-      ...planned,
-      commit: this.#commitPendingPlan()
-    };
+    return this.#createExperiment(action, tail);
+  }
+
+  async #createExperiment(id, parameterSource) {
+    const resolvedId = this.#resolveExperimentId(id);
+    const parameters = parseExperimentParameters(parameterSource);
+    return this.commands.execute(
+      "experiment.create",
+      { id: resolvedId, parameters }
+    );
   }
 
   async #planExperiment(id, parameterSource) {
@@ -605,7 +606,8 @@ export class DevConsole {
         "benchmark scene 1000 5 100",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
-        "runtime test experiment-contract|experiment-plugin|placement-frame|" +
+        "runtime test experiment-contract|experiment-plugin|" +
+        "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|" +
         "file-interop|project-files|pwa-status|spatial-planning|" +
         "spatial-plan-commit|procedure-catalog|procedure-editor|all",
@@ -1290,7 +1292,7 @@ export class DevConsole {
     if (namespace !== "test") {
       throw new Error(
         "Uso: runtime test help|experiment-contract|experiment-plugin|" +
-        "placement-frame|" +
+        "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|file-interop|" +
         "project-files|pwa-status|spatial-planning|" +
         "spatial-plan-commit|all"

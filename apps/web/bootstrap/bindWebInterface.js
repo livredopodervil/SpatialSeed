@@ -23,7 +23,8 @@ export function bindWebInterface({
     procedureCatalog,
     procedureCatalogEditor,
     objectInspector,
-    transformToolPanel
+    transformToolPanel,
+    experimentPanel
   } = web;
 
   const diagnostics = {
@@ -149,7 +150,8 @@ export function bindWebInterface({
     "#procedure-editor-panel",
     "#inspector-panel",
     "#transform-tools-panel",
-    "#geometry-create-panel"
+    "#geometry-create-panel",
+    "#experiment-panel"
   ]) {
     panelManager.register(selector, {
       defaultLayout: uiConfiguration?.panels?.items?.[
@@ -677,6 +679,16 @@ export function bindWebInterface({
   $("close-geometry-create").addEventListener(
     "click",
     () => panelManager.hide("#geometry-create-panel")
+  );
+
+  $("experiment-lab").addEventListener("click", () => {
+    panelManager.show("#experiment-panel");
+    experimentPanel.refresh();
+  });
+
+  $("close-experiment-panel").addEventListener(
+    "click",
+    () => panelManager.hide("#experiment-panel")
   );
 
   $("inspector").addEventListener("click", () => {

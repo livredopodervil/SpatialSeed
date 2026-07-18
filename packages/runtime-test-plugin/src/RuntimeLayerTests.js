@@ -86,7 +86,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260718-0027c";
+} from "../../devtools/src/DevConsole.js?build=20260718-0027d";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -149,14 +149,20 @@ import {
 } from "../../script-runtime/src/index.js";
 import {
   EXPERIMENT_DEFINITION_VERSION,
+  ExperimentActionService,
   ExperimentRegistry,
   buildExperimentInvocation,
   normalizeExperimentDefinition
-} from "../../experiment-runtime/src/index.js?build=20260718-0027b";
+} from "../../experiment-runtime/src/index.js?build=20260718-0027d";
 import {
   starterExperimentDefinitions,
   starterExperimentPlugin
-} from "../../experiment-plugin/src/index.js?build=20260718-0027b";
+} from "../../experiment-plugin/src/index.js?build=20260718-0027d";
+import {
+  formatExperimentCommand,
+  normalizeExperimentControlValue,
+  summarizeExperimentPlan
+} from "../../experiment-panel/src/index.js?build=20260718-0027d";
 import {
   ModuleRegistry,
   selectCapabilities
@@ -4402,33 +4408,19 @@ assets: {
       },
 
       "forma semântica curta resolve alias parâmetros e commit atômico"() {
-        const commits = [];
-        const planned = [];
+        const actions = [];
         const console = createProgramConsole([], {
           experiments: {
             list: () => [{ id: "math.helix" }],
             describe: id => ({ id }),
-            plan(id, parameters) {
-              planned.push({ id, parameters: structuredClone(parameters) });
-              return Promise.resolve({
-                experiment: { id },
-                parameters,
-                plan: {
-                  runId: "semantic-helix",
-                  baseVersion: 0,
-                  commands: [{
-                    sequence: 0,
-                    command: SPATIAL_CREATE_COMMAND,
-                    args: {}
-                  }],
-                  result: { value: { count: parameters.count }, output: [] }
-                }
-              });
-            }
+            plan: () => Promise.reject(new Error("não esperado"))
           },
           execute(id, args) {
-            commits.push({ id, args: structuredClone(args) });
-            return { changed: true };
+            actions.push({ id, args: structuredClone(args) });
+            return {
+              plan: { commandCount: args.parameters.count },
+              commit: { changed: true }
+            };
           }
         });
 
@@ -4437,12 +4429,12 @@ assets: {
         ).then(entries => {
           assertEqual(entries.length, 1);
           assertEqual(entries[0].ok, true);
-          assertDeepEqual(planned, [{
+          assertEqual(actions.length, 1);
+          assertEqual(actions[0].id, "experiment.create");
+          assertDeepEqual(actions[0].args, {
             id: "math.helix",
             parameters: { radius: 4, turns: 5, count: 160 }
-          }]);
-          assertEqual(commits.length, 1);
-          assertEqual(commits[0].id, "program.plan.commit");
+          });
           assertEqual(entries[0].result.commit.changed, true);
         });
       },
@@ -4462,6 +4454,118 @@ assets: {
           assertEqual(result.passed, 1);
           assertEqual(result.failed, 0);
         });
+      }
+    },
+
+    "experiment-panel": {
+      async "ação comum planeja e confirma fora da visualização"() {
+        const order = [];
+        const sourcePlan = {
+          runId: "panel-create",
+          baseVersion: 12,
+          commands: [{ sequence: 0 }, { sequence: 1 }],
+          result: { value: { count: 2 }, output: ["ok"] }
+        };
+        const service = new ExperimentActionService({
+          experiments: {
+            async plan(id, parameters) {
+              order.push("plan");
+              return {
+                experiment: { id },
+                parameters,
+                plan: sourcePlan
+              };
+            }
+          },
+          async commit(plan) {
+            order.push("commit");
+            assertEqual(plan, sourcePlan);
+            return { changed: true };
+          }
+        });
+
+        const result = await service.create("math.helix", { count: 2 });
+
+        assertDeepEqual(order, ["plan", "commit"]);
+        assertDeepEqual(result.plan, {
+          runId: "panel-create",
+          baseVersion: 12,
+          commandCount: 2
+        });
+        assertEqual(result.commit.changed, true);
+      },
+
+      "controles convertem somente tipos declarados"() {
+        assertEqual(
+          normalizeExperimentControlValue(
+            { id: "radius", type: "number" },
+            "3.5"
+          ),
+          3.5
+        );
+        assertEqual(
+          normalizeExperimentControlValue(
+            { id: "count", type: "integer" },
+            "12"
+          ),
+          12
+        );
+        assertEqual(
+          normalizeExperimentControlValue(
+            { id: "mirror", type: "boolean" },
+            "false"
+          ),
+          false
+        );
+        assertEqual(
+          normalizeExperimentControlValue(
+            { id: "color", type: "color" },
+            "#0af"
+          ),
+          "#0af"
+        );
+      },
+
+      "controles recusam inteiros fracionários e tipos desconhecidos"() {
+        assertThrowsMessage(
+          () => normalizeExperimentControlValue(
+            { id: "count", type: "integer" },
+            "2.5"
+          ),
+          "use um inteiro"
+        );
+        assertThrowsMessage(
+          () => normalizeExperimentControlValue(
+            { id: "unsafe", type: "html" },
+            "<button>"
+          ),
+          "Tipo de parâmetro desconhecido"
+        );
+      },
+
+      "resumo de plano não expõe a lista volumosa de comandos"() {
+        const summary = summarizeExperimentPlan({
+          runId: "experiment-math.helix-1",
+          baseVersion: 9,
+          commands: [{ sequence: 0 }, { sequence: 1 }]
+        });
+
+        assertDeepEqual(summary, {
+          runId: "experiment-math.helix-1",
+          baseVersion: 9,
+          commandCount: 2
+        });
+        assertEqual(Object.hasOwn(summary, "commands"), false);
+      },
+
+      "comando mostrado pelo painel usa intenção curta"() {
+        assertEqual(
+          formatExperimentCommand(
+            { id: "math.helix" },
+            { radius: 4, turns: 5, count: 160, color: "#5b8bd9" }
+          ),
+          "experiment helix radius=4 turns=5 count=160 color=#5b8bd9"
+        );
       }
     },
 
