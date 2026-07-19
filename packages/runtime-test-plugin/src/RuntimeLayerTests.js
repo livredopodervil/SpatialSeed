@@ -51,8 +51,12 @@ import {
   resolvePlacementFrame
 } from "../../math-affine/src/index.js";
 import {
-  AnimationRuntime
-} from "../../animation-runtime/src/index.js?build=20260719-0028a";
+  AnimationCommandService,
+  AnimationRuntime,
+  compileAnimationProgram,
+  createAnimationEvaluator,
+  resolveAnimationPreset
+} from "../../animation-runtime/src/index.js?build=20260719-0028b";
 import {
   composeAnimationOverlay,
   createAnimationTargetSnapshot
@@ -96,7 +100,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260718-0027h";
+} from "../../devtools/src/DevConsole.js?build=20260719-0028b";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260718-0027h";
@@ -1862,6 +1866,204 @@ export function createRuntimeLayerTests() {
         const result = clock.advance(0.55, () => {});
         assertEqual(result.executed, 2);
         assertEqual(result.dropped, 3);
+      }
+    },
+
+    "animation-commands": {
+      "programa seguro avalia a variável temporal t"() {
+        const program = compileAnimationProgram([{
+          type: "move",
+          value: ["2 * sin(t)", 0, 0]
+        }]);
+        const evaluate = createAnimationEvaluator(program);
+        const targets = createAnimationTargetSnapshot([{
+          unitId: "unit-a",
+          pivot: [0, 0, 0],
+          objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+        }]);
+        const frame = evaluate({ t: Math.PI / 2, dt: 1 / 60, targets });
+
+        assertEqual(program.unitDependent, false);
+        assertDeepEqual(
+          frame[0].matrix.slice(12, 15).map(roundAffine),
+          [2, 0, 0]
+        );
+      },
+
+      "i e u diferenciam unidades sem recompilar o programa"() {
+        const program = compileAnimationProgram([{
+          type: "move",
+          value: ["i + u", 0, 0]
+        }]);
+        const evaluate = createAnimationEvaluator(program);
+        const targets = createAnimationTargetSnapshot([
+          {
+            unitId: "unit-a",
+            pivot: [0, 0, 0],
+            objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+          },
+          {
+            unitId: "unit-b",
+            pivot: [0, 0, 0],
+            objects: [{ objectId: "b", baseMatrix: identityMatrix() }]
+          }
+        ]);
+        const frame = evaluate({ t: 0, dt: 1 / 60, targets });
+
+        assertEqual(program.unitDependent, true);
+        assertDeepEqual(
+          frame.map(entry => roundAffine(entry.matrix[12])),
+          [1, 3]
+        );
+      },
+
+      "preset spin preserva o pivô próprio de cada unidade"() {
+        const preset = resolveAnimationPreset("spin", {
+          axis: "y",
+          speed: 90
+        });
+        const evaluate = createAnimationEvaluator(
+          compileAnimationProgram(preset.operations)
+        );
+        const targets = createAnimationTargetSnapshot([{
+          unitId: "unit-a",
+          pivot: [2, 3, 4],
+          objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+        }]);
+        const frame = evaluate({ t: 1, dt: 1 / 60, targets });
+
+        assertDeepEqual(
+          transformAnimationPoint(frame[0].matrix, [2, 3, 4])
+            .map(roundAffine),
+          [2, 3, 4]
+        );
+      },
+
+      "preset orbit começa na base e percorre um quarto de volta"() {
+        const preset = resolveAnimationPreset("orbit", {
+          axis: "y",
+          radius: 4,
+          speed: 90
+        });
+        const evaluate = createAnimationEvaluator(
+          compileAnimationProgram(preset.operations)
+        );
+        const targets = createAnimationTargetSnapshot([{
+          unitId: "unit-a",
+          pivot: [0, 0, 0],
+          objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+        }]);
+        const initial = evaluate({ t: 0, dt: 1 / 60, targets });
+        const quarter = evaluate({ t: 1, dt: 1 / 60, targets });
+
+        assertDeepEqual(
+          initial[0].matrix.slice(12, 15).map(roundAffine),
+          [0, 0, 0]
+        );
+        assertDeepEqual(
+          quarter[0].matrix.slice(12, 15).map(roundAffine),
+          [-4, 0, 4]
+        );
+      },
+
+      "serviço captura a seleção e controla o ciclo de vida"() {
+        const fixture = createAnimationFixture();
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        const service = new AnimationCommandService({
+          runtime,
+          selection: () => ({
+            members: [{ objectId: "group-a" }]
+          })
+        });
+
+        const started = service.preset("float", {
+          axis: "z",
+          amplitude: 2,
+          frequency: 1
+        });
+        assertEqual(started.state, "playing");
+        assertEqual(started.preset.id, "float");
+        assertDeepEqual(fixture.captures, [["group-a"]]);
+        assertEqual(service.pause().state, "paused");
+        assertEqual(service.resume().state, "playing");
+        assertEqual(service.stop().state, "idle");
+        assertEqual(fixture.restored.length, 1);
+        runtime.dispose();
+      },
+
+      "seleção vazia é rejeitada antes de iniciar"() {
+        const fixture = createAnimationFixture();
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        const service = new AnimationCommandService({
+          runtime,
+          selection: () => ({ members: [] })
+        });
+
+        assertThrowsMessage(
+          () => service.preset("spin"),
+          "Selecione ao menos um objeto para animar."
+        );
+        assertEqual(runtime.status().state, "idle");
+        runtime.dispose();
+      },
+
+      "console traduz formas semânticas e expressões afins"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            describe: () => [],
+            execute(id, args) {
+              calls.push({ id, args });
+              return { ok: true };
+            }
+          }
+        });
+
+        console.execute('animate rotate 0 "45 * sin(t)" 0');
+        console.execute("animate spin speed=90 axis=z");
+        console.execute("animate pause\nanimate resume\nanimate stop");
+
+        assertDeepEqual(calls, [
+          {
+            id: "animation.start",
+            args: {
+              id: "custom.rotate",
+              operations: [{
+                type: "rotate",
+                value: [0, "45 * sin(t)", 0]
+              }]
+            }
+          },
+          {
+            id: "animation.preset",
+            args: { id: "spin", parameters: { speed: 90, axis: "z" } }
+          },
+          { id: "animation.pause", args: undefined },
+          { id: "animation.resume", args: undefined },
+          { id: "animation.stop", args: undefined }
+        ]);
+      },
+
+      "catálogo rejeita parâmetros desconhecidos e eixos inválidos"() {
+        assertThrowsMessage(
+          () => resolveAnimationPreset("spin", { surprise: 1 }),
+          "Parâmetro desconhecido em spin: surprise."
+        );
+        assertThrowsMessage(
+          () => resolveAnimationPreset("spin", { axis: "q" }),
+          "axis deve ser x, y ou z."
+        );
       }
     },
 
@@ -6628,6 +6830,7 @@ function createAnimationFixture() {
   const listeners = new Set();
   const applied = [];
   const restored = [];
+  const captures = [];
   const targets = createAnimationTargetSnapshot([{
     unitId: "group-a",
     pivot: [0, 0, 0],
@@ -6641,7 +6844,8 @@ function createAnimationFixture() {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    captureAnimationTargets() {
+    captureAnimationTargets(targetIds) {
+      captures.push([...targetIds]);
       return targets;
     },
     applyAnimationFrame(snapshot, frame) {
@@ -6658,10 +6862,19 @@ function createAnimationFixture() {
     surface,
     applied,
     restored,
+    captures,
     emit(frame) {
       for (const listener of [...listeners]) listener(frame);
     }
   };
+}
+
+function transformAnimationPoint(matrix, [x, y, z]) {
+  return [
+    matrix[0] * x + matrix[4] * y + matrix[8] * z + matrix[12],
+    matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13],
+    matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14]
+  ];
 }
 
 function identityAnimationFrame({ targets }) {

@@ -1,7 +1,7 @@
 # Referência da linguagem e do console SpatialSeed
 
-> Referência normativa P0. Auditada em 16 de julho de 2026 contra o runtime
-> `0026j`. Consulte `help`, `help create`, `procedure help` e
+> Referência normativa P0. Auditada em 19 de julho de 2026 contra o runtime
+> `0028b`. Consulte `help`, `help create`, `help animate`, `procedure help` e
 > `runtime test help` para confirmar as capabilities do build carregado.
 
 ## 1. Três linguagens, uma fronteira editorial
@@ -12,6 +12,7 @@ O console reúne três superfícies diferentes:
 | --- | --- | --- | --- |
 | comandos editoriais | selecionar, transformar, criar, agrupar, propriedades | processo principal, camada de comandos | sim, imediatamente e com histórico |
 | linguagem afim `spatialseed-math-v1` | gerar séries paramétricas determinísticas | compilador/avaliador afim | somente pelo comando que a contém |
+| animação temporal | avaliar a linguagem afim com `t` sobre um overlay visual | runtime fixed-step + renderer | não; restaura a projeção canônica ao parar |
 | JavaScript SES | cálculo, estado privado, funções e procedimentos | Worker + SES Compartment | somente produz plano; exige `plan commit` |
 
 Não confunda `program` com macro textual. Programas não recebem o registro de
@@ -529,7 +530,52 @@ plan status
 plan commit
 ```
 
-## 11. Limites e erros
+## 11. Animação temporal efêmera
+
+```text
+animate spin|orbit|float|pulse|wave [parâmetro=valor ...]
+animate move expressão-x expressão-y expressão-z
+animate rotate expressão-x expressão-y expressão-z
+animate scale expressão-x expressão-y expressão-z
+animate matrix m00 ... m15
+animate pause
+animate resume
+animate stop
+animate status
+animate list
+animate help
+```
+
+O comando captura a seleção atual. Cada raiz selecionada é uma unidade; grupos
+mantêm sua estrutura rígida. Rotação e escala usam o pivô mundial próprio de
+cada unidade. Uma alteração editorial da cena interrompe a animação e restaura
+a projeção canônica.
+
+As expressões usam o mesmo AST seguro da linguagem afim e são compiladas uma
+vez. Além das constantes e funções da seção 6, recebem:
+
+| Nome | Significado |
+| --- | --- |
+| `t` | tempo fixo da simulação, em segundos |
+| `dt` | duração do passo fixo |
+| `i` / `index` | índice da unidade, começando em 1 |
+| `u` | índice normalizado entre 0 e 1 |
+| `count` | quantidade de unidades |
+
+Exemplos:
+
+```text
+animate spin speed=45 axis=y
+animate orbit radius=4 speed=30 axis=y
+animate wave amplitude=1 frequency=0.5 phase=0.35
+animate move "2 * sin(t)" 0 0
+animate rotate 0 "90 * t + 20 * sin(tau * t)" 0
+```
+
+O overlay não cria comandos editoriais, não ocupa histórico e não é salvo no
+arquivo `.spatialseed`. `animate stop` restaura exatamente a cena persistente.
+
+## 12. Limites e erros
 
 | Condição | Resultado |
 | --- | --- |
@@ -546,12 +592,14 @@ plan commit
 O console registra sucesso ou erro por entrada. Stack traces são diagnóstico de
 desenvolvimento e não fazem parte da API estável de erro.
 
-## 12. Testes e benchmarks
+## 13. Testes e benchmarks
 
 ```text
 test help
 test all
 runtime test help
+runtime test animation-runtime
+runtime test animation-commands
 runtime test all
 runtime benchmark api [iterações]
 benchmark help
@@ -564,14 +612,14 @@ benchmark clear
 `runtime test all` é teste de correção, não benchmark. O histórico de benchmark
 atual vive apenas na instância carregada e mantém no máximo 20 resultados.
 
-## 13. Relação com JavaScript padrão
+## 14. Relação com JavaScript padrão
 
 O modo SES usa a sintaxe ECMAScript aceita pelo navegador, mas dentro de um
 ambiente Hardened JavaScript e sem capabilities de host implícitas. Esta
 referência não reproduz a especificação ECMAScript. Recursos padrão devem ser
 usados somente quando não dependem de DOM, rede, importação ou assincronismo.
 
-## 14. Referências
+## 15. Referências
 
 - [ECMAScript Language Specification](https://tc39.es/ecma262/)
 - [Endo: Hardened JavaScript e SES](https://docs.endojs.org/documents/get-started.html)
@@ -580,9 +628,13 @@ usados somente quando não dependem de DOM, rede, importação ou assincronismo.
 - [`AFFINE_AST_AND_SEMANTICS_0021D.md`](AFFINE_AST_AND_SEMANTICS_0021D.md)
 - [`SCRIPT_RUNTIME_0026A.md`](SCRIPT_RUNTIME_0026A.md)
 
-## 15. Fontes no repositório
+## 16. Fontes no repositório
 
 - `packages/devtools/src/DevConsole.js`
+- `packages/animation-runtime/src/AnimationRuntime.js`
+- `packages/animation-runtime/src/AnimationCommandService.js`
+- `packages/animation-runtime/src/AnimationProgram.js`
+- `packages/animation-runtime/src/AnimationPresetCatalog.js`
 - `packages/selection-operations/src/AffineProgram.js`
 - `packages/selection-operations/src/AffineAst.js`
 - `packages/script-runtime/src/ProgramWorkerKernel.js`

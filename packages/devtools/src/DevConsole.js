@@ -470,7 +470,7 @@ export class DevConsole {
 
     switch (command) {
       case "help":
-        this.#expectMaximum(tokens, 1, "help [create]");
+        this.#expectMaximum(tokens, 1, "help [topic]");
         return this.#help(tokens[0]);
 
       case "commands":
@@ -514,6 +514,9 @@ export class DevConsole {
         return this.commands.execute("selection.rotate", {
           degrees: tokens.map(value => this.#number(value))
         });
+
+      case "animate":
+        return this.#animate(tokens);
 
       case "scale":
         this.#expectExact(tokens, 3, "scale sx sy sz");
@@ -598,6 +601,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "experiment") {
         return this.#experimentHelp();
       }
+      if (String(topic).toLowerCase() === "animate") {
+        return this.#animationHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -613,7 +619,8 @@ export class DevConsole {
         "runtime ui-stats",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
-        "runtime test animation-runtime|experiment-contract|experiment-plugin|" +
+        "runtime test animation-runtime|animation-commands|" +
+        "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|" +
         "file-interop|project-files|pwa-status|spatial-planning|" +
@@ -623,6 +630,9 @@ export class DevConsole {
         "procedure define|list|show|run|remove|export|import|help",
         "experiment id [parâmetro=valor ...]",
         "experiment list|show|run|plan|help",
+        "animate spin|orbit|float|pulse|wave [parâmetro=valor ...]",
+        "animate move|rotate|scale expressão expressão expressão",
+        "animate pause|resume|stop|status|list|help",
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
         "help create",
@@ -745,6 +755,112 @@ export class DevConsole {
         "plan commit"
       ]
     };
+  }
+
+  #animationHelp() {
+    return {
+      usage: [
+        "animate spin|orbit|float|pulse|wave [parâmetro=valor ...]",
+        "animate move expressão-x expressão-y expressão-z",
+        "animate rotate expressão-x expressão-y expressão-z",
+        "animate scale expressão-x expressão-y expressão-z",
+        "animate matrix m00 ... m15",
+        "animate pause|resume|stop|status|list"
+      ],
+      variables: {
+        t: "tempo da simulação em segundos",
+        dt: "passo fixo em segundos",
+        i: "índice do item, começando em 1",
+        u: "posição normalizada entre 0 e 1",
+        count: "quantidade de unidades animadas"
+      },
+      notes: [
+        "A seleção atual é capturada quando a animação começa.",
+        "Cada item usa o próprio pivô; grupos permanecem rígidos.",
+        "A animação é visual e não altera histórico nem arquivo.",
+        "Expressões usam a linguagem matemática afim segura."
+      ],
+      examples: [
+        "animate spin speed=45 axis=y",
+        "animate orbit radius=4 speed=30 axis=y",
+        "animate wave amplitude=1 frequency=0.5 phase=0.35",
+        "animate move \"2 * sin(t)\" 0 0",
+        "animate rotate 0 \"90 * t + 20 * sin(tau * t)\" 0",
+        "animate scale \"1 + 0.2 * sin(tau * t)\" " +
+          "\"1 + 0.2 * sin(tau * t)\" " +
+          "\"1 + 0.2 * sin(tau * t)\"",
+        "animate pause",
+        "animate resume",
+        "animate stop"
+      ]
+    };
+  }
+
+  #animate(tokens) {
+    const action = (tokens.shift() ?? "status").toLowerCase();
+
+    if (action === "help") {
+      this.#expectMaximum(tokens, 0, "animate help");
+      return this.#animationHelp();
+    }
+    if (action === "status") {
+      this.#expectMaximum(tokens, 0, "animate status");
+      return this.commands.execute("animation.status");
+    }
+    if (action === "list") {
+      this.#expectMaximum(tokens, 0, "animate list");
+      return this.commands.execute("animation.presets.describe");
+    }
+    if (action === "pause") {
+      this.#expectMaximum(tokens, 0, "animate pause");
+      return this.commands.execute("animation.pause");
+    }
+    if (action === "resume" || action === "play") {
+      this.#expectMaximum(tokens, 0, `animate ${action}`);
+      return this.commands.execute("animation.resume");
+    }
+    if (action === "stop") {
+      this.#expectMaximum(tokens, 0, "animate stop");
+      return this.commands.execute("animation.stop");
+    }
+
+    if (["move", "rotate", "scale"].includes(action)) {
+      this.#expectExact(
+        tokens,
+        3,
+        `animate ${action} expressão-x expressão-y expressão-z`
+      );
+      return this.commands.execute("animation.start", {
+        id: `custom.${action}`,
+        operations: [{
+          type: action,
+          value: tokens.map(value => this.#affineValue(value))
+        }]
+      });
+    }
+
+    if (action === "matrix") {
+      this.#expectExact(tokens, 16, "animate matrix m00 ... m15");
+      return this.commands.execute("animation.start", {
+        id: "custom.matrix",
+        operations: [{
+          type: "matrix",
+          value: tokens.map(value => this.#affineValue(value))
+        }]
+      });
+    }
+
+    let presetId = action;
+    if (action === "preset") {
+      presetId = (tokens.shift() ?? "").toLowerCase();
+      if (!presetId) {
+        throw new Error("Uso: animate preset id [parâmetro=valor ...].");
+      }
+    }
+    return this.commands.execute("animation.preset", {
+      id: presetId,
+      parameters: parseExperimentParameters(tokens.join(" "))
+    });
   }
 
   #create(tokens) {
@@ -1334,7 +1450,8 @@ export class DevConsole {
     if (namespace !== "test") {
       throw new Error(
         "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
-        "resources|test help|animation-runtime|experiment-contract|experiment-plugin|" +
+        "resources|test help|animation-runtime|animation-commands|" +
+        "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|file-interop|" +
         "project-files|pwa-status|spatial-planning|" +

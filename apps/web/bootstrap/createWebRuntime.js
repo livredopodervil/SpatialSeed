@@ -6,7 +6,7 @@ import { EditorState } from "../../../packages/editor-core/src/EditorState.js?bu
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260719-0028a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260719-0028a";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260719-0028b";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260718-0027h";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
@@ -15,7 +15,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260716-0025d";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260719-0028a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260719-0028b";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -59,9 +59,11 @@ import {
   ExperimentPanel
 } from "../../../packages/experiment-panel/src/index.js?build=20260718-0027f";
 import {
+  ANIMATION_COMMAND_SERVICE_VERSION,
   ANIMATION_RUNTIME_VERSION,
+  AnimationCommandService,
   AnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260719-0028a";
+} from "../../../packages/animation-runtime/src/index.js?build=20260719-0028b";
 
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -212,6 +214,47 @@ export async function createWebRuntime({
     resourceAudit,
     propertyService
   });
+  const animationCommands = new AnimationCommandService({
+    runtime: animationRuntime,
+    selection: () => editor.selection.snapshot()
+  });
+  commands
+    .register(
+      "animation.start",
+      args => animationCommands.start(args),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.preset",
+      ({ id, parameters = {} } = {}) =>
+        animationCommands.preset(id, parameters),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.pause",
+      () => animationCommands.pause(),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.resume",
+      () => animationCommands.resume(),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.stop",
+      () => animationCommands.stop(),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.status",
+      () => animationCommands.status(),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.presets.describe",
+      () => animationCommands.presets(),
+      { category: "animation", mutates: false }
+    );
 
   const spatialPlanCommitService = new SpatialPlanCommitService({
     sandbox,
@@ -325,6 +368,12 @@ export async function createWebRuntime({
     )
     .register("experiment.describe", ({ id }) =>
       experimentService.describe(id)
+    )
+    .register("animation.status", () =>
+      animationCommands.status()
+    )
+    .register("animation.presets.describe", () =>
+      animationCommands.presets()
     )
     .register("runtime.profile", () => profile)
     .register("runtime.ui-stats", () => uiDiagnosticsProvider());
@@ -440,7 +489,9 @@ export async function createWebRuntime({
   capabilities
     .register("animation", () => ({
       apiVersion: ANIMATION_RUNTIME_VERSION,
+      commandApiVersion: ANIMATION_COMMAND_SERVICE_VERSION,
       mode: "ephemeral-render-overlay",
+      safeMath: true,
       persistent: false
     }))
     .register("runtimeProfiles", () => ({
@@ -528,6 +579,7 @@ export async function createWebRuntime({
       programSession,
       spatialPlanCommitService,
       animationRuntime,
+      animationCommands,
       connectUiDiagnostics
     })
   });

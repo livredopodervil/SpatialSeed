@@ -189,7 +189,10 @@ export class AnimationRuntime {
         simulationTime: round(this.clock.simulationTime),
         stepSeconds: this.clock.stepSeconds
       }),
-      statistics: Object.freeze({ ...this.statistics })
+      statistics: Object.freeze({ ...this.statistics }),
+      surface: typeof this.surface.getAnimationSurfaceDiagnostics === "function"
+        ? this.surface.getAnimationSurfaceDiagnostics()
+        : null
     });
   }
 
