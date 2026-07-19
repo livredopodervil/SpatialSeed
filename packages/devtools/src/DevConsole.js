@@ -613,7 +613,7 @@ export class DevConsole {
         "runtime ui-stats",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
-        "runtime test experiment-contract|experiment-plugin|" +
+        "runtime test animation-runtime|experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|" +
         "file-interop|project-files|pwa-status|spatial-planning|" +
@@ -1334,7 +1334,7 @@ export class DevConsole {
     if (namespace !== "test") {
       throw new Error(
         "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
-        "resources|test help|experiment-contract|experiment-plugin|" +
+        "resources|test help|animation-runtime|experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|file-interop|" +
         "project-files|pwa-status|spatial-planning|" +

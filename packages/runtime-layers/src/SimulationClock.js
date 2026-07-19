@@ -43,16 +43,21 @@ export class SimulationClock {
       executed += 1;
     }
 
+    let dropped = 0;
     if (
       executed === this.maxCatchUpSteps &&
       this.accumulator >= this.stepSeconds
     ) {
+      dropped = Math.floor(
+        this.accumulator / this.stepSeconds
+      );
       this.accumulator =
         this.accumulator % this.stepSeconds;
     }
 
     return {
       executed,
+      dropped,
       tick: this.tick,
       simulationTime: this.simulationTime,
       interpolation:

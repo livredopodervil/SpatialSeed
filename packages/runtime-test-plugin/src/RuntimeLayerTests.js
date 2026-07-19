@@ -13,7 +13,7 @@ import {
   EditorSession,
   SimulationClock,
   SimulationBridge
-} from "../../runtime-layers/src/index.js";
+} from "../../runtime-layers/src/index.js?build=20260719-0028a";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
@@ -47,8 +47,16 @@ import {
   identityMatrix,
   invertAffineMatrix,
   multiplyMatrices,
+  translationMatrix,
   resolvePlacementFrame
 } from "../../math-affine/src/index.js";
+import {
+  AnimationRuntime
+} from "../../animation-runtime/src/index.js?build=20260719-0028a";
+import {
+  composeAnimationOverlay,
+  createAnimationTargetSnapshot
+} from "../../renderer-three/src/AnimationTransformOverlay.js?build=20260719-0028a";
 import {
   compileAffineExpression,
   compileAffineProgram,
@@ -1723,6 +1731,137 @@ export function createRuntimeLayerTests() {
 
         assertEqual(result.executed, 2);
         assertEqual(count, 2);
+      }
+    },
+
+    "animation-runtime": {
+      "quadro visual aplica somente o último passo fixo"() {
+        const fixture = createAnimationFixture();
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        const evaluations = [];
+        runtime.start({
+          id: "test.fixed-step",
+          targetIds: ["group-a"],
+          evaluate(context) {
+            evaluations.push(context);
+            return context.targets.units.map(unit => ({
+              unitId: unit.unitId,
+              matrix: identityMatrix()
+            }));
+          }
+        });
+
+        fixture.emit({ deltaSeconds: 1 / 30 });
+        const status = runtime.status();
+        assertEqual(evaluations.length, 1);
+        assertEqual(evaluations[0].tick, 2);
+        assertNear(evaluations[0].t, 2 / 60, 1e-12);
+        assertEqual(fixture.applied.length, 1);
+        assertEqual(status.statistics.steps, 2);
+        assertEqual(status.statistics.frames, 1);
+        assertEqual(status.clip.objectCount, 2);
+        runtime.dispose();
+      },
+
+      "pausa retomada e parada não alteram estado editorial"() {
+        const fixture = createAnimationFixture();
+        const region = new Region(
+          { id: "animation-region", type: "box-region" },
+          { objects: [propertyObject("a", "#112233", null)] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const before = sandbox.getHistoryDiagnostics();
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        runtime.start({
+          targetIds: ["group-a"],
+          evaluate: identityAnimationFrame
+        });
+        runtime.pause();
+        fixture.emit({ deltaSeconds: 1 });
+        assertEqual(fixture.applied.length, 0);
+        runtime.play();
+        fixture.emit({ deltaSeconds: 1 / 60 });
+        assertEqual(fixture.applied.length, 1);
+        const stopped = runtime.stop();
+        assertEqual(stopped.state, "idle");
+        assertEqual(fixture.restored.length, 1);
+        assertDeepEqual(sandbox.getHistoryDiagnostics(), before);
+        runtime.dispose();
+      },
+
+      "mudança editorial interrompe e restaura a sobreposição"() {
+        const fixture = createAnimationFixture();
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        runtime.start({
+          targetIds: ["group-a"],
+          evaluate: identityAnimationFrame
+        });
+        assertEqual(runtime.sceneChanged(), true);
+        const status = runtime.status();
+        assertEqual(status.state, "idle");
+        assertEqual(status.statistics.lastStopReason, "scene-changed");
+        assertEqual(fixture.restored.length, 1);
+        runtime.dispose();
+      },
+
+      "falha de avaliação restaura sem escapar pelo main loop"() {
+        const fixture = createAnimationFixture();
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        runtime.start({
+          targetIds: ["group-a"],
+          evaluate() { throw new Error("falha deliberada"); }
+        });
+        const result = runtime.advance({ deltaSeconds: 1 / 60 });
+        assertEqual(result.advanced, false);
+        assertEqual(runtime.status().state, "idle");
+        assertEqual(fixture.restored.length, 1);
+        assertEqual(
+          runtime.status().statistics.lastError.message,
+          "falha deliberada"
+        );
+        runtime.dispose();
+      },
+
+      "delta mundial preserva relações internas do grupo"() {
+        const targets = createAnimationTargetSnapshot([{
+          unitId: "group-a",
+          pivot: [1, 2, 3],
+          objects: [
+            { objectId: "a", baseMatrix: translationMatrix([1, 0, 0]) },
+            { objectId: "b", baseMatrix: translationMatrix([3, 0, 0]) }
+          ]
+        }]);
+        const overlay = composeAnimationOverlay(targets, [{
+          unitId: "group-a",
+          matrix: translationMatrix([0, 5, 0])
+        }]);
+        assertDeepEqual(
+          overlay.transforms.map(item => item.matrix.slice(12, 15)),
+          [[1, 5, 0], [3, 5, 0]]
+        );
+        assertDeepEqual(overlay.pivots[0].position, [1, 7, 3]);
+      },
+
+      "relógio contabiliza passos descartados"() {
+        const clock = new SimulationClock({
+          stepSeconds: 0.1,
+          maxCatchUpSteps: 2
+        });
+        const result = clock.advance(0.55, () => {});
+        assertEqual(result.executed, 2);
+        assertEqual(result.dropped, 3);
       }
     },
 
@@ -6482,6 +6621,61 @@ assets: {
         assertEqual(packet.delta.type, "simulation-time");
       }
     }
+  };
+}
+
+function createAnimationFixture() {
+  const listeners = new Set();
+  const applied = [];
+  const restored = [];
+  const targets = createAnimationTargetSnapshot([{
+    unitId: "group-a",
+    pivot: [0, 0, 0],
+    objects: [
+      { objectId: "a", baseMatrix: identityMatrix() },
+      { objectId: "b", baseMatrix: translationMatrix([2, 0, 0]) }
+    ]
+  }]);
+  const surface = {
+    subscribeFrame(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    captureAnimationTargets() {
+      return targets;
+    },
+    applyAnimationFrame(snapshot, frame) {
+      const overlay = composeAnimationOverlay(snapshot, frame);
+      applied.push(overlay);
+      return { matrixWrites: overlay.transforms.length };
+    },
+    restoreAnimationTargets(snapshot) {
+      restored.push(snapshot);
+      return { restored: snapshot.units.length };
+    }
+  };
+  return {
+    surface,
+    applied,
+    restored,
+    emit(frame) {
+      for (const listener of [...listeners]) listener(frame);
+    }
+  };
+}
+
+function identityAnimationFrame({ targets }) {
+  return targets.units.map(unit => ({
+    unitId: unit.unitId,
+    matrix: identityMatrix()
+  }));
+}
+
+function monotonicNow() {
+  let value = 0;
+  return () => {
+    value += 0.25;
+    return value;
   };
 }
 

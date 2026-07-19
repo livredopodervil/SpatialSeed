@@ -4,9 +4,9 @@ import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260718-00
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260718-0027g";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260719-0028a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260718-0027h";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260719-0028a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260718-0027h";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
@@ -15,7 +15,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260716-0025d";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260718-0027h";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260719-0028a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -58,6 +58,10 @@ import {
 import {
   ExperimentPanel
 } from "../../../packages/experiment-panel/src/index.js?build=20260718-0027f";
+import {
+  ANIMATION_RUNTIME_VERSION,
+  AnimationRuntime
+} from "../../../packages/animation-runtime/src/index.js?build=20260719-0028a";
 
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -159,6 +163,7 @@ export async function createWebRuntime({
   renderer.setTransformConfig(
     uiConfiguration?.presentation?.transform ?? {}
   );
+  const animationRuntime = new AnimationRuntime({ surface: renderer });
 
   const outline = new OutlineRenderer(outlineRoot);
   const selectionOperations = new SelectionOperations({
@@ -301,6 +306,7 @@ export async function createWebRuntime({
     events,
     capabilities
   });
+  runtime.onDispose(() => animationRuntime.dispose());
 
   // O Inspector consulta estas propriedades durante sua construção.
   queries
@@ -432,6 +438,11 @@ export async function createWebRuntime({
     .register("runtime.performance", () => runtime.metrics());
 
   capabilities
+    .register("animation", () => ({
+      apiVersion: ANIMATION_RUNTIME_VERSION,
+      mode: "ephemeral-render-overlay",
+      persistent: false
+    }))
     .register("runtimeProfiles", () => ({
       active: profile,
       available: describeRuntimeProfiles()
@@ -461,6 +472,7 @@ export async function createWebRuntime({
 
   const unsubscribeSandbox = sandbox.subscribe(
     (state, changes) => {
+      animationRuntime.sceneChanged();
       const classification = classifyChanges(changes);
 
       if (classification.mode === "incremental") {
@@ -515,6 +527,7 @@ export async function createWebRuntime({
       experimentActionService,
       programSession,
       spatialPlanCommitService,
+      animationRuntime,
       connectUiDiagnostics
     })
   });

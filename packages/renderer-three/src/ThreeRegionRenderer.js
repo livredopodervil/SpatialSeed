@@ -25,6 +25,10 @@ import {
   benchmarkSelectionOutlines,
   selectionOutlineInstance
 } from "./SelectionOutlineBatch.js?build=20260718-0027g";
+import {
+  composeAnimationOverlay,
+  createAnimationTargetSnapshot
+} from "./AnimationTransformOverlay.js?build=20260719-0028a";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-selection-pivot-v2";
@@ -45,6 +49,19 @@ export class ThreeRegionRenderer {
   #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
   #batchCapacity = 65536;
   #hierarchy = new HierarchyIndex([]);
+  #frameListeners = new Set();
+  #lastFrameTimestamp = null;
+  #animationTargetIds = new Set();
+  #animationPivotOverrides = new Map();
+  #animationBatchCulling = new Map();
+  #animationSurfaceDiagnostics = {
+    captures: 0,
+    frames: 0,
+    restores: 0,
+    matrixWrites: 0,
+    lastFrameMs: 0,
+    maximumFrameMs: 0
+  };
 
   #incrementalDiagnostics = {
     fullUpdates: 0,
@@ -346,6 +363,151 @@ export class ThreeRegionRenderer {
     this.#finishSceneUpdate();
   }
 
+  subscribeFrame(listener) {
+    if (typeof listener !== "function") {
+      throw new TypeError("Listener de quadro deve ser função.");
+    }
+    this.#frameListeners.add(listener);
+    return () => this.#frameListeners.delete(listener);
+  }
+
+  captureAnimationTargets(targetIds = []) {
+    if (this.#animationTargetIds.size) {
+      throw new Error("Já existe uma sobreposição de animação ativa.");
+    }
+    const requested = [...new Set(
+      targetIds.map(value => String(value)).filter(id => this.#hierarchy.has(id))
+    )];
+    const roots = this.#hierarchy.canonicalizeSelection(requested);
+    const units = [];
+
+    for (const unitId of roots) {
+      const objects = renderableSubtreeIds(this.#hierarchy, unitId)
+        .map(objectId => {
+          const proxy = this.#meshes.get(objectId);
+          if (!proxy || proxy.userData.logicalOnly) return null;
+          return {
+            objectId,
+            baseMatrix: [
+              ...(proxy.userData.canonicalWorldMatrix ??
+                proxy.matrix.toArray())
+            ]
+          };
+        })
+        .filter(Boolean);
+      if (!objects.length) continue;
+      units.push({
+        unitId,
+        pivot: this.#hierarchy.worldPivotOf(unitId),
+        objects
+      });
+    }
+
+    const snapshot = createAnimationTargetSnapshot(units);
+    this.#animationTargetIds = new Set(
+      snapshot.units.flatMap(unit =>
+        unit.objects.map(object => object.objectId)
+      )
+    );
+    for (const objectId of this.#animationTargetIds) {
+      const batchKey = this.#meshes.get(objectId)?.userData.batchKey;
+      if (!batchKey || this.#animationBatchCulling.has(batchKey)) continue;
+      const batch = this.#batchManager.getBatch(batchKey);
+      if (!batch) continue;
+      this.#animationBatchCulling.set(
+        batchKey,
+        batch.mesh.frustumCulled
+      );
+      batch.mesh.frustumCulled = false;
+    }
+    this.#animationSurfaceDiagnostics.captures += 1;
+    return snapshot;
+  }
+
+  applyAnimationFrame(targets, unitFrames) {
+    const startedAt = performance.now();
+    const overlay = composeAnimationOverlay(targets, unitFrames);
+    let matrixWrites = 0;
+
+    for (const transform of overlay.transforms) {
+      if (!this.#animationTargetIds.has(transform.objectId)) {
+        throw new Error(
+          `Objeto fora da sobreposição ativa: ${transform.objectId}.`
+        );
+      }
+      const proxy = this.#meshes.get(transform.objectId);
+      if (!proxy || proxy.userData.logicalOnly) continue;
+      applyProjectedWorldMatrix(proxy, transform.matrix);
+      if (this.#updateBatchMatrix(transform.objectId, proxy)) {
+        matrixWrites += 1;
+      }
+    }
+
+    this.#animationPivotOverrides = new Map(
+      overlay.pivots.map(entry => [entry.unitId, [...entry.position]])
+    );
+    this.#rebuildAnchor();
+    this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
+
+    const elapsed = performance.now() - startedAt;
+    const diagnostics = this.#animationSurfaceDiagnostics;
+    diagnostics.frames += 1;
+    diagnostics.matrixWrites += matrixWrites;
+    diagnostics.lastFrameMs = elapsed;
+    diagnostics.maximumFrameMs = Math.max(
+      diagnostics.maximumFrameMs,
+      elapsed
+    );
+    return Object.freeze({ matrixWrites, unitCount: overlay.pivots.length });
+  }
+
+  restoreAnimationTargets(targets) {
+    const requested = new Set(
+      targets?.units?.flatMap(unit =>
+        unit.objects.map(object => object.objectId)
+      ) ?? []
+    );
+    let matrixWrites = 0;
+    let restoreError = null;
+
+    try {
+      for (const objectId of requested) {
+        const proxy = this.#meshes.get(objectId);
+        const canonical = proxy?.userData.canonicalWorldMatrix;
+        if (!proxy || !canonical || proxy.userData.logicalOnly) continue;
+        applyProjectedWorldMatrix(proxy, canonical);
+        if (this.#updateBatchMatrix(objectId, proxy)) matrixWrites += 1;
+      }
+    } catch (error) {
+      restoreError = error;
+    }
+
+    this.#animationTargetIds.clear();
+    this.#animationPivotOverrides.clear();
+    for (const [batchKey, frustumCulled] of this.#animationBatchCulling) {
+      const batch = this.#batchManager.getBatch(batchKey);
+      if (batch) batch.mesh.frustumCulled = frustumCulled;
+    }
+    this.#animationBatchCulling.clear();
+    this.#flushBatchBounds();
+    this.#rebuildAnchor();
+    this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
+    this.#animationSurfaceDiagnostics.restores += 1;
+    if (restoreError) throw restoreError;
+    return Object.freeze({ restored: matrixWrites, matrixWrites });
+  }
+
+  getAnimationSurfaceDiagnostics() {
+    return Object.freeze({
+      ...this.#animationSurfaceDiagnostics,
+      activeObjects: this.#animationTargetIds.size,
+      pivotOverrides: this.#animationPivotOverrides.size,
+      uncullableBatches: this.#animationBatchCulling.size
+    });
+  }
+
   getIncrementalDiagnostics() {
     return {
       ...this.#incrementalDiagnostics,
@@ -372,8 +534,9 @@ export class ThreeRegionRenderer {
     }
 
     proxy.userData.size = object.size ? [...object.size] : [0,0,0];
+    proxy.userData.canonicalWorldMatrix = [...worldMatrix];
 
-    if (!this.#session) {
+    if (!this.#session && !this.#animationTargetIds.has(object.id)) {
       applyProjectedWorldMatrix(proxy,worldMatrix);
     }
 
@@ -412,6 +575,8 @@ export class ThreeRegionRenderer {
     this.#removeFromBatch(id, proxy.userData.batchKey);
     this.#meshes.delete(id);
     this.#selectedVisualIds.delete(id);
+    this.#animationTargetIds.delete(id);
+    this.#animationPivotOverrides.delete(id);
     this.#incrementalDiagnostics.objectsDeleted += 1;
     return true;
   }
@@ -884,6 +1049,8 @@ export class ThreeRegionRenderer {
 
   #selectionReferencePosition(objectId) {
     if (!objectId || !this.#hierarchy.has(objectId)) return null;
+    const animated = this.#animationPivotOverrides.get(objectId);
+    if (animated) return new THREE.Vector3().fromArray(animated);
     return new THREE.Vector3().fromArray(
       selectionReferenceWorldPosition(this.#hierarchy,objectId)
     );
@@ -1211,8 +1378,26 @@ getResourceDiagnostics() {
   });
 }
 
-  animate = () => {
+  animate = timestamp => {
     requestAnimationFrame(this.animate);
+    const current = Number.isFinite(timestamp)
+      ? timestamp
+      : performance.now();
+    const deltaSeconds = this.#lastFrameTimestamp === null
+      ? 0
+      : Math.max(0, (current - this.#lastFrameTimestamp) / 1000);
+    this.#lastFrameTimestamp = current;
+    const frame = Object.freeze({
+      timestampMs: current,
+      deltaSeconds
+    });
+    for (const listener of [...this.#frameListeners]) {
+      try {
+        listener(frame);
+      } catch (error) {
+        console.error("Animation frame listener failed", error);
+      }
+    }
     this.orbit.update();
     this.renderer.render(this.scene, this.camera);
   };
