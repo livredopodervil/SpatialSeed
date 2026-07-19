@@ -4,8 +4,10 @@ import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
   RuntimeEvents,
-  RuntimeCapabilities
-} from "../../runtime-api/src/index.js?build=20260714-0020b-a";
+  RuntimeCapabilities,
+  describeRuntimeProfiles,
+  resolveRuntimeProfile
+} from "../../runtime-api/src/index.js?build=20260718-0027h";
 import {
   ViewerState,
   EditorSession,
@@ -16,7 +18,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260716-0026g";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260718-0027h";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -61,7 +63,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260718-0027f";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260718-0027h";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -86,7 +88,10 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260718-0027g";
+} from "../../devtools/src/DevConsole.js?build=20260718-0027h";
+import {
+  ObjectInspector
+} from "../../object-inspector/src/ObjectInspector.js?build=20260718-0027h";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -132,6 +137,9 @@ import {
 import {
   PwaInstallController
 } from "../../../apps/web/pwa/PwaInstallController.js";
+import {
+  UiRefreshCoordinator
+} from "../../ui-widgets/src/index.js?build=20260718-0027h";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260716-0024i";
@@ -278,6 +286,164 @@ export function createRuntimeLayerTests() {
         assert(result.directMs >= 0);
         assert(result.facadeMs >= 0);
         assert(Number.isFinite(result.overheadPerCallUs));
+      }
+    },
+
+    "runtime-profile": {
+      "autoria permanece o perfil padrão"() {
+        const profile = resolveRuntimeProfile();
+        assertEqual(profile.id, "authoring");
+        assertEqual(profile.capabilities.edit, true);
+        assertEqual(profile.capabilities.inspect, true);
+      },
+
+      "apresentação e interop restringem capacidades"() {
+        const presentation = resolveRuntimeProfile("presentation");
+        const interop = resolveRuntimeProfile("interop");
+        assertEqual(presentation.capabilities.render, true);
+        assertEqual(presentation.capabilities.edit, false);
+        assertEqual(interop.capabilities.interactive, false);
+        assertEqual(interop.capabilities.interop, true);
+        assertEqual(describeRuntimeProfiles().length, 3);
+      },
+
+      "atualizações de UI são consolidadas por quadro"() {
+        let scheduled = null;
+        let refreshes = 0;
+        let reasons = [];
+        const coordinator = new UiRefreshCoordinator({
+          refresh(nextReasons) {
+            refreshes += 1;
+            reasons = [...nextReasons];
+          },
+          schedule(callback) {
+            scheduled = callback;
+            return 7;
+          },
+          cancel() {}
+        });
+
+        assertEqual(coordinator.request("world.changed"), true);
+        assertEqual(coordinator.request("selection.changed"), false);
+        assertEqual(coordinator.request("editor.changed"), false);
+        assertEqual(refreshes, 0);
+        scheduled();
+        const snapshot = coordinator.snapshot();
+        assertEqual(refreshes, 1);
+        assertDeepEqual(reasons, [
+          "world.changed",
+          "selection.changed",
+          "editor.changed"
+        ]);
+        assertEqual(snapshot.requests, 3);
+        assertEqual(snapshot.coalesced, 2);
+        assertEqual(snapshot.refreshes, 1);
+        assertEqual(snapshot.pending, false);
+      },
+
+      "console expõe perfil e estatísticas da UI"() {
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            execute() { return null; },
+            describe() { return []; }
+          },
+          queries: {
+            execute(id) {
+              if (id === "runtime.profile") {
+                return resolveRuntimeProfile();
+              }
+              if (id === "runtime.ui-stats") {
+                return { connected: true, refreshes: 2 };
+              }
+              throw new Error(`Consulta inesperada: ${id}.`);
+            }
+          }
+        });
+
+        const profile = console.execute("runtime profile")[0];
+        const statistics = console.execute("runtime ui-stats")[0];
+        assertEqual(profile.ok, true);
+        assertEqual(profile.result.id, "authoring");
+        assertEqual(statistics.ok, true);
+        assertEqual(statistics.result.connected, true);
+      }
+    },
+
+    "object-inspector": {
+      "painel fechado adia inspeção até ser aberto"() {
+        const root = document.createElement("section");
+        root.hidden = true;
+        root.innerHTML =
+          '<p id="inspector-empty"></p>' +
+          '<form id="inspector-form" hidden>' +
+          '<span id="inspector-summary"></span>' +
+          '<div id="inspector-properties"></div>' +
+          '<button id="inspector-apply" type="button"></button>' +
+          '</form>';
+        let selectionListener = null;
+        let sandboxListener = null;
+        let inspectionCalls = 0;
+        let scheduledRefresh = null;
+        const inspector = new ObjectInspector({
+          root,
+          editor: {
+            selection: {
+              subscribe(listener) {
+                selectionListener = listener;
+                listener();
+                return () => { selectionListener = null; };
+              }
+            }
+          },
+          sandbox: {
+            subscribe(listener) {
+              sandboxListener = listener;
+              listener();
+              return () => { sandboxListener = null; };
+            }
+          },
+          query(id) {
+            if (id === "properties.describe") return { properties: [] };
+            if (id === "selection.properties.inspect") {
+              inspectionCalls += 1;
+              return { count: 0, targetIds: [], properties: {} };
+            }
+            throw new Error(`Consulta inesperada: ${id}.`);
+          },
+          execute() { return null; },
+          scheduleRefresh(callback) {
+            scheduledRefresh = callback;
+            return 1;
+          },
+          cancelRefresh() {
+            scheduledRefresh = null;
+          }
+        });
+
+        assertEqual(inspectionCalls, 0);
+        sandboxListener();
+        selectionListener();
+        assertEqual(inspectionCalls, 0);
+        assertEqual(inspector.diagnostics().pendingRefresh, true);
+        inspector.setActive(true);
+        assertEqual(inspectionCalls, 1);
+        sandboxListener();
+        selectionListener();
+        assertEqual(inspectionCalls, 1);
+        assertEqual(inspector.diagnostics().coalesced, 1);
+        scheduledRefresh();
+        assertEqual(inspectionCalls, 2);
+        inspector.setActive(false);
+        sandboxListener();
+        assertEqual(inspectionCalls, 2);
+        assertEqual(inspector.dispose(), true);
+        assertEqual(selectionListener, null);
+        assertEqual(sandboxListener, null);
       }
     },
 

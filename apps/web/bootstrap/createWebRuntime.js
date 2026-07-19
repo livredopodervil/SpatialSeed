@@ -1,21 +1,21 @@
 import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-0020b-a";
 import { Region } from "../../../packages/core/src/Region.js?build=20260714-0020b-a";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260716-0026g";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260718-0027h";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260718-0027g";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260718-0027g";
-import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260716-0024d";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260718-0027h";
+import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260718-0027h";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260718-0027f";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260718-0027h";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260718-0027g";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260716-0025d";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260718-0027g";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260718-0027h";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -30,8 +30,10 @@ import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
   RuntimeEvents,
-  RuntimeCapabilities
-} from "../../../packages/runtime-api/src/index.js?build=20260714-0020b-a";
+  RuntimeCapabilities,
+  describeRuntimeProfiles,
+  resolveRuntimeProfile
+} from "../../../packages/runtime-api/src/index.js?build=20260718-0027h";
 import {
   ProcedureCatalog,
   ProgramSessionController,
@@ -70,12 +72,14 @@ export async function createWebRuntime({
   inspectorRoot,
   onConsoleOutput,
   buildInfo,
-  uiConfiguration
+  uiConfiguration,
+  runtimeProfile = "authoring"
 }) {
   if (!buildInfo?.build || !buildInfo?.version) {
     throw new TypeError("createWebRuntime exige buildInfo válido.");
   }
   validateApis();
+  const profile = resolveRuntimeProfile(runtimeProfile);
 
   const modules = new ModuleRegistry();
   const reducers = new Map();
@@ -272,6 +276,24 @@ export async function createWebRuntime({
   const queries = new RuntimeQueryRegistry();
   const events = new RuntimeEvents();
   const capabilities = new RuntimeCapabilities();
+  let uiDiagnosticsProvider = () => Object.freeze({
+    connected: false,
+    profile: profile.id
+  });
+  const connectUiDiagnostics = provider => {
+    if (typeof provider !== "function") {
+      throw new TypeError("Diagnóstico de UI exige um provedor.");
+    }
+    uiDiagnosticsProvider = provider;
+    return () => {
+      if (uiDiagnosticsProvider === provider) {
+        uiDiagnosticsProvider = () => Object.freeze({
+          connected: false,
+          profile: profile.id
+        });
+      }
+    };
+  };
 
   const runtime = new SpatialSeedRuntime({
     commands,
@@ -297,7 +319,9 @@ export async function createWebRuntime({
     )
     .register("experiment.describe", ({ id }) =>
       experimentService.describe(id)
-    );
+    )
+    .register("runtime.profile", () => profile)
+    .register("runtime.ui-stats", () => uiDiagnosticsProvider());
 
   const transformToolPanel = new TransformToolPanel({
     root: transformToolsRoot,
@@ -311,6 +335,7 @@ export async function createWebRuntime({
     query: (id, args) => runtime.query(id, args),
     execute: (id, args) => runtime.execute(id, args)
   });
+  runtime.onDispose(() => objectInspector.dispose());
   const geometryCreationPanel = new GeometryCreationPanel({
     root: geometryCreationRoot,
     geometryRegistry,
@@ -356,7 +381,7 @@ export async function createWebRuntime({
 
   queries
     .register("world.snapshot", () =>
-      structuredClone(sandbox.getState())
+      sandbox.getState()
     )
     .register("selection.snapshot", () =>
       editor.selection.snapshot()
@@ -374,7 +399,7 @@ export async function createWebRuntime({
       dirty: sandbox.dirty,
       canUndo: sandbox.canUndo,
       canRedo: sandbox.canRedo,
-      objectCount: sandbox.getState().objects.length
+      objectCount: sandbox.objectCount
     }))
     .register("developer.state", () => ({
       build: buildInfo.build,
@@ -394,7 +419,7 @@ export async function createWebRuntime({
         dirty: sandbox.dirty,
         canUndo: sandbox.canUndo,
         canRedo: sandbox.canRedo,
-        objectCount: sandbox.getState().objects.length
+        objectCount: sandbox.objectCount
       },
       renderer: renderer.renderer?.info?.render ?? null,
       appearance: appearanceRuntime.stats(),
@@ -407,6 +432,10 @@ export async function createWebRuntime({
     .register("runtime.performance", () => runtime.metrics());
 
   capabilities
+    .register("runtimeProfiles", () => ({
+      active: profile,
+      available: describeRuntimeProfiles()
+    }))
     .register("modules", () => modules.describe())
     .register("renderer", () => ({
       apiVersion: ThreeRegionRenderer.apiVersion
@@ -485,7 +514,8 @@ export async function createWebRuntime({
       experimentService,
       experimentActionService,
       programSession,
-      spatialPlanCommitService
+      spatialPlanCommitService,
+      connectUiDiagnostics
     })
   });
 }

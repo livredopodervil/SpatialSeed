@@ -609,6 +609,8 @@ export class DevConsole {
         "benchmark scene 1000 5 100",
         "benchmark selection 1000 5",
         "selection stats",
+        "runtime profile",
+        "runtime ui-stats",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
         "runtime test experiment-contract|experiment-plugin|" +
@@ -1280,6 +1282,16 @@ export class DevConsole {
     const namespace =
       (tokens.shift() ?? "").toLowerCase();
 
+    if (namespace === "profile") {
+      this.#expectMaximum(tokens, 0, "runtime profile");
+      return this.queries.execute("runtime.profile");
+    }
+
+    if (namespace === "ui-stats") {
+      this.#expectMaximum(tokens, 0, "runtime ui-stats");
+      return this.queries.execute("runtime.ui-stats");
+    }
+
     if (namespace === "benchmark") {
       const target =
         (tokens.shift() ?? "").toLowerCase();
@@ -1321,7 +1333,8 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|experiment-contract|experiment-plugin|" +
+        "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
+        "resources|test help|experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|file-interop|" +
         "project-files|pwa-status|spatial-planning|" +

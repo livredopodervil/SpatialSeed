@@ -277,13 +277,13 @@ export class SelectionOperations {
   }
 
   canUngroup() {
-    const hierarchy=new HierarchyIndex(
-      this.sandbox.getSnapshot().objects
+    const selectedIds=new Set(
+      this.editor.selection.snapshot().members.map(member => member.objectId)
     );
+    if (!selectedIds.size) return false;
 
-    return this.editor.selection.snapshot().members.some(member =>
-      hierarchy.has(member.objectId) &&
-      hierarchy.node(member.objectId).kind === "group"
+    return this.sandbox.getSnapshot().objects.some(object =>
+      object.kind === "group" && selectedIds.has(object.id)
     );
   }
 
