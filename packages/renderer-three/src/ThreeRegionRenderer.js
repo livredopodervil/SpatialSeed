@@ -20,6 +20,11 @@ import {
 } from "./WorldTransformProjection.js?build=20260715-0023d";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
+import {
+  SelectionOutlineBatch,
+  benchmarkSelectionOutlines,
+  selectionOutlineInstance
+} from "./SelectionOutlineBatch.js?build=20260718-0027g";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-selection-pivot-v2";
@@ -34,7 +39,7 @@ export class ThreeRegionRenderer {
   #materialCache = new BatchMaterialCache({ resourceCache: this.#resourceCache });
   #batchManager = null;
   #selectedVisualIds = new Set();
-  #selectionHelpers = new Map();
+  #selectionOutlines = null;
   #interactionMode = "select";
   #selectionOperation = "replace";
   #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
@@ -124,6 +129,8 @@ export class ThreeRegionRenderer {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x08101a);
+    this.#selectionOutlines = new SelectionOutlineBatch();
+    this.scene.add(this.#selectionOutlines.object);
 
     this.#batchManager = new InstanceBatchManager({
       createBatch: descriptor => {
@@ -999,6 +1006,7 @@ export class ThreeRegionRenderer {
       pivotPolicy: this.editorState.pivot.policy,
       pivotPosition: this.getSelectionPivotPosition(),
       selection: this.#selectionSnapshot,
+      selectionAppearance: this.#selectionOutlines.diagnostics(),
       lifecycle:structuredClone(this.#transformLifecycleDiagnostics)
     };
   }
@@ -1007,11 +1015,55 @@ export class ThreeRegionRenderer {
     return this.#calculatePivot()?.toArray() ?? null;
   }
 
+  benchmarkSelectionOutlines(options = {}) {
+    return benchmarkSelectionOutlines(options);
+  }
+
+  getSelectionAppearanceDiagnostics() {
+    const diagnostics = this.#selectionOutlines.diagnostics();
+    const selectedMembers =
+      this.#selectionSnapshot?.members?.length ?? 0;
+
+    return Object.freeze({
+      selectedMembers,
+      outlinesRequested: diagnostics.instanceCount,
+      outlinesSubmitted: diagnostics.submittedInstanceCount,
+      complete:
+        selectedMembers === diagnostics.instanceCount &&
+        diagnostics.instanceCount ===
+        diagnostics.submittedInstanceCount,
+      capacity: diagnostics.capacity,
+      reallocations: diagnostics.reallocations,
+      geometryReplacements: diagnostics.geometryReplacements,
+      drawCalls: diagnostics.drawCalls,
+      submittedLineSegments:
+        diagnostics.submittedLineSegments,
+      lastMatrixWrites: diagnostics.lastMatrixWrites,
+      lastColorWrites: diagnostics.lastColorWrites,
+      lastUploadedBytes: diagnostics.lastUploadedBytes,
+      memoryBytes: diagnostics.memoryBytes,
+      lastUpdateMs: diagnostics.lastUpdateMs,
+      maxUpdateMs: diagnostics.maxUpdateMs,
+      rendererInstanceLimit:
+        diagnostics.rendererInstanceLimit
+    });
+  }
+
   #updateSelectionAppearance() {
     const selected=new Set((this.#selectionSnapshot?.members??[]).map(m=>m.objectId));
     const activeId=this.#selectionSnapshot?.activeMember?.objectId;
-    for(const [id,h] of this.#selectionHelpers){if(!selected.has(id)){this.scene.remove(h);h.geometry?.dispose?.();h.material?.dispose?.();this.#selectionHelpers.delete(id)}}
-    for(const id of selected){const proxy=this.#meshes.get(id);if(!proxy)continue;let h=this.#selectionHelpers.get(id);if(!h){h=new THREE.Box3Helper(new THREE.Box3(),id===activeId?0xffd166:0x8faaff);h.renderOrder=999;h.material.depthTest=false;h.material.depthWrite=false;this.#selectionHelpers.set(id,h);this.scene.add(h)}h.box.copy(this.#worldBoundsForObjectId(id));h.material.color.set(id===activeId?0xffd166:0x8faaff);h.visible=!h.box.isEmpty()}
+    const outlines=[];
+    for(const id of selected){
+      if(!this.#meshes.has(id))continue;
+      const bounds=this.#worldBoundsForObjectId(id);
+      if(bounds.isEmpty())continue;
+      outlines.push(selectionOutlineInstance({
+        id,
+        bounds,
+        active:id===activeId
+      }));
+    }
+    this.#selectionOutlines.update(outlines);
     for(const id of this.#selectedVisualIds)if(!selected.has(id))this.#applyObjectInstanceColor(id);
     this.#selectedVisualIds=selected;
   }

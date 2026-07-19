@@ -3,7 +3,7 @@ import {
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 export class DevConsole {
-  static apiVersion = "dev-console-v4";
+  static apiVersion = "dev-console-v5";
 
   constructor({
     editor,
@@ -15,7 +15,8 @@ export class DevConsole {
     commands,
     queries = null,
     programs = null,
-    procedures = null
+    procedures = null,
+    experiments = null
   }) {
     this.editor = editor;
     this.sandbox = sandbox;
@@ -27,6 +28,7 @@ export class DevConsole {
     this.queries = queries;
     this.programs = programs;
     this.procedures = procedures;
+    this.experiments = experiments;
     this.programSequence = 0;
     this.pendingProgramPlan = null;
     this.history = [];
@@ -36,32 +38,33 @@ export class DevConsole {
     const input = String(source ?? "").trim();
     if (!input) return [];
 
-    if (isProgramConsoleInput(input)) {
-      return this.#executeProgramInputs(
-        splitProgramConsoleInputs(input)
-      );
+    const asynchronousInputs = splitAsynchronousConsoleInputs(input);
+    if (asynchronousInputs) {
+      return this.#executeSequentialInputs(asynchronousInputs);
     }
 
-    const lines = splitStatements(input);
+    return this.#executeSynchronousInputs(splitStatements(input));
+  }
 
+  #executeSynchronousInputs(inputs) {
     const results = [];
 
-    for (const line of lines) {
+    for (const input of inputs) {
       try {
-        const result = this.#executeLine(line);
+        const result = this.#executeLine(input);
         const entry = {
           timestamp: new Date().toISOString(),
-          input: line,
+          input,
           ok: true,
           result
         };
         this.history.push(entry);
         results.push(entry);
-        this.onOutput?.({ type: "result", input: line, result });
+        this.onOutput?.({ type: "result", input, result });
       } catch (error) {
         const entry = {
           timestamp: new Date().toISOString(),
-          input: line,
+          input,
           ok: false,
           error: error?.message ?? String(error)
         };
@@ -69,7 +72,7 @@ export class DevConsole {
         results.push(entry);
         this.onOutput?.({
           type: "error",
-          input: line,
+          input,
           error: entry.error
         });
       }
@@ -78,14 +81,49 @@ export class DevConsole {
     return results;
   }
 
-  async #executeProgramInputs(inputs) {
+  async #executeSequentialInputs(inputs) {
     const results = [];
 
     for (const input of inputs) {
-      results.push(...await this.#executeProgramInput(input));
+      if (isProgramConsoleInput(input)) {
+        results.push(...await this.#executeProgramInput(input));
+      } else {
+        for (const statement of splitStatements(input)) {
+          results.push(await this.#executeAsynchronousLine(statement));
+        }
+      }
     }
 
     return results;
+  }
+
+  async #executeAsynchronousLine(input) {
+    try {
+      const result = await this.#executeLine(input);
+      const entry = {
+        timestamp: new Date().toISOString(),
+        input,
+        ok: true,
+        result
+      };
+      this.history.push(entry);
+      this.onOutput?.({ type: "result", input, result });
+      return entry;
+    } catch (error) {
+      const entry = {
+        timestamp: new Date().toISOString(),
+        input,
+        ok: false,
+        error: error?.message ?? String(error)
+      };
+      this.history.push(entry);
+      this.onOutput?.({
+        type: "error",
+        input,
+        error: entry.error
+      });
+      return entry;
+    }
   }
 
   async #executeProgramInput(input) {
@@ -154,15 +192,7 @@ export class DevConsole {
         };
       }
       if (action === "commit") {
-        if (!this.pendingProgramPlan) {
-          throw new Error("Nenhum plano espacial está pendente.");
-        }
-        const result = this.commands.execute(
-          "program.plan.commit",
-          { plan: this.pendingProgramPlan }
-        );
-        this.pendingProgramPlan = null;
-        return result;
+        return this.#commitPendingPlan();
       }
 
       throw new Error("Uso: plan status|commit|discard|help.");
@@ -170,6 +200,10 @@ export class DevConsole {
 
     if (command === "procedure") {
       return this.#procedureCommand(source);
+    }
+
+    if (command === "experiment") {
+      return this.#experimentCommand(source);
     }
 
     if (!source) {
@@ -278,6 +312,115 @@ export class DevConsole {
     throw new Error(
       "Uso: procedure define|list|show|run|remove|export|import|help."
     );
+  }
+
+  async #experimentCommand(source) {
+    if (!this.experiments) {
+      throw new Error("Catálogo de experimentos indisponível.");
+    }
+
+    const { head: action, tail } = takeHead(source);
+
+    if (!action || action === "help") return this.#experimentHelp();
+    if (action === "list") {
+      expectEmpty(tail, "experiment list");
+      return this.experiments.list();
+    }
+    if (action === "show") {
+      const { head: id, tail: extra } = takeHead(tail);
+      if (!id || extra) throw new Error("Uso: experiment show id.");
+      return this.experiments.describe(this.#resolveExperimentId(id));
+    }
+    if (action === "plan" || action === "run") {
+      if (this.pendingProgramPlan) {
+        throw new Error(
+          "Existe um plano espacial pendente. " +
+          "Use plan commit ou plan discard."
+        );
+      }
+
+      const { head: id, tail: parameterSource } = takeHead(tail);
+      if (!id) {
+        throw new Error(
+          `Uso: experiment ${action} id [parâmetros].`
+        );
+      }
+      return action === "run"
+        ? this.#createExperiment(id, parameterSource)
+        : this.#planExperiment(id, parameterSource);
+    }
+
+    /*
+     * Forma semântica curta: `experiment helix turns=4 count=120`.
+     * O ciclo plan/commit permanece disponível como mecanismo avançado.
+     */
+    return this.#createExperiment(action, tail);
+  }
+
+  async #createExperiment(id, parameterSource) {
+    const resolvedId = this.#resolveExperimentId(id);
+    const parameters = parseExperimentParameters(parameterSource);
+    return this.commands.execute(
+      "experiment.create",
+      { id: resolvedId, parameters }
+    );
+  }
+
+  async #planExperiment(id, parameterSource) {
+    const resolvedId = this.#resolveExperimentId(id);
+    const parameters = parseExperimentParameters(parameterSource);
+    const result = await this.experiments.plan(resolvedId, parameters);
+    const plan = result.plan;
+
+    if (plan.commands?.length) {
+      this.pendingProgramPlan = structuredClone(plan);
+    }
+
+    return {
+      experiment: result.experiment,
+      parameters: result.parameters,
+      value: plan.result?.value ?? null,
+      output: plan.result?.output ?? [],
+      plan: {
+        runId: plan.runId,
+        baseVersion: plan.baseVersion,
+        commandCount: plan.commands?.length ?? 0,
+        commands: plan.commands ?? []
+      },
+      session: this.programs.snapshot()
+    };
+  }
+
+  #resolveExperimentId(candidate) {
+    const requested = String(candidate ?? "").trim().toLowerCase();
+    const descriptions = this.experiments.list();
+    const exact = descriptions.find(item =>
+      String(item.id).toLowerCase() === requested
+    );
+    if (exact) return exact.id;
+
+    const aliases = descriptions.filter(item =>
+      String(item.id).toLowerCase().split(".").at(-1) === requested
+    );
+    if (aliases.length === 1) return aliases[0].id;
+    if (aliases.length > 1) {
+      throw new Error(
+        `Experimento ambíguo: ${candidate}. Use o identificador completo.`
+      );
+    }
+    throw new Error(`Experimento desconhecido: ${candidate}.`);
+  }
+
+  #commitPendingPlan() {
+    if (!this.pendingProgramPlan) {
+      throw new Error("Nenhum plano espacial está pendente.");
+    }
+    const result = this.commands.execute(
+      "program.plan.commit",
+      { plan: this.pendingProgramPlan }
+    );
+    this.pendingProgramPlan = null;
+    return result;
   }
 
   async #runProgramSource({ source, mode }) {
@@ -420,6 +563,9 @@ export class DevConsole {
       case "benchmark":
         return this.#benchmark(tokens);
 
+      case "selection":
+        return this.#selection(tokens);
+
       case "test":
         return this.#test(tokens);
 
@@ -449,6 +595,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "procedure") {
         return this.#procedureHelp();
       }
+      if (String(topic).toLowerCase() === "experiment") {
+        return this.#experimentHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -458,14 +607,22 @@ export class DevConsole {
         "commands",
         "benchmark help",
         "benchmark scene 1000 5 100",
+        "benchmark selection 1000 5",
+        "selection stats",
+        "runtime profile",
+        "runtime ui-stats",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
-        "runtime test placement-frame|geometry-creation|geometry-registry|" +
+        "runtime test experiment-contract|experiment-plugin|" +
+        "experiment-panel|placement-frame|" +
+        "geometry-creation|geometry-registry|" +
         "file-interop|project-files|pwa-status|spatial-planning|" +
         "spatial-plan-commit|procedure-catalog|procedure-editor|all",
         "calc expressão JavaScript",
         "program código JavaScript",
         "procedure define|list|show|run|remove|export|import|help",
+        "experiment id [parâmetro=valor ...]",
+        "experiment list|show|run|plan|help",
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
         "help create",
@@ -559,6 +716,32 @@ export class DevConsole {
         "procedure define tower ({height=8}={}) => " +
           "spatial.create('box',{size:[2,height,2],position:[0,height/2,0]})",
         "procedure run tower {\"height\":12}",
+        "plan commit"
+      ]
+    };
+  }
+
+  #experimentHelp() {
+    return {
+      usage: [
+        "experiment id [parâmetro=valor ...]",
+        "experiment run id [parâmetro=valor ...]",
+        "experiment plan id [parâmetro=valor ...]",
+        "experiment list",
+        "experiment show id",
+        "plan status|commit|discard"
+      ],
+      notes: [
+        "Experimentos descrevem parâmetros e uma função espacial.",
+        "A forma curta e run criam o resultado atomicamente.",
+        "plan prepara uma prévia; plan commit aplica e discard descarta.",
+        "JSON continua aceito para automação e compatibilidade."
+      ],
+      examples: [
+        "experiment list",
+        "experiment show math.helix",
+        "experiment helix turns=4 count=120 radius=3",
+        "experiment plan helix {\"turns\":4,\"count\":120}",
         "plan commit"
       ]
     };
@@ -1036,6 +1219,20 @@ export class DevConsole {
       });
     }
 
+    if (action === "selection") {
+      const objectCount = tokens.length ? this.#integer(tokens.shift()) : 1000;
+      const samples = tokens.length ? this.#integer(tokens.shift()) : 5;
+      this.#expectMaximum(
+        tokens,
+        0,
+        "benchmark selection [objetos] [amostras]"
+      );
+      return this.commands.execute("benchmark.selection", {
+        objectCount,
+        samples
+      });
+    }
+
     const id = {
       compare: "benchmark.compare",
       history: "benchmark.history",
@@ -1043,11 +1240,22 @@ export class DevConsole {
     }[action];
 
     if (!id) {
-      throw new Error("Uso: benchmark help|scene|compare|history|clear");
+      throw new Error(
+        "Uso: benchmark help|scene|selection|compare|history|clear"
+      );
     }
 
     this.#expectMaximum(tokens, 0, `benchmark ${action}`);
     return this.commands.execute(id);
+  }
+
+  #selection(tokens) {
+    const action = (tokens.shift() ?? "stats").toLowerCase();
+    if (action !== "stats") {
+      throw new Error("Uso: selection stats");
+    }
+    this.#expectMaximum(tokens, 0, "selection stats");
+    return this.commands.execute("selection.stats");
   }
 
   #test(tokens) {
@@ -1073,6 +1281,16 @@ export class DevConsole {
   #runtime(tokens) {
     const namespace =
       (tokens.shift() ?? "").toLowerCase();
+
+    if (namespace === "profile") {
+      this.#expectMaximum(tokens, 0, "runtime profile");
+      return this.queries.execute("runtime.profile");
+    }
+
+    if (namespace === "ui-stats") {
+      this.#expectMaximum(tokens, 0, "runtime ui-stats");
+      return this.queries.execute("runtime.ui-stats");
+    }
 
     if (namespace === "benchmark") {
       const target =
@@ -1115,9 +1333,12 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime test help|placement-frame|geometry-creation|" +
-        "geometry-registry|file-interop|project-files|pwa-status|" +
-        "spatial-planning|spatial-plan-commit|all"
+        "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
+        "resources|test help|experiment-contract|experiment-plugin|" +
+        "experiment-panel|placement-frame|" +
+        "geometry-creation|geometry-registry|file-interop|" +
+        "project-files|pwa-status|spatial-planning|" +
+        "spatial-plan-commit|all"
       );
     }
 
@@ -1366,12 +1587,17 @@ function isNumericToken(value) {
 }
 
 function isProgramConsoleInput(source) {
-  return /^(calc|program|session|plan|procedure)(?:\s|$)/i.test(
+  return /^(calc|program|session|plan|procedure|experiment)(?:\s|$)/i.test(
     String(source)
   );
 }
 
-function splitProgramConsoleInputs(source) {
+function isAsynchronousConsoleInput(source) {
+  return isProgramConsoleInput(source) ||
+    /^runtime\s+test(?:\s|$)/i.test(String(source));
+}
+
+function splitAsynchronousConsoleInputs(source) {
   const input = String(source).trim();
   const lines = input
     .split(/\r?\n/)
@@ -1380,17 +1606,43 @@ function splitProgramConsoleInputs(source) {
   const preservesMultilineSource =
     /^(calc|program|procedure\s+(define|import))(?:\s|$)/i.test(input);
 
-  if (
-    !preservesMultilineSource &&
-    lines.length > 1 &&
-    lines.every(line =>
-      /^(plan|session|procedure)(?:\s|$)/i.test(line)
-    )
-  ) {
-    return lines;
+  if (preservesMultilineSource) return [input];
+  if (lines.length > 1 && lines.some(isAsynchronousConsoleInput)) return lines;
+  if (isAsynchronousConsoleInput(input)) return [input];
+  return null;
+}
+
+function parseExperimentParameters(source) {
+  const input = String(source ?? "").trim();
+  if (!input) return {};
+  if (input.startsWith("{")) {
+    return parseJson(input, "Parâmetros do experimento");
   }
 
-  return [input];
+  const parameters = {};
+  for (const token of input.split(/\s+/).filter(Boolean)) {
+    const separator = token.indexOf("=");
+    if (separator < 1 || separator === token.length - 1) {
+      throw new Error(
+        `Parâmetro inválido: ${token}. Use nome=valor ou um objeto JSON.`
+      );
+    }
+    const name = token.slice(0, separator);
+    const rawValue = token.slice(separator + 1);
+    if (Object.hasOwn(parameters, name)) {
+      throw new Error(`Parâmetro repetido: ${name}.`);
+    }
+    parameters[name] = parseExperimentParameterValue(rawValue);
+  }
+  return parameters;
+}
+
+function parseExperimentParameterValue(source) {
+  if (source === "true") return true;
+  if (source === "false") return false;
+  if (source === "null") return null;
+  const number = Number(source);
+  return Number.isFinite(number) ? number : source;
 }
 
 function takeHead(source, { lowercase = true } = {}) {

@@ -82,6 +82,9 @@
   <button id="inspector">Inspector</button>
   <button id="transform-tools">Transformação</button>
   <button id="geometry-create">Criar</button>
+  <button id="experiment-lab" title="Explorar construções paramétricas">
+    ∿ Experimentos
+  </button>
   <select id="toolbar-layout" aria-label="Disposição da barra">
     <option value="horizontal">Barra horizontal</option>
     <option value="vertical">Barra vertical</option>
@@ -307,6 +310,46 @@
     </div>
     <output data-geometry-result></output>
   </form>
+</section>
+
+<section id="experiment-panel" hidden>
+  <header>
+    <strong>Laboratório de experimentos</strong>
+    <button id="close-experiment-panel" type="button">×</button>
+  </header>
+  <div class="ss-experiment-content">
+    <label class="ss-experiment-catalog-field">
+      <span>Experimento</span>
+      <select data-experiment-catalog></select>
+    </label>
+    <p data-experiment-description></p>
+    <div class="ss-experiment-tags" data-experiment-tags></div>
+    <fieldset>
+      <legend>Parâmetros</legend>
+      <div class="ss-experiment-parameters" data-experiment-parameters></div>
+    </fieldset>
+    <div class="actions">
+      <button type="button" data-experiment-create>Criar na cena</button>
+    </div>
+    <output data-experiment-status></output>
+    <details class="ss-experiment-advanced">
+      <summary>Opções avançadas</summary>
+      <p>Prepare um plano para inspecionar a quantidade antes de alterar a cena.</p>
+      <div class="actions">
+        <button type="button" data-experiment-plan>Preparar preview</button>
+        <button type="button" data-experiment-apply disabled>Aplicar preview</button>
+        <button type="button" data-experiment-discard disabled>Descartar</button>
+      </div>
+    </details>
+    <details>
+      <summary>Usar pelo console</summary>
+      <pre data-experiment-command></pre>
+    </details>
+    <details>
+      <summary>Ver programa do experimento</summary>
+      <pre data-experiment-source></pre>
+    </details>
+  </div>
 </section>
 
 <section id="review-panel" hidden>

@@ -17,7 +17,15 @@ const GROUP_LABELS = Object.freeze({
 export class ObjectInspector {
   static apiVersion = "object-inspector-properties-v1";
 
-  constructor({ root, editor, sandbox, query, execute }) {
+  constructor({
+    root,
+    editor,
+    sandbox,
+    query,
+    execute,
+    scheduleRefresh = null,
+    cancelRefresh = null
+  }) {
     this.root = root;
     this.document = root.ownerDocument;
     this.editor = editor;
@@ -30,20 +38,64 @@ export class ObjectInspector {
     this.pendingFiles = new Map();
     this.selectionKey = "";
     this.applying = false;
+    this.active = false;
+    this.pendingRefresh = true;
+    this.disposed = false;
+    const view = this.document.defaultView;
+    this.scheduleRefresh = scheduleRefresh ?? (callback =>
+      typeof view?.requestAnimationFrame === "function"
+        ? view.requestAnimationFrame(callback)
+        : setTimeout(callback, 0)
+    );
+    this.cancelRefresh = cancelRefresh ?? (handle =>
+      typeof view?.cancelAnimationFrame === "function"
+        ? view.cancelAnimationFrame(handle)
+        : clearTimeout(handle)
+    );
+    this.refreshHandle = null;
+    this.refreshStatistics = {
+      invalidations: 0,
+      deferred: 0,
+      scheduled: 0,
+      coalesced: 0,
+      refreshes: 0,
+      skippedWhileApplying: 0,
+      sources: {}
+    };
 
     this.description = this.query("properties.describe");
     this.#buildPropertyFields();
     this.#bind();
 
-    editor.selection.subscribe(() => this.refresh());
-    sandbox.subscribe(() => this.refresh());
-    this.refresh();
+    this.unsubscribeSelection = editor.selection.subscribe(() =>
+      this.invalidate("selection")
+    );
+    this.unsubscribeSandbox = sandbox.subscribe(() =>
+      this.invalidate("sandbox")
+    );
+    this.setActive(!root.hidden);
   }
 
   refresh() {
-    if (this.applying) return;
+    if (this.disposed) return { refreshed: false, reason: "disposed" };
+    if (this.refreshHandle !== null) {
+      this.cancelRefresh(this.refreshHandle);
+      this.refreshHandle = null;
+    }
+    if (!this.active) {
+      this.pendingRefresh = true;
+      this.refreshStatistics.deferred += 1;
+      return { refreshed: false, reason: "inactive" };
+    }
+    if (this.applying) {
+      this.pendingRefresh = true;
+      this.refreshStatistics.skippedWhileApplying += 1;
+      return { refreshed: false, reason: "applying" };
+    }
 
     const inspection = this.query("selection.properties.inspect");
+    this.pendingRefresh = false;
+    this.refreshStatistics.refreshes += 1;
     const empty = this.root.querySelector("#inspector-empty");
     const form = this.root.querySelector("#inspector-form");
     const summary = this.root.querySelector("#inspector-summary");
@@ -58,7 +110,7 @@ export class ObjectInspector {
       empty.hidden = false;
       form.hidden = true;
       empty.textContent = "Selecione um ou mais objetos.";
-      return;
+      return { refreshed: true, count: 0 };
     }
 
     empty.hidden = true;
@@ -73,6 +125,69 @@ export class ObjectInspector {
       if (!control || !property) continue;
       this.#renderControl(control, property);
     }
+
+    return { refreshed: true, count: inspection.count };
+  }
+
+  invalidate(source = "unknown") {
+    if (this.disposed) return false;
+    const key = String(source);
+    this.pendingRefresh = true;
+    this.refreshStatistics.invalidations += 1;
+    this.refreshStatistics.sources[key] =
+      (this.refreshStatistics.sources[key] ?? 0) + 1;
+
+    if (!this.active) {
+      this.refreshStatistics.deferred += 1;
+      return false;
+    }
+
+    if (this.refreshHandle !== null) {
+      this.refreshStatistics.coalesced += 1;
+      return false;
+    }
+
+    this.refreshStatistics.scheduled += 1;
+    this.refreshHandle = this.scheduleRefresh(() => {
+      this.refreshHandle = null;
+      this.refresh();
+    });
+    return true;
+  }
+
+  setActive(value) {
+    if (this.disposed) return false;
+    const next = Boolean(value);
+    const changed = next !== this.active;
+    this.active = next;
+    if (!next && this.refreshHandle !== null) {
+      this.cancelRefresh(this.refreshHandle);
+      this.refreshHandle = null;
+      this.pendingRefresh = true;
+    }
+    if (next && this.pendingRefresh) this.refresh();
+    return changed;
+  }
+
+  diagnostics() {
+    return Object.freeze({
+      active: this.active,
+      pendingRefresh: this.pendingRefresh,
+      ...this.refreshStatistics,
+      sources: Object.freeze({ ...this.refreshStatistics.sources })
+    });
+  }
+
+  dispose() {
+    if (this.disposed) return false;
+    this.disposed = true;
+    if (this.refreshHandle !== null) {
+      this.cancelRefresh(this.refreshHandle);
+      this.refreshHandle = null;
+    }
+    this.unsubscribeSelection?.();
+    this.unsubscribeSandbox?.();
+    return true;
   }
 
   apply() {

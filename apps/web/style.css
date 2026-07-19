@@ -224,6 +224,7 @@ body.ss-scene-only #console-panel,
 body.ss-scene-only #procedure-editor-panel,
 body.ss-scene-only #inspector-panel,
 body.ss-scene-only #transform-tools-panel,
+body.ss-scene-only #experiment-panel,
 body.ss-scene-only #selection-marquee,
 body.ss-scene-only #error-box{
   display:none!important;
@@ -524,6 +525,130 @@ input[data-scrubbable="true"]{
 [data-geometry-result][data-status="error"]{color:#ff9b9b}
 .geometry-series{display:grid;gap:.55rem}
 .geometry-series small{color:#91a4bc;line-height:1.4}
+
+/* 0027a — laboratório declarativo de experimentos */
+#experiment-panel{
+  position:fixed;
+  z-index:29;
+  top:var(--ss-toolbar-clearance,4rem);
+  right:.55rem;
+  width:min(470px,calc(100vw - 1.1rem));
+  max-height:calc(100dvh - var(--ss-toolbar-clearance,4rem) - .55rem);
+  overflow:auto;
+  border:1px solid #ffffff26;
+  border-radius:14px;
+  background:
+    radial-gradient(circle at 90% 0,#31517b44,transparent 38%),
+    #08101af7;
+}
+#experiment-panel>header{
+  position:sticky;
+  top:0;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  padding:.65rem;
+  border-bottom:1px solid #ffffff18;
+  background:#08101afa;
+}
+#experiment-panel>header strong{flex:1}
+.ss-experiment-content{display:grid;gap:.65rem;padding:.75rem}
+.ss-experiment-content>p{margin:0;color:#b9c8dc;line-height:1.45}
+.ss-experiment-content fieldset{
+  margin:0;
+  border:1px solid #ffffff1c;
+  border-radius:10px;
+}
+.ss-experiment-catalog-field,
+.ss-experiment-field{
+  display:grid;
+  grid-template-columns:9rem minmax(0,1fr);
+  gap:.55rem;
+  align-items:center;
+}
+.ss-experiment-catalog-field select,
+.ss-experiment-editor>input:not([type="checkbox"]),
+.ss-experiment-editor>select{
+  width:100%;
+  min-width:0;
+  padding:.45rem;
+  border:1px solid #ffffff22;
+  border-radius:8px;
+  background:#02060c;
+  color:#edf4ff;
+}
+.ss-experiment-parameters{display:grid;gap:.62rem}
+.ss-experiment-editor{min-width:0}
+.ss-experiment-slider{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 5rem;
+  gap:.45rem;
+  align-items:center;
+}
+.ss-experiment-slider input[type="range"]{padding:0}
+.ss-experiment-color{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 3.2rem;
+  gap:.4rem;
+}
+.ss-experiment-color input[type="color"]{height:2.25rem;padding:.2rem}
+.ss-experiment-tags{display:flex;gap:.35rem;flex-wrap:wrap}
+.ss-experiment-tags span{
+  padding:.2rem .45rem;
+  border:1px solid #79a9e244;
+  border-radius:999px;
+  color:#aac9ee;
+  font-size:.72rem;
+}
+[data-experiment-status]{min-height:1.4rem;color:#9db0c9;line-height:1.4}
+[data-experiment-status][data-error="true"]{color:#ff9b9b}
+.ss-experiment-content details{
+  border-top:1px solid #ffffff14;
+  padding-top:.45rem;
+}
+.ss-experiment-content summary{cursor:pointer;color:#b9c8dc}
+.ss-experiment-advanced>p{
+  margin:.5rem 0;
+  color:#91a4bc;
+  font-size:.82rem;
+  line-height:1.4;
+}
+[data-experiment-create]{
+  width:100%;
+  min-height:2.7rem;
+  font-weight:700;
+  background:#31517bee;
+}
+.ss-experiment-content pre{
+  max-height:16rem;
+  overflow:auto;
+  margin:.5rem 0 0;
+  padding:.6rem;
+  border:1px solid #ffffff18;
+  border-radius:8px;
+  background:#02060c;
+  color:#dbe7f7;
+  font:.72rem/1.45 monospace;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  -webkit-user-select:text;
+  user-select:text;
+}
+#experiment-panel[data-running="true"] [data-experiment-status]{
+  color:#e7bf75;
+}
+@media(max-width:700px){
+  #experiment-panel{
+    top:auto;
+    right:.3rem;
+    bottom:.3rem;
+    width:calc(100vw - .6rem);
+    max-height:min(78dvh,720px);
+  }
+  .ss-experiment-catalog-field,
+  .ss-experiment-field{grid-template-columns:7.2rem minmax(0,1fr)}
+}
 #scene-exit-hotspot{display:none}
 body.ss-scene-only #scene-exit-hotspot{
   display:block!important;

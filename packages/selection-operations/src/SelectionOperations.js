@@ -276,6 +276,17 @@ export class SelectionOperations {
     return {changed,groupIds,promotedIds};
   }
 
+  canUngroup() {
+    const selectedIds=new Set(
+      this.editor.selection.snapshot().members.map(member => member.objectId)
+    );
+    if (!selectedIds.size) return false;
+
+    return this.sandbox.getSnapshot().objects.some(object =>
+      object.kind === "group" && selectedIds.has(object.id)
+    );
+  }
+
   duplicateMany(count = 1) {
     const copies = Number(count);
     if (!Number.isInteger(copies) || copies < 1 || copies > 100000) {

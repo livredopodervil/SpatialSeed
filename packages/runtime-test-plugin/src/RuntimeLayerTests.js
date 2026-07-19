@@ -4,8 +4,10 @@ import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
   RuntimeEvents,
-  RuntimeCapabilities
-} from "../../runtime-api/src/index.js?build=20260714-0020b-a";
+  RuntimeCapabilities,
+  describeRuntimeProfiles,
+  resolveRuntimeProfile
+} from "../../runtime-api/src/index.js?build=20260718-0027h";
 import {
   ViewerState,
   EditorSession,
@@ -16,7 +18,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260716-0026g";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260718-0027h";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -61,7 +63,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260716-0024i";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260718-0027h";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -86,7 +88,10 @@ import {
 } from "../../property-registry/src/index.js?build=20260716-0024d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260716-0026j";
+} from "../../devtools/src/DevConsole.js?build=20260718-0027h";
+import {
+  ObjectInspector
+} from "../../object-inspector/src/ObjectInspector.js?build=20260718-0027h";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -103,6 +108,11 @@ import {
   selectionReferenceWorldPosition,
   selectionUnitId
 } from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
+import {
+  SelectionOutlineBatch,
+  benchmarkSelectionOutlines,
+  selectionOutlineInstance
+} from "../../renderer-three/src/SelectionOutlineBatch.js?build=20260718-0027g";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -128,6 +138,9 @@ import {
   PwaInstallController
 } from "../../../apps/web/pwa/PwaInstallController.js";
 import {
+  UiRefreshCoordinator
+} from "../../ui-widgets/src/index.js?build=20260718-0027h";
+import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260716-0024i";
 import { fnv1a64 } from "../../asset-store/src/index.js";
@@ -147,6 +160,26 @@ import {
   createSeededRandom,
   executeProgramRequest
 } from "../../script-runtime/src/index.js";
+import {
+  EXPERIMENT_DEFINITION_VERSION,
+  ExperimentActionService,
+  ExperimentRegistry,
+  buildExperimentInvocation,
+  normalizeExperimentDefinition
+} from "../../experiment-runtime/src/index.js?build=20260718-0027f";
+import {
+  starterExperimentDefinitions,
+  starterExperimentPlugin
+} from "../../experiment-plugin/src/index.js?build=20260718-0027f";
+import {
+  formatExperimentCommand,
+  normalizeExperimentControlValue,
+  summarizeExperimentPlan
+} from "../../experiment-panel/src/index.js?build=20260718-0027f";
+import {
+  ModuleRegistry,
+  selectCapabilities
+} from "../../plugin-api/src/ModuleRegistry.js";
 
 export function createRuntimeLayerTests() {
   return {
@@ -253,6 +286,164 @@ export function createRuntimeLayerTests() {
         assert(result.directMs >= 0);
         assert(result.facadeMs >= 0);
         assert(Number.isFinite(result.overheadPerCallUs));
+      }
+    },
+
+    "runtime-profile": {
+      "autoria permanece o perfil padrão"() {
+        const profile = resolveRuntimeProfile();
+        assertEqual(profile.id, "authoring");
+        assertEqual(profile.capabilities.edit, true);
+        assertEqual(profile.capabilities.inspect, true);
+      },
+
+      "apresentação e interop restringem capacidades"() {
+        const presentation = resolveRuntimeProfile("presentation");
+        const interop = resolveRuntimeProfile("interop");
+        assertEqual(presentation.capabilities.render, true);
+        assertEqual(presentation.capabilities.edit, false);
+        assertEqual(interop.capabilities.interactive, false);
+        assertEqual(interop.capabilities.interop, true);
+        assertEqual(describeRuntimeProfiles().length, 3);
+      },
+
+      "atualizações de UI são consolidadas por quadro"() {
+        let scheduled = null;
+        let refreshes = 0;
+        let reasons = [];
+        const coordinator = new UiRefreshCoordinator({
+          refresh(nextReasons) {
+            refreshes += 1;
+            reasons = [...nextReasons];
+          },
+          schedule(callback) {
+            scheduled = callback;
+            return 7;
+          },
+          cancel() {}
+        });
+
+        assertEqual(coordinator.request("world.changed"), true);
+        assertEqual(coordinator.request("selection.changed"), false);
+        assertEqual(coordinator.request("editor.changed"), false);
+        assertEqual(refreshes, 0);
+        scheduled();
+        const snapshot = coordinator.snapshot();
+        assertEqual(refreshes, 1);
+        assertDeepEqual(reasons, [
+          "world.changed",
+          "selection.changed",
+          "editor.changed"
+        ]);
+        assertEqual(snapshot.requests, 3);
+        assertEqual(snapshot.coalesced, 2);
+        assertEqual(snapshot.refreshes, 1);
+        assertEqual(snapshot.pending, false);
+      },
+
+      "console expõe perfil e estatísticas da UI"() {
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            execute() { return null; },
+            describe() { return []; }
+          },
+          queries: {
+            execute(id) {
+              if (id === "runtime.profile") {
+                return resolveRuntimeProfile();
+              }
+              if (id === "runtime.ui-stats") {
+                return { connected: true, refreshes: 2 };
+              }
+              throw new Error(`Consulta inesperada: ${id}.`);
+            }
+          }
+        });
+
+        const profile = console.execute("runtime profile")[0];
+        const statistics = console.execute("runtime ui-stats")[0];
+        assertEqual(profile.ok, true);
+        assertEqual(profile.result.id, "authoring");
+        assertEqual(statistics.ok, true);
+        assertEqual(statistics.result.connected, true);
+      }
+    },
+
+    "object-inspector": {
+      "painel fechado adia inspeção até ser aberto"() {
+        const root = document.createElement("section");
+        root.hidden = true;
+        root.innerHTML =
+          '<p id="inspector-empty"></p>' +
+          '<form id="inspector-form" hidden>' +
+          '<span id="inspector-summary"></span>' +
+          '<div id="inspector-properties"></div>' +
+          '<button id="inspector-apply" type="button"></button>' +
+          '</form>';
+        let selectionListener = null;
+        let sandboxListener = null;
+        let inspectionCalls = 0;
+        let scheduledRefresh = null;
+        const inspector = new ObjectInspector({
+          root,
+          editor: {
+            selection: {
+              subscribe(listener) {
+                selectionListener = listener;
+                listener();
+                return () => { selectionListener = null; };
+              }
+            }
+          },
+          sandbox: {
+            subscribe(listener) {
+              sandboxListener = listener;
+              listener();
+              return () => { sandboxListener = null; };
+            }
+          },
+          query(id) {
+            if (id === "properties.describe") return { properties: [] };
+            if (id === "selection.properties.inspect") {
+              inspectionCalls += 1;
+              return { count: 0, targetIds: [], properties: {} };
+            }
+            throw new Error(`Consulta inesperada: ${id}.`);
+          },
+          execute() { return null; },
+          scheduleRefresh(callback) {
+            scheduledRefresh = callback;
+            return 1;
+          },
+          cancelRefresh() {
+            scheduledRefresh = null;
+          }
+        });
+
+        assertEqual(inspectionCalls, 0);
+        sandboxListener();
+        selectionListener();
+        assertEqual(inspectionCalls, 0);
+        assertEqual(inspector.diagnostics().pendingRefresh, true);
+        inspector.setActive(true);
+        assertEqual(inspectionCalls, 1);
+        sandboxListener();
+        selectionListener();
+        assertEqual(inspectionCalls, 1);
+        assertEqual(inspector.diagnostics().coalesced, 1);
+        scheduledRefresh();
+        assertEqual(inspectionCalls, 2);
+        inspector.setActive(false);
+        sandboxListener();
+        assertEqual(inspectionCalls, 2);
+        assertEqual(inspector.dispose(), true);
+        assertEqual(selectionListener, null);
+        assertEqual(sandboxListener, null);
       }
     },
 
@@ -3087,6 +3278,7 @@ assets: {
           sandbox,
           regionId:"region-main"
         });
+        assertEqual(operations.canUngroup(),true);
         const result=operations.ungroup();
 
         assertEqual(result.changed,true);
@@ -3110,6 +3302,7 @@ assets: {
           sandbox,
           regionId:"region-main"
         });
+        assertEqual(operations.canUngroup(),false);
         const result=operations.ungroup();
 
         assertEqual(result.changed,false);
@@ -4157,6 +4350,428 @@ assets: {
       }
     },
 
+    "experiment-contract": {
+      "definição declarativa é normalizada e congelada"() {
+        const definition = normalizeExperimentDefinition(
+          createExperimentDefinition()
+        );
+
+        assertEqual(
+          definition.apiVersion,
+          EXPERIMENT_DEFINITION_VERSION
+        );
+        assertEqual(definition.id, "math.test-curve");
+        assertEqual(definition.parameters[0].control, "slider");
+        assertEqual(Object.isFrozen(definition), true);
+        assertEqual(Object.isFrozen(definition.parameters[0]), true);
+      },
+
+      "registro não aceita identidade nem parâmetro duplicado"() {
+        const registry = new ExperimentRegistry();
+        const definition = createExperimentDefinition();
+        registry.register(definition);
+
+        assertThrowsMessage(
+          () => registry.register(definition),
+          "Experimento duplicado"
+        );
+        assertThrowsMessage(
+          () => normalizeExperimentDefinition({
+            ...definition,
+            parameters: [
+              definition.parameters[0],
+              definition.parameters[0]
+            ]
+          }),
+          "Parâmetro duplicado"
+        );
+      },
+
+      "registro rejeita controles e limites incompatíveis"() {
+        const definition = createExperimentDefinition();
+
+        assertThrowsMessage(
+          () => normalizeExperimentDefinition({
+            ...definition,
+            parameters: [{
+              id: "amount",
+              label: "Quantidade",
+              type: "integer",
+              control: "color",
+              default: 4
+            }]
+          }),
+          "incompatível"
+        );
+        assertThrowsMessage(
+          () => normalizeExperimentDefinition({
+            ...definition,
+            parameters: [{
+              id: "amount",
+              label: "Quantidade",
+              type: "integer",
+              min: 8,
+              max: 2,
+              default: 4
+            }]
+          }),
+          "min não pode exceder max"
+        );
+      },
+
+      "parâmetros resolvem defaults e valores de entrada"() {
+        const registry = new ExperimentRegistry()
+          .register(createExperimentDefinition());
+
+        const defaults = registry.resolveParameters("math.test-curve");
+        const custom = registry.resolveParameters("math.test-curve", {
+          count: "12",
+          color: "#0af",
+          closed: "true",
+          shape: "sphere"
+        });
+
+        assertDeepEqual(defaults, {
+          count: 8,
+          color: "#6699cc",
+          closed: false,
+          shape: "box"
+        });
+        assertDeepEqual(custom, {
+          count: 12,
+          color: "#00aaff",
+          closed: true,
+          shape: "sphere"
+        });
+      },
+
+      "parâmetro desconhecido falha sem alterar o registro"() {
+        const registry = new ExperimentRegistry()
+          .register(createExperimentDefinition());
+        const before = registry.list();
+
+        assertThrowsMessage(
+          () => registry.resolveParameters("math.test-curve", {
+            unsafe: true
+          }),
+          "Parâmetro desconhecido"
+        );
+        assertDeepEqual(registry.list(), before);
+      },
+
+      "invocação liga parâmetros à função textual"() {
+        const invocation = buildExperimentInvocation({
+          program: {
+            source: "({ count }) => count * 2"
+          }
+        }, { count: 6 });
+
+        assertEqual(invocation, "(({ count }) => count * 2)({\"count\":6})");
+        assertEqual(Function(`return ${invocation};`)(), 12);
+      }
+    },
+
+    "experiment-plugin": {
+      "capabilities entregam somente referências declaradas"() {
+        const experiments = new ExperimentRegistry();
+        const selected = selectCapabilities(
+          ["experiments"],
+          {
+            experiments,
+            renderer: { unsafe: true },
+            dom: { unsafe: true }
+          },
+          "experiment.fixture"
+        );
+
+        assertEqual(selected.experiments, experiments);
+        assertEqual(Object.hasOwn(selected, "renderer"), false);
+        assertEqual(Object.hasOwn(selected, "dom"), false);
+        assertEqual(Object.isFrozen(selected), true);
+      },
+
+      "capability ausente falha fechada"() {
+        assertThrowsMessage(
+          () => selectCapabilities(
+            ["experiments"],
+            { renderer: {} },
+            "experiment.fixture"
+          ),
+          "requires unavailable capability: experiments"
+        );
+      },
+
+      "manifesto de módulo é validado e descrito"() {
+        const registry = new ModuleRegistry()
+          .register(starterExperimentPlugin);
+        const [description] = registry.describe();
+
+        assertEqual(description.id, "experiments.starter");
+        assertDeepEqual(description.capabilities, ["experiments"]);
+        assertEqual(description.failed, false);
+        assertEqual(description.error, null);
+      },
+
+      "plugin inicial registra catálogo sem receber host inteiro"() {
+        const experiments = new ExperimentRegistry();
+        const activated = starterExperimentPlugin.activate({ experiments });
+
+        assertEqual(activated.registered, 3);
+        assertDeepEqual(
+          experiments.list().map(item => item.id).sort(),
+          ["math.helix", "math.polar-flower", "math.sine-wave"]
+        );
+      },
+
+      "fontes iniciais produzem planos determinísticos válidos"() {
+        const registry = new ExperimentRegistry();
+        starterExperimentPlugin.activate({ experiments: registry });
+        const expectedCounts = {
+          "math.helix": 96,
+          "math.polar-flower": 240,
+          "math.sine-wave": 121
+        };
+
+        for (const definition of starterExperimentDefinitions) {
+          const parameters = registry.resolveParameters(definition.id);
+          const envelope = executeProgramRequest({
+            runId: `fixture-${definition.id}`,
+            baseVersion: 7,
+            seed: 0,
+            allowedCommands: [SPATIAL_CREATE_COMMAND],
+            geometryTypes: ["box", "sphere"],
+            maxCommands: 10000,
+            source: buildExperimentInvocation(definition, parameters),
+            mode: "expression"
+          }, {
+            evaluate: evaluateTrustedFixture
+          });
+
+          assertEqual(envelope.type, "program.completed");
+          assertEqual(envelope.plan.baseVersion, 7);
+          assertEqual(
+            envelope.plan.commands.length,
+            expectedCounts[definition.id]
+          );
+          assertEqual(
+            envelope.plan.result.value.experiment,
+            definition.id
+          );
+        }
+      },
+
+      "hélice com caixa tolera invocação compatível sem pointRadius"() {
+        const definition=starterExperimentDefinitions.find(
+          item => item.id === "math.helix"
+        );
+        const parameters=Object.fromEntries(
+          definition.parameters
+            .filter(parameter => parameter.id !== "pointRadius")
+            .map(parameter => [
+              parameter.id,
+              parameter.id === "shape" ? "box" : parameter.default
+            ])
+        );
+        const envelope=executeProgramRequest({
+          runId:"fixture-math.helix-box",
+          baseVersion:0,
+          seed:0,
+          allowedCommands:[SPATIAL_CREATE_COMMAND],
+          geometryTypes:["box","sphere"],
+          maxCommands:10000,
+          source:buildExperimentInvocation(definition,parameters),
+          mode:"expression"
+        },{evaluate:evaluateTrustedFixture});
+
+        assertEqual(envelope.type,"program.completed");
+        assertEqual(envelope.plan.commands.length,96);
+        for(const command of envelope.plan.commands){
+          assertDeepEqual(command.args.geometry.size,[0.28,0.28,0.28]);
+        }
+      },
+
+      "bloco misto despacha comandos comuns e assíncronos em ordem"() {
+        const console = createProgramConsole([], {
+          experiments: {
+            list: () => [],
+            describe: id => ({ id }),
+            plan: () => Promise.reject(new Error("não esperado"))
+          }
+        });
+
+        return console.execute("help\nexperiment list")
+          .then(entries => {
+            assertEqual(entries.length, 2);
+            assertEqual(entries[0].input, "help");
+            assertEqual(entries[0].ok, true);
+            assertEqual(entries[1].input, "experiment list");
+            assertEqual(entries[1].ok, true);
+            assertDeepEqual(entries[1].result, []);
+          });
+      },
+
+      "forma semântica curta resolve alias parâmetros e commit atômico"() {
+        const actions = [];
+        const console = createProgramConsole([], {
+          experiments: {
+            list: () => [{ id: "math.helix" }],
+            describe: id => ({ id }),
+            plan: () => Promise.reject(new Error("não esperado"))
+          },
+          execute(id, args) {
+            actions.push({ id, args: structuredClone(args) });
+            return {
+              plan: { commandCount: args.parameters.count },
+              commit: { changed: true }
+            };
+          }
+        });
+
+        return console.execute(
+          "experiment helix radius=4 turns=5 count=160"
+        ).then(entries => {
+          assertEqual(entries.length, 1);
+          assertEqual(entries[0].ok, true);
+          assertEqual(actions.length, 1);
+          assertEqual(actions[0].id, "experiment.create");
+          assertDeepEqual(actions[0].args, {
+            id: "math.helix",
+            parameters: { radius: 4, turns: 5, count: 160 }
+          });
+          assertEqual(entries[0].result.commit.changed, true);
+        });
+      },
+
+      "runner aguarda asserções assíncronas antes de aprovar"() {
+        let completed = false;
+        return runRuntimeTests({
+          fixture: {
+            async "asserção assíncrona"() {
+              await Promise.resolve();
+              completed = true;
+              assertEqual(completed, true);
+            }
+          }
+        }, "fixture").then(result => {
+          assertEqual(completed, true);
+          assertEqual(result.passed, 1);
+          assertEqual(result.failed, 0);
+        });
+      }
+    },
+
+    "experiment-panel": {
+      async "ação comum planeja e confirma fora da visualização"() {
+        const order = [];
+        const sourcePlan = {
+          runId: "panel-create",
+          baseVersion: 12,
+          commands: [{ sequence: 0 }, { sequence: 1 }],
+          result: { value: { count: 2 }, output: ["ok"] }
+        };
+        const service = new ExperimentActionService({
+          experiments: {
+            async plan(id, parameters) {
+              order.push("plan");
+              return {
+                experiment: { id },
+                parameters,
+                plan: sourcePlan
+              };
+            }
+          },
+          async commit(plan) {
+            order.push("commit");
+            assertEqual(plan, sourcePlan);
+            return { changed: true };
+          }
+        });
+
+        const result = await service.create("math.helix", { count: 2 });
+
+        assertDeepEqual(order, ["plan", "commit"]);
+        assertDeepEqual(result.plan, {
+          runId: "panel-create",
+          baseVersion: 12,
+          commandCount: 2
+        });
+        assertEqual(result.commit.changed, true);
+      },
+
+      "controles convertem somente tipos declarados"() {
+        assertEqual(
+          normalizeExperimentControlValue(
+            { id: "radius", type: "number" },
+            "3.5"
+          ),
+          3.5
+        );
+        assertEqual(
+          normalizeExperimentControlValue(
+            { id: "count", type: "integer" },
+            "12"
+          ),
+          12
+        );
+        assertEqual(
+          normalizeExperimentControlValue(
+            { id: "mirror", type: "boolean" },
+            "false"
+          ),
+          false
+        );
+        assertEqual(
+          normalizeExperimentControlValue(
+            { id: "color", type: "color" },
+            "#0af"
+          ),
+          "#0af"
+        );
+      },
+
+      "controles recusam inteiros fracionários e tipos desconhecidos"() {
+        assertThrowsMessage(
+          () => normalizeExperimentControlValue(
+            { id: "count", type: "integer" },
+            "2.5"
+          ),
+          "use um inteiro"
+        );
+        assertThrowsMessage(
+          () => normalizeExperimentControlValue(
+            { id: "unsafe", type: "html" },
+            "<button>"
+          ),
+          "Tipo de parâmetro desconhecido"
+        );
+      },
+
+      "resumo de plano não expõe a lista volumosa de comandos"() {
+        const summary = summarizeExperimentPlan({
+          runId: "experiment-math.helix-1",
+          baseVersion: 9,
+          commands: [{ sequence: 0 }, { sequence: 1 }]
+        });
+
+        assertDeepEqual(summary, {
+          runId: "experiment-math.helix-1",
+          baseVersion: 9,
+          commandCount: 2
+        });
+        assertEqual(Object.hasOwn(summary, "commands"), false);
+      },
+
+      "comando mostrado pelo painel usa intenção curta"() {
+        assertEqual(
+          formatExperimentCommand(
+            { id: "math.helix" },
+            { radius: 4, turns: 5, count: 160, color: "#5b8bd9" }
+          ),
+          "experiment helix radius=4 turns=5 count=160 color=#5b8bd9"
+        );
+      }
+    },
+
     "property-contract": {
       "codec de cor normaliza formas curta e longa"() {
         assertEqual(normalizeHexColor("#AbC"), "#aabbcc");
@@ -4954,6 +5569,165 @@ assets: {
     },
 
     "instanced-renderer": {
+      "seleção numerosa preserva contornos individuais em um draw call"() {
+        const batch=new SelectionOutlineBatch({capacity:4});
+        const instances=Array.from({length:500},(_,index) =>
+          selectionOutlineInstance({
+            id:`selected-${index}`,
+            bounds:new THREE.Box3(
+              new THREE.Vector3(index,0,0),
+              new THREE.Vector3(index+1,2,3)
+            ),
+            active:index===499
+          })
+        );
+        const diagnostics=batch.update(instances);
+
+        assertEqual(batch.object.isLineSegments,true);
+        assertEqual(batch.geometry.isInstancedBufferGeometry,true);
+        assertEqual(batch.geometry.instanceCount,500);
+        assertEqual(diagnostics.instanceCount,500);
+        assertEqual(diagnostics.drawCalls,1);
+        assertEqual(diagnostics.capacity,512);
+        assertEqual(diagnostics.reallocations,1);
+        const actualMatrix=batch.matrixAt(0).elements;
+        const expectedMatrix=new THREE.Matrix4()
+          .compose(
+            new THREE.Vector3(0.5,1,1.5),
+            new THREE.Quaternion(),
+            new THREE.Vector3(1,2,3)
+          )
+          .elements;
+        for(let index=0;index<16;index+=1){
+          assertNear(actualMatrix[index],expectedMatrix[index],1e-6);
+        }
+        batch.dispose();
+      },
+
+      "lote atualiza cor ativa e evita upload quando nada mudou"() {
+        const batch=new SelectionOutlineBatch({capacity:2});
+        const instances=[
+          selectionOutlineInstance({
+            id:"inactive",
+            bounds:new THREE.Box3(
+              new THREE.Vector3(0,0,0),
+              new THREE.Vector3(1,1,1)
+            )
+          }),
+          selectionOutlineInstance({
+            id:"active",
+            bounds:new THREE.Box3(
+              new THREE.Vector3(2,0,0),
+              new THREE.Vector3(3,1,1)
+            ),
+            active:true
+          })
+        ];
+        batch.update(instances);
+        const inactive=batch.colorAt(0);
+        const active=batch.colorAt(1);
+        assertEqual(inactive.getHex(),0x8faaff);
+        assertEqual(active.getHex(),0xffd166);
+        const unchanged=batch.update(instances);
+        assertEqual(unchanged.lastMatrixWrites,0);
+        assertEqual(unchanged.lastColorWrites,0);
+        assertEqual(unchanged.lastUploadedBytes,0);
+        batch.dispose();
+      },
+
+      "crescimento após submissão recria geometria sem limite obsoleto"() {
+        const batch=new SelectionOutlineBatch({capacity:2});
+        const instances=Array.from({length:5},(_,index) =>
+          selectionOutlineInstance({
+            id:`growth-${index}`,
+            bounds:new THREE.Box3(
+              new THREE.Vector3(index,0,0),
+              new THREE.Vector3(index+1,1,1)
+            )
+          })
+        );
+        batch.update(instances.slice(0,2));
+        const initialGeometry=batch.geometry;
+        let disposed=0;
+        initialGeometry.addEventListener("dispose",() => {
+          disposed+=1;
+        });
+
+        // O WebGLRenderer registra este limite na primeira submissão.
+        initialGeometry._maxInstanceCount=2;
+        const diagnostics=batch.update(instances);
+
+        assertEqual(batch.geometry===initialGeometry,false);
+        assertEqual(batch.object.geometry===batch.geometry,true);
+        assertEqual(disposed,1);
+        assertEqual(diagnostics.capacity,8);
+        assertEqual(diagnostics.reallocations,1);
+        assertEqual(diagnostics.geometryReplacements,1);
+        assertEqual(diagnostics.rendererInstanceLimit,null);
+        assertEqual(diagnostics.submittedInstanceCount,5);
+        assertEqual(diagnostics.submittedLineSegments,60);
+        batch.dispose();
+      },
+
+      "benchmark compara helpers legados e lote instanciado"() {
+        const result=benchmarkSelectionOutlines({
+          objectCount:32,
+          samples:2
+        });
+        assertEqual(result.resources.legacyHelpers.drawCalls,32);
+        assertEqual(result.resources.instancedBatch.drawCalls,1);
+        assertEqual(result.resources.instancedBatch.objects,1);
+        assertEqual(result.cpuPreparationMs.instancedBatch.median >= 0,true);
+      },
+
+      "console expõe benchmark de seleção com parâmetros explícitos"() {
+        const calls=[];
+        const console=new DevConsole({
+          editor:{selection:new Selection()},
+          sandbox:{},
+          region:{},
+          renderer:{},
+          getDiagnostics:()=>({}),
+          commands:{
+            describe:()=>[],
+            execute(id,args){
+              calls.push({id,args});
+              return {ok:true};
+            }
+          }
+        });
+        const [entry]=console.execute("benchmark selection 250 3");
+        assertEqual(entry.ok,true);
+        assertDeepEqual(calls,[{
+          id:"benchmark.selection",
+          args:{objectCount:250,samples:3}
+        }]);
+      },
+
+      "console expõe diagnóstico conciso da seleção"() {
+        const calls=[];
+        const console=new DevConsole({
+          editor:{selection:new Selection()},
+          sandbox:{},
+          region:{},
+          renderer:{},
+          getDiagnostics:()=>({}),
+          commands:{
+            describe:()=>[],
+            execute(id,args){
+              calls.push({id,args});
+              return {complete:true};
+            }
+          }
+        });
+        const [entry]=console.execute("selection stats");
+        assertEqual(entry.ok,true);
+        assertDeepEqual(entry.result,{complete:true});
+        assertDeepEqual(calls,[{
+          id:"selection.stats",
+          args:undefined
+        }]);
+      },
       "limites acompanham instância movida"() {
         const geometry = new THREE.BoxGeometry(1, 1, 1);
         const material = new THREE.MeshBasicMaterial();
@@ -5806,6 +6580,7 @@ function createGeometryConsole(calls) {
 
 function createProgramConsole(calls, {
   procedures = null,
+  experiments = null,
   plan = null,
   execute = null
 } = {}) {
@@ -5834,7 +6609,8 @@ function createProgramConsole(calls, {
       reset: () => ({ state: "idle" }),
       cancel: () => ({ cancelled: false })
     },
-    procedures
+    procedures,
+    experiments
   });
 }
 
@@ -6034,7 +6810,52 @@ function createFileGatewayHarness(windowOverrides={}) {
   return {gateway,calls,link};
 }
 
-export function runRuntimeTests(suites, requested = "all") {
+function createExperimentDefinition() {
+  return {
+    apiVersion: EXPERIMENT_DEFINITION_VERSION,
+    id: "math.test-curve",
+    title: "Curva de teste",
+    description: "Contrato declarativo usado pela suíte.",
+    tags: ["Matemática", "teste", "matemática"],
+    parameters: [
+      {
+        id: "count",
+        label: "Quantidade",
+        type: "integer",
+        control: "slider",
+        min: 2,
+        max: 64,
+        step: 1,
+        default: 8
+      },
+      {
+        id: "color",
+        label: "Cor",
+        type: "color",
+        default: "#6699cc"
+      },
+      {
+        id: "closed",
+        label: "Fechada",
+        type: "boolean",
+        default: false
+      },
+      {
+        id: "shape",
+        label: "Forma",
+        type: "select",
+        options: ["box", { value: "sphere", label: "Esfera" }],
+        default: "box"
+      }
+    ],
+    program: {
+      mode: "expression",
+      source: "({ count }) => count"
+    }
+  };
+}
+
+export async function runRuntimeTests(suites, requested = "all") {
   const selected =
     requested === "all"
       ? Object.entries(suites)
@@ -6054,7 +6875,7 @@ export function runRuntimeTests(suites, requested = "all") {
       const started = performance.now();
 
       try {
-        test();
+        await test();
         results.push({
           suite,
           test: name,

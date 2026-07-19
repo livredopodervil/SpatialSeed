@@ -21,6 +21,7 @@ export class Sandbox {
   get canUndo() { return this.#undo.length > 0; }
   get canRedo() { return this.#redo.length > 0; }
   get dirty() { return this.#commands.length > 0; }
+  get objectCount() { return this.#state.objects.length; }
   getSnapshot() { return this.#state; }
   getState() { return structuredClone(this.#state); }
 

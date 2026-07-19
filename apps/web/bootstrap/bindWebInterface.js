@@ -1,4 +1,4 @@
-import { FloatingPanelManager, SelectionMarquee, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260716-0024i";
+import { FloatingPanelManager, SelectionMarquee, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260718-0027h";
 import {
   BrowserProjectFileGateway
 } from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0026i";
@@ -23,7 +23,9 @@ export function bindWebInterface({
     procedureCatalog,
     procedureCatalogEditor,
     objectInspector,
-    transformToolPanel
+    transformToolPanel,
+    experimentPanel,
+    connectUiDiagnostics
   } = web;
 
   const diagnostics = {
@@ -149,7 +151,8 @@ export function bindWebInterface({
     "#procedure-editor-panel",
     "#inspector-panel",
     "#transform-tools-panel",
-    "#geometry-create-panel"
+    "#geometry-create-panel",
+    "#experiment-panel"
   ]) {
     panelManager.register(selector, {
       defaultLayout: uiConfiguration?.panels?.items?.[
@@ -167,25 +170,52 @@ export function bindWebInterface({
     console.error(error);
   }
 
-  function refreshUi() {
-    const state = runtime.query("world.snapshot");
+  function refreshUiNow() {
     const status = runtime.query("runtime.status");
 
     if (!$("outline").hidden) {
+      const state = runtime.query("world.snapshot");
       outline.update(region, sandbox, modules.describe(), state);
     }
 
     $("undo").disabled = !status.canUndo;
     $("redo").disabled = !status.canRedo;
     $("review").disabled = !status.dirty;
+    const selectionActions=runtime.query("selection.actions.describe");
+    $("group-selection").disabled=!selectionActions.canGroup;
+    $("ungroup-selection").disabled=!selectionActions.canUngroup;
     const count=latestSelection?.members?.length??0,active=latestSelection?.activeMember?.objectId??"∅",mode=latestEditor?.tool?.mode??"select",operation=latestEditor?.selectionOperation??"replace";
     $("status").textContent=`${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"}`;
   }
 
+  const scheduleUiFrame = callback =>
+    typeof browserWindow.requestAnimationFrame === "function"
+      ? browserWindow.requestAnimationFrame(callback)
+      : browserWindow.setTimeout(callback, 0);
+  const cancelUiFrame = handle =>
+    typeof browserWindow.cancelAnimationFrame === "function"
+      ? browserWindow.cancelAnimationFrame(handle)
+      : browserWindow.clearTimeout(handle);
+  const uiRefresh = new UiRefreshCoordinator({
+    refresh: refreshUiNow,
+    schedule: scheduleUiFrame,
+    cancel: cancelUiFrame
+  });
+  const disconnectUiDiagnostics = connectUiDiagnostics(() => ({
+    connected: true,
+    profile: runtime.query("runtime.profile").id,
+    refresh: uiRefresh.snapshot(),
+    inspector: objectInspector.diagnostics(),
+    outlineVisible: !$("outline").hidden
+  }));
+
   function showNotice(message, duration = 2200) {
     clearTimeout(statusTimer);
     $("status").textContent = message;
-    statusTimer = setTimeout(refreshUi, duration);
+    statusTimer = setTimeout(
+      () => uiRefresh.request("notice-expired"),
+      duration
+    );
   }
 
   function execute(id, args = {}) {
@@ -277,7 +307,7 @@ export function bindWebInterface({
 
   const unsubscribeWorld = runtime.subscribe(
     "world.changed",
-    refreshUi
+    () => uiRefresh.request("world.changed")
   );
 
   const unsubscribeSelection = runtime.subscribe(
@@ -305,11 +335,9 @@ export function bindWebInterface({
       $("clear-selection").disabled = empty;
       $("edit-pivot").disabled = empty;
       $("duplicate-selection").disabled = empty;
-      $("group-selection").disabled = empty;
-      $("ungroup-selection").disabled = empty;
       $("delete-selection").disabled = empty;
       $("inspector").disabled = empty;
-      refreshUi();
+      uiRefresh.request("selection.changed");
     }
   );
 
@@ -331,7 +359,7 @@ export function bindWebInterface({
       documentRoot.querySelectorAll("[data-selection-op]").forEach(button=>{button.dataset.active=button.dataset.selectionOp===snapshot.selectionOperation?"true":"false"});
       $("area-selection").dataset.active=snapshot.areaSelection?"true":"false";
       marquee.setEnabled(snapshot.tool.mode==="select"&&snapshot.areaSelection);
-      refreshUi();
+      uiRefresh.request("editor.changed");
 
       $("pivot-content").textContent =
         snapshot.pivot.policy === "custom"
@@ -392,9 +420,12 @@ export function bindWebInterface({
   );
 
   $("structure").addEventListener("click", () => {
-    $("outline").hidden
-      ? panelManager.show("#outline")
-      : panelManager.hide("#outline");
+    if ($("outline").hidden) {
+      panelManager.show("#outline");
+      uiRefresh.request("outline.opened");
+    } else {
+      panelManager.hide("#outline");
+    }
   });
 
   $("close-outline").addEventListener(
@@ -679,14 +710,27 @@ export function bindWebInterface({
     () => panelManager.hide("#geometry-create-panel")
   );
 
+  $("experiment-lab").addEventListener("click", () => {
+    panelManager.show("#experiment-panel");
+    experimentPanel.refresh();
+  });
+
+  $("close-experiment-panel").addEventListener(
+    "click",
+    () => panelManager.hide("#experiment-panel")
+  );
+
   $("inspector").addEventListener("click", () => {
     panelManager.show("#inspector-panel");
-    objectInspector.refresh();
+    objectInspector.setActive(true);
   });
 
   $("close-inspector").addEventListener(
     "click",
-    () => panelManager.hide("#inspector-panel")
+    () => {
+      panelManager.hide("#inspector-panel");
+      objectInspector.setActive(false);
+    }
   );
 
   $("developer").addEventListener("click", () => {
@@ -923,7 +967,7 @@ export function bindWebInterface({
     }
   });
 
-  refreshUi();
+  uiRefresh.flushNow("initial");
 
   const initialSelection = runtime.query("selection.snapshot");
   runtime.emit("selection.changed", initialSelection);
@@ -937,6 +981,8 @@ export function bindWebInterface({
       unsubscribeSelection();
       unsubscribeWorld();
       unsubscribeInstall();
+      disconnectUiDiagnostics();
+      uiRefresh.dispose();
       pwaInstallController?.dispose();
       marquee.dispose();
       document.removeEventListener(

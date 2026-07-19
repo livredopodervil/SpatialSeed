@@ -192,6 +192,7 @@ export class BenchmarkRunner {
     return {
       commands: [
         "benchmark scene [objetos] [amostras] [transformados]",
+        "benchmark selection [objetos] [amostras]",
         "benchmark compare",
         "benchmark history",
         "benchmark clear"

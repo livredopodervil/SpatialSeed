@@ -16,6 +16,7 @@ export async function startApplication(
     outlineRoot: $("outline-content"),
     transformToolsRoot: $("transform-tools-panel"),
     geometryCreationRoot: $("geometry-create-panel"),
+    experimentPanelRoot: $("experiment-panel"),
     procedureEditorRoot: $("procedure-editor-root"),
     inspectorRoot: $("inspector-panel"),
     buildInfo,

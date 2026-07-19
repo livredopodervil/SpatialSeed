@@ -147,6 +147,10 @@ export function createEditorCommands({
     .register(
       "runtime.resources",
       () => resourceAudit.collect()
+    )
+    .register(
+      "selection.stats",
+      () => renderer.getSelectionAppearanceDiagnostics()
     );
 
   commands
@@ -155,6 +159,9 @@ export function createEditorCommands({
     )
     .register("benchmark.scene", args =>
       benchmarkRunner.runScene(args)
+    )
+    .register("benchmark.selection", args =>
+      renderer.benchmarkSelectionOutlines(args)
     )
     .register("benchmark.compare", () =>
       benchmarkRunner.compare()
