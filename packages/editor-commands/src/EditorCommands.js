@@ -23,6 +23,13 @@ export function createEditorCommands({
       editor.setMultiSelect(!editor.multiSelect);
       return { multiSelect: editor.multiSelect };
     })
+    .register("selection.operation.set", ({ operation }) => ({
+      operation: renderer.setSelectionOperation(operation)
+    }))
+    .register("selection.area.toggle", () => {
+      editor.setAreaSelection(!editor.areaSelection);
+      return { enabled: editor.areaSelection };
+    })
     .register("selection.clear", () => {
       editor.selection.clear();
       return editor.selection.snapshot();

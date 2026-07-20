@@ -97,6 +97,25 @@
       "experiment-panel": { "anchor": "right", "top": "toolbar", "width": 470, "height": 680 }
     }
   },
+  "shortcuts": {
+    "profile": "spatialseed",
+    "storageKey": "spatialseed.ui.shortcuts.v1",
+    "bindings": [
+      { "action": "history.undo", "chord": "Primary+Z", "context": "global" },
+      { "action": "history.redo", "chord": "Primary+Shift+Z", "context": "global" },
+      { "action": "history.redo", "chord": "Primary+Y", "context": "global" },
+      { "action": "tool.navigate", "chord": "Q", "context": "viewport" },
+      { "action": "tool.select", "chord": "S", "context": "viewport" },
+      { "action": "tool.translate", "chord": "W", "context": "viewport" },
+      { "action": "tool.rotate", "chord": "E", "context": "viewport" },
+      { "action": "tool.scale", "chord": "R", "context": "viewport" },
+      { "action": "selection.duplicate", "chord": "Primary+D", "context": "global" },
+      { "action": "selection.delete", "chord": "Delete", "context": "viewport" },
+      { "action": "selection.delete", "chord": "Backspace", "context": "viewport" },
+      { "action": "scene.toggle", "chord": "Tab", "context": "viewport" },
+      { "action": "viewport.fullscreen", "chord": "F", "context": "viewport" }
+    ]
+  },
   "presentation": {
     "transform": {
       "size": 0.8,

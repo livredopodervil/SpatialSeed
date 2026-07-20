@@ -150,11 +150,13 @@ import {
   PwaInstallController
 } from "../../../apps/web/pwa/PwaInstallController.js";
 import {
-  UiRefreshCoordinator
-} from "../../ui-widgets/src/index.js?build=20260718-0027h";
+  UiActionRegistry,
+  UiRefreshCoordinator,
+  normalizeShortcutChord
+} from "../../ui-widgets/src/index.js?build=20260720-0028c";
 import {
   normalizeUiConfiguration
-} from "../../ui-config/src/index.js?build=20260716-0024i";
+} from "../../ui-config/src/index.js?build=20260720-0028c";
 import { fnv1a64 } from "../../asset-store/src/index.js";
 import {
   DisposableProgramRun,
@@ -3930,6 +3932,8 @@ assets: {
         assertEqual(configuration.toolbar.layout,"horizontal");
         assertEqual(configuration.toolbar.menus[0].items[0],"undo");
         assertEqual(configuration.panels.items.inspector.anchor,"right");
+        assertEqual(configuration.shortcuts.profile,"spatialseed");
+        assertDeepEqual(configuration.shortcuts.bindings,[]);
         assertEqual(configuration.presentation.transform.size,0.8);
         assertEqual(configuration.presentation.sceneExit.corner,"top-left");
         assertEqual(
@@ -3973,6 +3977,126 @@ assets: {
           showVertices:false,
           vertexSize:7
         });
+      },
+      "normaliza atalhos declarativos sem acoplar ações"() {
+        const configuration=normalizeUiConfiguration({
+          shortcuts:{
+            profile:"test",
+            storageKey:"test.shortcuts",
+            bindings:[
+              {action:"history.undo",chord:"primary+z"},
+              {action:"tool.rotate",chord:"E",context:"viewport"}
+            ]
+          }
+        });
+        assertEqual(configuration.shortcuts.profile,"test");
+        assertDeepEqual(configuration.shortcuts.bindings,[
+          {action:"history.undo",chord:"Primary+Z",context:"global"},
+          {action:"tool.rotate",chord:"E",context:"viewport"}
+        ]);
+      },
+      "rejeita conflito de atalho dentro do mesmo contexto"() {
+        let failed=false;
+        try {
+          normalizeUiConfiguration({shortcuts:{bindings:[
+            {action:"history.undo",chord:"Primary+Z"},
+            {action:"history.redo",chord:"Primary+Z"}
+          ]}});
+        } catch (error) {
+          failed=/duplicado/.test(error.message);
+        }
+        assertEqual(failed,true);
+      }
+    },
+
+    "ui-actions": {
+      "normaliza acordes portáveis para Ctrl e Command"() {
+        assertEqual(normalizeShortcutChord("primary + shift + z"),"Primary+Shift+Z");
+        assertEqual(normalizeShortcutChord("delete"),"Delete");
+      },
+      "atalho e ação visual compartilham o mesmo handler"() {
+        let calls=0;
+        const registry=new UiActionRegistry({
+          root:null,
+          configuration:{bindings:[
+            {action:"history.undo",chord:"Primary+Z",context:"global"}
+          ]}
+        });
+        registry.register("history.undo",() => { calls += 1; return calls; });
+        assertEqual(registry.execute("history.undo"),1);
+        const event=createShortcutEvent({key:"z",ctrlKey:true});
+        assertEqual(registry.handleKeydown(event,"viewport"),true);
+        assertEqual(calls,2);
+        assertEqual(event.prevented,true);
+        assertEqual(event.stopped,true);
+        registry.dispose();
+      },
+      "campos de texto preservam o histórico do editor interno"() {
+        let calls=0;
+        const registry=new UiActionRegistry({
+          root:null,
+          configuration:{bindings:[
+            {action:"history.undo",chord:"Primary+Z",context:"global"}
+          ]}
+        });
+        registry.register("history.undo",() => { calls += 1; });
+        const event=createShortcutEvent({
+          key:"z",
+          ctrlKey:true,
+          textEditing:true
+        });
+        assertEqual(registry.handleKeydown(event,"viewport"),false);
+        assertEqual(calls,0);
+        assertEqual(event.prevented,false);
+        assertEqual(registry.describe().statistics.ignoredTextEditing,1);
+        registry.dispose();
+      },
+      "contexto específico prevalece sobre ação global"() {
+        const calls=[];
+        const registry=new UiActionRegistry({
+          root:null,
+          configuration:{bindings:[
+            {action:"scene.global",chord:"F",context:"global"},
+            {action:"viewport.frame",chord:"F",context:"viewport"}
+          ]}
+        });
+        registry
+          .register("scene.global",() => calls.push("global"))
+          .register("viewport.frame",() => calls.push("viewport"));
+        assertEqual(
+          registry.handleKeydown(createShortcutEvent({key:"f"}),"viewport"),
+          true
+        );
+        assertDeepEqual(calls,["viewport"]);
+        registry.dispose();
+      },
+      "preferências persistidas substituem o perfil sem tocar no layout"() {
+        const values=new Map();
+        const storage={
+          getItem:key => values.get(key) ?? null,
+          setItem:(key,value) => values.set(key,value),
+          removeItem:key => values.delete(key)
+        };
+        const configuration={
+          profile:"test",
+          storageKey:"test.shortcuts",
+          bindings:[{action:"tool.rotate",chord:"E",context:"viewport"}]
+        };
+        const first=new UiActionRegistry({root:null,storage,configuration});
+        first.setBindings([
+          {action:"tool.rotate",chord:"R",context:"viewport"}
+        ]);
+        first.dispose();
+        const restored=new UiActionRegistry({root:null,storage,configuration});
+        assertDeepEqual(restored.describeBindings(),[
+          {action:"tool.rotate",chord:"R",context:"viewport"}
+        ]);
+        assertEqual(restored.describe().profile,"test");
+        restored.resetBindings();
+        assertDeepEqual(restored.describeBindings(),[
+          {action:"tool.rotate",chord:"E",context:"viewport"}
+        ]);
+        restored.dispose();
       }
     },
 
@@ -7544,6 +7668,40 @@ function spatialCreationPlan({
       }
     })),
     result: null
+  };
+}
+
+function createShortcutEvent({
+  key,
+  ctrlKey = false,
+  metaKey = false,
+  altKey = false,
+  shiftKey = false,
+  repeat = false,
+  textEditing = false
+} = {}) {
+  return {
+    key,
+    ctrlKey,
+    metaKey,
+    altKey,
+    shiftKey,
+    repeat,
+    defaultPrevented: false,
+    prevented: false,
+    stopped: false,
+    target: {
+      closest(selector) {
+        return textEditing && selector.includes("input") ? {} : null;
+      }
+    },
+    preventDefault() {
+      this.defaultPrevented = true;
+      this.prevented = true;
+    },
+    stopPropagation() {
+      this.stopped = true;
+    }
   };
 }
 

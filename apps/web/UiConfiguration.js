@@ -1,4 +1,4 @@
-import { normalizeUiConfiguration } from "../../packages/ui-config/src/index.js";
+import { normalizeUiConfiguration } from "../../packages/ui-config/src/index.js?build=20260720-0028c";
 
 export async function loadUiConfiguration({
   url = "./config/ui.default.json",

@@ -1,4 +1,4 @@
-import { FloatingPanelManager, SelectionMarquee, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260718-0027h";
+import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260720-0028c";
 import {
   BrowserProjectFileGateway
 } from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0026i";
@@ -160,6 +160,10 @@ export function bindWebInterface({
       ]
     });
   }
+  const uiActions = new UiActionRegistry({
+    root: documentRoot,
+    configuration: uiConfiguration?.shortcuts
+  });
   attachScrubbableFields(documentRoot);
   const marquee=new SelectionMarquee({canvas:$("world"),element:$("selection-marquee"),onComplete:r=>renderer.selectScreenRect(r,latestEditor.selectionOperation)});
 
@@ -206,6 +210,7 @@ export function bindWebInterface({
     profile: runtime.query("runtime.profile").id,
     refresh: uiRefresh.snapshot(),
     inspector: objectInspector.diagnostics(),
+    actions: uiActions.describe(),
     outlineVisible: !$("outline").hidden
   }));
 
@@ -247,6 +252,47 @@ export function bindWebInterface({
       return { changed: false, reason: "internal-error" };
     }
   }
+
+  const registerRuntimeAction = (id, command = id, args = value => value) => {
+    uiActions.register(id, value => execute(command, args(value)), {
+      metadata: { command }
+    });
+  };
+  for (const mode of ["navigate", "select", "translate", "rotate", "scale"]) {
+    registerRuntimeAction(
+      `tool.${mode}`,
+      "tool.set",
+      () => ({ mode })
+    );
+  }
+  registerRuntimeAction("history.undo");
+  registerRuntimeAction("history.redo");
+  registerRuntimeAction("selection.multi.toggle");
+  registerRuntimeAction("selection.clear");
+  registerRuntimeAction("selection.area.toggle");
+  registerRuntimeAction("selection.duplicate");
+  registerRuntimeAction("selection.group");
+  registerRuntimeAction("selection.ungroup");
+  registerRuntimeAction("selection.repeat");
+  registerRuntimeAction("selection.delete");
+  registerRuntimeAction("pivot.edit.toggle");
+  uiActions.register("space.toggle", () => {
+    const result = execute("space.toggle");
+    if (result?.space) {
+      $("space").textContent = result.space === "world" ? "Mundo" : "Local";
+    }
+    return result;
+  }, { metadata: { command: "space.toggle" } });
+  for (const operation of ["replace", "add", "remove", "toggle"]) {
+    registerRuntimeAction(
+      `selection.operation.${operation}`,
+      "selection.operation.set",
+      () => ({ operation })
+    );
+  }
+  uiActions
+    .register("scene.toggle", () => setSceneOnly(!sceneOnly))
+    .register("viewport.fullscreen", () => toggleViewportFullscreen());
 
   function appendConsole(entry) {
     const line = {
@@ -372,52 +418,33 @@ export function bindWebInterface({
     }
   );
 
-  documentRoot.querySelectorAll("[data-tool-mode]").forEach(button=>button.addEventListener("click",()=>renderer.setTransformMode(button.dataset.toolMode)));
-  documentRoot.querySelectorAll("[data-selection-op]").forEach(button=>button.addEventListener("click",()=>renderer.setSelectionOperation(button.dataset.selectionOp)));
-  $("area-selection").addEventListener("click",()=>editor.setAreaSelection(!editor.areaSelection));
-
-  $("space").addEventListener("click", event => {
-    const result = execute("space.toggle");
-
-    if (result?.space) {
-      event.currentTarget.textContent =
-        result.space === "world" ? "Mundo" : "Local";
-    }
-  });
-
-  $("multi-select").addEventListener(
-    "click",
-    () => execute("selection.multi.toggle")
+  documentRoot.querySelectorAll("[data-tool-mode]").forEach(button =>
+    uiActions.bindControl(button, `tool.${button.dataset.toolMode}`)
   );
-
-  $("clear-selection").addEventListener(
-    "click",
-    () => execute("selection.clear")
+  documentRoot.querySelectorAll("[data-selection-op]").forEach(button =>
+    uiActions.bindControl(
+      button,
+      `selection.operation.${button.dataset.selectionOp}`
+    )
   );
+  uiActions.bindControl($("area-selection"), "selection.area.toggle");
+  uiActions.bindControl($("space"), "space.toggle");
+  uiActions.bindControl($("multi-select"), "selection.multi.toggle");
+  uiActions.bindControl($("clear-selection"), "selection.clear");
 
   $("pivot-policy").addEventListener("change", event =>
     execute("pivot.policy", { policy: event.target.value })
   );
 
-  $("edit-pivot").addEventListener(
-    "click",
-    () => execute("pivot.edit.toggle")
-  );
+  uiActions.bindControl($("edit-pivot"), "pivot.edit.toggle");
 
   $("add-box").addEventListener(
     "click",
     () => execute("object.create.box")
   );
 
-  $("undo").addEventListener(
-    "click",
-    () => execute("history.undo")
-  );
-
-  $("redo").addEventListener(
-    "click",
-    () => execute("history.redo")
-  );
+  uiActions.bindControl($("undo"), "history.undo");
+  uiActions.bindControl($("redo"), "history.redo");
 
   $("structure").addEventListener("click", () => {
     if ($("outline").hidden) {
@@ -666,30 +693,11 @@ export function bindWebInterface({
     () => panelManager.hide("#diagnostic-panel")
   );
 
-  $("duplicate-selection").addEventListener(
-    "click",
-    () => execute("selection.duplicate")
-  );
-
-  $("group-selection").addEventListener(
-    "click",
-    () => execute("selection.group")
-  );
-
-  $("ungroup-selection").addEventListener(
-    "click",
-    () => execute("selection.ungroup")
-  );
-
-  $("repeat-duplicate").addEventListener(
-    "click",
-    () => execute("selection.repeat")
-  );
-
-  $("delete-selection").addEventListener(
-    "click",
-    () => execute("selection.delete")
-  );
+  uiActions.bindControl($("duplicate-selection"), "selection.duplicate");
+  uiActions.bindControl($("group-selection"), "selection.group");
+  uiActions.bindControl($("ungroup-selection"), "selection.ungroup");
+  uiActions.bindControl($("repeat-duplicate"), "selection.repeat");
+  uiActions.bindControl($("delete-selection"), "selection.delete");
 
   $("transform-tools").addEventListener("click", () => {
     panelManager.show("#transform-tools-panel");
@@ -844,14 +852,6 @@ export function bindWebInterface({
 
   let sceneOnly = false;
 
-  function isTextEditingTarget(target) {
-    return Boolean(
-      target?.closest?.(
-        "input,textarea,select,[contenteditable='true']"
-      )
-    );
-  }
-
   function setSceneOnly(enabled) {
     const entering = Boolean(enabled) && !sceneOnly;
     sceneOnly = Boolean(enabled);
@@ -894,10 +894,7 @@ export function bindWebInterface({
       : "Alternar tela cheia do viewport (F)";
   }
 
-  $("scene-only").addEventListener(
-    "click",
-    () => setSceneOnly(!sceneOnly)
-  );
+  uiActions.bindControl($("scene-only"), "scene.toggle");
   $("scene-exit-hotspot").addEventListener(
     "click",
     () => setSceneOnly(false)
@@ -906,10 +903,7 @@ export function bindWebInterface({
     "click",
     () => showSceneHelp({ manual:true })
   );
-  $("viewport-fullscreen").addEventListener(
-    "click",
-    toggleViewportFullscreen
-  );
+  uiActions.bindControl($("viewport-fullscreen"), "viewport.fullscreen");
   document.addEventListener(
     "fullscreenchange",
     refreshFullscreenButton
@@ -917,21 +911,9 @@ export function bindWebInterface({
 
   documentRoot.addEventListener("keydown", event => {
     if (sceneHelpDialog.open) return;
-    if (isTextEditingTarget(event.target)) return;
-
-    if (event.key === "Tab") {
-      event.preventDefault();
-      setSceneOnly(!sceneOnly);
-      return;
-    }
-
-    if (event.key.toLowerCase() === "f") {
-      event.preventDefault();
-      toggleViewportFullscreen();
-      return;
-    }
 
     if (event.key === "Escape" && sceneOnly) {
+      event.preventDefault();
       setSceneOnly(false);
     }
   });
@@ -982,6 +964,7 @@ export function bindWebInterface({
       unsubscribeWorld();
       unsubscribeInstall();
       disconnectUiDiagnostics();
+      uiActions.dispose();
       uiRefresh.dispose();
       pwaInstallController?.dispose();
       marquee.dispose();

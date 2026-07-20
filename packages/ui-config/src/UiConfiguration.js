@@ -1,3 +1,7 @@
+import {
+  normalizeShortcutBindings
+} from "./ShortcutConfiguration.js";
+
 const DEFAULT_STORAGE_KEY = "spatialseed.ui.layout.v2";
 
 export function normalizeUiConfiguration(source = {}) {
@@ -43,6 +47,9 @@ export function normalizeUiConfiguration(source = {}) {
   }
 
   const transform = source.presentation?.transform ?? {};
+  const shortcutBindings = normalizeShortcutBindings(
+    source.shortcuts?.bindings ?? []
+  );
   const presentationTransform = Object.freeze({
     size: boundedNumber(transform.size, 0.2, 4, 0.8, "presentation.transform.size"),
     showX: transform.showX !== false,
@@ -82,6 +89,17 @@ export function normalizeUiConfiguration(source = {}) {
         "panels.storageKey"
       ),
       items: Object.freeze(panelItems)
+    }),
+    shortcuts: Object.freeze({
+      profile: requiredText(
+        source.shortcuts?.profile ?? "spatialseed",
+        "shortcuts.profile"
+      ),
+      storageKey: requiredText(
+        source.shortcuts?.storageKey ?? "spatialseed.ui.shortcuts.v1",
+        "shortcuts.storageKey"
+      ),
+      bindings: Object.freeze(shortcutBindings)
     }),
     presentation: Object.freeze({
       transform: presentationTransform,
