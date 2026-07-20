@@ -1246,6 +1246,12 @@ class TransformControlsGizmo extends Object3D {
 		const matWhiteTransparent = gizmoMaterial.clone();
 		matWhiteTransparent.opacity = 0.25;
 
+		// SpatialSeed: o manipulador XYZ de escala precisa ser reconhecível
+		// e tocável em telas pequenas, sem alterar a semântica upstream.
+		const matUniformScale = gizmoMaterial.clone();
+		matUniformScale.color.setHex( 0xffffff );
+		matUniformScale.opacity = 0.85;
+
 		const matYellowTransparent = gizmoMaterial.clone();
 		matYellowTransparent.color.setHex( 0xffff00 );
 		matYellowTransparent.opacity = 0.25;
@@ -1452,7 +1458,7 @@ class TransformControlsGizmo extends Object3D {
 				[ new Mesh( new BoxGeometry( 0.15, 0.15, 0.01 ), matGreenTransparent ), [ 0.15, 0, 0.15 ], [ - Math.PI / 2, 0, 0 ]]
 			],
 			XYZ: [
-				[ new Mesh( new BoxGeometry( 0.1, 0.1, 0.1 ), matWhiteTransparent ) ],
+				[ new Mesh( new BoxGeometry( 0.18, 0.18, 0.18 ), matUniformScale ) ],
 			]
 		};
 
@@ -1479,7 +1485,7 @@ class TransformControlsGizmo extends Object3D {
 				[ new Mesh( new BoxGeometry( 0.2, 0.2, 0.01 ), matInvisible ), [ 0.15, 0, 0.15 ], [ - Math.PI / 2, 0, 0 ]],
 			],
 			XYZ: [
-				[ new Mesh( new BoxGeometry( 0.2, 0.2, 0.2 ), matInvisible ), [ 0, 0, 0 ]],
+				[ new Mesh( new BoxGeometry( 0.3, 0.3, 0.3 ), matInvisible ), [ 0, 0, 0 ]],
 			]
 		};
 

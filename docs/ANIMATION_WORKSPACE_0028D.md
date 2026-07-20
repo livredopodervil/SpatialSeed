@@ -19,6 +19,12 @@ Essa disposição é somente a configuração padrão em
 `FloatingPanelManager` continuam sendo as superfícies de composição; nenhuma
 regra editorial foi movida para HTML ou handlers de botão.
 
+No refinamento 0028e, a escala uniforme já fornecida pelo eixo composto `XYZ`
+do `TransformControls` ganhou um cubo central branco maior, opacidade adequada
+e área de toque ampliada. A alteração é estritamente de affordance: arrastar o
+cubo continua produzindo a mesma escala proporcional nos três eixos, através
+da mesma sessão transacional usada pelas alças X, Y e Z.
+
 ## Inspetor coletivo
 
 O inspetor oferece dois escopos explícitos:

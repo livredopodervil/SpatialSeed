@@ -44,7 +44,10 @@
   <button id="tool-select" data-tool-mode="select" title="Selecionar">⌖</button>
   <button id="tool-translate" data-tool-mode="translate" title="Mover">↔</button>
   <button id="tool-rotate" data-tool-mode="rotate" title="Girar">↻</button>
-  <button id="tool-scale" data-tool-mode="scale" title="Escalar">⤢</button>
+  <button id="tool-scale" data-tool-mode="scale"
+    title="Escalar; arraste o cubo branco central para escala uniforme XYZ">
+    ⤢
+  </button>
   <span class="toolbar-divider"></span>
   <button id="selection-replace" data-selection-op="replace" title="Substituir seleção">●</button>
   <button id="selection-add" data-selection-op="add" title="Incluir na seleção">＋</button>
@@ -246,6 +249,9 @@
       <label>Translação <input id="tt-translate-snap" type="number" min="0" step="0.1"></label>
       <label>Rotação ° <input id="tt-rotate-snap" type="number" min="0" step="1"></label>
       <label>Escala <input id="tt-scale-snap" type="number" min="0" step="0.05"></label>
+      <p class="tt-uniform-scale-hint">
+        Escala uniforme XYZ: arraste o cubo branco no centro do gizmo.
+      </p>
       <label><input id="tt-grid-lock" type="checkbox"> Bloquear posição na grade</label>
     </fieldset>
 
