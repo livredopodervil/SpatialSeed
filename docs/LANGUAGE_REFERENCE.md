@@ -1,7 +1,7 @@
 # Referência da linguagem e do console SpatialSeed
 
-> Referência normativa P0. Auditada em 19 de julho de 2026 contra o runtime
-> `0028b`. Consulte `help`, `help create`, `help animate`, `procedure help` e
+> Referência normativa P0. Auditada em 20 de julho de 2026 contra o runtime
+> `0028d`. Consulte `help`, `help create`, `help animate`, `procedure help` e
 > `runtime test help` para confirmar as capabilities do build carregado.
 
 ## 1. Três linguagens, uma fronteira editorial
@@ -198,6 +198,7 @@ create cylinder top 0 bottom 1.5 height 4 segments 32 origin 3 2 0
 property list
 property inspect [id]
 property set id valor [...]
+property batch id "expressão" [scope=selection|renderables]
 property unset id
 ```
 
@@ -232,6 +233,23 @@ property unset instance.color
 
 Em seleção múltipla, `property inspect` distingue valor uniforme, misto e
 propriedade não suportada. Uma edição em lote é atômica.
+
+`property batch` compila a expressão uma vez e calcula um valor para cada
+alvo. `scope=selection` preserva os nós selecionados; `scope=renderables` abre
+grupos aninhados e alcança somente seus objetos visíveis. Vetores separam
+componentes por `;`. Cores aceitam hexadecimal, `hsl(h,s,l)`, `rgb(r,g,b)` e
+`mix(#cor-a,#cor-b,u)`. As variáveis disponíveis são `i`, `u`, `count`,
+`x`, `y`, `z`, `sx`, `sy` e `sz`.
+
+```text
+property batch instance.color "hsl(300*u,0.8,0.55)" scope=renderables
+property batch transform.position "x; y + 2*sin(tau*u); z"
+property batch transform.scale "1; 0.5 + u; 1"
+```
+
+A validação e todos os cálculos precedem a mutação. Se qualquer alvo ou valor
+falhar, a cena e o histórico permanecem intactos. Para cores numerosas, prefira
+`instance.color`, que preserva um lote de renderização compartilhado.
 
 ## 6. Linguagem afim
 
@@ -533,10 +551,12 @@ plan commit
 ## 11. Animação temporal efêmera
 
 ```text
-animate spin|orbit|float|pulse|wave [parâmetro=valor ...]
+animate spin|orbit|float|pulse|wave|rainbow [parâmetro=valor ...]
+  [mode=selection|objects]
 animate move expressão-x expressão-y expressão-z
 animate rotate expressão-x expressão-y expressão-z
 animate scale expressão-x expressão-y expressão-z
+animate color "hsl(...)|rgb(...)|mix(...)" [mode=selection|objects]
 animate matrix m00 ... m15
 animate pause
 animate resume
@@ -546,10 +566,13 @@ animate list
 animate help
 ```
 
-O comando captura a seleção atual. Cada raiz selecionada é uma unidade; grupos
-mantêm sua estrutura rígida. Rotação e escala usam o pivô mundial próprio de
-cada unidade. Uma alteração editorial da cena interrompe a animação e restaura
-a projeção canônica.
+O comando captura a seleção atual. `mode=selection` trata cada raiz como uma
+unidade e mantém grupos rígidos. `mode=objects` abre grupos e dá a cada objeto
+renderizável uma unidade e um pivô próprios. O painel **Animação** também
+permite guardar várias faixas temporárias: seleciona-se um conjunto, escolhe-se
+um preset, adiciona-se a faixa e repete-se para os demais objetos. Todas as
+faixas são avaliadas numa única sobreposição. Uma alteração editorial da cena
+interrompe a animação e restaura a projeção canônica.
 
 As expressões usam o mesmo AST seguro da linguagem afim e são compiladas uma
 vez. Além das constantes e funções da seção 6, recebem:
@@ -567,13 +590,17 @@ Exemplos:
 ```text
 animate spin speed=45 axis=y
 animate orbit radius=4 speed=30 axis=y
-animate wave amplitude=1 frequency=0.5 phase=0.35
+animate wave amplitude=1 frequency=0.5 phase=0.35 mode=objects
+animate rainbow speed=60 saturation=0.8 mode=objects
+animate color "hsl(60*t + 360*u,0.8,0.55)" mode=objects
 animate move "2 * sin(t)" 0 0
 animate rotate 0 "90 * t + 20 * sin(tau * t)" 0
 ```
 
-O overlay não cria comandos editoriais, não ocupa histórico e não é salvo no
-arquivo `.spatialseed`. `animate stop` restaura exatamente a cena persistente.
+Transformações e cor por instância usam a mesma vida útil efêmera. O overlay
+não cria comandos editoriais, não ocupa histórico e não é salvo no arquivo
+`.spatialseed`. `animate stop` restaura exatamente matrizes e cores da cena
+persistente.
 
 ## 12. Limites e erros
 
@@ -600,6 +627,7 @@ test all
 runtime test help
 runtime test animation-runtime
 runtime test animation-commands
+runtime test animation-tracks
 runtime test all
 runtime benchmark api [iterações]
 benchmark help
@@ -635,6 +663,8 @@ usados somente quando não dependem de DOM, rede, importação ou assincronismo.
 - `packages/animation-runtime/src/AnimationCommandService.js`
 - `packages/animation-runtime/src/AnimationProgram.js`
 - `packages/animation-runtime/src/AnimationPresetCatalog.js`
+- `packages/animation-runtime/src/AnimationTrackProgram.js`
+- `packages/animation-panel/src/AnimationPanel.js`
 - `packages/selection-operations/src/AffineProgram.js`
 - `packages/selection-operations/src/AffineAst.js`
 - `packages/script-runtime/src/ProgramWorkerKernel.js`
@@ -642,3 +672,5 @@ usados somente quando não dependem de DOM, rede, importação ou assincronismo.
 - `packages/script-runtime/src/SpatialPlanningFacade.js`
 - `packages/script-runtime/src/ProcedureCatalog.js`
 - `packages/property-registry/src/createDefaultPropertyRegistry.js`
+- `packages/property-registry/src/PropertyBatchProgram.js`
+- `packages/property-registry/src/SelectionTargetResolver.js`

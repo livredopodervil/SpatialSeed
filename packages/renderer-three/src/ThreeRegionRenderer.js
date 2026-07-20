@@ -28,7 +28,7 @@ import {
 import {
   composeAnimationOverlay,
   createAnimationTargetSnapshot
-} from "./AnimationTransformOverlay.js?build=20260719-0028a";
+} from "./AnimationTransformOverlay.js?build=20260720-0028d";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-selection-pivot-v2";
@@ -59,6 +59,7 @@ export class ThreeRegionRenderer {
     frames: 0,
     restores: 0,
     matrixWrites: 0,
+    colorWrites: 0,
     lastFrameMs: 0,
     maximumFrameMs: 0
   };
@@ -371,7 +372,9 @@ export class ThreeRegionRenderer {
     return () => this.#frameListeners.delete(listener);
   }
 
-  captureAnimationTargets(targetIds = []) {
+  captureAnimationTargets(targetIds = [], {
+    targetMode = "selection"
+  } = {}) {
     if (this.#animationTargetIds.size) {
       throw new Error("Já existe uma sobreposição de animação ativa.");
     }
@@ -379,10 +382,17 @@ export class ThreeRegionRenderer {
       targetIds.map(value => String(value)).filter(id => this.#hierarchy.has(id))
     )];
     const roots = this.#hierarchy.canonicalizeSelection(requested);
+    if (!["selection", "objects"].includes(targetMode)) {
+      throw new RangeError(`Modo de alvos de animação desconhecido: ${targetMode}.`);
+    }
     const units = [];
 
-    for (const unitId of roots) {
-      const objects = renderableSubtreeIds(this.#hierarchy, unitId)
+    for (const sourceId of roots) {
+      const objectIds = renderableSubtreeIds(this.#hierarchy, sourceId);
+      const unitIds = targetMode === "objects" ? objectIds : [sourceId];
+      for (const unitId of unitIds) {
+        const members = targetMode === "objects" ? [unitId] : objectIds;
+        const objects = members
         .map(objectId => {
           const proxy = this.#meshes.get(objectId);
           if (!proxy || proxy.userData.logicalOnly) return null;
@@ -395,12 +405,14 @@ export class ThreeRegionRenderer {
           };
         })
         .filter(Boolean);
-      if (!objects.length) continue;
-      units.push({
-        unitId,
-        pivot: this.#hierarchy.worldPivotOf(unitId),
-        objects
-      });
+        if (!objects.length) continue;
+        units.push({
+          unitId,
+          sourceId,
+          pivot: this.#hierarchy.worldPivotOf(unitId),
+          objects
+        });
+      }
     }
 
     const snapshot = createAnimationTargetSnapshot(units);
@@ -428,6 +440,7 @@ export class ThreeRegionRenderer {
     const startedAt = performance.now();
     const overlay = composeAnimationOverlay(targets, unitFrames);
     let matrixWrites = 0;
+    let colorWrites = 0;
 
     for (const transform of overlay.transforms) {
       if (!this.#animationTargetIds.has(transform.objectId)) {
@@ -443,6 +456,15 @@ export class ThreeRegionRenderer {
       }
     }
 
+    for (const entry of overlay.colors) {
+      if (!this.#animationTargetIds.has(entry.objectId)) {
+        throw new Error(`Cor fora da sobreposição ativa: ${entry.objectId}.`);
+      }
+      if (this.#setInstanceColor(entry.objectId, entry.color)) {
+        colorWrites += 1;
+      }
+    }
+
     this.#animationPivotOverrides = new Map(
       overlay.pivots.map(entry => [entry.unitId, [...entry.position]])
     );
@@ -454,12 +476,17 @@ export class ThreeRegionRenderer {
     const diagnostics = this.#animationSurfaceDiagnostics;
     diagnostics.frames += 1;
     diagnostics.matrixWrites += matrixWrites;
+    diagnostics.colorWrites += colorWrites;
     diagnostics.lastFrameMs = elapsed;
     diagnostics.maximumFrameMs = Math.max(
       diagnostics.maximumFrameMs,
       elapsed
     );
-    return Object.freeze({ matrixWrites, unitCount: overlay.pivots.length });
+    return Object.freeze({
+      matrixWrites,
+      colorWrites,
+      unitCount: overlay.pivots.length
+    });
   }
 
   restoreAnimationTargets(targets) {
@@ -478,6 +505,7 @@ export class ThreeRegionRenderer {
         if (!proxy || !canonical || proxy.userData.logicalOnly) continue;
         applyProjectedWorldMatrix(proxy, canonical);
         if (this.#updateBatchMatrix(objectId, proxy)) matrixWrites += 1;
+        this.#applyObjectInstanceColor(objectId);
       }
     } catch (error) {
       restoreError = error;

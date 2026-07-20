@@ -152,7 +152,8 @@ export function bindWebInterface({
     "#inspector-panel",
     "#transform-tools-panel",
     "#geometry-create-panel",
-    "#experiment-panel"
+    "#experiment-panel",
+    "#animation-panel"
   ]) {
     panelManager.register(selector, {
       defaultLayout: uiConfiguration?.panels?.items?.[
@@ -292,7 +293,13 @@ export function bindWebInterface({
   }
   uiActions
     .register("scene.toggle", () => setSceneOnly(!sceneOnly))
-    .register("viewport.fullscreen", () => toggleViewportFullscreen());
+    .register("viewport.fullscreen", () => toggleViewportFullscreen())
+    .register("panel.animation.toggle", () => {
+      const panel = $("animation-panel");
+      return panel.hidden
+        ? panelManager.show(panel)
+        : panelManager.hide(panel);
+    });
 
   function appendConsole(entry) {
     const line = {
@@ -726,6 +733,12 @@ export function bindWebInterface({
   $("close-experiment-panel").addEventListener(
     "click",
     () => panelManager.hide("#experiment-panel")
+  );
+
+  uiActions.bindControl($("animation"), "panel.animation.toggle");
+  $("close-animation-panel").addEventListener(
+    "click",
+    () => panelManager.hide("#animation-panel")
   );
 
   $("inspector").addEventListener("click", () => {

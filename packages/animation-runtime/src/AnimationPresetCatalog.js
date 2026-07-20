@@ -26,6 +26,11 @@ const DEFINITIONS = Object.freeze([
     numberParameter("amplitude", "Amplitude", 1, 0, 100),
     numberParameter("frequency", "Frequência (Hz)", 0.5, 0.01, 20),
     numberParameter("phase", "Fase por item (rad)", 0.35, -100, 100)
+  ]),
+  preset("rainbow", "Arco-íris", "Cor temporal defasada por objeto.", [
+    numberParameter("speed", "Velocidade (graus/s)", 45, -720, 720),
+    numberParameter("saturation", "Saturação", 0.8, 0, 1),
+    numberParameter("lightness", "Luminosidade", 0.55, 0, 1)
   ])
 ]);
 
@@ -83,6 +88,15 @@ function buildOperations(id, parameters) {
     const factor = `1 + ${numberSource(parameters.amplitude)} * ` +
       `sin(tau * ${numberSource(parameters.frequency)} * t)`;
     return [{ type: "scale", value: [factor, factor, factor] }];
+  }
+
+  if (id === "rainbow") {
+    return [{
+      type: "color",
+      value: `hsl(${numberSource(parameters.speed)} * t + 360 * u, ` +
+        `${numberSource(parameters.saturation)}, ` +
+        `${numberSource(parameters.lightness)})`
+    }];
   }
 
   const phase = `${numberSource(parameters.phase)} * (i - 1)`;

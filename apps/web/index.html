@@ -85,6 +85,9 @@
   <button id="experiment-lab" title="Explorar construções paramétricas">
     ∿ Experimentos
   </button>
+  <button id="animation" title="Abrir espaço de trabalho de animação">
+    ▶ Animar
+  </button>
   <select id="toolbar-layout" aria-label="Disposição da barra">
     <option value="horizontal">Barra horizontal</option>
     <option value="vertical">Barra vertical</option>
@@ -186,12 +189,39 @@
   <div id="inspector-empty">Selecione um ou mais objetos.</div>
   <form id="inspector-form" hidden onsubmit="return false">
     <div id="inspector-summary"></div>
+    <label class="ins-target-scope">
+      <span>Aplicar em</span>
+      <select id="inspector-target-scope">
+        <option value="renderables" selected>
+          Objetos visíveis; abrir grupos
+        </option>
+        <option value="selection">Nós diretamente selecionados</option>
+      </select>
+    </label>
     <div id="inspector-properties"></div>
     <div class="actions">
       <button id="inspector-apply" type="button">
         Aplicar propriedades
       </button>
     </div>
+    <details class="ins-procedural" open>
+      <summary>Aplicação procedural em lote</summary>
+      <label>
+        <span>Propriedade</span>
+        <select id="inspector-procedural-property"></select>
+      </label>
+      <label>
+        <span>Expressão</span>
+        <input id="inspector-procedural-expression" type="text"
+          spellcheck="false" autocomplete="off">
+      </label>
+      <small id="inspector-procedural-help"></small>
+      <div class="actions">
+        <button id="inspector-procedural-apply" type="button">
+          Aplicar expressão
+        </button>
+      </div>
+    </details>
   </form>
 </section>
 <section id="transform-tools-panel" hidden>
@@ -349,6 +379,53 @@
       <summary>Ver programa do experimento</summary>
       <pre data-experiment-source></pre>
     </details>
+  </div>
+</section>
+
+<section id="animation-panel" hidden>
+  <header>
+    <strong>Animação</strong>
+    <button id="close-animation-panel" type="button">×</button>
+  </header>
+  <div class="ss-animation-content">
+    <label>
+      <span>Movimento</span>
+      <select data-animation-preset></select>
+    </label>
+    <label>
+      <span>Unidades</span>
+      <select data-animation-target-mode>
+        <option value="objects" selected>Cada objeto; abrir grupos</option>
+        <option value="selection">Seleção; grupos rígidos</option>
+      </select>
+    </label>
+    <fieldset>
+      <legend>Parâmetros</legend>
+      <div data-animation-parameters></div>
+    </fieldset>
+    <div class="actions">
+      <button type="button" data-animation-play-selection>
+        ▶ Animar seleção
+      </button>
+      <button type="button" data-animation-pause>Pausar</button>
+      <button type="button" data-animation-resume>Continuar</button>
+      <button type="button" data-animation-stop>Parar</button>
+    </div>
+    <fieldset>
+      <legend>Animações diferentes</legend>
+      <p>Escolha um movimento, selecione seus objetos e adicione uma faixa.</p>
+      <div class="actions">
+        <button type="button" data-animation-add-track>
+          Adicionar faixa para a seleção
+        </button>
+        <button type="button" data-animation-clear-tracks>Limpar faixas</button>
+      </div>
+      <div data-animation-tracks></div>
+      <button type="button" data-animation-play-tracks>
+        ▶ Reproduzir faixas
+      </button>
+    </fieldset>
+    <pre data-animation-status></pre>
   </div>
 </section>
 

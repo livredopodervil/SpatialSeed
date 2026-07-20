@@ -3,7 +3,7 @@ import {
   normalizeHexColor,
   parsePropertyInput,
   propertyComponentCount
-} from "../../property-registry/src/index.js?build=20260716-0024d";
+} from "../../property-registry/src/index.js?build=20260720-0028d";
 
 const GROUP_LABELS = Object.freeze({
   object: "Identificação",
@@ -36,6 +36,8 @@ export class ObjectInspector {
     this.dirty = new Set();
     this.unset = new Set();
     this.pendingFiles = new Map();
+    this.targetScope = root.querySelector("#inspector-target-scope")?.value ??
+      "selection";
     this.selectionKey = "";
     this.applying = false;
     this.active = false;
@@ -65,6 +67,7 @@ export class ObjectInspector {
 
     this.description = this.query("properties.describe");
     this.#buildPropertyFields();
+    this.#buildProceduralEditor();
     this.#bind();
 
     this.unsubscribeSelection = editor.selection.subscribe(() =>
@@ -93,7 +96,9 @@ export class ObjectInspector {
       return { refreshed: false, reason: "applying" };
     }
 
-    const inspection = this.query("selection.properties.inspect");
+    const inspection = this.query("selection.properties.inspect", {
+      targetScope: this.targetScope
+    });
     this.pendingRefresh = false;
     this.refreshStatistics.refreshes += 1;
     const empty = this.root.querySelector("#inspector-empty");
@@ -117,7 +122,7 @@ export class ObjectInspector {
     form.hidden = false;
     summary.textContent = inspection.count === 1
       ? `1 objeto selecionado · ${inspection.targetIds[0]}`
-      : `${inspection.count} objetos selecionados`;
+      : `${inspection.count} objetos no escopo`;
 
     for (const descriptor of this.description.properties) {
       const control = this.controls.get(descriptor.id);
@@ -217,10 +222,36 @@ export class ObjectInspector {
     try {
       const result = this.execute(
         "selection.properties.set",
-        { patch }
+        { patch, targetScope: this.targetScope }
       );
       this.#clearPending();
       return result;
+    } finally {
+      this.applying = false;
+      this.refresh();
+    }
+  }
+
+  applyProcedural() {
+    const property = this.root.querySelector(
+      "#inspector-procedural-property"
+    );
+    const expression = this.root.querySelector(
+      "#inspector-procedural-expression"
+    );
+    const source = expression.value.trim();
+    if (!source) {
+      const error = new Error("Informe uma expressão procedural.");
+      this.#showValidation(error, { inputs: [expression] });
+      throw error;
+    }
+    this.applying = true;
+    try {
+      return this.execute("selection.properties.applyExpression", {
+        propertyId: property.value,
+        expression: source,
+        targetScope: this.targetScope
+      });
     } finally {
       this.applying = false;
       this.refresh();
@@ -253,6 +284,35 @@ export class ObjectInspector {
         group.append(this.#createTextureFileControl(control));
       }
     }
+  }
+
+  #buildProceduralEditor() {
+    const property = this.root.querySelector(
+      "#inspector-procedural-property"
+    );
+    const expression = this.root.querySelector(
+      "#inspector-procedural-expression"
+    );
+    const help = this.root.querySelector("#inspector-procedural-help");
+    if (!property || !expression || !help) return;
+
+    const descriptors = this.description.properties.filter(item =>
+      item.writable && item.procedural
+    );
+    property.replaceChildren(...descriptors.map(descriptor =>
+      option(this.document, descriptor.id, descriptor.label)
+    ));
+    if (descriptors.some(item => item.id === "instance.color")) {
+      property.value = "instance.color";
+    }
+    const refreshHint = () => {
+      const descriptor = descriptors.find(item => item.id === property.value);
+      const hint = proceduralHint(descriptor);
+      expression.placeholder = hint.example;
+      help.textContent = hint.help;
+    };
+    property.addEventListener("change", refreshHint);
+    refreshHint();
   }
 
   #createControl(descriptor) {
@@ -486,6 +546,14 @@ export class ObjectInspector {
 
   #bind() {
     this.root
+      .querySelector("#inspector-target-scope")
+      ?.addEventListener("change", event => {
+        this.targetScope = event.target.value;
+        this.selectionKey = "";
+        this.#clearPending();
+        this.refresh();
+      });
+    this.root
       .querySelector("#inspector-apply")
       .addEventListener("click", () => {
         try {
@@ -494,6 +562,15 @@ export class ObjectInspector {
           if (!error?.fieldShown) {
             this.#showValidation(error);
           }
+        }
+      });
+    this.root
+      .querySelector("#inspector-procedural-apply")
+      ?.addEventListener("click", () => {
+        try {
+          this.applyProcedural();
+        } catch (error) {
+          if (!error?.fieldShown) this.#showValidation(error);
         }
       });
   }
@@ -555,4 +632,31 @@ function embeddedTextureLabel(source) {
     ? `${(kibibytes / 1024).toFixed(1)} MiB`
     : `${Math.max(1, Math.round(kibibytes))} KiB`;
   return `imagem incorporada · ${size}`;
+}
+
+function proceduralHint(descriptor) {
+  if (descriptor?.valueType === "color") {
+    return {
+      example: "hsl(360*u, 0.75, 0.55)",
+      help: descriptor.id === "appearance.color"
+        ? "Cores: hsl, rgb ou mix. Em lotes grandes, prefira Cor da instância."
+        : "Cores: hsl(h,s,l), rgb(r,g,b), mix(#cor,#cor,u)."
+    };
+  }
+  if (descriptor?.valueType === "vector3") {
+    return {
+      example: "x + 2*u; y; z",
+      help: "Separe componentes por ;. Use i, u, count, x, y, z, sx, sy, sz."
+    };
+  }
+  if (descriptor?.valueType === "vector2") {
+    return {
+      example: "1 + u; 1",
+      help: "Separe os dois componentes por ;."
+    };
+  }
+  return {
+    example: "0.25 + 0.75*u",
+    help: "Use i, u, count e as funções matemáticas seguras."
+  };
 }

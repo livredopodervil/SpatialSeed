@@ -83,6 +83,7 @@ button:disabled{opacity:.35}
 #inspector-panel>header{position:sticky;top:0;display:flex;gap:.5rem;padding:.65rem;background:#08101af7}#inspector-panel>header strong{flex:1}
 #inspector-empty,#inspector-form{padding:.7rem}#inspector-summary{margin:0 0 .75rem;color:#b9c8dc;font-size:.88rem}#inspector-form fieldset{margin:0 0 .7rem;border:1px solid #ffffff18;border-radius:10px}
 .ins-property{margin:.55rem 0}.ins-property>label{display:grid;grid-template-columns:8.5rem minmax(0,1fr);gap:.5rem;align-items:center}.ins-property-editor{min-width:0}.ins-property input,.ins-property select{width:100%;min-width:0;padding:.42rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff}.ins-property-vector{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.35rem}.ins-property-vector[data-components="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}.ins-color-editor{display:grid;grid-template-columns:minmax(0,1fr) 3.2rem;gap:.35rem}.ins-color-editor input[type=color]{padding:.2rem}.ins-property-footer{display:flex;justify-content:flex-end;align-items:center;gap:.4rem;margin:.25rem 0 0 9rem;min-height:1.3rem}.ins-property-status{flex:1;color:#91a4bc}.ins-property-footer button{padding:.22rem .45rem}.ins-property.is-dirty{border-left:2px solid #5b8bd9;padding-left:.4rem}.ins-property[data-status=mixed] .ins-property-status{color:#e7bf75}.ins-file-property{display:grid;grid-template-columns:8.5rem minmax(0,1fr);gap:.5rem;align-items:center}
+.ins-target-scope{display:grid;grid-template-columns:8.5rem minmax(0,1fr);gap:.5rem;align-items:center;margin:0 0 .75rem}.ins-target-scope select,.ins-procedural input,.ins-procedural select{width:100%;min-width:0;padding:.42rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff}.ins-procedural{margin-top:.8rem;border:1px solid #5b8bd955;border-radius:10px;padding:.55rem}.ins-procedural>summary{cursor:pointer;color:#a9c8ff}.ins-procedural>label{display:grid;grid-template-columns:8.5rem minmax(0,1fr);gap:.5rem;align-items:center;margin:.55rem 0}.ins-procedural>small{display:block;color:#91a4bc;margin:.35rem 0}
 @media(max-width:700px){#inspector-panel{top:auto;bottom:.55rem;max-height:72vh}}
 
 
@@ -225,6 +226,7 @@ body.ss-scene-only #procedure-editor-panel,
 body.ss-scene-only #inspector-panel,
 body.ss-scene-only #transform-tools-panel,
 body.ss-scene-only #experiment-panel,
+body.ss-scene-only #animation-panel,
 body.ss-scene-only #selection-marquee,
 body.ss-scene-only #error-box{
   display:none!important;
@@ -713,6 +715,11 @@ html[data-toolbar-layout="vertical"] #selection-panel{
   left:var(--ss-toolbar-left-clearance,.55rem);
   width:min(350px,calc(100vw - var(--ss-toolbar-left-clearance,.55rem) - .55rem));
 }
+
+#animation-panel{position:fixed;z-index:28;top:var(--ss-toolbar-clearance,4rem);left:var(--ss-toolbar-left-clearance,.55rem);width:min(470px,calc(100vw - 1.1rem));max-height:calc(100dvh - var(--ss-toolbar-clearance,4rem) - .55rem);overflow:auto;border:1px solid #6aa7ff55;border-radius:14px;background:#08101af7}
+#animation-panel>header{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:.5rem;padding:.65rem;border-bottom:1px solid #ffffff18;background:#08101af7}
+#animation-panel>header strong{flex:1}.ss-animation-content{padding:.7rem}.ss-animation-content>label,.ss-animation-content [data-animation-parameters]>label{display:grid;grid-template-columns:8.5rem minmax(0,1fr);gap:.5rem;align-items:center;margin:.55rem 0}.ss-animation-content select,.ss-animation-content input{width:100%;min-width:0;padding:.42rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff}.ss-animation-content fieldset{margin:.7rem 0;border:1px solid #ffffff18;border-radius:10px}.ss-animation-content fieldset p{color:#9fb0c6;font-size:.8rem}.ss-animation-track{display:flex;align-items:center;gap:.4rem;padding:.35rem;border-bottom:1px solid #ffffff12}.ss-animation-track span{flex:1}.ss-animation-content [data-animation-status]{white-space:pre-wrap;font-size:.72rem;max-height:12rem;overflow:auto;padding:.55rem;border-radius:9px;background:#02060c}.ss-animation-content [data-animation-status][data-error="true"]{color:#ff9d9d}#animation-panel[data-state="playing"]>header{box-shadow:inset 3px 0 #52d68a}#animation-panel[data-state="paused"]>header{box-shadow:inset 3px 0 #efc36b}
+@media(max-width:700px){#animation-panel{top:auto;bottom:.55rem;max-height:72vh}.ss-animation-content>label,.ss-animation-content [data-animation-parameters]>label{grid-template-columns:7rem minmax(0,1fr)}}
 #scene-help-dialog{
   width:min(26rem,calc(100vw - 2rem));
   padding:0;

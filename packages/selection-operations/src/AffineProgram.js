@@ -1,4 +1,3 @@
-import * as THREE from "three";
 import {
   AFFINE_AST_VERSION,
   AFFINE_LANGUAGE_ID,
@@ -161,6 +160,18 @@ export function evaluateAffineExpression(
   context = {},
   { backend = NativeAffineMathBackend } = {}
 ) {
+  return evaluateCompiledAffineExpression(
+    compileValue(expression),
+    context,
+    { backend }
+  );
+}
+
+export function evaluateCompiledAffineExpression(
+  compiled,
+  context = {},
+  { backend = NativeAffineMathBackend } = {}
+) {
   validateBackend(backend);
 
   const evaluationContext = createAffineEvaluationContext({
@@ -186,7 +197,7 @@ export function evaluateAffineExpression(
 
   return backend.toNumber(
     evaluateCompiled(
-      compileValue(expression),
+      compiled,
       evaluationContext,
       backend
     )
@@ -763,15 +774,9 @@ const NATIVE_FUNCTIONS = Object.freeze({
   sin: Math.sin,
   cos: Math.cos,
   tan: Math.tan,
-  sind: value => Math.sin(
-    THREE.MathUtils.degToRad(value)
-  ),
-  cosd: value => Math.cos(
-    THREE.MathUtils.degToRad(value)
-  ),
-  tand: value => Math.tan(
-    THREE.MathUtils.degToRad(value)
-  ),
+  sind: value => Math.sin(value * Math.PI / 180),
+  cosd: value => Math.cos(value * Math.PI / 180),
+  tand: value => Math.tan(value * Math.PI / 180),
   asin: Math.asin,
   acos: Math.acos,
   atan: Math.atan,

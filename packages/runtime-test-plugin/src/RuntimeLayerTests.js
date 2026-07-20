@@ -54,13 +54,15 @@ import {
   AnimationCommandService,
   AnimationRuntime,
   compileAnimationProgram,
+  compileAnimationTrackProgram,
   createAnimationEvaluator,
+  createAnimationTrackEvaluator,
   resolveAnimationPreset
-} from "../../animation-runtime/src/index.js?build=20260719-0028b";
+} from "../../animation-runtime/src/index.js?build=20260720-0028d";
 import {
   composeAnimationOverlay,
   createAnimationTargetSnapshot
-} from "../../renderer-three/src/AnimationTransformOverlay.js?build=20260719-0028a";
+} from "../../renderer-three/src/AnimationTransformOverlay.js?build=20260720-0028d";
 import {
   compileAffineExpression,
   compileAffineProgram,
@@ -96,14 +98,15 @@ import {
   normalizeHexColor,
   parsePropertyInput,
   createDefaultPropertyRegistry,
+  resolveSelectionTargetIds,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260716-0024d";
+} from "../../property-registry/src/index.js?build=20260720-0028d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260719-0028b";
+} from "../../devtools/src/DevConsole.js?build=20260720-0028d";
 import {
   ObjectInspector
-} from "../../object-inspector/src/ObjectInspector.js?build=20260718-0027h";
+} from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -1968,6 +1971,41 @@ export function createRuntimeLayerTests() {
         );
       },
 
+      "cor temporal é calculada por unidade sem mutar a cena"() {
+        const preset = resolveAnimationPreset("rainbow", {
+          speed: 0,
+          saturation: 1,
+          lightness: 0.5
+        });
+        const evaluate = createAnimationEvaluator(
+          compileAnimationProgram(preset.operations)
+        );
+        const targets = createAnimationTargetSnapshot([
+          {
+            unitId: "a",
+            pivot: [0, 0, 0],
+            objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+          },
+          {
+            unitId: "b",
+            pivot: [0, 0, 0],
+            objects: [{ objectId: "b", baseMatrix: identityMatrix() }]
+          }
+        ]);
+
+        const frame = evaluate({ t: 2, dt: 1 / 60, targets });
+        const overlay = composeAnimationOverlay(targets, frame);
+
+        assertDeepEqual(frame.map(entry => entry.color), ["#ff0000", "#ff0000"]);
+        assertDeepEqual(
+          overlay.colors,
+          [
+            { objectId: "a", color: "#ff0000" },
+            { objectId: "b", color: "#ff0000" }
+          ]
+        );
+      },
+
       "serviço captura a seleção e controla o ciclo de vida"() {
         const fixture = createAnimationFixture();
         const runtime = new AnimationRuntime({
@@ -2034,6 +2072,9 @@ export function createRuntimeLayerTests() {
 
         console.execute('animate rotate 0 "45 * sin(t)" 0');
         console.execute("animate spin speed=90 axis=z");
+        console.execute(
+          'animate color "hsl(60*t + 360*u,0.8,0.55)" mode=objects'
+        );
         console.execute("animate pause\nanimate resume\nanimate stop");
 
         assertDeepEqual(calls, [
@@ -2049,7 +2090,22 @@ export function createRuntimeLayerTests() {
           },
           {
             id: "animation.preset",
-            args: { id: "spin", parameters: { speed: 90, axis: "z" } }
+            args: {
+              id: "spin",
+              parameters: { speed: 90, axis: "z" },
+              targetMode: "selection"
+            }
+          },
+          {
+            id: "animation.start",
+            args: {
+              id: "custom.color",
+              operations: [{
+                type: "color",
+                value: "hsl(60*t + 360*u,0.8,0.55)"
+              }],
+              targetMode: "objects"
+            }
           },
           { id: "animation.pause", args: undefined },
           { id: "animation.resume", args: undefined },
@@ -2065,6 +2121,132 @@ export function createRuntimeLayerTests() {
         assertThrowsMessage(
           () => resolveAnimationPreset("spin", { axis: "q" }),
           "axis deve ser x, y ou z."
+        );
+      }
+    },
+
+    "animation-tracks": {
+      "faixas aplicam programas distintos a objetos distintos"() {
+        const composition = compileAnimationTrackProgram([
+          {
+            id: "left",
+            targetIds: ["a"],
+            operations: [{ type: "move", value: ["2 * t", 0, 0] }]
+          },
+          {
+            id: "right",
+            targetIds: ["b"],
+            operations: [{ type: "move", value: [0, "4 * t", 0] }]
+          }
+        ]);
+        const evaluate = createAnimationTrackEvaluator(composition);
+        const targets = createAnimationTargetSnapshot([
+          {
+            unitId: "a",
+            sourceId: "a",
+            pivot: [0, 0, 0],
+            objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+          },
+          {
+            unitId: "b",
+            sourceId: "b",
+            pivot: [0, 0, 0],
+            objects: [{ objectId: "b", baseMatrix: identityMatrix() }]
+          }
+        ]);
+
+        const frame = evaluate({ t: 1, dt: 1 / 60, targets });
+
+        assertDeepEqual(
+          frame.map(entry => entry.matrix.slice(12, 15).map(roundAffine)),
+          [[2, 0, 0], [0, 4, 0]]
+        );
+      },
+
+      "faixa de grupo alcança cada descendente como unidade própria"() {
+        const composition = compileAnimationTrackProgram([{
+          id: "group-track",
+          targetIds: ["group-a"],
+          operations: [{ type: "move", value: ["i", 0, 0] }]
+        }]);
+        const evaluate = createAnimationTrackEvaluator(composition);
+        const targets = createAnimationTargetSnapshot([
+          {
+            unitId: "a",
+            sourceId: "group-a",
+            pivot: [0, 0, 0],
+            objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+          },
+          {
+            unitId: "b",
+            sourceId: "group-a",
+            pivot: [2, 0, 0],
+            objects: [{ objectId: "b", baseMatrix: identityMatrix() }]
+          }
+        ]);
+
+        const frame = evaluate({ t: 0, dt: 1 / 60, targets });
+
+        assertDeepEqual(
+          frame.map(entry => roundAffine(entry.matrix[12])),
+          [1, 2]
+        );
+      },
+
+      "composição inicia uma única sobreposição em modo por objeto"() {
+        const targets = createAnimationTargetSnapshot([
+          {
+            unitId: "a",
+            sourceId: "a",
+            pivot: [0, 0, 0],
+            objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+          },
+          {
+            unitId: "b",
+            sourceId: "b",
+            pivot: [0, 0, 0],
+            objects: [{ objectId: "b", baseMatrix: identityMatrix() }]
+          }
+        ]);
+        const fixture = createAnimationFixture({ targets });
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        const service = new AnimationCommandService({
+          runtime,
+          selection: () => ({ members: [] })
+        });
+
+        const status = service.compose({
+          tracks: [
+            { id: "a", targetIds: ["a"], presetId: "spin" },
+            { id: "b", targetIds: ["b"], presetId: "float" }
+          ]
+        });
+
+        assertEqual(status.state, "playing");
+        assertEqual(status.clip.targetMode, "objects");
+        assertEqual(status.composition.tracks.length, 2);
+        assertDeepEqual(fixture.captureOptions, [{ targetMode: "objects" }]);
+        runtime.dispose();
+      },
+
+      "sobreposição de alvos entre faixas é rejeitada"() {
+        assertThrowsMessage(
+          () => compileAnimationTrackProgram([
+            {
+              id: "a",
+              targetIds: ["box"],
+              operations: [{ type: "move", value: [0, 0, 0] }]
+            },
+            {
+              id: "b",
+              targetIds: ["box"],
+              operations: [{ type: "move", value: [0, 0, 0] }]
+            }
+          ]),
+          "Alvo box aparece em a e b."
         );
       }
     },
@@ -5252,7 +5434,73 @@ assets: {
         assertEqual(description.apiVersion, "property-registry-v1");
         assertEqual(color.valueType, "color");
         assertEqual(color.editableMany, true);
+        assertEqual(color.procedural, true);
         assertEqual("normalize" in color, false);
+      },
+
+      "escopo renderizável abre grupos aninhados sem editar nós lógicos"() {
+        const fixture = createPropertyFixture({ grouped: true });
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "outer"
+        });
+
+        assertDeepEqual(
+          resolveSelectionTargetIds({
+            selection: fixture.selection,
+            state: fixture.sandbox.getState(),
+            targetScope: "renderables"
+          }),
+          ["a", "b"]
+        );
+        const inspection = fixture.service.inspectSelection({
+          targetScope: "renderables"
+        });
+        assertEqual(inspection.count, 2);
+        assertDeepEqual(inspection.targetIds, ["a", "b"]);
+      },
+
+      "expressão procedural colore descendentes em um comando atômico"() {
+        const fixture = createPropertyFixture({ grouped: true });
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "outer"
+        });
+
+        const result = fixture.service.setSelectionProcedural({
+          propertyId: "instance.color",
+          expression: "hsl(240*u, 1, 0.5)",
+          targetScope: "renderables"
+        });
+        const byId = new Map(
+          fixture.sandbox.getState().objects.map(object => [object.id, object])
+        );
+
+        assertEqual(result.changed, true);
+        assertDeepEqual(result.targetIds, ["a", "b"]);
+        assertEqual(byId.get("a").instanceState.color, "#ff0000");
+        assertEqual(byId.get("b").instanceState.color, "#0000ff");
+        assertEqual("color" in (byId.get("outer").instanceState ?? {}), false);
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+      },
+
+      "erro procedural não altera cena nem histórico"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replaceMany([
+          { regionId: "region-properties", objectId: "a" },
+          { regionId: "region-properties", objectId: "b" }
+        ]);
+        const before = structuredClone(fixture.sandbox.getState());
+
+        assertThrowsMessage(
+          () => fixture.service.setSelectionProcedural({
+            propertyId: "transform.scale",
+            expression: "1; 1; 1 / 0"
+          }),
+          "Valor numérico inválido"
+        );
+        assertDeepEqual(fixture.sandbox.getState(), before);
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 0);
       },
 
       "codec de entrada interpreta tipos declarados"() {
@@ -5543,6 +5791,27 @@ assets: {
           fixture.sandbox.getHistoryDiagnostics().commandCount,
           1
         );
+      },
+
+      "console traduz lote procedural e escopo de grupo"() {
+        const fixture = createPropertyFixture({ grouped: true });
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "outer"
+        });
+        const console = createPropertyConsole(fixture);
+
+        const result = console.execute(
+          'property batch instance.color "mix(#ff0000,#0000ff,u)" ' +
+          "scope=renderables"
+        )[0];
+        const byId = new Map(
+          fixture.sandbox.getState().objects.map(object => [object.id, object])
+        );
+
+        assertEqual(result.ok, true);
+        assertEqual(byId.get("a").instanceState.color, "#ff0000");
+        assertEqual(byId.get("b").instanceState.color, "#0000ff");
       },
 
       "console valida aridade vetorial antes da mutação"() {
@@ -6950,12 +7219,12 @@ assets: {
   };
 }
 
-function createAnimationFixture() {
+function createAnimationFixture({ targets = null } = {}) {
   const listeners = new Set();
   const applied = [];
   const restored = [];
   const captures = [];
-  const targets = createAnimationTargetSnapshot([{
+  const defaultTargets = createAnimationTargetSnapshot([{
     unitId: "group-a",
     pivot: [0, 0, 0],
     objects: [
@@ -6963,14 +7232,17 @@ function createAnimationFixture() {
       { objectId: "b", baseMatrix: translationMatrix([2, 0, 0]) }
     ]
   }]);
+  const resolvedTargets = targets ?? defaultTargets;
+  const captureOptions = [];
   const surface = {
     subscribeFrame(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    captureAnimationTargets(targetIds) {
+    captureAnimationTargets(targetIds, options = {}) {
       captures.push([...targetIds]);
-      return targets;
+      captureOptions.push(structuredClone(options));
+      return resolvedTargets;
     },
     applyAnimationFrame(snapshot, frame) {
       const overlay = composeAnimationOverlay(snapshot, frame);
@@ -6987,6 +7259,7 @@ function createAnimationFixture() {
     applied,
     restored,
     captures,
+    captureOptions,
     emit(frame) {
       for (const listener of [...listeners]) listener(frame);
     }
@@ -7018,19 +7291,47 @@ function monotonicNow() {
 
 function createPropertyFixture({
   instanceColor = null,
-  sameAppearance = false
+  sameAppearance = false,
+  grouped = false
 } = {}) {
   const appearanceRuntime = new AppearanceRuntime();
+  const objects = [
+    propertyObject("a", "#112233", instanceColor),
+    propertyObject(
+      "b",
+      sameAppearance ? "#112233" : "#445566",
+      instanceColor
+    )
+  ];
+  if (grouped) {
+    objects[0].parentId = "inner";
+    objects[1].parentId = "outer";
+    objects.unshift(
+      {
+        id: "outer",
+        kind: "group",
+        parentId: null,
+        position: [0, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+        pivot: [0, 0, 0],
+        instanceState: {}
+      },
+      {
+        id: "inner",
+        kind: "group",
+        parentId: "outer",
+        position: [0, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+        pivot: [0, 0, 0],
+        instanceState: {}
+      }
+    );
+  }
   const scene = appearanceRuntime.normalizeScene({
     schemaVersion: 1,
-    objects: [
-      propertyObject("a", "#112233", instanceColor),
-      propertyObject(
-        "b",
-        sameAppearance ? "#112233" : "#445566",
-        instanceColor
-      )
-    ]
+    objects
   });
   const region = new Region(
     {
@@ -7070,21 +7371,28 @@ function createPropertyConsole(fixture) {
       describe: () => [],
       execute(id, args) {
         if (id === "selection.properties.set") {
-          return fixture.service.setSelection(args.patch);
+          return fixture.service.setSelection(args.patch, {
+            targetScope: args.targetScope
+          });
         }
         if (id === "selection.properties.unset") {
-          return fixture.service.unsetSelection(args.properties);
+          return fixture.service.unsetSelection(args.properties, {
+            targetScope: args.targetScope
+          });
+        }
+        if (id === "selection.properties.applyExpression") {
+          return fixture.service.setSelectionProcedural(args);
         }
         throw new Error(`Comando inesperado: ${id}.`);
       }
     },
     queries: {
-      execute(id) {
+      execute(id, args) {
         if (id === "properties.describe") {
           return fixture.registry.describe();
         }
         if (id === "selection.properties.inspect") {
-          return fixture.service.inspectSelection();
+          return fixture.service.inspectSelection(args);
         }
         throw new Error(`Consulta inesperada: ${id}.`);
       }

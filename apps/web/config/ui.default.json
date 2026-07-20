@@ -14,8 +14,9 @@
       "duplicate-selection",
       "repeat-duplicate",
       "delete-selection",
+      "inspector",
       "geometry-create",
-      "experiment-lab",
+      "animation",
       "scene-only",
       "viewport-fullscreen"
     ],
@@ -53,6 +54,13 @@
         ]
       },
       {
+        "id": "explore",
+        "label": "Explorar",
+        "items": [
+          "experiment-lab"
+        ]
+      },
+      {
         "id": "panels",
         "label": "Painéis",
         "items": [
@@ -61,7 +69,6 @@
           "diagnostics",
           "developer",
           "console",
-          "inspector",
           "toolbar-layout",
           "scene-help"
         ]
@@ -94,7 +101,8 @@
       "inspector-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
       "transform-tools-panel": { "anchor": "left", "top": "toolbar", "width": 410, "height": 540 },
       "geometry-create-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
-      "experiment-panel": { "anchor": "right", "top": "toolbar", "width": 470, "height": 680 }
+      "experiment-panel": { "anchor": "right", "top": "toolbar", "width": 470, "height": 680 },
+      "animation-panel": { "anchor": "left", "top": "toolbar", "width": 470, "height": 650 }
     }
   },
   "shortcuts": {

@@ -43,6 +43,7 @@ export class PropertyRegistry {
           valueType: descriptor.valueType,
           nullable: descriptor.nullable,
           editableMany: descriptor.editableMany,
+          procedural: descriptor.procedural,
           writable: descriptor.writable,
           values: descriptor.values
         })
@@ -119,6 +120,7 @@ function normalizeDescriptor(input) {
     valueType: String(input.valueType ?? "unknown"),
     nullable: Boolean(input.nullable),
     editableMany: Boolean(input.editableMany),
+    procedural: Boolean(input.procedural),
     writable: input.writable !== false,
     values: input.values
       ? Object.freeze([...input.values])

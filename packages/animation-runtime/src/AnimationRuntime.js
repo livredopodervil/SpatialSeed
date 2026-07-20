@@ -27,19 +27,27 @@ export class AnimationRuntime {
     );
   }
 
-  start({ id = "temporary", targetIds, evaluate }) {
+  start({
+    id = "temporary",
+    targetIds,
+    targetMode = "selection",
+    evaluate
+  }) {
     this.#assertActive();
     if (typeof evaluate !== "function") {
       throw new TypeError("Animação exige evaluate().");
     }
 
     const ids = normalizeTargetIds(targetIds);
+    const resolvedTargetMode = normalizeTargetMode(targetMode);
     if (!ids.length) {
       throw new RangeError("Animação exige ao menos um alvo.");
     }
 
     if (this.state !== "idle") this.stop("replaced");
-    const targets = this.surface.captureAnimationTargets(ids);
+    const targets = this.surface.captureAnimationTargets(ids, {
+      targetMode: resolvedTargetMode
+    });
     const objectCount = targetObjectCount(targets);
     if (!targets?.units?.length || objectCount === 0) {
       throw new RangeError("A seleção não contém alvos renderizáveis.");
@@ -49,6 +57,7 @@ export class AnimationRuntime {
     this.clip = Object.freeze({
       id: String(id),
       targetIds: Object.freeze(ids),
+      targetMode: resolvedTargetMode,
       targets,
       evaluate,
       objectCount
@@ -182,7 +191,8 @@ export class AnimationRuntime {
         id: clip.id,
         targetCount: clip.targetIds.length,
         unitCount: clip.targets.units.length,
-        objectCount: clip.objectCount
+        objectCount: clip.objectCount,
+        targetMode: clip.targetMode
       }) : null,
       time: Object.freeze({
         tick: this.clock.tick,
@@ -234,6 +244,14 @@ function normalizeTargetIds(values) {
     throw new TypeError("targetIds deve ser uma lista.");
   }
   return [...new Set(values.map(value => String(value).trim()).filter(Boolean))];
+}
+
+function normalizeTargetMode(value) {
+  const mode = String(value ?? "selection");
+  if (!["selection", "objects"].includes(mode)) {
+    throw new RangeError(`Modo de alvos de animação desconhecido: ${mode}.`);
+  }
+  return mode;
 }
 
 function targetObjectCount(targets) {

@@ -1,3 +1,12 @@
+import {
+  compilePropertyBatchProgram,
+  describePropertyBatchProgram,
+  evaluatePropertyBatchProgram
+} from "./PropertyBatchProgram.js";
+import {
+  resolveSelectionTargetIds
+} from "./SelectionTargetResolver.js";
+
 export class SelectionPropertyService {
   static apiVersion = "selection-properties-v1";
 
@@ -8,26 +17,27 @@ export class SelectionPropertyService {
     this.registry = registry;
   }
 
-  inspectSelection() {
-    const targets = this.#selectionTargets();
+  inspectSelection({ targetScope = "selection" } = {}) {
+    const targets = this.#selectionTargets(targetScope);
 
     return Object.freeze({
       apiVersion: SelectionPropertyService.apiVersion,
       selectionId: this.selection.id,
+      targetScope,
       targetIds: Object.freeze(targets.map(object => object.id)),
       count: targets.length,
       properties: this.registry.inspect(targets, this.#context())
     });
   }
 
-  setSelection(patch) {
+  setSelection(patch, { targetScope = "selection" } = {}) {
     return this.set({
-      targetIds: this.#selectionTargetIds(),
+      targetIds: this.#selectionTargetIds(targetScope),
       patch
     });
   }
 
-  unsetSelection(propertyIds) {
+  unsetSelection(propertyIds, { targetScope = "selection" } = {}) {
     const patch = {};
 
     for (const id of propertyIds ?? []) {
@@ -38,7 +48,48 @@ export class SelectionPropertyService {
       patch[id] = null;
     }
 
-    return this.setSelection(patch);
+    return this.setSelection(patch, { targetScope });
+  }
+
+  setSelectionProcedural({
+    propertyId,
+    expression,
+    targetScope = "selection"
+  } = {}) {
+    const objects = this.#selectionTargets(targetScope);
+    if (!objects.length) throw new Error("Seleção vazia.");
+    const descriptor = this.registry.require(propertyId);
+    if (!descriptor.writable) {
+      throw new Error(`Propriedade somente leitura: ${descriptor.id}.`);
+    }
+    if (objects.some(object => !descriptor.supports(object, this.#context()))) {
+      throw new Error(`Propriedade não suportada pelos alvos: ${descriptor.id}.`);
+    }
+
+    const program = compilePropertyBatchProgram(descriptor, expression);
+    const patches = new Map(objects.map((object, index) => {
+      const raw = evaluatePropertyBatchProgram(program, {
+        object,
+        index: index + 1,
+        count: objects.length
+      });
+      return [object.id, {
+        [descriptor.id]: descriptor.normalize(raw)
+      }];
+    }));
+
+    return this.#commitPropertyPatches(
+      objects,
+      patches,
+      {
+        [descriptor.id]: {
+          mode: "expression",
+          source: program.source,
+          targetScope
+        }
+      },
+      { program: describePropertyBatchProgram(program), targetScope }
+    );
   }
 
   set({ targetIds, patch }) {
@@ -74,16 +125,24 @@ export class SelectionPropertyService {
       normalizedPatch[id] = descriptor.normalize(value);
     }
 
+    return this.#commitPropertyPatches(
+      objects,
+      new Map(objects.map(object => [object.id, normalizedPatch])),
+      normalizedPatch
+    );
+  }
+
+  #commitPropertyPatches(objects, patchesById, auditPatch, extra = {}) {
     const context = this.#context();
     const appearanceCache = new Map();
     const updates = objects.flatMap(object => {
+      const propertyPatch = patchesById.get(object.id) ?? {};
       const changedProperties = Object.fromEntries(
-        Object.entries(normalizedPatch).filter(([id, value]) => {
+        Object.entries(propertyPatch).filter(([id, value]) => {
           const descriptor = this.registry.require(id);
           return !equalValue(descriptor.read(object, context), value);
         })
       );
-
       return Object.keys(changedProperties).length
         ? [{
             id: object.id,
@@ -95,29 +154,30 @@ export class SelectionPropertyService {
           }]
         : [];
     });
+    const frozenAudit = Object.freeze(structuredClone(auditPatch));
 
     if (!updates.length) {
       return Object.freeze({
         changed: false,
         targetIds: Object.freeze([]),
-        propertyPatch: Object.freeze(structuredClone(normalizedPatch))
+        propertyPatch: frozenAudit,
+        ...extra
       });
     }
 
     const changedTargetIds = updates.map(update => update.id);
-    const command = {
+    const changed = this.sandbox.dispatch({
       type: "selection.properties.set",
       schemaVersion: 1,
       targetIds: changedTargetIds,
-      propertyPatch: normalizedPatch,
+      propertyPatch: auditPatch,
       updates
-    };
-    const changed = this.sandbox.dispatch(command);
-
+    });
     return Object.freeze({
       changed,
       targetIds: Object.freeze([...changedTargetIds]),
-      propertyPatch: Object.freeze(structuredClone(normalizedPatch))
+      propertyPatch: frozenAudit,
+      ...extra
     });
   }
 
@@ -146,7 +206,10 @@ export class SelectionPropertyService {
       const sourceKey = object.appearanceId
         ? `appearance:${object.appearanceId}`
         : `material:${JSON.stringify(object.material ?? {})}`;
-      const cachedAppearance = appearanceCache.get(sourceKey);
+      const cacheKey = `${sourceKey}:patch:${JSON.stringify(
+        appearanceValues.map(({ descriptor, value }) => [descriptor.id, value])
+      )}`;
+      const cachedAppearance = appearanceCache.get(cacheKey);
 
       if (cachedAppearance) {
         this.appearanceRuntime.retainAppearanceReferences(cachedAppearance);
@@ -157,7 +220,7 @@ export class SelectionPropertyService {
           applyAppearanceValue(material, descriptor.path, value);
         }
         const created = this.appearanceRuntime.internLegacyMaterial(material);
-        appearanceCache.set(sourceKey, Object.freeze({
+        appearanceCache.set(cacheKey, Object.freeze({
           appearanceId: created.appearanceId,
           materialId: created.material.id,
           textureId: created.texture?.id ?? null
@@ -211,14 +274,18 @@ export class SelectionPropertyService {
     };
   }
 
-  #selectionTargetIds() {
-    return this.selection.members.map(member => member.objectId);
+  #selectionTargetIds(targetScope = "selection") {
+    return resolveSelectionTargetIds({
+      selection: this.selection,
+      state: this.sandbox.getState(),
+      targetScope
+    });
   }
 
-  #selectionTargets() {
+  #selectionTargets(targetScope = "selection") {
     const state = this.sandbox.getState();
     const byId = new Map(state.objects.map(object => [object.id, object]));
-    return this.#selectionTargetIds()
+    return this.#selectionTargetIds(targetScope)
       .map(id => byId.get(id))
       .filter(Boolean);
   }

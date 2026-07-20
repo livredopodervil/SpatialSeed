@@ -17,25 +17,33 @@ export function composeAnimationOverlay(targets, unitFrames) {
       throw new Error(`Unidade repetida no quadro: ${unitId}.`);
     }
     validateMatrix(entry.matrix);
-    byUnit.set(unitId, entry.matrix);
+    const color = entry.color == null ? null : normalizeColor(entry.color);
+    byUnit.set(unitId, Object.freeze({ matrix: entry.matrix, color }));
   }
 
   const transforms = [];
   const pivots = [];
+  const colors = [];
   for (const unit of targets.units) {
-    const delta = byUnit.get(unit.unitId);
-    if (!delta) {
+    const frame = byUnit.get(unit.unitId);
+    if (!frame) {
       throw new Error(`Quadro sem transformação para ${unit.unitId}.`);
     }
     pivots.push(Object.freeze({
       unitId: unit.unitId,
-      position: Object.freeze(transformPoint(delta, unit.pivot))
+      position: Object.freeze(transformPoint(frame.matrix, unit.pivot))
     }));
     for (const object of unit.objects) {
       transforms.push(Object.freeze({
         objectId: object.objectId,
-        matrix: Object.freeze(multiplyMatrices(delta, object.baseMatrix))
+        matrix: Object.freeze(multiplyMatrices(frame.matrix, object.baseMatrix))
       }));
+      if (frame.color !== null) {
+        colors.push(Object.freeze({
+          objectId: object.objectId,
+          color: frame.color
+        }));
+      }
     }
   }
 
@@ -47,7 +55,8 @@ export function composeAnimationOverlay(targets, unitFrames) {
 
   return Object.freeze({
     transforms: Object.freeze(transforms),
-    pivots: Object.freeze(pivots)
+    pivots: Object.freeze(pivots),
+    colors: Object.freeze(colors)
   });
 }
 
@@ -78,6 +87,7 @@ export function createAnimationTargetSnapshot(units) {
     });
     return Object.freeze({
       unitId,
+      sourceId: String(unit.sourceId ?? unitId),
       pivot: Object.freeze(pivot),
       objects: Object.freeze(objects)
     });
@@ -109,4 +119,12 @@ function vector3(value, message) {
     throw new TypeError(message);
   }
   return value.map(Number);
+}
+
+function normalizeColor(value) {
+  const color = String(value ?? "").trim().toLowerCase();
+  if (!/^#[0-9a-f]{6}$/.test(color)) {
+    throw new TypeError(`Cor de animação inválida: ${value}.`);
+  }
+  return color;
 }

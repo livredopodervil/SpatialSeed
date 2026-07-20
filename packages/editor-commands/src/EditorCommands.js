@@ -128,11 +128,20 @@ export function createEditorCommands({
 
   if (propertyService) {
     commands
-      .register("selection.properties.set", ({ patch }) =>
-        propertyService.setSelection(patch)
+      .register("selection.properties.set", ({
+        patch,
+        targetScope = "selection"
+      }) =>
+        propertyService.setSelection(patch, { targetScope })
       )
-      .register("selection.properties.unset", ({ properties }) =>
-        propertyService.unsetSelection(properties)
+      .register("selection.properties.unset", ({
+        properties,
+        targetScope = "selection"
+      }) =>
+        propertyService.unsetSelection(properties, { targetScope })
+      )
+      .register("selection.properties.applyExpression", args =>
+        propertyService.setSelectionProcedural(args)
       );
   }
 

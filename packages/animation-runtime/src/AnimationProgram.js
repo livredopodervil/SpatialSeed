@@ -6,6 +6,10 @@ import {
 import {
   composeAffineOperations
 } from "../../math-affine/src/index.js?build=20260719-0028b";
+import {
+  compilePropertyBatchProgram,
+  evaluatePropertyBatchProgram
+} from "../../property-registry/src/PropertyBatchProgram.js?build=20260720-0028d";
 
 export const ANIMATION_PROGRAM_VERSION = "animation-program-v1";
 
@@ -13,14 +17,34 @@ export function compileAnimationProgram(operations, {
   id = "custom"
 } = {}) {
   if (!Array.isArray(operations) || operations.length === 0) {
-    throw new TypeError("Programa de animação exige operações afins.");
+    throw new TypeError("Programa de animação exige operações.");
   }
 
   const source = structuredClone(operations);
-  const compiled = compileAffineProgram(source, {
-    mode: "indexed",
-    translationSpace: "world"
-  });
+  const colorOperations = source.filter(
+    operation => operation?.type === "color"
+  );
+  if (colorOperations.length > 1) {
+    throw new Error("Programa de animação aceita uma operação de cor.");
+  }
+  const affineOperations = source.filter(
+    operation => operation?.type !== "color"
+  );
+  const compiled = compileAffineProgram(
+    affineOperations.length
+      ? affineOperations
+      : [{ type: "move", value: [0, 0, 0] }],
+    {
+      mode: "indexed",
+      translationSpace: "world"
+    }
+  );
+  const colorProgram = colorOperations.length
+    ? compilePropertyBatchProgram(
+        ANIMATION_COLOR_DESCRIPTOR,
+        colorOperations[0].value
+      )
+    : null;
 
   return deepFreeze({
     type: "animation-program",
@@ -28,6 +52,7 @@ export function compileAnimationProgram(operations, {
     id: nonEmpty(id, "Identificador de animação ausente."),
     operations: source,
     compiled,
+    colorProgram,
     unitDependent: usesUnitVariables(source)
   });
 }
@@ -47,20 +72,22 @@ export function createAnimationEvaluator(program) {
       : evaluate(program, { t, dt, i: 1, count });
 
     return Object.freeze(units.map((unit, index) => {
-      const operations = shared ?? evaluate(program, {
+      const evaluated = shared ?? evaluate(program, {
         t,
         dt,
         i: index + 1,
-        count
+        count,
+        unit
       });
       const matrix = composeAffineOperations([
         { type: "pivot", value: unit.pivot },
-        ...operations
+        ...evaluated.operations
       ]);
 
       return Object.freeze({
         unitId: unit.unitId,
-        matrix: Object.freeze(matrix)
+        matrix: Object.freeze(matrix),
+        color: evaluated.color
       });
     }));
   };
@@ -74,12 +101,13 @@ export function describeAnimationProgram(program) {
     operationCount: program.operations.length,
     unitDependent: program.unitDependent,
     astHash: program.compiled.astHash,
+    colorExpression: program.colorProgram?.source ?? null,
     language: program.compiled.syntax
   });
 }
 
 function evaluate(program, context) {
-  return evaluateAffineProgram(
+  const operations = evaluateAffineProgram(
     program.compiled,
     createAffineEvaluationContext({
       index: context.i,
@@ -88,7 +116,23 @@ function evaluate(program, context) {
       deltaTime: context.dt
     })
   );
+  const color = program.colorProgram
+    ? evaluatePropertyBatchProgram(program.colorProgram, {
+        object: { position: context.unit?.pivot ?? [0, 0, 0] },
+        index: context.i,
+        count: context.count,
+        t: context.t,
+        dt: context.dt
+      })
+    : null;
+  return Object.freeze({ operations, color });
 }
+
+const ANIMATION_COLOR_DESCRIPTOR = Object.freeze({
+  id: "animation.color",
+  procedural: true,
+  valueType: "color"
+});
 
 function usesUnitVariables(value) {
   if (typeof value === "string") {

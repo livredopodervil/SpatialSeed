@@ -2,11 +2,16 @@ import {
   compileAnimationProgram,
   createAnimationEvaluator,
   describeAnimationProgram
-} from "./AnimationProgram.js?build=20260719-0028b";
+} from "./AnimationProgram.js?build=20260720-0028d";
 import {
   listAnimationPresets,
   resolveAnimationPreset
-} from "./AnimationPresetCatalog.js?build=20260719-0028b";
+} from "./AnimationPresetCatalog.js?build=20260720-0028d";
+import {
+  compileAnimationTrackProgram,
+  createAnimationTrackEvaluator,
+  describeAnimationTrackProgram
+} from "./AnimationTrackProgram.js?build=20260720-0028d";
 
 export const ANIMATION_COMMAND_SERVICE_VERSION =
   "animation-command-service-v1";
@@ -23,9 +28,15 @@ export class AnimationCommandService {
     this.selection = selection;
     this.currentProgram = null;
     this.currentPreset = null;
+    this.currentComposition = null;
   }
 
-  start({ id = "custom", operations, targetIds = null } = {}) {
+  start({
+    id = "custom",
+    operations,
+    targetIds = null,
+    targetMode = "selection"
+  } = {}) {
     const program = compileAnimationProgram(operations, { id });
     const resolvedTargets = targetIds === null
       ? selectedTargetIds(this.selection())
@@ -33,26 +44,73 @@ export class AnimationCommandService {
 
     this.currentProgram = null;
     this.currentPreset = null;
+    this.currentComposition = null;
     this.runtime.start({
       id: program.id,
       targetIds: resolvedTargets,
+      targetMode,
       evaluate: createAnimationEvaluator(program)
     });
     this.currentProgram = program;
     return this.status();
   }
 
-  preset(id, parameters = {}) {
+  preset(id, parameters = {}, {
+    targetIds = null,
+    targetMode = "selection"
+  } = {}) {
     const preset = resolveAnimationPreset(id, parameters);
     const result = this.start({
       id: `preset.${preset.id}`,
-      operations: preset.operations
+      operations: preset.operations,
+      targetIds,
+      targetMode
     });
     this.currentPreset = preset;
     return Object.freeze({
       ...result,
       preset: describePreset(preset)
     });
+  }
+
+  compose({ id = "composition", tracks, targetMode = "objects" } = {}) {
+    let fallbackTargets = null;
+    const resolvedTracks = (tracks ?? []).map((track, index) => {
+      const targetIds = track?.targetIds == null
+        ? (fallbackTargets ??= selectedTargetIds(this.selection()))
+        : normalizeTargetIds(track.targetIds);
+      if (track?.presetId) {
+        const preset = resolveAnimationPreset(
+          track.presetId,
+          track.parameters ?? {}
+        );
+        return {
+          id: track.id ?? `track-${index + 1}`,
+          targetIds,
+          operations: preset.operations,
+          metadata: { preset: describePreset(preset) }
+        };
+      }
+      return {
+        id: track?.id ?? `track-${index + 1}`,
+        targetIds,
+        operations: track?.operations,
+        metadata: structuredClone(track?.metadata ?? {})
+      };
+    });
+    const composition = compileAnimationTrackProgram(resolvedTracks, { id });
+
+    this.currentProgram = null;
+    this.currentPreset = null;
+    this.currentComposition = null;
+    this.runtime.start({
+      id: composition.id,
+      targetIds: composition.targetIds,
+      targetMode,
+      evaluate: createAnimationTrackEvaluator(composition)
+    });
+    this.currentComposition = composition;
+    return this.status();
   }
 
   pause() {
@@ -69,6 +127,7 @@ export class AnimationCommandService {
     this.runtime.stop("user");
     this.currentProgram = null;
     this.currentPreset = null;
+    this.currentComposition = null;
     return this.status();
   }
 
@@ -77,6 +136,7 @@ export class AnimationCommandService {
     if (runtime.state === "idle") {
       this.currentProgram = null;
       this.currentPreset = null;
+      this.currentComposition = null;
     }
     return Object.freeze({
       serviceVersion: ANIMATION_COMMAND_SERVICE_VERSION,
@@ -86,6 +146,9 @@ export class AnimationCommandService {
         : null,
       preset: this.currentPreset
         ? describePreset(this.currentPreset)
+        : null,
+      composition: this.currentComposition
+        ? describeAnimationTrackProgram(this.currentComposition)
         : null
     });
   }

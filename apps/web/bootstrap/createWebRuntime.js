@@ -4,25 +4,25 @@ import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260718-00
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260719-0028a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260720-0028d";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260719-0028b";
-import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260718-0027h";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260720-0028d";
+import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260718-0027h";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260720-0028c";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260720-0028d";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260716-0025d";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260720-0028c";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260720-0028d";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
 import {
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260716-0024d";
+} from "../../../packages/property-registry/src/index.js?build=20260720-0028d";
 import {
   createDefaultGeometryRegistry
 } from "../../../packages/geometry-registry/src/index.js?build=20260716-0024g";
@@ -63,7 +63,10 @@ import {
   ANIMATION_RUNTIME_VERSION,
   AnimationCommandService,
   AnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260719-0028b";
+} from "../../../packages/animation-runtime/src/index.js?build=20260720-0028d";
+import {
+  AnimationPanel
+} from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
 
 const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -74,6 +77,7 @@ export async function createWebRuntime({
   transformToolsRoot,
   geometryCreationRoot,
   experimentPanelRoot,
+  animationPanelRoot,
   procedureEditorRoot,
   inspectorRoot,
   onConsoleOutput,
@@ -226,8 +230,21 @@ export async function createWebRuntime({
     )
     .register(
       "animation.preset",
-      ({ id, parameters = {} } = {}) =>
-        animationCommands.preset(id, parameters),
+      ({
+        id,
+        parameters = {},
+        targetIds = null,
+        targetMode = "selection"
+      } = {}) =>
+        animationCommands.preset(id, parameters, {
+          targetIds,
+          targetMode
+        }),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.tracks.start",
+      args => animationCommands.compose(args),
       { category: "animation", mutates: false }
     )
     .register(
@@ -356,8 +373,10 @@ export async function createWebRuntime({
     .register("properties.describe", () =>
       propertyRegistry.describe()
     )
-    .register("selection.properties.inspect", () =>
-      propertyService.inspectSelection()
+    .register("selection.properties.inspect", ({
+      targetScope = "selection"
+    } = {}) =>
+      propertyService.inspectSelection({ targetScope })
     )
     .register("selection.actions.describe", () => ({
       canGroup: !editor.selection.empty,
@@ -403,6 +422,12 @@ export async function createWebRuntime({
     execute: (id, args) => runtime.execute(id, args)
   });
   runtime.onDispose(() => experimentPanel.dispose());
+  const animationPanel = new AnimationPanel({
+    root: animationPanelRoot,
+    query: (id, args) => runtime.query(id, args),
+    execute: (id, args) => runtime.execute(id, args)
+  });
+  runtime.onDispose(() => animationPanel.dispose());
 
   const procedureCatalog = new ProcedureCatalog({
     storage: new BrowserProcedureCatalogStore()
@@ -570,6 +595,7 @@ export async function createWebRuntime({
       transformToolPanel,
       geometryCreationPanel,
       experimentPanel,
+      animationPanel,
       geometryRegistry,
       propertyRegistry,
       propertyService,

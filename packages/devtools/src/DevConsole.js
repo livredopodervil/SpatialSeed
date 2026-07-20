@@ -630,8 +630,9 @@ export class DevConsole {
         "procedure define|list|show|run|remove|export|import|help",
         "experiment id [parâmetro=valor ...]",
         "experiment list|show|run|plan|help",
-        "animate spin|orbit|float|pulse|wave [parâmetro=valor ...]",
+        "animate spin|orbit|float|pulse|wave|rainbow [parâmetro=valor ...] [mode=selection|objects]",
         "animate move|rotate|scale expressão expressão expressão",
+        "animate color \"hsl(...)|rgb(...)|mix(...)\" [mode=selection|objects]",
         "animate pause|resume|stop|status|list|help",
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
@@ -760,7 +761,7 @@ export class DevConsole {
   #animationHelp() {
     return {
       usage: [
-        "animate spin|orbit|float|pulse|wave [parâmetro=valor ...]",
+        "animate spin|orbit|float|pulse|wave|rainbow [parâmetro=valor ...]",
         "animate move expressão-x expressão-y expressão-z",
         "animate rotate expressão-x expressão-y expressão-z",
         "animate scale expressão-x expressão-y expressão-z",
@@ -776,14 +777,16 @@ export class DevConsole {
       },
       notes: [
         "A seleção atual é capturada quando a animação começa.",
-        "Cada item usa o próprio pivô; grupos permanecem rígidos.",
+        "mode=selection preserva grupos; mode=objects abre grupos em objetos.",
         "A animação é visual e não altera histórico nem arquivo.",
         "Expressões usam a linguagem matemática afim segura."
       ],
       examples: [
         "animate spin speed=45 axis=y",
         "animate orbit radius=4 speed=30 axis=y",
-        "animate wave amplitude=1 frequency=0.5 phase=0.35",
+        "animate wave amplitude=1 frequency=0.5 phase=0.35 mode=objects",
+        "animate rainbow speed=60 saturation=0.8 mode=objects",
+        "animate color \"hsl(60*t + 360*u,0.8,0.55)\" mode=objects",
         "animate move \"2 * sin(t)\" 0 0",
         "animate rotate 0 \"90 * t + 20 * sin(tau * t)\" 0",
         "animate scale \"1 + 0.2 * sin(tau * t)\" " +
@@ -850,6 +853,24 @@ export class DevConsole {
       });
     }
 
+    if (action === "color") {
+      let targetMode = "selection";
+      const modeIndex = tokens.findIndex(token => token.startsWith("mode="));
+      if (modeIndex >= 0) {
+        targetMode = tokens.splice(modeIndex, 1)[0].slice("mode=".length);
+      }
+      if (!["selection", "objects"].includes(targetMode) || tokens.length !== 1) {
+        throw new Error(
+          'Uso: animate color "hsl(...)|rgb(...)|mix(...)" [mode=selection|objects].'
+        );
+      }
+      return this.commands.execute("animation.start", {
+        id: "custom.color",
+        operations: [{ type: "color", value: tokens[0] }],
+        targetMode
+      });
+    }
+
     let presetId = action;
     if (action === "preset") {
       presetId = (tokens.shift() ?? "").toLowerCase();
@@ -857,9 +878,16 @@ export class DevConsole {
         throw new Error("Uso: animate preset id [parâmetro=valor ...].");
       }
     }
+    const parameters = parseExperimentParameters(tokens.join(" "));
+    const targetMode = parameters.mode ?? "selection";
+    delete parameters.mode;
+    if (!["selection", "objects"].includes(targetMode)) {
+      throw new Error("mode deve ser selection ou objects.");
+    }
     return this.commands.execute("animation.preset", {
       id: presetId,
-      parameters: parseExperimentParameters(tokens.join(" "))
+      parameters,
+      targetMode
     });
   }
 
@@ -1096,6 +1124,7 @@ export class DevConsole {
           "property list",
           "property inspect [id]",
           "property set id valor [...]",
+          "property batch id \"expressão\" [scope=selection|renderables]",
           "property unset id"
         ],
         ...description
@@ -1121,6 +1150,25 @@ export class DevConsole {
     }
     const descriptor = this.#propertyDescriptor(description, id);
 
+    if (action === "batch") {
+      let targetScope = "selection";
+      const scopeIndex = tokens.findIndex(token => token.startsWith("scope="));
+      if (scopeIndex >= 0) {
+        targetScope = tokens.splice(scopeIndex, 1)[0].slice("scope=".length);
+      }
+      if (!["selection", "renderables"].includes(targetScope)) {
+        throw new Error("scope deve ser selection ou renderables.");
+      }
+      const expression = tokens.join(" ").trim();
+      if (!expression) {
+        throw new Error(`Uso: property batch ${id} \"expressão\".`);
+      }
+      return this.commands.execute(
+        "selection.properties.applyExpression",
+        { propertyId: id, expression, targetScope }
+      );
+    }
+
     if (action === "unset") {
       this.#expectMaximum(tokens, 0, `property unset ${id}`);
       return this.commands.execute(
@@ -1131,7 +1179,7 @@ export class DevConsole {
 
     if (action !== "set") {
       throw new Error(
-        "Uso: property list|inspect|set|unset."
+        "Uso: property list|inspect|set|batch|unset."
       );
     }
 

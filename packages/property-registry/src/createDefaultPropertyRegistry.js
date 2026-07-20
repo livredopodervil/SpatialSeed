@@ -22,6 +22,7 @@ export function createDefaultPropertyRegistry() {
       path: ["position"],
       valueType: "vector3",
       editableMany: false,
+      procedural: true,
       normalize: value => vector(value, 3),
       read: object => [...(object.position ?? [0, 0, 0])]
     }))
@@ -33,6 +34,7 @@ export function createDefaultPropertyRegistry() {
       path: ["rotation"],
       valueType: "vector3",
       editableMany: false,
+      procedural: true,
       normalize: value => vector(value, 3),
       read: object => quaternionToEuler(
         object.rotation ?? [0, 0, 0, 1]
@@ -48,6 +50,7 @@ export function createDefaultPropertyRegistry() {
       scope: "object",
       path: ["scale"],
       valueType: "vector3",
+      procedural: true,
       normalize: value => positiveVector(value, 3),
       read: object => [...(object.scale ?? [1, 1, 1])]
     }))
@@ -58,6 +61,7 @@ export function createDefaultPropertyRegistry() {
       scope: "object",
       path: ["size"],
       valueType: "vector3",
+      procedural: true,
       normalize: value => positiveVector(value, 3),
       supports: object =>
         object?.kind === "box" && Array.isArray(object.size),
@@ -70,6 +74,7 @@ export function createDefaultPropertyRegistry() {
       scope: "appearance",
       path: ["color"],
       valueType: "color",
+      procedural: true,
       normalize: normalizeHexColor,
       read: (object, context) => context.material(object).color
     }))
@@ -80,6 +85,7 @@ export function createDefaultPropertyRegistry() {
       scope: "appearance",
       path: ["opacity"],
       valueType: "number",
+      procedural: true,
       normalize: value => boundedNumber(value, 0, 1),
       read: (object, context) => context.material(object).opacity ?? 1
     }))
@@ -111,6 +117,7 @@ export function createDefaultPropertyRegistry() {
       scope: "appearance",
       path: ["texture", "repeat"],
       valueType: "vector2",
+      procedural: true,
       normalize: value => vector(value, 2),
       read: (object, context) => context.textureTransform(object).repeat
     }))
@@ -121,6 +128,7 @@ export function createDefaultPropertyRegistry() {
       scope: "appearance",
       path: ["texture", "offset"],
       valueType: "vector2",
+      procedural: true,
       normalize: value => vector(value, 2),
       read: (object, context) => context.textureTransform(object).offset
     }))
@@ -131,6 +139,7 @@ export function createDefaultPropertyRegistry() {
       scope: "appearance",
       path: ["texture", "rotationDeg"],
       valueType: "number",
+      procedural: true,
       normalize: finiteNumber,
       read: (object, context) => context.textureTransform(object).rotationDeg
     }))
@@ -152,6 +161,7 @@ export function createDefaultPropertyRegistry() {
       scope: "instance",
       path: ["color"],
       valueType: "color",
+      procedural: true,
       nullable: true,
       normalize: value => value === null || value === ""
         ? null
@@ -163,7 +173,9 @@ export function createDefaultPropertyRegistry() {
 function property(input) {
   return {
     editableMany: true,
-    supports: object => Boolean(object?.id),
+    supports: ["appearance", "instance"].includes(input.scope)
+      ? object => Boolean(object?.id) && object.kind !== "group"
+      : object => Boolean(object?.id),
     ...input
   };
 }
