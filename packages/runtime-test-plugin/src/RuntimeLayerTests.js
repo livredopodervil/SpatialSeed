@@ -10,6 +10,7 @@ import {
 } from "../../runtime-api/src/index.js?build=20260718-0027h";
 import {
   VIEWER_CAMERA_COMMANDS,
+  CameraObjectService,
   ViewerCameraController,
   ViewerState,
   cameraSnapshot,
@@ -87,10 +88,13 @@ import {
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
-} from "../../project-files/src/ProjectValidator.js?build=20260716-0025d";
+} from "../../project-files/src/ProjectValidator.js?build=20260724-0029f";
+import {
+  ProjectSerializer
+} from "../../project-files/src/ProjectSerializer.js?build=20260724-0029f";
 import {
   ProjectService
-} from "../../project-files/src/ProjectService.js?build=20260724-0029e";
+} from "../../project-files/src/ProjectService.js?build=20260724-0029f";
 import {
   BrowserSandboxIdentity,
   MemoryRecoveryStore,
@@ -100,14 +104,17 @@ import {
 } from "../../project-recovery/src/index.js?build=20260724-0029e2";
 import {
   CoordinatedSandbox,
+  LocalProjectLaunchReceiver,
+  LocalProjectLaunchSender,
   LocalAnimationCoordinator,
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
+  createIndependentProjectUrl,
   createSharedViewerUrl
-} from "../../local-viewers/src/index.js?build=20260724-0029e2";
+} from "../../local-viewers/src/index.js?build=20260724-0029f";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260716-0024d";
+} from "../../region-box/src/reducer.js?build=20260724-0029f";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -123,10 +130,10 @@ import {
   createDefaultPropertyRegistry,
   resolveSelectionTargetIds,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260720-0028d";
+} from "../../property-registry/src/index.js?build=20260724-0029f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260724-0029e2";
+} from "../../devtools/src/DevConsole.js?build=20260724-0029f";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -145,7 +152,7 @@ import {
   renderableSubtreeIds,
   selectionReferenceWorldPosition,
   selectionUnitId
-} from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
+} from "../../renderer-three/src/WorldTransformProjection.js?build=20260724-0029f";
 import {
   SelectionOutlineBatch,
   benchmarkSelectionOutlines,
@@ -1957,6 +1964,213 @@ export function createRuntimeLayerTests() {
             "viewer.camera.frame-selection"
           ]
         );
+      },
+
+      "objetos câmera persistem e a ativação continua local"() {
+        const region = new Region(
+          { id: "camera-object-region", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const firstSurface = createCameraSurfaceFixture();
+        const secondSurface = createCameraSurfaceFixture();
+        const freeSurface = createCameraSurfaceFixture();
+        const firstViewer = new ViewerState({
+          viewerId: "camera-object-viewer-a",
+          camera: navigationCameraFixture({ position: [1, 2, 3] })
+        });
+        const secondViewer = new ViewerState({
+          viewerId: "camera-object-viewer-b",
+          camera: navigationCameraFixture({ position: [8, 9, 10] })
+        });
+        const freeViewer = new ViewerState({
+          viewerId: "camera-object-viewer-free",
+          camera: navigationCameraFixture({ position: [12, 11, 10] })
+        });
+        const firstController = new ViewerCameraController({
+          viewer: firstViewer,
+          surface: firstSurface
+        });
+        const secondController = new ViewerCameraController({
+          viewer: secondViewer,
+          surface: secondSurface
+        });
+        const freeController = new ViewerCameraController({
+          viewer: freeViewer,
+          surface: freeSurface
+        });
+        const first = new CameraObjectService({
+          sandbox,
+          viewer: firstViewer,
+          controller: firstController,
+          createId: () => "camera-persistent-a"
+        });
+        const second = new CameraObjectService({
+          sandbox,
+          viewer: secondViewer,
+          controller: secondController,
+          createId: () => "camera-persistent-b"
+        });
+        const free = new CameraObjectService({
+          sandbox,
+          viewer: freeViewer,
+          controller: freeController
+        });
+
+        first.create({
+          name: "Câmera A",
+          camera: navigationCameraFixture({ position: [3, 4, 5] }),
+          activate: true
+        });
+        second.create({
+          name: "Câmera B",
+          camera: navigationCameraFixture({ position: [9, 8, 7] }),
+          activate: true
+        });
+
+        assertEqual(sandbox.objectCount, 2);
+        assertEqual(
+          firstViewer.snapshot().activeCameraId,
+          "camera-persistent-a"
+        );
+        assertEqual(
+          secondViewer.snapshot().activeCameraId,
+          "camera-persistent-b"
+        );
+        assertVectorNear(firstController.snapshot().position, [3, 4, 5]);
+        assertVectorNear(secondController.snapshot().position, [9, 8, 7]);
+
+        first.setDefault("camera-persistent-a");
+        assertEqual(
+          sandbox.getSnapshot().defaultCameraId,
+          "camera-persistent-a"
+        );
+        assertEqual(freeViewer.snapshot().activeCameraId, null);
+        assertVectorNear(
+          freeController.snapshot().position,
+          [12, 11, 10]
+        );
+        const adoptedSurface = createCameraSurfaceFixture();
+        const adoptedViewer = new ViewerState({
+          viewerId: "camera-object-viewer-default",
+          camera: navigationCameraFixture()
+        });
+        const adoptedController = new ViewerCameraController({
+          viewer: adoptedViewer,
+          surface: adoptedSurface
+        });
+        const adopted = new CameraObjectService({
+          sandbox,
+          viewer: adoptedViewer,
+          controller: adoptedController
+        });
+        assertEqual(
+          adoptedViewer.snapshot().activeCameraId,
+          "camera-persistent-a"
+        );
+        adopted.dispose();
+        adoptedController.dispose();
+        assertEqual(sandbox.undo(), true);
+        assertEqual(
+          sandbox.getSnapshot().defaultCameraId ?? null,
+          null
+        );
+        first.dispose();
+        second.dispose();
+        free.dispose();
+        firstController.dispose();
+        secondController.dispose();
+        freeController.dispose();
+      },
+
+      "câmera hierárquica combina posição e orientação dos ancestrais"() {
+        const region = new Region(
+          { id: "camera-hierarchy-region", type: "box-region" },
+          {
+            schemaVersion: 1,
+            objects: [
+              {
+                id: "camera-parent",
+                kind: "group",
+                position: [10, 0, 0],
+                rotation: eulerQuaternion([0, 90, 0]),
+                scale: [2, 2, 2]
+              },
+              {
+                id: "camera-child",
+                kind: "camera",
+                parentId: "camera-parent",
+                position: [0, 0, -2],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1],
+                camera: {
+                  projection: "perspective",
+                  fov: 60,
+                  near: 0.2,
+                  far: 500,
+                  focusDistance: 4
+                }
+              }
+            ]
+          }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const service = new CameraObjectService({
+          sandbox,
+          viewer,
+          controller
+        });
+
+        service.activate("camera-child");
+        const camera = controller.snapshot();
+        assertVectorNear(camera.position, [6, 0, 0], 1e-8);
+        assertVectorNear(camera.target, [2, 0, 0], 1e-8);
+        assertEqual(camera.fov, 60);
+        assertEqual(camera.near, 0.2);
+        assertEqual(camera.far, 500);
+
+        sandbox.dispatch({
+          type: "object.transform",
+          id: "camera-parent",
+          position: [20, 0, 0],
+          rotation: eulerQuaternion([0, 90, 0]),
+          scale: [2, 2, 2]
+        });
+        assertVectorNear(
+          controller.snapshot().position,
+          [16, 0, 0],
+          1e-8
+        );
+
+        controller.execute("viewer.camera.restore", {
+          camera: navigationCameraFixture({
+            position: [30, 2, 1],
+            quaternion: [0, 0, 0, 1]
+          })
+        });
+        assertEqual(viewer.snapshot().activeCameraId, null);
+        service.captureViewer("camera-child");
+        assertEqual(
+          viewer.snapshot().activeCameraId,
+          "camera-child"
+        );
+        assertVectorNear(
+          controller.snapshot().position,
+          [30, 2, 1],
+          1e-8
+        );
+        assertVectorNear(
+          controller.snapshot().quaternion,
+          [0, 0, 0, 1],
+          1e-8
+        );
+        service.dispose();
+        controller.dispose();
       }
     },
 
@@ -1972,8 +2186,106 @@ export function createRuntimeLayerTests() {
           url.searchParams.get("sandbox"),
           "sandbox-coordination-url"
         );
-        assertEqual(url.searchParams.get("viewer"), "auto");
+        assertEqual(url.searchParams.get("viewer"), "join");
         assertEqual(url.hash, "#scene");
+      },
+
+      "URLs independentes distinguem projeto novo e arquivo recebido"() {
+        const fresh = new URL(createIndependentProjectUrl(
+          "https://example.test/apps/web/?build=current",
+          {
+            sandboxId: "sandbox-independent-new",
+            mode: "new"
+          }
+        ));
+        const opened = new URL(createIndependentProjectUrl(
+          "https://example.test/apps/web/",
+          {
+            sandboxId: "sandbox-independent-open",
+            mode: "open",
+            launchId: "launch-independent-open"
+          }
+        ));
+        assertEqual(fresh.searchParams.get("project"), "new");
+        assertEqual(fresh.searchParams.get("viewer"), "auto");
+        assertEqual(opened.searchParams.get("project"), "open");
+        assertEqual(
+          opened.searchParams.get("launch"),
+          "launch-independent-open"
+        );
+      },
+
+      async "arquivo atravessa lançamento transitório sem virar sessão"() {
+        const network = createLocalViewerNetwork();
+        const launchId = "launch-project-transfer";
+        const sender = new LocalProjectLaunchSender({
+          launchId,
+          channelFactory: network.channelFactory
+        });
+        const receiver = new LocalProjectLaunchReceiver({
+          launchId,
+          channelFactory: network.channelFactory,
+          setTimeoutFn: null,
+          setIntervalFn: null
+        });
+        const receivedPromise = receiver.receive();
+        const acceptedPromise = sender.sendProject(
+          "{\"format\":\"spatial-seed\"}"
+        );
+        await settleLocalViewers(20);
+        const received = await receivedPromise;
+        assertEqual(
+          received.text,
+          "{\"format\":\"spatial-seed\"}"
+        );
+        receiver.accept({
+          name: "Projeto transferido",
+          objectCount: 4
+        });
+        await settleLocalViewers();
+        const accepted = await acceptedPromise;
+        assertEqual(accepted.accepted, true);
+        assertEqual(accepted.projectName, "Projeto transferido");
+        assertEqual(accepted.objectCount, 4);
+        sender.dispose();
+      },
+
+      async "viewer em junção recebe snapshot antes de disputar autoridade"() {
+        const network = createLocalViewerNetwork();
+        const lockManager = createLocalViewerLockManager();
+        const authority = createLocalViewerHarness({
+          sandboxId: "sandbox-join-handshake",
+          viewerId: "viewer-join-authority",
+          role: "auto",
+          network,
+          lockManager
+        });
+        await authority.coordinator.start();
+        authority.coordinated.dispatch({
+          type: "object.create",
+          id: "join-snapshot-object",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        const joining = createLocalViewerHarness({
+          sandboxId: "sandbox-join-handshake",
+          viewerId: "viewer-joining",
+          role: "auto",
+          joinExisting: true,
+          network,
+          lockManager
+        });
+        await joining.coordinator.start();
+        await settleLocalViewers(20);
+
+        assertEqual(joining.coordinator.status().role, "replica");
+        assertEqual(
+          joining.coordinator.status().initialSynchronized,
+          true
+        );
+        assertEqual(joining.sandbox.objectCount, 1);
+        joining.coordinator.dispose();
+        authority.coordinator.dispose();
       },
 
       async "réplica sem BroadcastChannel não finge aceitar edição"() {
@@ -5115,6 +5427,76 @@ assets: {
     },
 
     "project-files": {
+      "schema 3 preserva câmera hierárquica e câmera padrão"() {
+        const assets = new AppearanceRuntime().exportAssets();
+        const project = new ProjectValidator().validate({
+          format: "spatial-seed",
+          schemaVersion: ProjectSerializer.schemaVersion,
+          assets,
+          scene: {
+            schemaVersion: 1,
+            defaultCameraId: "camera-main",
+            objects: [
+              {
+                id: "camera-group",
+                kind: "group",
+                position: [0, 0, 0],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1]
+              },
+              {
+                id: "camera-main",
+                kind: "camera",
+                parentId: "camera-group",
+                position: [1, 2, 3],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1],
+                camera: {
+                  projection: "perspective",
+                  fov: 50,
+                  near: 0.1,
+                  far: 2000,
+                  focusDistance: 8
+                }
+              }
+            ]
+          }
+        });
+
+        assertEqual(project.schemaVersion, 3);
+        assertEqual(project.scene.defaultCameraId, "camera-main");
+        assertEqual(project.scene.objects[1].kind, "camera");
+        assertEqual("appearanceId" in project.scene.objects[1], false);
+        assertThrowsMessage(
+          () => new ProjectValidator().validate({
+            format: "spatial-seed",
+            schemaVersion: 2,
+            assets,
+            scene: {
+              schemaVersion: 1,
+              objects: [project.scene.objects[1]]
+            }
+          }),
+          "exige schema 3"
+        );
+      },
+
+      "schema 3 rejeita câmera padrão inexistente"() {
+        assertThrowsMessage(
+          () => new ProjectValidator().validate({
+            format: "spatial-seed",
+            schemaVersion: 3,
+            assets: new AppearanceRuntime().exportAssets(),
+            scene: {
+              schemaVersion: 1,
+              defaultCameraId: "camera-missing",
+              objects: []
+            }
+          }),
+          "Câmera padrão inexistente"
+        );
+      },
+
       "schema 2 aceita grupo lógico sem aparência"() {
         const sourceRuntime=new AppearanceRuntime();
         const scene=sourceRuntime.normalizeScene({
@@ -10087,6 +10469,7 @@ function createLocalViewerHarness({
   sandboxId,
   viewerId,
   role,
+  joinExisting = false,
   network,
   lockManager = null
 }) {
@@ -10104,6 +10487,7 @@ function createLocalViewerHarness({
     sandboxId,
     viewerId,
     requestedRole: role,
+    joinExisting,
     channelFactory: network.channelFactory,
     lockManager,
     now: () => Date.parse("2026-07-24T12:00:00.000Z")

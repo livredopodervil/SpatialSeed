@@ -11,3 +11,8 @@ export {
 export {
   LocalAnimationCoordinator
 } from "./LocalAnimationCoordinator.js";
+export {
+  LocalProjectLaunchReceiver,
+  LocalProjectLaunchSender,
+  createIndependentProjectUrl
+} from "./LocalProjectLaunch.js";

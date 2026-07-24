@@ -1,6 +1,6 @@
 export class ProjectSerializer {
   static format = "spatial-seed";
-  static schemaVersion = 2;
+  static schemaVersion = 3;
 
   constructor({
     sandbox,

@@ -103,7 +103,8 @@ um diálogo com três ações: continuar, exportar uma cópia `.spatialseed` ou
 descartar.
 
 Abrir um arquivo ou criar um projeto inicia outra identidade local. A
-recuperação não inclui seleção, câmera, painéis, previews nem animação e não
+recuperação não inclui seleção, câmera de navegação, câmera ativa, painéis,
+previews nem animação e não
 substitui o transporte explícito por arquivo.
 
 ## Interoperabilidade de arquivos

@@ -1,4 +1,9 @@
-import { ProjectSerializer } from "./ProjectSerializer.js";
+import {
+  ProjectSerializer
+} from "./ProjectSerializer.js?build=20260724-0029f";
+import {
+  HierarchyIndex
+} from "../../scene-hierarchy/src/index.js";
 
 export class ProjectValidator {
   parse(text) {
@@ -30,7 +35,7 @@ export class ProjectValidator {
       );
     }
 
-    if (![1, ProjectSerializer.schemaVersion].includes(
+    if (![1, 2, ProjectSerializer.schemaVersion].includes(
       value.schemaVersion
     )) {
       throw new Error(
@@ -49,7 +54,7 @@ export class ProjectValidator {
     }
 
     if (
-      value.schemaVersion === 2 &&
+      value.schemaVersion >= 2 &&
       (
         !value.assets ||
         value.assets.schemaVersion !== 1 ||
@@ -88,8 +93,8 @@ export class ProjectValidator {
         ids.add(id);
 
         if (
-          value.schemaVersion === 2 &&
-          object.kind !== "group" &&
+          value.schemaVersion >= 2 &&
+          !["group", "camera"].includes(object.kind) &&
           !object.appearanceId
         ) {
           throw new Error(
@@ -97,9 +102,44 @@ export class ProjectValidator {
           );
         }
 
+        if (object.kind === "camera") {
+          if (value.schemaVersion < 3) {
+            throw new Error(
+              `Objeto câmera exige schema 3: ${id}.`
+            );
+          }
+          validateCameraNode(object, id);
+        }
+
         return structuredClone(object);
       }
     );
+
+    if (
+      value.schemaVersion < 3 &&
+      value.scene.defaultCameraId !== undefined
+    ) {
+      throw new Error("Câmera padrão exige schema 3.");
+    }
+    const defaultCameraId =
+      value.scene.defaultCameraId === undefined ||
+      value.scene.defaultCameraId === null ||
+      value.scene.defaultCameraId === ""
+      ? null
+      : String(value.scene.defaultCameraId);
+    if (
+      defaultCameraId !== null &&
+      !objects.some(object =>
+        object.id === defaultCameraId && object.kind === "camera"
+      )
+    ) {
+      throw new Error(
+        `Câmera padrão inexistente: ${defaultCameraId}.`
+      );
+    }
+    if (value.schemaVersion >= 3) {
+      new HierarchyIndex(objects);
+    }
 
     return {
       format: value.format,
@@ -107,15 +147,67 @@ export class ProjectValidator {
       metadata: structuredClone(value.metadata ?? {}),
       region: structuredClone(value.region ?? {}),
       assets:
-        value.schemaVersion === 2
+        value.schemaVersion >= 2
           ? structuredClone(value.assets)
           : null,
       scene: {
         ...structuredClone(value.scene),
+        ...(defaultCameraId === null
+          ? {}
+          : { defaultCameraId }),
         objects
       },
       editor: structuredClone(value.editor ?? {}),
       renderer: structuredClone(value.renderer ?? {})
     };
   }
+}
+
+function validateCameraNode(object, id) {
+  vector(object.position ?? [0, 0, 0], 3, `Posição inválida: ${id}.`);
+  const rotation = vector(
+    object.rotation ?? [0, 0, 0, 1],
+    4,
+    `Orientação inválida: ${id}.`
+  );
+  if (Math.hypot(...rotation) <= 1e-12) {
+    throw new Error(`Orientação inválida: ${id}.`);
+  }
+  const camera = object.camera;
+  if (!camera || typeof camera !== "object") {
+    throw new Error(`Descritor de câmera ausente: ${id}.`);
+  }
+  if ((camera.projection ?? "perspective") !== "perspective") {
+    throw new Error(`Projeção de câmera incompatível: ${id}.`);
+  }
+  const fov = finite(camera.fov ?? 55);
+  const near = finite(camera.near ?? 0.1);
+  const far = finite(camera.far ?? 1000);
+  const focusDistance = finite(camera.focusDistance ?? 10);
+  if (
+    !(fov >= 1 && fov <= 179) ||
+    !(near > 0 && far > near) ||
+    !(focusDistance > 0)
+  ) {
+    throw new Error(`Descritor de câmera inválido: ${id}.`);
+  }
+}
+
+function vector(value, length, message) {
+  if (
+    !Array.isArray(value) ||
+    value.length !== length ||
+    !value.every(entry => Number.isFinite(Number(entry)))
+  ) {
+    throw new Error(message);
+  }
+  return value.map(Number);
+}
+
+function finite(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    throw new TypeError("Valor de câmera deve ser finito.");
+  }
+  return number;
 }

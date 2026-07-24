@@ -21,7 +21,7 @@ import {
   renderableSubtreeIds,
   selectionReferenceWorldPosition,
   selectionUnitId
-} from "./WorldTransformProjection.js?build=20260715-0023d";
+} from "./WorldTransformProjection.js?build=20260724-0029f";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import {
@@ -37,6 +37,7 @@ import {
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-navigation-camera-v1";
   #meshes = new Map();
+  #cameraVisuals = new Map();
   #selectionSnapshot = null;
   #session = null;
   #tap = null;
@@ -360,7 +361,10 @@ export class ThreeRegionRenderer {
   selectScreenRect(rectangle, operation = this.#selectionOperation) {
     const r = this.canvas.getBoundingClientRect(), byId = new Map();
     for (const [objectId, proxy] of this.#meshes) {
-      if (proxy.userData.logicalOnly) continue;
+      if (
+        proxy.userData.logicalOnly &&
+        !proxy.userData.cameraVisual
+      ) continue;
       const p = proxy.getWorldPosition(new THREE.Vector3()).project(this.camera);
       if (p.z < -1 || p.z > 1) continue;
       const x=(p.x+1)*.5*r.width,y=(1-p.y)*.5*r.height;
@@ -655,6 +659,21 @@ export class ThreeRegionRenderer {
       applyProjectedWorldMatrix(proxy,worldMatrix);
     }
 
+    if (object.kind === "camera") {
+      if (proxy.userData.batchKey) {
+        this.#removeFromBatch(object.id, proxy.userData.batchKey);
+        proxy.userData.batchKey = null;
+      }
+      proxy.userData.logicalOnly = true;
+      proxy.userData.cameraVisual = true;
+      this.#upsertCameraVisual(object, proxy);
+      return;
+    }
+
+    if (proxy.userData.cameraVisual) {
+      this.#removeCameraVisual(object.id, proxy);
+    }
+
     if (!isRenderableSceneNode(object)) {
       if (proxy.userData.batchKey) {
         this.#removeFromBatch(object.id,proxy.userData.batchKey);
@@ -687,12 +706,103 @@ export class ThreeRegionRenderer {
     const proxy = this.#meshes.get(id);
     if (!proxy) return false;
 
+    this.#removeCameraVisual(id, proxy);
     this.#removeFromBatch(id, proxy.userData.batchKey);
     this.#meshes.delete(id);
     this.#selectedVisualIds.delete(id);
     this.#animationTargetIds.delete(id);
     this.#animationPivotOverrides.delete(id);
     this.#incrementalDiagnostics.objectsDeleted += 1;
+    return true;
+  }
+
+  #upsertCameraVisual(object, proxy) {
+    let visual = this.#cameraVisuals.get(object.id);
+    if (!visual) {
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(0.58, 0.38, 0.62),
+        new THREE.MeshBasicMaterial({
+          color: 0xffc857,
+          depthTest: true,
+          depthWrite: true
+        })
+      );
+      body.position.z = 0.22;
+      body.userData.cameraObjectId = object.id;
+      const lens = new THREE.Mesh(
+        new THREE.ConeGeometry(0.24, 0.42, 12, 1, true),
+        new THREE.MeshBasicMaterial({
+          color: 0xffa62b,
+          wireframe: true
+        })
+      );
+      lens.rotation.x = -Math.PI / 2;
+      lens.position.z = -0.28;
+      lens.userData.cameraObjectId = object.id;
+      const lines = new THREE.LineSegments(
+        new THREE.BufferGeometry(),
+        new THREE.LineBasicMaterial({ color: 0x72d6ff })
+      );
+      lines.userData.cameraObjectId = object.id;
+      proxy.add(body, lens, lines);
+      this.scene.add(proxy);
+      visual = { body, lens, lines };
+      this.#cameraVisuals.set(object.id, visual);
+    }
+
+    const fov = Number(object.camera?.fov ?? 55);
+    const length = 2;
+    const halfHeight = Math.min(
+      3,
+      Math.max(0.15, Math.tan(fov * Math.PI / 360) * length)
+    );
+    const halfWidth = Math.min(4, halfHeight * 1.6);
+    const z = -length;
+    const corners = [
+      [-halfWidth, -halfHeight, z],
+      [halfWidth, -halfHeight, z],
+      [halfWidth, halfHeight, z],
+      [-halfWidth, halfHeight, z]
+    ];
+    const segments = [];
+    for (const corner of corners) {
+      segments.push(0, 0, 0, ...corner);
+    }
+    for (let index = 0; index < corners.length; index += 1) {
+      segments.push(
+        ...corners[index],
+        ...corners[(index + 1) % corners.length]
+      );
+    }
+    visual.lines.geometry.dispose();
+    visual.lines.geometry = new THREE.BufferGeometry();
+    visual.lines.geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(segments, 3)
+    );
+    proxy.userData.localBounds = {
+      min: [-halfWidth, -halfHeight, z],
+      max: [halfWidth, halfHeight, 0.53]
+    };
+    proxy.userData.cameraProjection = {
+      fov,
+      near: Number(object.camera?.near ?? 0.1),
+      far: Number(object.camera?.far ?? 1000),
+      focusDistance: Number(object.camera?.focusDistance ?? 10)
+    };
+  }
+
+  #removeCameraVisual(id, proxy = this.#meshes.get(id)) {
+    const visual = this.#cameraVisuals.get(id);
+    if (!visual) return false;
+    this.scene.remove(proxy);
+    for (const object of [visual.body, visual.lens, visual.lines]) {
+      object.geometry?.dispose?.();
+      object.material?.dispose?.();
+    }
+    proxy.clear();
+    proxy.userData.cameraVisual = false;
+    this.#cameraVisuals.delete(id);
     return true;
   }
 
@@ -1407,7 +1517,16 @@ export class ThreeRegionRenderer {
       false
     );
 
-    const hitIds=[...new Set(hits.map(h=>this.#batchManager.objectFromHit(h)).filter(Boolean).map(id=>this.#hierarchy.has(id)?selectionUnitId(this.#hierarchy,id):id))];
+    const cameraHits = this.raycaster.intersectObjects(
+      [...this.#cameraVisuals.values()].flatMap(
+        visual => [visual.body, visual.lens]
+      ),
+      false
+    );
+    const hitIds=[...new Set([
+      ...hits.map(hit => this.#batchManager.objectFromHit(hit)),
+      ...cameraHits.map(hit => hit.object.userData.cameraObjectId)
+    ].filter(Boolean).map(id=>this.#hierarchy.has(id)?selectionUnitId(this.#hierarchy,id):id))];
     const objectId=this.#cycledHitId(hitIds,event.clientX,event.clientY);
     this.#inputDiagnostics.objectHits=hitIds.length;
 
@@ -1483,6 +1602,7 @@ getResourceDiagnostics() {
     logicalProxies: this.#meshes.size,
     instancedMeshes: batches.length,
     logicalInstances: this.#batchManager.stats().objects,
+    cameraObjects: this.#cameraVisuals.size,
     uniqueGeometries: geometries.size,
     uniqueMaterials: materials.size,
     uniqueTextures: textures.size,

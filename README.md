@@ -26,6 +26,8 @@ O resultado atual combina:
 - recuperação automática local por checkpoint e comandos confirmados;
 - múltiplos viewers locais sobre o mesmo sandbox, com câmeras e seleções
   independentes;
+- projetos independentes criados ou abertos explicitamente em novas abas;
+- objetos câmera persistentes, hierárquicos e ativáveis por viewer;
 - animações efêmeras sincronizadas por definição e relógio absoluto entre esses
   viewers;
 - testes, diagnósticos, auditoria de recursos e benchmarks executáveis no próprio aplicativo.
@@ -122,7 +124,8 @@ Um servidor HTTP é necessário porque módulos ES, import maps e service worker
 | Editar propriedades literais ou procedurais, inclusive abrindo grupos | **Inspector** |
 | Reproduzir presets ou compor faixas diferentes por objeto | **Animação** |
 | Posicionar, orientar, orbitar, enquadrar e configurar o recorte | **Câmera** |
-| Abrir outra projeção local do mesmo sandbox | **Painéis → Novo viewer** |
+| Criar, ativar, capturar e escolher objetos câmera | **Câmera → Câmeras do projeto** |
+| Conectar viewers ou abrir projetos independentes | **Projetos / viewers** |
 | Executar laboratórios paramétricos que geram planos revisáveis | **Explorar** |
 | Ver árvore regional, diagnóstico, recursos e console | **Painéis** |
 | Salvar, abrir, instalar e trocar catálogos de procedimentos | **Projeto** |
@@ -186,10 +189,23 @@ O painel **Câmera** permite editar posição e alvo, orbitar incrementalmente,
 enquadrar a seleção e restaurar a vista inicial. Essas ações não alteram o
 sandbox, não entram no undo e não são salvas no arquivo `.spatialseed`.
 
+### Objetos câmera
+
+Objetos câmera são entidades persistentes e hierárquicas, distintas da câmera
+de navegação. Podem ser criados a partir da vista atual, selecionados,
+transformados, agrupados, capturados novamente e salvos no schema 3 do projeto.
+Cada viewer escolhe localmente qual objeto câmera ativa; o documento pode
+declarar uma câmera padrão opcional.
+
+Ativar um objeto projeta sua pose mundial e seus parâmetros de perspectiva na
+vista local. Navegar manualmente volta à câmera livre sem modificar o objeto.
+Use `camera objects` e `help camera` no console.
+
 ### Viewers locais
 
-**Novo viewer** abre outra aba sobre uma identidade de sandbox ativa. Quando há
-mais de um projeto rodando, um seletor permite escolher o destino. Cada aba
+**Projetos / viewers** lista as identidades de sandbox ativas, conecta outra aba
+ao destino escolhido e também oferece **Novo projeto em nova aba** e **Abrir
+arquivo em nova aba**. Cada aba
 mantém câmera, seleção e painéis próprios; objetos e histórico são coordenados
 por revisão. Uma aba é a autoridade local e as demais enviam comandos canônicos
 em fila. Se uma intenção foi produzida sobre revisão antiga, ela é rejeitada, o
@@ -200,6 +216,11 @@ Use `viewers status`, `viewers sessions`, `viewers open [sandboxId]` e
 o projeto e seu diário de recuperação. Essa
 coordenação usa `BroadcastChannel` na mesma origem e não deve ser confundida com
 colaboração remota ou multiusuário.
+
+Um viewer que entra numa sessão existente aguarda o primeiro snapshot antes de
+participar da sucessão de autoridade. Isso evita tratar uma entrada ainda não
+sincronizada como um projeto vazio recuperável. Arquivos enviados a uma nova aba
+usam um canal transitório e não são guardados no diretório de sessões.
 
 Sessões de animação efêmera também atravessam esses viewers, mas por um
 protocolo temporal separado do snapshot editorial. A definição e uma época
@@ -447,8 +468,8 @@ flowchart TD
 | --- | --- |
 | `packages/core` | região, sandbox e eventos |
 | `packages/runtime-api` | fachada pública de comandos, consultas, eventos e capacidades |
-| `packages/runtime-layers` | estado local do viewer e controlador da câmera de navegação |
-| `packages/local-viewers` | coordenação editorial e temporal entre viewers da mesma origem |
+| `packages/runtime-layers` | estado local do viewer, controlador de navegação e serviço de objetos câmera |
+| `packages/local-viewers` | coordenação editorial/temporal e lançamento transitório entre abas |
 | `packages/editor-commands` | registro canônico das operações editoriais |
 | `packages/region-box` | reducer puro e modelo de estado da região atual |
 | `packages/scene-hierarchy` | grupos, parentesco, transforms locais e ciclo de subárvores |
@@ -476,6 +497,9 @@ Consulte [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
 [`docs/ANIMATION_WORKSPACE_0028D.md`](docs/ANIMATION_WORKSPACE_0028D.md).
 O protocolo local atual está em
 [`docs/project/LOCAL_VIEWER_COORDINATION.md`](docs/project/LOCAL_VIEWER_COORDINATION.md).
+O contrato de câmera está dividido entre
+[`docs/project/VIEWER_CAMERA_CONTROLLER.md`](docs/project/VIEWER_CAMERA_CONTROLLER.md)
+e [`docs/project/CAMERA_OBJECTS.md`](docs/project/CAMERA_OBJECTS.md).
 
 ## Projetos, arquivos e funcionamento offline
 
@@ -489,7 +513,8 @@ O protocolo local atual está em
   do sandbox;
 - ao reabrir, checkpoints limpos continuam automaticamente; rascunhos oferecem
   **Continuar**, **Exportar cópia** ou **Descartar**;
-- seleção, câmera, painéis e animação não entram na recuperação;
+- seleção, câmera de navegação, câmera ativa, painéis e animação não entram na
+  recuperação; objetos câmera e a câmera padrão pertencem ao documento;
 - limpar os dados do navegador pode apagar a recuperação local;
 - a cópia portátil do trabalho continua sendo responsabilidade de **Salvar** e
   **Abrir**.

@@ -1,7 +1,7 @@
 # Especificação do formato `.spatialseed`
 
-> Especificação normativa P0. Auditada em 16 de julho de 2026. Formato de
-> escrita atual: `spatial-seed`, schema 2. O leitor também aceita schema 1.
+> Especificação normativa P0. Auditada em 24 de julho de 2026. Formato de
+> escrita atual: `spatial-seed`, schema 3. O leitor também aceita schemas 1 e 2.
 
 ## 1. Escopo
 
@@ -22,22 +22,26 @@ sentido do BCP 14.
 | encoding | UTF-8 |
 | media type usado pela aplicação | `application/json;charset=utf-8` |
 | `format` | `spatial-seed` |
-| schema escrito | `2` |
-| schemas lidos | `1`, `2` |
+| schema escrito | `3` |
+| schemas lidos | `1`, `2`, `3` |
 
 O tipo MIME ainda não é registrado na IANA. Integrações externas DEVERIAM
 reconhecer primeiro `format` e `schemaVersion`, não apenas extensão ou MIME.
 
-## 3. Envelope de schema 2
+## 3. Envelope de schema 3
 
 ```js
 {
   format: "spatial-seed",
-  schemaVersion: 2,
+  schemaVersion: 3,
   metadata: { name, createdAt, savedAt },
   region: { descriptor, version },
   assets: { schemaVersion: 1, assets: { [contentId]: assetRecord } },
-  scene: { schemaVersion: 1, objects: [...] },
+  scene: {
+    schemaVersion: 1,
+    defaultCameraId: "camera-principal", // opcional
+    objects: [...]
+  },
   editor: { ... },
   renderer: { transformConfig: { ... } }
 }
@@ -125,8 +129,8 @@ Forma canônica:
 }
 ```
 
-Em schema 2, todo objeto cujo `kind` não seja `group` DEVE possuir
-`appearanceId`. `material` embutido não é a representação canônica de schema 2.
+Em schemas 2 e 3, todo objeto cujo `kind` não seja `group` nem `camera` DEVE
+possuir `appearanceId`. `material` embutido não é a representação canônica.
 
 `instanceState` guarda overrides por instância. O campo atualmente usado é
 `color`; novos campos precisam de contrato de propriedade e serialização.
@@ -158,8 +162,38 @@ Uma hierarquia conforme DEVE satisfazer:
 4. cada nó tem no máximo um pai;
 5. relações internas permanecem em transforms locais.
 
-O `ProjectValidator` atual ainda não aplica toda essa lista; `HierarchyIndex`
-aplica-a quando a hierarquia é usada. Escritores DEVEM obedecê-la mesmo assim.
+Em schema 3, `ProjectValidator` aplica essa lista por `HierarchyIndex`. Escritores
+de versões anteriores DEVEM obedecê-la mesmo quando o leitor legado for mais
+tolerante.
+
+### 6.5 Objeto câmera
+
+```js
+{
+  id: "camera-principal",
+  kind: "camera",
+  name: "Câmera principal",
+  parentId: null,
+  position: [0, 4, 8],
+  rotation: [0, 0, 0, 1],
+  scale: [1, 1, 1],
+  camera: {
+    projection: "perspective",
+    fov: 50,
+    near: 0.1,
+    far: 2000,
+    focusDistance: 10
+  }
+}
+```
+
+Objeto câmera NÃO DEVE possuir geometria nem `appearanceId`. Nesta versão,
+`projection` DEVE ser `perspective`, `1 <= fov <= 179`,
+`0 < near < far` e `focusDistance > 0`.
+
+`scene.defaultCameraId` PODE ser ausente. Quando presente, DEVE referenciar o ID
+de um objeto `kind: "camera"` existente na mesma cena. A câmera ativa de cada
+viewer não pertence ao arquivo.
 
 ## 7. Descritores geométricos
 
@@ -290,12 +324,12 @@ Políticas de pivô aceitas hoje:
 `renderer.transformConfig` guarda configuração do gizmo. Recursos WebGL,
 caches, meshes e bounds derivados NÃO pertencem ao arquivo.
 
-## 10. Exemplo mínimo importável de schema 2
+## 10. Exemplo mínimo importável de schema 3
 
 ```json
 {
   "format": "spatial-seed",
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "metadata": {
     "name": "Exemplo mínimo",
     "createdAt": "2026-07-16T12:00:00.000Z",
@@ -339,6 +373,7 @@ caches, meshes e bounds derivados NÃO pertencem ao arquivo.
   },
   "scene": {
     "schemaVersion": 1,
+    "defaultCameraId": "camera-1",
     "objects": [
       {
         "id": "box-1",
@@ -350,6 +385,22 @@ caches, meshes e bounds derivados NÃO pertencem ao arquivo.
         "geometry": { "type": "box", "size": [2, 2, 2] },
         "appearanceId": "appearance:fnv1a64:0805c98f9629a319",
         "instanceState": {}
+      },
+      {
+        "id": "camera-1",
+        "kind": "camera",
+        "name": "Câmera principal",
+        "parentId": null,
+        "position": [0, 4, 8],
+        "rotation": [0, 0, 0, 1],
+        "scale": [1, 1, 1],
+        "camera": {
+          "projection": "perspective",
+          "fov": 50,
+          "near": 0.1,
+          "far": 2000,
+          "focusDistance": 10
+        }
       }
     ]
   },
@@ -361,7 +412,7 @@ caches, meshes e bounds derivados NÃO pertencem ao arquivo.
 Os IDs acima correspondem exatamente aos valores mostrados. Alterar qualquer
 valor exige recalcular seu content ID e atualizar referências.
 
-## 11. Compatibilidade com schema 1
+## 11. Compatibilidade com schemas 1 e 2
 
 Schema 1 não exige `assets`; objetos podem conter `material` embutido:
 
@@ -385,7 +436,11 @@ Schema 1 não exige `assets`; objetos podem conter `material` embutido:
 ```
 
 Ao abrir, materiais legados são internados no grafo de aparências. O próximo
-save escreve schema 2. Não existe downgrade automático de schema 2 para 1.
+save escreve schema 3. Não existe downgrade automático para schemas 1 ou 2.
+
+Schema 2 possui catálogo de assets, mas não define objetos câmera nem
+`defaultCameraId`. O leitor o normaliza e o próximo save também escreve schema
+3.
 
 ## 12. Processo de leitura
 
@@ -394,7 +449,7 @@ O reader atual executa, em ordem:
 1. `JSON.parse`;
 2. validação do envelope e objetos;
 3. reset do runtime de aparências;
-4. importação dos assets de schema 2;
+4. importação dos assets de schemas 2 e 3;
 5. normalização da cena;
 6. `sandbox.replaceState(..., {markClean:true})`;
 7. limpeza da seleção;
@@ -413,9 +468,10 @@ O reader DEVE rejeitar, sem aceitar parcialmente:
 - `format` diferente;
 - schema desconhecido;
 - `scene.objects` ausente ou não-array;
-- catálogo de assets incompatível em schema 2;
+- catálogo de assets incompatível em schemas 2 ou 3;
 - objeto não-objeto, ID vazio ou duplicado;
-- objeto renderizável sem `appearanceId` em schema 2;
+- objeto renderizável sem `appearanceId` em schemas 2 ou 3;
+- descritor de câmera inválido ou câmera padrão inexistente;
 - content ID incompatível;
 - valor de asset não canônico ou não serializável;
 - referência inexistente ou de `kind` incorreto;
@@ -423,8 +479,9 @@ O reader DEVE rejeitar, sem aceitar parcialmente:
 - geometria desconhecida ou parâmetros inválidos;
 - transform não finito ou não representável.
 
-Os primeiros sete itens são amplamente implementados hoje; os demais definem o
-alvo normativo que ainda precisa ser incorporado ao `ProjectValidator`.
+O `ProjectValidator` implementa envelope, assets, identidades, câmeras e
+hierarquia do schema 3. Validação profunda de content IDs, referências e todos
+os limites de recurso ainda deve continuar evoluindo.
 
 ## 14. Limites e segurança de recursos
 

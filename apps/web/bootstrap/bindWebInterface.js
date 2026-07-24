@@ -28,6 +28,7 @@ export function bindWebInterface({
     sandboxRecovery,
     viewerCoordinator,
     viewerDirectory,
+    projectLaunch,
     connectUiDiagnostics
   } = web;
 
@@ -40,6 +41,10 @@ export function bindWebInterface({
   };
   const browserWindow = documentRoot.defaultView ?? window;
   const projectFiles = new BrowserProjectFileGateway({
+    windowRef: browserWindow,
+    documentRef: documentRoot
+  });
+  const projectWindowFiles = new BrowserProjectFileGateway({
     windowRef: browserWindow,
     documentRef: documentRoot
   });
@@ -78,6 +83,22 @@ export function bindWebInterface({
   );
   let latestViewerRole = latestViewerInstances.role;
   let latestSandboxId = latestViewerInstances.sandboxId;
+  let pendingProjectWindowLaunch = null;
+  if (browserWindow.location) {
+    const cleanLaunchUrl = new URL(browserWindow.location.href);
+    if (cleanLaunchUrl.searchParams.has("project")) {
+      cleanLaunchUrl.searchParams.delete("project");
+      cleanLaunchUrl.searchParams.delete("launch");
+      if (latestViewerRole === "authority") {
+        cleanLaunchUrl.searchParams.delete("viewer");
+      }
+      browserWindow.history.replaceState(
+        browserWindow.history.state,
+        "",
+        cleanLaunchUrl
+      );
+    }
+  }
   const initialCamera = runtime.query("viewer.camera.snapshot");
   const toolbarBinding = composeToolbar({
     root: documentRoot,
@@ -330,11 +351,6 @@ export function bindWebInterface({
     .register("viewer.instance.choose", () => {
       const directory = runtime.query("viewer.sessions.status");
       const sessions = directory.sessions ?? [];
-      if (sessions.length <= 1) {
-        return uiActions.execute("viewer.instance.open", {
-          sandboxId: sessions[0]?.sandboxId ?? latestSandboxId
-        });
-      }
       renderViewerSessions(sessions);
       if (typeof viewerSessionDialog.showModal === "function") {
         viewerSessionDialog.showModal();
@@ -409,7 +425,15 @@ export function bindWebInterface({
 
   const unsubscribeWorld = runtime.subscribe(
     "world.changed",
-    () => uiRefresh.request("world.changed")
+    () => {
+      uiRefresh.request("world.changed");
+      if (
+        !$("camera-panel").hidden &&
+        !$("camera-panel").contains(documentRoot.activeElement)
+      ) {
+        refreshCameraPanel();
+      }
+    }
   );
 
   const unsubscribeSelection = runtime.subscribe(
@@ -538,7 +562,52 @@ export function bindWebInterface({
       `quaternion [${camera.quaternion
         .map(value => Number(value.toFixed(6)))
         .join(", ")}] · foco ${Number(camera.focusDistance.toFixed(6))}`;
+    refreshCameraObjects();
     return camera;
+  };
+  const selectedCameraObjectId = () =>
+    $("camera-object-select").value || null;
+  const refreshCameraObjects = () => {
+    const snapshot = runtime.query("camera.objects.list");
+    const select = $("camera-object-select");
+    const previous = select.value;
+    select.replaceChildren();
+    for (const camera of snapshot.cameras) {
+      const option = documentRoot.createElement("option");
+      option.value = camera.id;
+      option.textContent = [
+        camera.name,
+        camera.active ? "ativa" : null,
+        camera.default ? "padrão" : null
+      ].filter(Boolean).join(" · ");
+      select.append(option);
+    }
+    if (snapshot.cameras.some(camera => camera.id === previous)) {
+      select.value = previous;
+    } else if (snapshot.activeCameraId) {
+      select.value = snapshot.activeCameraId;
+    } else if (snapshot.defaultCameraId) {
+      select.value = snapshot.defaultCameraId;
+    }
+    const selected = snapshot.cameras.find(
+      camera => camera.id === select.value
+    );
+    $("camera-object-summary").textContent = selected
+      ? `${snapshot.cameras.length} câmera(s) · id ${selected.id} · ` +
+        `${selected.camera.fov}° · ${selected.camera.near}–${selected.camera.far}`
+      : "Nenhuma câmera persistente.";
+    for (const id of [
+      "camera-object-activate",
+      "camera-object-capture",
+      "camera-object-default"
+    ]) {
+      $(id).disabled = !selected;
+    }
+    $("camera-object-default-clear").disabled =
+      !snapshot.defaultCameraId;
+    $("camera-object-deactivate").disabled =
+      !snapshot.activeCameraId;
+    return snapshot;
   };
 
   $("camera-settings").addEventListener("click", () => {
@@ -605,6 +674,61 @@ export function bindWebInterface({
     showNotice("Vista inicial restaurada.");
   });
 
+  $("camera-object-create").addEventListener("click", () => {
+    const snapshot = runtime.query("camera.objects.list");
+    const name = browserWindow.prompt(
+      "Nome da câmera persistente:",
+      `Câmera ${snapshot.cameras.length + 1}`
+    );
+    if (name === null) return;
+    const result = execute("camera.object.create", {
+      name: name.trim() || null,
+      camera: runtime.query("viewer.camera.snapshot"),
+      activate: true
+    });
+    if (!result?.changed) return;
+    refreshCameraPanel();
+    $("camera-object-select").value = result.id;
+    showNotice("Câmera persistente criada e ativada.");
+  });
+
+  $("camera-object-activate").addEventListener("click", () => {
+    const id = selectedCameraObjectId();
+    if (!id) return;
+    execute("viewer.camera.object.activate", { id });
+    refreshCameraPanel();
+    showNotice("Câmera ativada somente neste viewer.");
+  });
+
+  $("camera-object-capture").addEventListener("click", () => {
+    const id = selectedCameraObjectId();
+    if (!id) return;
+    const result = execute("camera.object.capture-viewer", { id });
+    if (!result?.changed) return;
+    refreshCameraPanel();
+    showNotice("Câmera persistente atualizada pela vista atual.");
+  });
+
+  $("camera-object-default").addEventListener("click", () => {
+    const id = selectedCameraObjectId();
+    if (!id) return;
+    execute("camera.object.default.set", { id });
+    refreshCameraObjects();
+    showNotice("Câmera padrão do documento atualizada.");
+  });
+
+  $("camera-object-default-clear").addEventListener("click", () => {
+    execute("camera.object.default.set", { id: null });
+    refreshCameraObjects();
+    showNotice("O documento não possui câmera padrão.");
+  });
+
+  $("camera-object-deactivate").addEventListener("click", () => {
+    execute("viewer.camera.object.deactivate");
+    refreshCameraObjects();
+    showNotice("Navegação livre neste viewer.");
+  });
+
   const unsubscribeViewer = runtime.subscribe(
     "viewer.changed",
     () => {
@@ -635,7 +759,7 @@ export function bindWebInterface({
         const url = new URL(browserWindow.location.href);
         url.searchParams.set("sandbox", snapshot.sandboxId);
         if (snapshot.role === "replica") {
-          url.searchParams.set("viewer", "auto");
+          url.searchParams.set("viewer", "join");
         } else {
           url.searchParams.delete("viewer");
         }
@@ -744,6 +868,105 @@ export function bindWebInterface({
       sandboxId: selected.value
     });
   });
+
+  $("project-new-window").addEventListener("click", () => {
+    const plan = execute("viewer.project.new-window", {
+      href: browserWindow.location.href
+    });
+    if (!plan?.url) return;
+    const opened = browserWindow.open(plan.url, "_blank");
+    if (!opened) {
+      showNotice("O navegador bloqueou a nova aba.");
+      return;
+    }
+    opened.opener = null;
+    viewerSessionDialog.close();
+    showNotice("Novo projeto solicitado em outra aba.");
+  });
+
+  async function finishProjectWindowLaunch(text) {
+    const pending = pendingProjectWindowLaunch;
+    if (!pending) return;
+    pendingProjectWindowLaunch = null;
+    try {
+      const accepted = await pending.sender.sendProject(text);
+      showNotice(
+        `Projeto aberto em nova aba: ${accepted.projectName ?? "Spatial Seed"}.`
+      );
+    } catch (error) {
+      showError(error);
+    } finally {
+      pending.sender.dispose();
+    }
+  }
+
+  $("project-open-window").addEventListener("click", async () => {
+    const plan = execute("viewer.project.open-window.prepare", {
+      href: browserWindow.location.href
+    });
+    if (!plan?.url) return;
+    const sender = projectLaunch.createSender(plan.launchId);
+    pendingProjectWindowLaunch = { plan, sender };
+    const openedWindow = browserWindow.open(plan.url, "_blank");
+    if (!openedWindow) {
+      sender.dispose();
+      pendingProjectWindowLaunch = null;
+      showNotice("O navegador bloqueou a nova aba.");
+      return;
+    }
+    openedWindow.opener = null;
+    viewerSessionDialog.close();
+
+    if (!projectWindowFiles.capabilities().nativeOpen) {
+      $("project-file-input-new-window").click();
+      return;
+    }
+    try {
+      const opened = await projectWindowFiles.open();
+      if (opened.opened) {
+        await finishProjectWindowLaunch(opened.text);
+      } else if (opened.fallbackRequired) {
+        $("project-file-input-new-window").click();
+      } else {
+        sender.cancel("file-selection-cancelled");
+        sender.dispose();
+        pendingProjectWindowLaunch = null;
+      }
+    } catch (error) {
+      sender.cancel(error?.message ?? "file-open-failed");
+      sender.dispose();
+      pendingProjectWindowLaunch = null;
+      showError(error);
+    }
+  });
+
+  $("project-file-input-new-window").addEventListener(
+    "change",
+    async event => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        pendingProjectWindowLaunch?.sender.cancel(
+          "file-selection-cancelled"
+        );
+        pendingProjectWindowLaunch?.sender.dispose();
+        pendingProjectWindowLaunch = null;
+        return;
+      }
+      try {
+        const opened = await projectWindowFiles.readFile(file);
+        await finishProjectWindowLaunch(opened.text);
+      } catch (error) {
+        pendingProjectWindowLaunch?.sender.cancel(
+          error?.message ?? "file-open-failed"
+        );
+        pendingProjectWindowLaunch?.sender.dispose();
+        pendingProjectWindowLaunch = null;
+        showError(error);
+      } finally {
+        event.target.value = "";
+      }
+    }
+  );
 
   $("project-open").addEventListener(
     "click",

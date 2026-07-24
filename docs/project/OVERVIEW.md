@@ -1,6 +1,6 @@
 # Visão geral do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e2`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029f`.
 > O build exato nunca deve ser copiado para este texto: sua fonte autoritativa
 > é [`apps/web/build-info.json`](../../apps/web/build-info.json).
 
@@ -112,6 +112,10 @@ Esse desenho procura tornar o sistema:
 - múltiplos viewers locais com seleção e câmera próprias, transporte por
   `BroadcastChannel` e serialização de edições por revisão;
 - escolha entre projetos ativos e sucessão automática da autoridade local;
+- criação e abertura explícitas de projetos independentes em novas abas, com
+  handshake de entrada antes da recuperação;
+- objetos câmera persistentes e hierárquicos, separados da câmera de navegação
+  local de cada viewer;
 - sessão de animação compartilhada entre viewers por descritor, sequência e
   relógio comum, sem tráfego de quadros;
 - catálogos de procedimentos em JSON legível;

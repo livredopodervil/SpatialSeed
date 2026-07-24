@@ -152,11 +152,15 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - promoção de réplica após fechamento da autoridade;
 - adoção do snapshot vivo pelo diário de recuperação promovido.
 
-### 0029f — Objetos câmera
+### 0029f — Objetos câmera e projetos locais explícitos — implementado
 
 - nós de câmera persistentes e hierárquicos;
 - múltiplas câmeras, câmera ativa local e câmera padrão opcional do documento;
-- migração retrocompatível do schema.
+- migração retrocompatível do schema para a versão 3;
+- handshake de entrada antes da recuperação de um viewer;
+- criação de projeto independente e abertura de arquivo em nova aba;
+- transferência de arquivo transitória, sem persistir conteúdo no diretório de
+  sessões.
 
 ### 0029g — Procedimentos e animação de câmera
 

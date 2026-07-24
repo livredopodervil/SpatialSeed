@@ -68,6 +68,50 @@ export function createDefaultPropertyRegistry() {
       read: object => [...object.size]
     }))
     .register(property({
+      id: "camera.fov",
+      label: "Campo visual °",
+      group: "camera",
+      scope: "object",
+      path: ["camera", "fov"],
+      valueType: "number",
+      normalize: value => boundedNumber(value, 1, 179),
+      supports: object => object?.kind === "camera",
+      read: object => Number(object.camera?.fov ?? 55)
+    }))
+    .register(property({
+      id: "camera.near",
+      label: "Plano near",
+      group: "camera",
+      scope: "object",
+      path: ["camera", "near"],
+      valueType: "number",
+      normalize: positiveNumber,
+      supports: object => object?.kind === "camera",
+      read: object => Number(object.camera?.near ?? 0.1)
+    }))
+    .register(property({
+      id: "camera.far",
+      label: "Plano far",
+      group: "camera",
+      scope: "object",
+      path: ["camera", "far"],
+      valueType: "number",
+      normalize: positiveNumber,
+      supports: object => object?.kind === "camera",
+      read: object => Number(object.camera?.far ?? 1000)
+    }))
+    .register(property({
+      id: "camera.focusDistance",
+      label: "Distância de foco",
+      group: "camera",
+      scope: "object",
+      path: ["camera", "focusDistance"],
+      valueType: "number",
+      normalize: positiveNumber,
+      supports: object => object?.kind === "camera",
+      read: object => Number(object.camera?.focusDistance ?? 10)
+    }))
+    .register(property({
       id: "appearance.color",
       label: "Cor",
       group: "appearance",
@@ -174,7 +218,8 @@ function property(input) {
   return {
     editableMany: true,
     supports: ["appearance", "instance"].includes(input.scope)
-      ? object => Boolean(object?.id) && object.kind !== "group"
+      ? object => Boolean(object?.id) &&
+          !["group", "camera"].includes(object.kind)
       : object => Boolean(object?.id),
     ...input
   };
@@ -202,6 +247,14 @@ function boundedNumber(value, minimum, maximum) {
   const result = finiteNumber(value);
   if (result < minimum || result > maximum) {
     throw new RangeError(`Número fora do intervalo ${minimum}–${maximum}.`);
+  }
+  return result;
+}
+
+function positiveNumber(value) {
+  const result = finiteNumber(value);
+  if (!(result > 0)) {
+    throw new RangeError("Número precisa ser positivo.");
   }
   return result;
 }

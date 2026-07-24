@@ -1,6 +1,7 @@
 # Coordenação de viewers locais
 
-> Contrato técnico implementado nos marcos `0029e`, `0029e1` e `0029e2`.
+> Contrato técnico implementado nos marcos `0029e`, `0029e1`, `0029e2` e
+> `0029f`.
 
 ## Fronteira
 
@@ -10,9 +11,9 @@ os comandos confirmados e o histórico pertencem ao sandbox compartilhado.
 
 `LocalViewerCoordinator` usa `BroadcastChannel` apenas como transporte local.
 Quando a Web Locks API está disponível, uma trava exclusiva escolhe a aba
-autoritativa. O botão **Novo viewer** usa o diretório de sessões vivas: conecta
-diretamente ao projeto atual quando ele é o único ativo ou apresenta um seletor
-de `sandboxId` quando há vários projetos.
+autoritativa. O botão **Projetos / viewers** usa o diretório de sessões vivas e
+sempre oferece ações explícitas: conectar ao projeto escolhido, criar um projeto
+independente ou abrir um arquivo em nova aba.
 
 Cada viewer anuncia periodicamente nome do projeto, identidade, papel, revisão
 e contagens num canal de diretório separado. O diretório não persiste projetos:
@@ -21,6 +22,11 @@ uma despedida remove a entrada imediatamente e anúncios abandonados expiram.
 Ao fechar a autoridade, as réplicas automáticas disputam a trava liberada. A
 vencedora mantém o snapshot espelhado, torna-se autoridade e adota o diário de
 recuperação vigente sem reler um checkpoint antigo sobre o estado vivo.
+
+Um URL de entrada com `viewer=join` não disputa autoridade imediatamente. Ele
+solicita o snapshot, aguarda a resposta da sessão escolhida e só participa da
+sucessão se nenhuma autoridade viva responder. Assim, recuperação não aparece
+enquanto a aba ainda está simplesmente entrando num projeto existente.
 
 ## Protocolo
 
@@ -73,7 +79,7 @@ intenção obsoleta recebe `rejected-stale` e a sessão vigente. Qualquer comand
 editorial encerra o overlay em todos os viewers antes de propagar o novo
 snapshot.
 
-## Recuperação e arquivos
+## Projetos independentes, recuperação e arquivos
 
 Somente a aba autoritativa grava a recuperação IndexedDB e pode abrir, criar ou
 publicar outro projeto. Réplicas podem salvar uma cópia portátil do estado
@@ -81,9 +87,16 @@ espelhado. Abrir um arquivo, criar um projeto e confirmar uma proposta continuam
 operações exclusivas da autoridade porque substituem a identidade ou a base
 compartilhada.
 
+**Novo projeto em nova aba** gera antecipadamente outra identidade e abre uma
+autoridade independente. **Abrir arquivo em nova aba** usa um `launchId`
+descartável e um `BroadcastChannel` próprio: a aba de destino anuncia que está
+pronta, recebe o texto do arquivo, valida e abre o projeto, confirma a aceitação
+e encerra o canal. O diretório recebe apenas metadados da sessão viva; nunca
+recebe o conteúdo do arquivo.
+
 ## Superfícies
 
-- botão **Novo viewer**;
+- botão **Projetos / viewers**;
 - `viewers status`;
 - `viewers sessions`;
 - `viewers open`;
@@ -93,6 +106,8 @@ compartilhada.
 - query `viewer.sessions.status`;
 - comando `viewer.sessions.discover`;
 - comandos `viewer.instance.open` e `viewer.instance.sync`;
+- comandos `viewer.project.new-window` e
+  `viewer.project.open-window.prepare`;
 - evento `viewer.instances.changed`;
 - suíte `runtime test viewer-coordination`;
 - evento `animation.shared.changed`;
@@ -100,7 +115,8 @@ compartilhada.
 
 ## Roteiro manual
 
-1. abra **Painéis → Novo viewer** e escolha o projeto se o seletor aparecer;
+1. abra **Projetos / viewers**, conecte outro viewer ao projeto e confirme que
+   recuperação não aparece;
 2. mantenha as duas abas lado a lado ou alterne entre elas;
 3. mova a câmera e selecione objetos diferentes em cada viewer;
 4. crie ou transforme um objeto numa aba e confirme a atualização na outra;
@@ -109,9 +125,11 @@ compartilhada.
 7. inicie uma animação numa aba e pause, retome e pare pela outra;
 8. deixe uma aba em segundo plano, retorne e confirme o mesmo instante;
 9. execute `runtime test viewer-coordination`, `runtime test viewer-animation`
-   e `runtime test all`.
+   e `runtime test all`;
 10. feche a aba autoritativa, confirme a promoção da réplica e abra outro viewer
-    sem perder o projeto.
+    sem perder o projeto;
+11. crie um projeto independente, confirme os dois destinos no seletor e abra
+    um arquivo numa terceira sessão.
 
 O teste de conflito obsoleto é automatizado porque depende de controlar a ordem
 das mensagens. A validação visual confirma separadamente que câmera e seleção

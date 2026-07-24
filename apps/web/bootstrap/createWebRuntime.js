@@ -5,29 +5,30 @@ import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
 import {
   VIEWER_CAMERA_COMMANDS,
+  CameraObjectService,
   ViewerCameraController,
   ViewerState,
-} from "../../../packages/runtime-layers/src/index.js?build=20260724-0029c";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029c";
+} from "../../../packages/runtime-layers/src/index.js?build=20260724-0029f";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260724-0029f";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029f";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029e2";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029f";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260718-0027h";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260724-0029e";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029e";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029f";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029e2";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029f";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260724-0029f";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
 import {
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260720-0028d";
+} from "../../../packages/property-registry/src/index.js?build=20260724-0029f";
 import {
   createDefaultGeometryRegistry
 } from "../../../packages/geometry-registry/src/index.js?build=20260716-0024g";
@@ -76,16 +77,20 @@ import {
 } from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
 import {
   BrowserSandboxIdentity,
+  createSandboxId,
   createRecoveryRecord,
   IndexedDbRecoveryStore,
   SandboxRecoveryController
 } from "../../../packages/project-recovery/src/index.js?build=20260724-0029e2";
 import {
   CoordinatedSandbox,
+  LocalProjectLaunchReceiver,
+  LocalProjectLaunchSender,
   LocalAnimationCoordinator,
   LocalViewerCoordinator,
-  LocalViewerSessionDirectory
-} from "../../../packages/local-viewers/src/index.js?build=20260724-0029e2";
+  LocalViewerSessionDirectory,
+  createIndependentProjectUrl
+} from "../../../packages/local-viewers/src/index.js?build=20260724-0029f";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v1";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -218,14 +223,33 @@ export async function createWebRuntime({
     region,
     appearanceRuntime
   });
+  const projectLaunchMode = locationParameters.get("project");
+  let incomingProject = null;
+  if (projectLaunchMode === "new") {
+    projectService.newProject();
+  } else if (projectLaunchMode === "open") {
+    const receiver = new LocalProjectLaunchReceiver({
+      launchId: locationParameters.get("launch")
+    });
+    try {
+      incomingProject = await receiver.receive();
+      const opened = projectService.openText(incomingProject.text);
+      receiver.accept(opened);
+    } catch (error) {
+      receiver.reject(error);
+      throw error;
+    }
+  }
   const viewerCoordinator = new LocalViewerCoordinator({
     sandbox: baseSandbox,
     sandboxId,
     viewerId: viewer.viewerId,
-    requestedRole:
-      locationParameters.get("viewer") === "fixed-replica"
+    requestedRole: locationParameters.get("viewer") === "authority"
+      ? "authority"
+      : locationParameters.get("viewer") === "fixed-replica"
         ? "replica"
-        : "auto"
+        : "auto",
+    joinExisting: locationParameters.get("viewer") === "join"
   });
   viewerCoordinator.connectSnapshotAdapter({
     capture: ({ sandboxId: snapshotSandboxId }) => {
@@ -296,6 +320,11 @@ export async function createWebRuntime({
     coordinator: viewerCoordinator
   });
   commandSandbox = sandbox;
+  const cameraObjects = new CameraObjectService({
+    sandbox,
+    viewer,
+    controller: cameraController
+  });
   const selectionOperations = new SelectionOperations({
     editor,
     sandbox,
@@ -362,6 +391,37 @@ export async function createWebRuntime({
     );
   }
   commands
+    .register(
+      "camera.object.create",
+      args => cameraObjects.create(args),
+      { category: "camera-object", mutates: true }
+    )
+    .register(
+      "camera.object.projection.set",
+      ({ id, ...patch }) =>
+        cameraObjects.updateProjection(id, patch),
+      { category: "camera-object", mutates: true }
+    )
+    .register(
+      "camera.object.capture-viewer",
+      ({ id }) => cameraObjects.captureViewer(id),
+      { category: "camera-object", mutates: true }
+    )
+    .register(
+      "camera.object.default.set",
+      ({ id = null } = {}) => cameraObjects.setDefault(id),
+      { category: "camera-object", mutates: true }
+    )
+    .register(
+      "viewer.camera.object.activate",
+      ({ id }) => cameraObjects.activate(id),
+      { category: "viewer", mutates: false }
+    )
+    .register(
+      "viewer.camera.object.deactivate",
+      () => cameraObjects.deactivate(),
+      { category: "viewer", mutates: false }
+    )
     .register(
       "animation.start",
       args => sharedAnimations.play("program", args),
@@ -464,6 +524,39 @@ export async function createWebRuntime({
     .register(
       "viewer.instance.sync",
       () => viewerCoordinator.requestSync(),
+      { category: "viewer", mutates: false }
+    )
+    .register(
+      "viewer.project.new-window",
+      ({ href = globalThis.location?.href } = {}) => {
+        const targetSandboxId = createSandboxId();
+        return {
+          changed: false,
+          sandboxId: targetSandboxId,
+          url: createIndependentProjectUrl(href, {
+            sandboxId: targetSandboxId,
+            mode: "new"
+          })
+        };
+      },
+      { category: "viewer", mutates: false }
+    )
+    .register(
+      "viewer.project.open-window.prepare",
+      ({ href = globalThis.location?.href } = {}) => {
+        const targetSandboxId = createSandboxId();
+        const launchId = `launch-${crypto.randomUUID()}`;
+        return {
+          changed: false,
+          sandboxId: targetSandboxId,
+          launchId,
+          url: createIndependentProjectUrl(href, {
+            sandboxId: targetSandboxId,
+            mode: "open",
+            launchId
+          })
+        };
+      },
       { category: "viewer", mutates: false }
     );
 
@@ -633,6 +726,9 @@ export async function createWebRuntime({
     .register("viewer.camera.snapshot", () =>
       cameraController.snapshot()
     )
+    .register("camera.objects.list", () =>
+      cameraObjects.list()
+    )
     .register("viewer.instances.status", () =>
       viewerCoordinator.status()
     )
@@ -684,6 +780,7 @@ export async function createWebRuntime({
   runtime.onDispose(() => programSession.dispose());
   runtime.onDispose(() => experimentProgramSession.dispose());
   runtime.onDispose(() => cameraController.dispose());
+  runtime.onDispose(() => cameraObjects.dispose());
 
   const devConsole = new DevConsole({
     editor,
@@ -792,11 +889,19 @@ export async function createWebRuntime({
       coordinatorApiVersion: LocalViewerCoordinator.apiVersion,
       sessionDirectoryApiVersion:
         LocalViewerSessionDirectory.apiVersion,
+      projectLaunchApiVersion:
+        LocalProjectLaunchSender.apiVersion,
       coordinatedSandboxApiVersion: CoordinatedSandbox.apiVersion,
+      cameraObjectApiVersion: CameraObjectService.apiVersion,
       multipleLocalViewers: true,
       activeProjectSelection: true,
+      independentLocalProjects: true,
+      joinHandshake: true,
       authorityFailover: true,
       sharedSandbox: viewerCoordinator.sandboxId,
+      persistentCameraObjects: true,
+      localActiveCamera: true,
+      documentDefaultCamera: true,
       cameraProjection: true,
       cameraPose: true,
       cameraOrbit: true,
@@ -895,6 +1000,7 @@ export async function createWebRuntime({
       viewerCoordinator,
       viewerDirectory,
       cameraController,
+      cameraObjects,
       renderer,
       outline,
       modules,
@@ -920,6 +1026,11 @@ export async function createWebRuntime({
       animationCommands,
       sharedAnimations,
       sandboxRecovery,
+      projectLaunch: Object.freeze({
+        createSender: launchId =>
+          new LocalProjectLaunchSender({ launchId }),
+        incoming: incomingProject
+      }),
       connectUiDiagnostics
     })
   });

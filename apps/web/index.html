@@ -72,6 +72,12 @@
     ></div>
     <div class="actions">
       <button id="viewer-session-open" type="button">Abrir viewer</button>
+      <button id="project-new-window" type="button">
+        Novo projeto em nova aba
+      </button>
+      <button id="project-open-window" type="button">
+        Abrir arquivo em nova aba
+      </button>
       <button type="submit" value="cancel">Cancelar</button>
     </div>
   </form>
@@ -125,9 +131,9 @@
   </button>
   <button
     id="viewer-new"
-    title="Abrir outro viewer local sobre o mesmo sandbox"
+    title="Conectar viewers ou iniciar outro projeto local"
   >
-    Novo viewer
+    Projetos / viewers
   </button>
   <button id="inspector">Inspector</button>
   <button id="transform-tools">Transformação</button>
@@ -152,6 +158,8 @@
   <button id="procedure-editor">Editor de procedimentos</button>
   <button id="pwa-install">Como instalar</button>
   <input id="project-file-input" type="file"
+    accept=".spatialseed,.json,application/json" hidden>
+  <input id="project-file-input-new-window" type="file"
     accept=".spatialseed,.json,application/json" hidden>
   <input id="procedure-library-file-input" type="file"
     accept=".spatialseed-procedures.json,.json,application/json" hidden>
@@ -267,6 +275,38 @@
       </div>
     </fieldset>
     <output id="camera-summary"></output>
+    <fieldset class="camera-objects">
+      <legend>Câmeras persistentes do projeto</legend>
+      <p>
+        Cada viewer escolhe localmente a câmera ativa. A câmera padrão é apenas
+        uma preferência portátil do documento.
+      </p>
+      <label>
+        <span>Câmera</span>
+        <select id="camera-object-select"></select>
+      </label>
+      <div class="actions">
+        <button id="camera-object-create" type="button">
+          Criar da vista atual
+        </button>
+        <button id="camera-object-activate" type="button">
+          Ativar neste viewer
+        </button>
+        <button id="camera-object-capture" type="button">
+          Atualizar pela vista
+        </button>
+        <button id="camera-object-default" type="button">
+          Definir como padrão
+        </button>
+        <button id="camera-object-default-clear" type="button">
+          Sem padrão
+        </button>
+        <button id="camera-object-deactivate" type="button">
+          Navegação livre
+        </button>
+      </div>
+      <output id="camera-object-summary"></output>
+    </fieldset>
   </form>
 </section>
 

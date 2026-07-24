@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e2`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029f`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -453,7 +453,7 @@ catalogados; caminhos permanecem relativos para funcionar sob o prefixo do
 GitHub Pages; dependências externas observadas devem ser declaradas e podem ser
 rejeitadas por auditoria offline estrita.
 
-## D-030 — Projeção da câmera pertence ao viewer
+## D-030 — Projeção da câmera de navegação pertence ao viewer
 
 **Estado:** implementada para a câmera de navegação.
 
@@ -467,11 +467,12 @@ renderer e sincroniza de volta a navegação manual do `OrbitControls`.
 recorte, navegação e câmera ativa sem produzir comandos editoriais nem
 sobrescrever a experiência dos demais.
 
-**Consequências:** `0 < near < far` é uma invariante pública; alterações não
-entram em undo/redo nem no arquivo; painel e console chamam comandos
+**Consequências:** `0 < near < far` é uma invariante pública; alterações da
+câmera de navegação não entram em undo/redo nem no arquivo; painel e console chamam comandos
 `viewer.camera.*`; procedimentos recebem uma capability declarativa que produz
 plano revisável. Planos de câmera local não podem misturar mutações espaciais
-persistentes na mesma transação.
+persistentes na mesma transação. Objetos câmera persistentes são entidades
+distintas e não revogam esta fronteira.
 
 ## D-031 — Viewers locais coordenam um sandbox por revisão
 
@@ -493,11 +494,13 @@ compartilhado. O protocolo é local e não antecipa CRDT, identidade remota ou
 autorização distribuída.
 
 Um diretório transitório anuncia somente sessões vivas da mesma origem e agrupa
-viewers por `sandboxId`. **Novo viewer** conecta diretamente quando existe um
-único projeto ativo e exige escolha quando existem vários. Ao fechar a
-autoridade, uma réplica automática adquire a trava liberada, conserva o
-snapshot já sincronizado e adota o diário de recuperação sem restaurar por cima
-dele um checkpoint anterior.
+viewers por `sandboxId`. A superfície **Projetos / viewers** torna explícito o
+destino de um novo viewer e também permite criar ou abrir um projeto
+independente em nova aba. Um viewer de entrada aguarda o primeiro snapshot antes
+de disputar autoridade ou iniciar recuperação. Ao fechar a autoridade, uma
+réplica automática adquire a trava liberada, conserva o snapshot já sincronizado
+e adota o diário de recuperação sem restaurar por cima dele um checkpoint
+anterior.
 
 ## D-032 — Reprodução local compartilha definição e época
 
@@ -517,6 +520,27 @@ instante vigente.
 intenções com revisão ou sequência obsoleta são rejeitadas; uma mudança
 editorial encerra a reprodução em todas as abas. Definição, tempo e overlay não
 entram no documento, histórico, recuperação ou futura persistência de clips.
+
+## D-033 — Objetos câmera persistem; ativação permanece local
+
+**Estado:** implementada para câmera perspectiva.
+
+Um objeto `kind: "camera"` é uma entidade hierárquica do documento, com
+transform local, parâmetros de projeção e identidade estável. A cena pode
+declarar `defaultCameraId`, mas cada `ViewerState` conserva seu próprio
+`activeCameraId`. Ativar uma câmera projeta sua pose mundial no controlador de
+navegação; navegar manualmente apenas desfaz o vínculo local.
+
+**Motivação:** múltiplas vistas precisam compartilhar enquadramentos nomeados
+sem voltar a tornar Three.js autoritativo nem sincronizar a câmera concreta de
+cada aba.
+
+**Consequências:** criar, transformar, capturar, definir projeção e escolher a
+câmera padrão são comandos persistentes com undo/redo; ativar e desativar são
+ações locais. Helpers de corpo e frustum pertencem ao renderer. O serializer
+escreve schema 3 e o leitor continua aceitando schemas 1 e 2. Animação de
+câmera permanece fora deste marco e deverá reutilizar o overlay temporal no
+`0029g`.
 
 ## Decisões superadas ou rejeitadas
 

@@ -1,8 +1,10 @@
-import { ProjectSerializer } from "./ProjectSerializer.js";
-import { ProjectValidator } from "./ProjectValidator.js?build=20260716-0025d";
+import {
+  ProjectSerializer
+} from "./ProjectSerializer.js?build=20260724-0029f";
+import { ProjectValidator } from "./ProjectValidator.js?build=20260724-0029f";
 
 export class ProjectService {
-  static apiVersion = "project-service-v5";
+  static apiVersion = "project-service-v6";
 
   #subscribers = new Set();
 
@@ -192,7 +194,7 @@ export class ProjectService {
   #normalizeProjectScene(project, { mutate = true } = {}) {
     if (mutate) {
       this.appearanceRuntime.reset();
-      if (project.schemaVersion === 2) {
+      if (project.schemaVersion >= 2) {
         this.appearanceRuntime.importAssets(
           project.assets,
           { replace: true }

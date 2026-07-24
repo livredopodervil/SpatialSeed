@@ -30,6 +30,7 @@ repetidos em documentos vivos quando podem ser consultados diretamente.
 | --- | --- | --- | --- |
 | [`OVERVIEW.md`](OVERVIEW.md) | vivo | propósito, escopo e invariantes | inclui linha de base do ciclo 0029 |
 | [`VIEWER_CAMERA_CONTROLLER.md`](VIEWER_CAMERA_CONTROLLER.md) | vivo | câmera local, comandos, adaptador e procedimentos | implementado no 0029c |
+| [`CAMERA_OBJECTS.md`](CAMERA_OBJECTS.md) | vivo | objetos câmera, ativação local e schema 3 | implementado no 0029f |
 | [`../LOCAL_RECOVERY_SPEC.md`](../LOCAL_RECOVERY_SPEC.md) | vivo | identidade, IndexedDB, checkpoint, journal e UX | implementado no 0029d |
 | [`DECISIONS.md`](DECISIONS.md) | vivo | registro arquitetural durável | separa portal, aplicativo, laboratório e protótipos |
 | [`DISTRIBUTION.md`](DISTRIBUTION.md) | vivo | Pages, PWA, HTTP e arquivos | registra raiz pública, catálogo e escopos offline |

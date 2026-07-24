@@ -714,12 +714,20 @@ export class DevConsole {
         "camera orbit yawDeg pitchDeg [distância]",
         "camera frame [margem]",
         "camera projection near far [fov]",
+        "camera objects",
+        "camera create [nome]",
+        "camera activate id",
+        "camera free",
+        "camera capture id",
+        "camera default id|none",
+        "camera object-projection id near far [fov]",
         "camera restore câmera-JSON",
         "camera interpolate alpha câmera-JSON"
       ],
       notes: [
         "Quaternion é a orientação autoritativa; target é derivado.",
-        "Câmera e navegação pertencem ao viewer e não entram no undo.",
+        "A navegação pertence ao viewer e não entra no undo.",
+        "Objetos câmera e a câmera padrão pertencem ao documento e ao undo.",
         "Procedimentos podem usar camera.* e produzem plano revisável."
       ],
       examples: [
@@ -1010,6 +1018,66 @@ export class DevConsole {
           ? {}
           : { fov: this.#positive(tokens[2]) })
       });
+    }
+    if (action === "objects") {
+      this.#expectMaximum(tokens, 0, "camera objects");
+      return this.queries.execute("camera.objects.list");
+    }
+    if (action === "create") {
+      return this.commands.execute("camera.object.create", {
+        ...(tokens.length ? { name: tokens.join(" ") } : {}),
+        camera: this.queries.execute("viewer.camera.snapshot"),
+        activate: true
+      });
+    }
+    if (action === "activate") {
+      this.#expectExact(tokens, 1, "camera activate id");
+      return this.commands.execute(
+        "viewer.camera.object.activate",
+        { id: tokens[0] }
+      );
+    }
+    if (action === "free") {
+      this.#expectMaximum(tokens, 0, "camera free");
+      return this.commands.execute(
+        "viewer.camera.object.deactivate"
+      );
+    }
+    if (action === "capture") {
+      this.#expectExact(tokens, 1, "camera capture id");
+      return this.commands.execute(
+        "camera.object.capture-viewer",
+        { id: tokens[0] }
+      );
+    }
+    if (action === "default") {
+      this.#expectExact(tokens, 1, "camera default id|none");
+      return this.commands.execute(
+        "camera.object.default.set",
+        {
+          id: tokens[0].toLowerCase() === "none"
+            ? null
+            : tokens[0]
+        }
+      );
+    }
+    if (action === "object-projection") {
+      if (![3, 4].includes(tokens.length)) {
+        throw new Error(
+          "Uso: camera object-projection id near far [fov]."
+        );
+      }
+      return this.commands.execute(
+        "camera.object.projection.set",
+        {
+          id: tokens[0],
+          near: this.#positive(tokens[1]),
+          far: this.#positive(tokens[2]),
+          ...(tokens[3] === undefined
+            ? {}
+            : { fov: this.#positive(tokens[3]) })
+        }
+      );
     }
     if (action === "restore") {
       if (!tokens.length) {

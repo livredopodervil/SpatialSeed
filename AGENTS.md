@@ -27,8 +27,9 @@ complementa, sem substituir:
 - Toda mutação persistente passa por comando público.
 - Interface, Inspector, console, procedimentos, experimentos e futuras
   automações reutilizam os mesmos serviços de domínio.
-- Preview, animação efêmera, seleção, câmera e estado de painel não entram no
-  documento nem no histórico editorial.
+- Preview, animação efêmera, seleção, câmera de navegação e estado de painel não
+  entram no documento nem no histórico editorial. Objetos câmera são nós
+  persistentes distintos.
 - Viewers podem compartilhar uma sessão efêmera de animação por definição e
   época comum; matrizes por quadro nunca atravessam essa fronteira.
 - Operações em lote são completamente resolvidas, avaliadas e validadas antes

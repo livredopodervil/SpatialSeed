@@ -21,15 +21,21 @@ export class LocalViewerCoordinator {
   #lockTask = null;
   #promotionTask = null;
   #promotionAbort = null;
+  #initialSyncResolve = null;
+  #receivedInitialSnapshot = false;
+  #sawAuthority = false;
 
   constructor({
     sandbox,
     sandboxId,
     viewerId = createId(),
     requestedRole = "auto",
+    joinExisting = false,
+    joinWaitMs = 1200,
     channelFactory = defaultChannelFactory,
     lockManager = globalThis.navigator?.locks ?? null,
-    now = () => Date.now()
+    now = () => Date.now(),
+    setTimeoutFn = globalThis.setTimeout?.bind(globalThis)
   } = {}) {
     if (!sandbox?.dispatch || !sandbox?.restoreCommandSequence) {
       throw new TypeError(
@@ -48,9 +54,12 @@ export class LocalViewerCoordinator {
     this.sandboxId = String(sandboxId);
     this.viewerId = String(viewerId);
     this.requestedRole = requestedRole;
+    this.joinExisting = Boolean(joinExisting);
+    this.joinWaitMs = Math.max(0, Number(joinWaitMs) || 0);
     this.channelFactory = channelFactory;
     this.lockManager = lockManager;
     this.now = now;
+    this.setTimeoutFn = setTimeoutFn;
     this.role = "starting";
     this.sharedRevision = sandbox.revision;
     this.sharedHistory = historySnapshot(sandbox);
@@ -95,11 +104,30 @@ export class LocalViewerCoordinator {
       );
     }
     this.#started = true;
-    this.role = await this.#resolveRole();
-    this.#openChannel();
-    this.#unsubscribeSandbox = this.sandbox.subscribe(
-      (_state, changes) => this.#sandboxChanged(changes)
-    );
+    if (this.joinExisting && this.requestedRole === "auto") {
+      this.role = "starting";
+      this.#openChannel();
+      this.#unsubscribeSandbox = this.sandbox.subscribe(
+        (_state, changes) => this.#sandboxChanged(changes)
+      );
+      this.#post("hello", {
+        role: this.role,
+        revision: this.sandbox.revision
+      });
+      this.#post("sync-request", {
+        revision: this.sandbox.revision
+      });
+      await this.#waitForInitialSync();
+      this.role = this.#receivedInitialSnapshot || this.#sawAuthority
+        ? "replica"
+        : await this.#resolveRole();
+    } else {
+      this.role = await this.#resolveRole();
+      this.#openChannel();
+      this.#unsubscribeSandbox = this.sandbox.subscribe(
+        (_state, changes) => this.#sandboxChanged(changes)
+      );
+    }
     this.#post("hello", {
       role: this.role,
       revision: this.sandbox.revision
@@ -231,7 +259,8 @@ export class LocalViewerCoordinator {
       lastOutcome: this.#lastOutcome
         ? structuredClone(this.#lastOutcome)
         : null,
-      lastError: this.#lastError?.message ?? null
+      lastError: this.#lastError?.message ?? null,
+      initialSynchronized: this.#receivedInitialSnapshot
     });
   }
 
@@ -342,6 +371,9 @@ export class LocalViewerCoordinator {
     try {
       switch (message.type) {
         case "hello":
+          if (message.payload?.role === "authority") {
+            this.#sawAuthority = true;
+          }
           if (this.isAuthority) {
             this.#sendSnapshot(message.source);
           } else if (message.payload?.role === "authority") {
@@ -676,7 +708,32 @@ export class LocalViewerCoordinator {
     if (revision < this.sharedRevision) return false;
     this.#snapshotAdapter.restore(structuredClone(snapshot));
     this.sharedRevision = revision;
+    if (!this.#receivedInitialSnapshot) {
+      this.#receivedInitialSnapshot = true;
+      this.#initialSyncResolve?.(true);
+      this.#initialSyncResolve = null;
+    }
     return true;
+  }
+
+  #waitForInitialSync() {
+    if (this.#receivedInitialSnapshot || this.#sawAuthority) {
+      return Promise.resolve(true);
+    }
+    if (!this.#channel || !this.setTimeoutFn || this.joinWaitMs === 0) {
+      return Promise.resolve(false);
+    }
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        this.#initialSyncResolve = null;
+        resolve(value);
+      };
+      this.#initialSyncResolve = finish;
+      this.setTimeoutFn(() => finish(false), this.joinWaitMs);
+    });
   }
 
   #applyHistory(history) {
@@ -752,7 +809,7 @@ export function createSharedViewerUrl(
     throw new TypeError("Identidade de sandbox inválida.");
   }
   url.searchParams.set("sandbox", String(sandboxId));
-  url.searchParams.set("viewer", "auto");
+  url.searchParams.set("viewer", "join");
   return url.href;
 }
 

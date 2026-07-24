@@ -52,6 +52,13 @@ function applyObjectPatch(object, patch = {}) {
     });
   }
 
+  if ("camera" in patch) {
+    next.camera = freezeCamera({
+      ...(object.camera ?? {}),
+      ...(patch.camera ?? {})
+    });
+  }
+
   if ("appearanceId" in patch) {
     next.appearanceId = patch.appearanceId;
     delete next.material;
@@ -107,6 +114,137 @@ function applyPropertyUpdates(objects, command) {
 
 export function boxRegionReducer(state, command) {
   switch (command.type) {
+    case "camera.create": {
+      const id = String(command.id ?? "").trim();
+      if (!id) {
+        throw new TypeError("Câmera persistente exige id.");
+      }
+      if (state.objects.some(object => object.id === id)) {
+        throw new Error(`Duplicate object id: ${id}`);
+      }
+      const camera = freezeCamera(command.camera);
+      const object = Object.freeze({
+        id,
+        kind: "camera",
+        name: String(command.name ?? id),
+        parentId: command.parentId ?? null,
+        position: freezeVector(
+          command.position ?? [0, 0, 0],
+          3,
+          "Posição de câmera inválida."
+        ),
+        rotation: freezeVector(
+          command.rotation ?? [0, 0, 0, 1],
+          4,
+          "Orientação de câmera inválida."
+        ),
+        scale: Object.freeze([1, 1, 1]),
+        camera
+      });
+      const objects = Object.freeze([...state.objects, object]);
+      new HierarchyIndex(objects);
+      const makeDefault = Boolean(command.makeDefault);
+      return {
+        state: Object.freeze({
+          ...state,
+          objects,
+          ...(makeDefault ? { defaultCameraId: id } : {})
+        }),
+        changes: [
+          {
+            type: "object-created",
+            objectId: id,
+            object
+          },
+          ...(makeDefault
+            ? [{
+                type: "camera-default-changed",
+                objectId: id,
+                cameraId: id
+              }]
+            : [])
+        ]
+      };
+    }
+
+    case "camera.update": {
+      const id = String(command.id ?? "").trim();
+      const current = state.objects.find(object => object.id === id);
+      if (!current || current.kind !== "camera") {
+        throw new Error(`Câmera persistente inexistente: ${id}.`);
+      }
+      const patch = structuredClone(command.patch ?? {});
+      const nextCamera = "camera" in patch
+        ? freezeCamera({
+            ...current.camera,
+            ...patch.camera
+          })
+        : current.camera;
+      const nextPosition = "position" in patch
+        ? freezeVector(
+            patch.position,
+            3,
+            "Posição de câmera inválida."
+          )
+        : current.position;
+      const nextRotation = "rotation" in patch
+        ? freezeVector(
+            patch.rotation,
+            4,
+            "Orientação de câmera inválida."
+          )
+        : current.rotation;
+      const objects = updateById(
+        state.objects,
+        id,
+        object => ({
+          ...object,
+          ...patch,
+          kind: "camera",
+          position: nextPosition,
+          rotation: nextRotation,
+          scale: object.scale ?? [1, 1, 1],
+          camera: nextCamera
+        })
+      );
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [{
+          type: "object-updated",
+          objectId: id,
+          source: "camera"
+        }]
+      };
+    }
+
+    case "camera.default.set": {
+      const id = command.id === null || command.id === undefined
+        ? null
+        : String(command.id).trim();
+      if (id !== null) {
+        const camera = state.objects.find(object =>
+          object.id === id && object.kind === "camera"
+        );
+        if (!camera) {
+          throw new Error(`Câmera persistente inexistente: ${id}.`);
+        }
+      }
+      if ((state.defaultCameraId ?? null) === id) {
+        return { state, changes: [] };
+      }
+      const next = { ...state };
+      if (id === null) delete next.defaultCameraId;
+      else next.defaultCameraId = id;
+      return {
+        state: Object.freeze(next),
+        changes: [{
+          type: "camera-default-changed",
+          objectId: id,
+          cameraId: id
+        }]
+      };
+    }
+
     case "object.create": {
       const geometry = command.geometry
         ? freezeGeometry(command.geometry)
@@ -233,16 +371,28 @@ export function boxRegionReducer(state, command) {
       const removed = state.objects.filter(object => ids.has(object.id));
       if (!removed.length) return { state, changes: [] };
 
+      const nextState = {
+        ...state,
+        objects: Object.freeze(state.objects.filter(object => !ids.has(object.id)))
+      };
+      const defaultRemoved = ids.has(state.defaultCameraId);
+      if (defaultRemoved) delete nextState.defaultCameraId;
       return {
-        state: Object.freeze({
-          ...state,
-          objects: Object.freeze(state.objects.filter(object => !ids.has(object.id)))
-        }),
-        changes: removed.map(object => ({
+        state: Object.freeze(nextState),
+        changes: [
+          ...removed.map(object => ({
           type: "object-deleted",
           objectId: object.id,
           source: command.source ?? "selection.delete"
-        }))
+          })),
+          ...(defaultRemoved
+            ? [{
+                type: "camera-default-changed",
+                objectId: null,
+                cameraId: null
+              }]
+            : [])
+        ]
       };
     }
 
@@ -375,6 +525,66 @@ function freezeInstanceState(value = {}) {
   }
 
   return Object.freeze(state);
+}
+
+function freezeCamera(value = {}) {
+  const projection = String(value.projection ?? "perspective");
+  if (projection !== "perspective") {
+    throw new RangeError(
+      `Projeção de câmera desconhecida: ${projection}.`
+    );
+  }
+  const fov = finiteNumber(value.fov ?? 55, "Campo visual");
+  const near = finiteNumber(value.near ?? 0.1, "Plano near");
+  const far = finiteNumber(value.far ?? 1000, "Plano far");
+  const focusDistance = finiteNumber(
+    value.focusDistance ?? 10,
+    "Distância de foco"
+  );
+  if (!(fov >= 1 && fov <= 179)) {
+    throw new RangeError(
+      "O campo visual precisa estar entre 1 e 179 graus."
+    );
+  }
+  if (!(near > 0 && far > near)) {
+    throw new RangeError(
+      "A projeção precisa satisfazer 0 < near < far."
+    );
+  }
+  if (!(focusDistance > 0)) {
+    throw new RangeError(
+      "A distância de foco precisa ser positiva."
+    );
+  }
+  return Object.freeze({
+    projection,
+    fov,
+    near,
+    far,
+    focusDistance
+  });
+}
+
+function freezeVector(value, length, message) {
+  if (!Array.isArray(value) || value.length !== length) {
+    throw new TypeError(message);
+  }
+  const vector = value.map(Number);
+  if (!vector.every(Number.isFinite)) {
+    throw new TypeError(message);
+  }
+  if (length === 4 && Math.hypot(...vector) <= 1e-12) {
+    throw new TypeError(message);
+  }
+  return Object.freeze(vector);
+}
+
+function finiteNumber(value, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    throw new TypeError(`${label} deve ser número finito.`);
+  }
+  return number;
 }
 
 function normalizeHexColor(value) {

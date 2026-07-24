@@ -1,13 +1,15 @@
 # Controlador da câmera de navegação
 
-> Contrato técnico implementado no marco `0029c`.
+> Contrato técnico implementado no marco `0029c` e delimitado novamente no
+> `0029f`.
 
 ## Fronteira
 
 A câmera de navegação é estado local de um viewer. Ela não é um objeto da cena,
 não pertence à região ou ao sandbox, não entra no histórico e não é serializada
 no arquivo `.spatialseed`. Objetos câmera persistentes são uma capacidade
-posterior e distinta.
+distinta, implementada no `0029f` e descrita em
+[`CAMERA_OBJECTS.md`](CAMERA_OBJECTS.md).
 
 `ViewerCameraController` é a API pública. `ThreeRegionRenderer` implementa
 somente o adaptador visual:
