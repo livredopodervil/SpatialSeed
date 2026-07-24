@@ -63,6 +63,7 @@ export function bindWebInterface({
   let statusTimer = null;
   let latestSelection = runtime.query("selection.snapshot");
   let latestEditor = runtime.query("editor.snapshot");
+  const initialCamera = runtime.query("viewer.camera.snapshot");
   const toolbarBinding = composeToolbar({
     root: documentRoot,
     configuration: uiConfiguration?.toolbar
@@ -468,14 +469,33 @@ export function bindWebInterface({
     () => panelManager.hide("#outline")
   );
 
-  const refreshCameraProjection = () => {
-    const projection = runtime.query("viewer.camera.snapshot");
-    $("camera-near").value = String(projection.near);
-    $("camera-far").value = String(projection.far);
+  const cameraVector = (prefix, values) => {
+    ["x", "y", "z"].forEach((axis, index) => {
+      $(`camera-${prefix}-${axis}`).value = String(values[index]);
+    });
+  };
+  const readCameraVector = prefix =>
+    ["x", "y", "z"].map(axis =>
+      $(`camera-${prefix}-${axis}`).value
+    );
+  const refreshCameraPanel = () => {
+    const camera = runtime.query("viewer.camera.snapshot");
+    cameraVector("position", camera.position);
+    cameraVector("target", camera.target);
+    $("camera-fov").value = String(camera.fov);
+    $("camera-near").value = String(camera.near);
+    $("camera-far").value = String(camera.far);
+    $("camera-orbit-distance").placeholder =
+      String(Number(camera.focusDistance.toFixed(6)));
+    $("camera-summary").textContent =
+      `quaternion [${camera.quaternion
+        .map(value => Number(value.toFixed(6)))
+        .join(", ")}] · foco ${Number(camera.focusDistance.toFixed(6))}`;
+    return camera;
   };
 
   $("camera-settings").addEventListener("click", () => {
-    refreshCameraProjection();
+    refreshCameraPanel();
     panelManager.show("#camera-panel");
   });
 
@@ -486,13 +506,70 @@ export function bindWebInterface({
 
   $("camera-projection-apply").addEventListener("click", () => {
     const result = execute("viewer.camera.projection.set", {
+      fov: $("camera-fov").value,
       near: $("camera-near").value,
       far: $("camera-far").value
     });
-    if (!result) return;
-    refreshCameraProjection();
-    showNotice(`Recorte da câmera: ${result.near} – ${result.far}`);
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice(
+      `Projeção: ${result.fov}° · ${result.near} – ${result.far}`
+    );
   });
+
+  $("camera-view-apply").addEventListener("click", () => {
+    const result = execute("viewer.camera.look-at", {
+      position: readCameraVector("position"),
+      target: readCameraVector("target"),
+      fov: $("camera-fov").value,
+      near: $("camera-near").value,
+      far: $("camera-far").value
+    });
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice("Vista da câmera aplicada.");
+  });
+
+  $("camera-orbit-apply").addEventListener("click", () => {
+    const distance = $("camera-orbit-distance").value.trim();
+    const result = execute("viewer.camera.orbit", {
+      yawDegrees: $("camera-orbit-yaw").value,
+      pitchDegrees: $("camera-orbit-pitch").value,
+      ...(distance ? { distance } : {})
+    });
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice("Órbita da câmera aplicada.");
+  });
+
+  $("camera-frame-selection").addEventListener("click", () => {
+    const result = execute("viewer.camera.frame-selection");
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice("Seleção enquadrada.");
+  });
+
+  $("camera-reset").addEventListener("click", () => {
+    const result = execute("viewer.camera.restore", {
+      camera: initialCamera
+    });
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice("Vista inicial restaurada.");
+  });
+
+  const unsubscribeViewer = runtime.subscribe(
+    "viewer.changed",
+    () => {
+      if (
+        $("camera-panel").hidden ||
+        $("camera-panel").contains(documentRoot.activeElement)
+      ) {
+        return;
+      }
+      refreshCameraPanel();
+    }
+  );
 
   $("project-save").addEventListener("click", async () => {
     const project = execute("project.save");
@@ -1016,6 +1093,7 @@ export function bindWebInterface({
       unsubscribeEditor();
       unsubscribeSelection();
       unsubscribeWorld();
+      unsubscribeViewer();
       unsubscribeInstall();
       disconnectUiDiagnostics();
       uiActions.dispose();

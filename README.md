@@ -19,6 +19,7 @@ O resultado atual combina:
 - editor 3D responsivo para toque, mouse e teclado;
 - linguagem afim para repetições e construções paramétricas;
 - runtime JavaScript isolado para cálculos, funções e procedimentos;
+- câmera de navegação controlável por painel, console e procedimentos;
 - hierarquia de grupos aninháveis com transformações locais;
 - propriedades, materiais, texturas e cores de instância editáveis em lote;
 - aplicação web instalável, utilizável offline depois do primeiro carregamento;
@@ -115,7 +116,7 @@ Um servidor HTTP é necessário porque módulos ES, import maps e service worker
 | Agrupar, desagrupar, desfazer e refazer | **Editar** |
 | Editar propriedades literais ou procedurais, inclusive abrindo grupos | **Inspector** |
 | Reproduzir presets ou compor faixas diferentes por objeto | **Animação** |
-| Configurar as distâncias mínima e máxima de recorte | **Câmera** |
+| Posicionar, orientar, orbitar, enquadrar e configurar o recorte | **Câmera** |
 | Executar laboratórios paramétricos que geram planos revisáveis | **Explorar** |
 | Ver árvore regional, diagnóstico, recursos e console | **Painéis** |
 | Salvar, abrir, instalar e trocar catálogos de procedimentos | **Projeto** |
@@ -167,6 +168,17 @@ Os painéis são móveis e redimensionáveis. Sua disposição, o layout da barr
 - ferramentas por `Q`, `S`, `W`, `E` e `R`;
 - campos textuais preservam edição e undo próprios.
 
+### Câmera de navegação
+
+A câmera de navegação pertence ao `ViewerState`, não ao documento espacial. O
+`ViewerCameraController` mantém posição, quaternion, distância de foco, campo
+visual, `near` e `far`; o alvo exibido no painel é derivado da orientação e da
+distância, evitando duas fontes concorrentes de verdade.
+
+O painel **Câmera** permite editar posição e alvo, orbitar incrementalmente,
+enquadrar a seleção e restaurar a vista inicial. Essas ações não alteram o
+sandbox, não entram no undo e não são salvas no arquivo `.spatialseed`.
+
 ### Produção afim
 
 O console pode criar até 100.000 objetos em uma série atômica. As expressões conhecem o índice `i`, o parâmetro normalizado `u`, a quantidade `count`, constantes e funções matemáticas.
@@ -187,7 +199,9 @@ Esses comandos chamam diretamente a mesma operação `object.create.geometrySeri
 
 ## Console e linguagem
 
-O console reúne comandos editoriais, consultas, testes, benchmarks e um runtime de programas. Use `help`, `help create` e `procedure help` para obter a ajuda gerada pela própria versão carregada.
+O console reúne comandos editoriais, consultas, testes, benchmarks e um runtime
+de programas. Use `help`, `help create`, `help camera` e `procedure help` para
+obter a ajuda gerada pela própria versão carregada.
 
 ### Comandos editoriais
 
@@ -246,6 +260,23 @@ session status
 
 O namespace de sessão pertence a um Worker isolado. `session reset` encerra esse estado de cálculo sem alterar a cena.
 
+### Câmera pelo console
+
+O console chama os mesmos comandos do painel:
+
+```text
+camera status
+camera position 10 8 14
+camera lookat 0 1 0
+camera orbit 30 -10
+camera frame 1.2
+camera projection 0.1 2000 55
+```
+
+`camera quaternion x y z w` define a orientação diretamente. Os quatro
+componentes `x`, `y`, `z` e `w` formam o quaternion normalizado usado como
+orientação autoritativa.
+
 ### Programas espaciais e commit atômico
 
 Programas não recebem acesso direto ao sandbox, renderer, DOM, rede ou sistema de arquivos. Eles recebem apenas capacidades explícitas e podem produzir intenções com `spatial.create`.
@@ -294,6 +325,18 @@ plan commit
 ```
 
 O menu **Projeto** importa e exporta catálogos JSON editáveis em outros editores. O **Editor de procedimentos** permite manter fontes nomeadas com numeração de linhas, quebra visual e realce léxico. Importar uma biblioteca nunca executa seu código; a avaliação só ocorre quando o usuário chama `procedure run`.
+
+Procedimentos também podem planejar operações locais da câmera:
+
+```text
+procedure define orbit ({degrees=30}={}) => camera.orbit({yawDegrees:degrees})
+procedure run orbit {"degrees":45}
+plan status
+plan commit
+```
+
+O Worker recebe apenas a fachada `camera.*`. O plano não pode misturar
+mutações espaciais persistentes e câmera local na mesma transação.
 
 ### Experimentos declarativos
 
@@ -347,12 +390,14 @@ projeto e `animate stop` restaura matrizes e cores canônicas.
 flowchart TD
     UI["Editor, Inspector e painéis"] --> API["Comandos e consultas públicas"]
     CONSOLE["Console e automação"] --> API
-    SCRIPT["Worker SES e procedimentos"] --> PLAN["Plano espacial serializável"]
+    SCRIPT["Worker SES e procedimentos"] --> PLAN["Plano serializável"]
     EXP["Experimentos declarativos"] --> PLAN
     ACTION["Botões e atalhos"] --> API
     PLAN --> API
     API --> SANDBOX["Sandbox, reducers e histórico"]
+    API --> CAMERA["ViewerCameraController"]
     SANDBOX --> VIEW["Projeções: Three.js, outline e diagnóstico"]
+    CAMERA --> VIEW
     TIME["Runtime temporal efêmero"] --> VIEW
 ```
 
@@ -372,12 +417,13 @@ flowchart TD
 | --- | --- |
 | `packages/core` | região, sandbox e eventos |
 | `packages/runtime-api` | fachada pública de comandos, consultas, eventos e capacidades |
+| `packages/runtime-layers` | estado local do viewer e controlador da câmera de navegação |
 | `packages/editor-commands` | registro canônico das operações editoriais |
 | `packages/region-box` | reducer puro e modelo de estado da região atual |
 | `packages/scene-hierarchy` | grupos, parentesco, transforms locais e ciclo de subárvores |
 | `packages/geometry-registry` | famílias paramétricas e providers de geometria |
 | `packages/property-registry` | propriedades tipadas, inspeção e edição atômica em lote |
-| `packages/script-runtime` | Workers, SES, sessões, planos espaciais e procedimentos |
+| `packages/script-runtime` | Workers, SES, sessões, planos espaciais/de câmera e procedimentos |
 | `packages/experiment-runtime` | definições, parâmetros e planejamento de experimentos |
 | `packages/experiment-panel` | painel declarativo do laboratório |
 | `packages/ui-config` | manifesto e perfil de atalhos |

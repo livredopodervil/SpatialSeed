@@ -26,12 +26,15 @@ Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
 
 Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 
-## Estado funcional até 0029b
+## Estado funcional até 0029c
 
 - portal HTML na raiz e catálogo canônico de experimentos;
 - protótipos históricos offline, com seleção móvel, recorte configurável e
   salvamento nomeado;
 - `near` e `far` validados como estado local do viewer principal;
+- controlador público da câmera de navegação com posição, quaternion, alvo
+  derivado, campo visual, enquadramento, órbita e interpolação;
+- painel, console e procedimentos sobre as mesmas operações locais de câmera;
 - região local, sandbox com undo/redo e planos revisáveis;
 - seleção múltipla/área, pivôs, snapping e gizmos;
 - escala uniforme pela alça central `XYZ`;
@@ -99,10 +102,9 @@ animate status
 
 Continuar o ciclo 0029 em incrementos independentes:
 
-1. controlador público da câmera de navegação;
-2. recuperação automática em IndexedDB;
-3. múltiplas instâncias locais do mesmo sandbox;
-4. objetos câmera e animação procedural de câmera.
+1. recuperação automática em IndexedDB;
+2. múltiplas instâncias locais do mesmo sandbox;
+3. objetos câmera e animação procedural de câmera.
 
 Referência: `docs/project/ROADMAP.md`.
 

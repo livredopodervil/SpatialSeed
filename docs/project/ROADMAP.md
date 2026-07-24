@@ -119,7 +119,7 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - escolha explícita do nome ao salvar;
 - recursos locais e auditoria offline estrita verde.
 
-### 0029c — Controlador público da câmera de navegação
+### 0029c — Controlador público da câmera de navegação — implementado
 
 - posição, quaternion, foco, órbita, enquadramento e interpolação;
 - painel, console e procedimentos sobre a mesma API.

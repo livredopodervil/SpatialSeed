@@ -9,12 +9,17 @@ import {
   resolveRuntimeProfile
 } from "../../runtime-api/src/index.js?build=20260718-0027h";
 import {
+  VIEWER_CAMERA_COMMANDS,
+  ViewerCameraController,
   ViewerState,
+  cameraSnapshot,
+  normalizeNavigationCamera,
   normalizeCameraProjection,
+  reduceNavigationCamera,
   EditorSession,
   SimulationClock,
   SimulationBridge
-} from "../../runtime-layers/src/index.js?build=20260724-0029b";
+} from "../../runtime-layers/src/index.js?build=20260724-0029c";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
@@ -104,7 +109,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260720-0028d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260720-0028d";
+} from "../../devtools/src/DevConsole.js?build=20260724-0029c";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -163,6 +168,8 @@ import {
 } from "../../ui-config/src/index.js?build=20260720-0028c";
 import { fnv1a64 } from "../../asset-store/src/index.js";
 import {
+  CAMERA_PLAN_COMMANDS,
+  CameraPlanCommitService,
   DisposableProgramRun,
   PROGRAM_PLAN_VERSION,
   ProgramRunController,
@@ -811,6 +818,50 @@ export function createRuntimeLayerTests() {
         );
         assertEqual(failure.type, "program.failed");
         assert(failure.error.message.includes("linhas de saída"));
+      },
+
+      "capability de câmera produz intenções sem renderer"() {
+        const envelope = executeProgramRequest({
+          runId: "camera-plan",
+          baseVersion: 6,
+          allowedCommands: CAMERA_PLAN_COMMANDS,
+          snapshot: {
+            viewer: {
+              camera: navigationCameraFixture({
+                position: [3, 4, 5]
+              })
+            }
+          },
+          source: [
+            "camera.orbit({yawDegrees:45});",
+            "camera.frameSelection({padding:1.3});",
+            "return camera.view.position;"
+          ].join("\n"),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertEqual(envelope.plan.commands.length, 2);
+        assertEqual(
+          envelope.plan.commands[0].command,
+          "viewer.camera.orbit"
+        );
+        assertDeepEqual(envelope.plan.result.value, [3, 4, 5]);
+      },
+
+      "camera permanece ausente sem capability explícita"() {
+        const envelope = executeProgramRequest({
+          runId: "no-camera-capability",
+          allowedCommands: [],
+          source: "typeof camera"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.plan.result.value, "undefined");
+        assertEqual(envelope.plan.commands.length, 0);
       },
 
       "fábrica solicita Worker modular dedicado"() {
@@ -1648,6 +1699,246 @@ export function createRuntimeLayerTests() {
         assertThrowsMessage(
           () => normalizeCameraProjection({ near: "x", far: 10 }),
           "números finitos"
+        );
+      },
+
+      "snapshot deriva alvo sem armazenar segunda orientação"() {
+        const camera = cameraSnapshot({
+          position: [1, 2, 3],
+          quaternion: [0, 0, 0, 1],
+          focusDistance: 5,
+          fov: 55,
+          near: 0.1,
+          far: 1000,
+          aspect: 2
+        });
+
+        assertDeepEqual(camera.target, [1, 2, -2]);
+        assertEqual("target" in normalizeNavigationCamera(camera), false);
+      },
+
+      "look-at calcula quaternion e distância de foco"() {
+        const camera = reduceNavigationCamera(
+          navigationCameraFixture(),
+          "viewer.camera.look-at",
+          { target: [0, 0, -5] }
+        );
+        const snapshot = cameraSnapshot(camera);
+
+        assertVectorNear(snapshot.quaternion, [0, 0, 0, 1]);
+        assertVectorNear(snapshot.target, [0, 0, -5]);
+        assertNear(snapshot.focusDistance, 5);
+      },
+
+      "órbita preserva alvo e distância quando omitida"() {
+        const current = navigationCameraFixture({
+          position: [0, 0, 5],
+          focusDistance: 5
+        });
+        const camera = reduceNavigationCamera(
+          current,
+          "viewer.camera.orbit",
+          { yawDegrees: 90, pitchDegrees: 0 }
+        );
+        const snapshot = cameraSnapshot(camera);
+
+        assertVectorNear(snapshot.position, [5, 0, 0], 1e-8);
+        assertVectorNear(snapshot.target, [0, 0, 0], 1e-8);
+        assertNear(snapshot.focusDistance, 5);
+      },
+
+      "movimento local segue orientação autoritativa"() {
+        const oriented = reduceNavigationCamera(
+          navigationCameraFixture(),
+          "viewer.camera.look-at",
+          { target: [1, 0, 0] }
+        );
+        const moved = reduceNavigationCamera(
+          oriented,
+          "viewer.camera.move",
+          { delta: [0, 0, -2], space: "local" }
+        );
+
+        assertVectorNear(moved.position, [2, 0, 0], 1e-8);
+      },
+
+      "enquadramento usa limites e aspecto do viewer"() {
+        const camera = reduceNavigationCamera(
+          navigationCameraFixture({ position: [0, 0, 10] }),
+          "viewer.camera.frame-selection",
+          { padding: 1.2 },
+          {
+            selectionBounds: () => ({
+              min: [-1, -1, -1],
+              max: [1, 1, 1]
+            })
+          }
+        );
+        const snapshot = cameraSnapshot(camera);
+
+        assertVectorNear(snapshot.target, [0, 0, 0], 1e-8);
+        assert(snapshot.focusDistance > Math.sqrt(3));
+      },
+
+      "interpolação combina pose projeção e foco"() {
+        const from = navigationCameraFixture();
+        const to = navigationCameraFixture({
+          position: [8, 4, 2],
+          focusDistance: 9,
+          fov: 75,
+          near: 1,
+          far: 2000
+        });
+        const camera = reduceNavigationCamera(
+          from,
+          "viewer.camera.interpolate",
+          { from, to, alpha: 0.25 }
+        );
+
+        assertVectorNear(camera.position, [2, 1, 0.5]);
+        assertNear(camera.focusDistance, 3);
+        assertNear(camera.fov, 60);
+        assertNear(camera.near, 0.325);
+        assertNear(camera.far, 1250);
+      },
+
+      "controlador sincroniza navegação da superfície no viewer"() {
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          viewerId: "viewer-camera-sync",
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({
+          viewer,
+          surface
+        });
+
+        surface.emit(navigationCameraFixture({
+          position: [7, 8, 9],
+          focusDistance: 4
+        }));
+
+        assertVectorNear(controller.snapshot().position, [7, 8, 9]);
+        assertEqual("region" in viewer.snapshot(), false);
+        controller.dispose();
+      },
+
+      "sequência aplica uma única vista final na superfície"() {
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const before = surface.applyCount;
+
+        controller.applySequence([
+          {
+            sequence: 0,
+            command: "viewer.camera.move",
+            args: { delta: [1, 0, 0] }
+          },
+          {
+            sequence: 1,
+            command: "viewer.camera.look-at",
+            args: { target: [0, 0, -5] }
+          }
+        ]);
+
+        assertEqual(surface.applyCount, before + 1);
+        assertVectorNear(controller.snapshot().position, [1, 0, 0]);
+        controller.dispose();
+      },
+
+      "plano de procedimento altera só a câmera local"() {
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const service = new CameraPlanCommitService({
+          controller,
+          currentBaseVersion: () => 4
+        });
+        const result = service.commit({
+          planVersion: PROGRAM_PLAN_VERSION,
+          runId: "camera-procedure",
+          baseVersion: 4,
+          commands: [{
+            sequence: 0,
+            command: "viewer.camera.orbit",
+            args: { yawDegrees: 30 }
+          }]
+        });
+
+        assertEqual(result.domain, "viewer-camera");
+        assertEqual(result.commandCount, 1);
+        assertEqual(viewer.snapshot().selection.length, 0);
+        controller.dispose();
+      },
+
+      "plano de câmera obsoleto falha antes de aplicar"() {
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const service = new CameraPlanCommitService({
+          controller,
+          currentBaseVersion: () => 2
+        });
+        const before = controller.snapshot();
+
+        assertThrowsMessage(
+          () => service.commit({
+            planVersion: PROGRAM_PLAN_VERSION,
+            runId: "stale-camera",
+            baseVersion: 1,
+            commands: [{
+              sequence: 0,
+              command: "viewer.camera.move",
+              args: { delta: [9, 0, 0] }
+            }]
+          }),
+          "Plano obsoleto"
+        );
+        assertDeepEqual(controller.snapshot(), before);
+        controller.dispose();
+      },
+
+      "console encaminha câmera para os comandos públicos"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            describe: () => [],
+            execute(id, args) {
+              calls.push({ id, args });
+              return navigationCameraFixture();
+            }
+          },
+          queries: {
+            execute: () => cameraSnapshot(navigationCameraFixture())
+          }
+        });
+
+        const results = console.execute([
+          "camera lookat 0 1 0",
+          "camera orbit 30 -10",
+          "camera frame 1.25"
+        ].join("\n"));
+
+        assert(results.every(result => result.ok));
+        assertDeepEqual(
+          calls.map(call => call.id),
+          [
+            "viewer.camera.look-at",
+            "viewer.camera.orbit",
+            "viewer.camera.frame-selection"
+          ]
         );
       }
     },
@@ -8062,6 +8353,52 @@ function spatialCreationPlan({
   };
 }
 
+function navigationCameraFixture(patch = {}) {
+  return normalizeNavigationCamera({
+    position: [0, 0, 0],
+    quaternion: [0, 0, 0, 1],
+    focusDistance: 1,
+    fov: 55,
+    near: 0.1,
+    far: 1000,
+    aspect: 1,
+    ...patch
+  });
+}
+
+function createCameraSurfaceFixture() {
+  let camera = navigationCameraFixture();
+  const listeners = new Set();
+  return {
+    applyCount: 0,
+    readNavigationCamera() {
+      return structuredClone(camera);
+    },
+    applyNavigationCamera(next) {
+      camera = normalizeNavigationCamera(next, camera);
+      this.applyCount += 1;
+      return structuredClone(camera);
+    },
+    subscribeNavigationCamera(listener) {
+      listeners.add(listener);
+      listener(structuredClone(camera));
+      return () => listeners.delete(listener);
+    },
+    readSelectionBounds() {
+      return {
+        min: [-1, -1, -1],
+        max: [1, 1, 1]
+      };
+    },
+    emit(next) {
+      camera = normalizeNavigationCamera(next, camera);
+      for (const listener of listeners) {
+        listener(structuredClone(camera));
+      }
+    }
+  };
+}
+
 function createShortcutEvent({
   key,
   ctrlKey = false,
@@ -8124,6 +8461,13 @@ function assertNear(actual, expected, epsilon = 1e-9) {
   assert(
     Math.abs(actual - expected) <= epsilon,
     `Esperado aproximadamente ${expected}, recebido ${actual}.`
+  );
+}
+
+function assertVectorNear(actual, expected, epsilon = 1e-9) {
+  assertEqual(actual.length, expected.length);
+  actual.forEach((value, index) =>
+    assertNear(value, expected[index], epsilon)
   );
 }
 

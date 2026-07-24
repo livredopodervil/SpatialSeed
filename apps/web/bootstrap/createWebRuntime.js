@@ -4,13 +4,14 @@ import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260718-00
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
 import {
+  VIEWER_CAMERA_COMMANDS,
+  ViewerCameraController,
   ViewerState,
-  normalizeCameraProjection
-} from "../../../packages/runtime-layers/src/index.js?build=20260724-0029b";
+} from "../../../packages/runtime-layers/src/index.js?build=20260724-0029c";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029b";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029c";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260720-0028d";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029c";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
@@ -19,7 +20,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260716-0025d";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029b2";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029c";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -39,12 +40,14 @@ import {
   resolveRuntimeProfile
 } from "../../../packages/runtime-api/src/index.js?build=20260718-0027h";
 import {
+  CAMERA_PLAN_COMMANDS,
+  CameraPlanCommitService,
   ProcedureCatalog,
   ProgramSessionController,
   SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
-} from "../../../packages/script-runtime/src/index.js?build=20260716-0026i";
+} from "../../../packages/script-runtime/src/index.js?build=20260724-0029c";
 import {
   BrowserProcedureCatalogStore
 } from "../procedures/BrowserProcedureCatalogStore.js?build=20260716-0026i";
@@ -72,7 +75,7 @@ import {
   AnimationPanel
 } from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
 
-const EXPECTED_RENDERER_API = "renderer-three-selection-pivot-v2";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v1";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({
@@ -174,10 +177,11 @@ export async function createWebRuntime({
     uiConfiguration?.presentation?.transform ?? {}
   );
   const viewer = new ViewerState({
-    camera: renderer.getCameraProjection()
+    camera: renderer.readNavigationCamera()
   });
-  const unsubscribeViewerProjection = viewer.subscribe(snapshot => {
-    renderer.setCameraProjection(snapshot.camera);
+  const cameraController = new ViewerCameraController({
+    viewer,
+    surface: renderer
   });
   const animationRuntime = new AnimationRuntime({ surface: renderer });
 
@@ -232,16 +236,14 @@ export async function createWebRuntime({
     runtime: animationRuntime,
     selection: () => editor.selection.snapshot()
   });
-  commands
-    .register(
-      "viewer.camera.projection.set",
-      args => {
-        const projection = normalizeCameraProjection(args);
-        viewer.update({ camera: projection });
-        return viewer.snapshot().camera;
-      },
+  for (const command of VIEWER_CAMERA_COMMANDS) {
+    commands.register(
+      command,
+      args => cameraController.execute(command, args),
       { category: "viewer", mutates: false }
-    )
+    );
+  }
+  commands
     .register(
       "animation.start",
       args => animationCommands.start(args),
@@ -299,11 +301,41 @@ export async function createWebRuntime({
     geometryRegistry,
     appearanceRuntime
   });
-  commands.register("program.plan.commit", ({ plan }) =>
-    spatialPlanCommitService.commit(plan)
-  );
+  const cameraPlanCommitService = new CameraPlanCommitService({
+    controller: cameraController,
+    currentBaseVersion: () => sandbox.revision
+  });
+  commands.register("program.plan.commit", ({ plan }) => {
+    const planCommands = Array.isArray(plan?.commands)
+      ? plan.commands
+      : [];
+    const hasCamera = planCommands.some(intent =>
+      CAMERA_PLAN_COMMANDS.includes(intent?.command)
+    );
+    const hasSpatial = planCommands.some(intent =>
+      intent?.command === SPATIAL_CREATE_COMMAND
+    );
+    if (hasCamera && hasSpatial) {
+      throw new Error(
+        "Um plano não pode misturar câmera local e mutações espaciais."
+      );
+    }
+    return hasCamera
+      ? cameraPlanCommitService.commit(plan)
+      : spatialPlanCommitService.commit(plan);
+  });
 
   const programSession = new ProgramSessionController({
+    workerFactory: () => createBrowserProgramSessionWorker(),
+    timeoutMs: 5000,
+    allowedCommands: [
+      SPATIAL_CREATE_COMMAND,
+      ...CAMERA_PLAN_COMMANDS
+    ],
+    geometryTypes: geometryRegistry.list(),
+    maxCommands: 10000
+  });
+  const experimentProgramSession = new ProgramSessionController({
     workerFactory: () => createBrowserProgramSessionWorker(),
     timeoutMs: 5000,
     allowedCommands: [SPATIAL_CREATE_COMMAND],
@@ -312,7 +344,7 @@ export async function createWebRuntime({
   });
   const experimentService = new ExperimentService({
     registry: experimentRegistry,
-    programs: programSession,
+    programs: experimentProgramSession,
     baseVersion: () => sandbox.revision
   });
   const experimentActionService = new ExperimentActionService({
@@ -415,7 +447,7 @@ export async function createWebRuntime({
     )
     .register("runtime.profile", () => profile)
     .register("viewer.camera.snapshot", () =>
-      viewer.snapshot().camera
+      cameraController.snapshot()
     )
     .register("runtime.ui-stats", () => uiDiagnosticsProvider());
 
@@ -460,6 +492,8 @@ export async function createWebRuntime({
   });
   runtime.onDispose(() => procedureCatalogEditor.dispose());
   runtime.onDispose(() => programSession.dispose());
+  runtime.onDispose(() => experimentProgramSession.dispose());
+  runtime.onDispose(() => cameraController.dispose());
 
   const devConsole = new DevConsole({
     editor,
@@ -510,6 +544,7 @@ export async function createWebRuntime({
       selection: editor.selection.snapshot(),
       editor: editor.snapshot(),
       viewer: viewer.snapshot(),
+      camera: cameraController.snapshot(),
       input: renderer.getInputDiagnostics(),
       transform: {
         mode: renderer.transform?.mode ?? null,
@@ -548,7 +583,13 @@ export async function createWebRuntime({
     }))
     .register("viewer", () => ({
       apiVersion: ViewerState.apiVersion,
-      cameraProjection: true
+      cameraControllerApiVersion: ViewerCameraController.apiVersion,
+      cameraProjection: true,
+      cameraPose: true,
+      cameraOrbit: true,
+      cameraFrameSelection: true,
+      cameraInterpolation: true,
+      cameraProcedures: true
     }))
     .register("modules", () => modules.describe())
     .register("renderer", () => ({
@@ -599,9 +640,12 @@ export async function createWebRuntime({
   const unsubscribeEditor = editor.subscribe(
     snapshot => runtime.emit("editor.changed", snapshot)
   );
+  const unsubscribeViewer = viewer.subscribe(
+    snapshot => runtime.emit("viewer.changed", snapshot)
+  );
 
   runtime
-    .onDispose(unsubscribeViewerProjection)
+    .onDispose(unsubscribeViewer)
     .onDispose(unsubscribeEditor)
     .onDispose(unsubscribeSelection)
     .onDispose(unsubscribeSandbox);
@@ -614,6 +658,7 @@ export async function createWebRuntime({
       sandbox,
       editor,
       viewer,
+      cameraController,
       renderer,
       outline,
       modules,
@@ -632,7 +677,9 @@ export async function createWebRuntime({
       experimentService,
       experimentActionService,
       programSession,
+      experimentProgramSession,
       spatialPlanCommitService,
+      cameraPlanCommitService,
       animationRuntime,
       animationCommands,
       connectUiDiagnostics

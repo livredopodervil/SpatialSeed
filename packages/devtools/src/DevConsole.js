@@ -3,7 +3,7 @@ import {
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 export class DevConsole {
-  static apiVersion = "dev-console-v5";
+  static apiVersion = "dev-console-v6";
 
   constructor({
     editor,
@@ -424,12 +424,18 @@ export class DevConsole {
   }
 
   async #runProgramSource({ source, mode }) {
+    const camera = this.queries
+      ? this.queries.execute("viewer.camera.snapshot")
+      : null;
     const plan = await this.programs.run({
       runId: `console-session-${++this.programSequence}`,
       baseVersion: Number(this.sandbox?.revision ?? 0),
       seed: 0,
       source,
-      mode
+      mode,
+      snapshot: {
+        viewer: { camera }
+      }
     });
 
     if (plan.commands?.length) {
@@ -518,6 +524,9 @@ export class DevConsole {
       case "animate":
         return this.#animate(tokens);
 
+      case "camera":
+        return this.#camera(tokens);
+
       case "scale":
         this.#expectExact(tokens, 3, "scale sx sy sz");
         return this.commands.execute("selection.scale", {
@@ -604,6 +613,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "animate") {
         return this.#animationHelp();
       }
+      if (String(topic).toLowerCase() === "camera") {
+        return this.#cameraHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -634,6 +646,7 @@ export class DevConsole {
         "animate move|rotate|scale expressão expressão expressão",
         "animate color \"hsl(...)|rgb(...)|mix(...)\" [mode=selection|objects]",
         "animate pause|resume|stop|status|list|help",
+        "camera status|position|move|quaternion|lookat|orbit|frame|projection|restore|interpolate",
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
         "help create",
@@ -672,6 +685,35 @@ export class DevConsole {
         "gizmo",
         "undo",
         "redo"
+      ]
+    };
+  }
+
+  #cameraHelp() {
+    return {
+      usage: [
+        "camera status",
+        "camera position x y z",
+        "camera move dx dy dz [world|local]",
+        "camera quaternion x y z w",
+        "camera lookat x y z",
+        "camera orbit yawDeg pitchDeg [distância]",
+        "camera frame [margem]",
+        "camera projection near far [fov]",
+        "camera restore câmera-JSON",
+        "camera interpolate alpha câmera-JSON"
+      ],
+      notes: [
+        "Quaternion é a orientação autoritativa; target é derivado.",
+        "Câmera e navegação pertencem ao viewer e não entram no undo.",
+        "Procedimentos podem usar camera.* e produzem plano revisável."
+      ],
+      examples: [
+        "camera lookat 0 1 0",
+        "camera orbit 30 -10",
+        "camera frame 1.2",
+        "program camera.orbit({yawDegrees:45}); return camera.view",
+        "plan commit"
       ]
     };
   }
@@ -720,13 +762,17 @@ export class DevConsole {
         "O catálogo guarda fontes; a função só executa dentro do Worker SES.",
         "O catálogo web persiste localmente entre reinicializações.",
         "Arquivos JSON podem ser exportados e importados pelo menu Projeto.",
-        "run aceita um valor JSON e pode produzir um plano espacial.",
+        "run aceita JSON e pode produzir um plano espacial ou de câmera.",
+        "Planos não misturam mutações espaciais com câmera local.",
         "merge rejeita conflitos; replace troca o catálogo atomicamente."
       ],
       examples: [
         "procedure define tower ({height=8}={}) => " +
           "spatial.create('box',{size:[2,height,2],position:[0,height/2,0]})",
         "procedure run tower {\"height\":12}",
+        "procedure define orbit ({degrees=30}={}) => " +
+          "camera.orbit({yawDegrees:degrees})",
+        "procedure run orbit {\"degrees\":45}",
         "plan commit"
       ]
     };
@@ -797,6 +843,104 @@ export class DevConsole {
         "animate stop"
       ]
     };
+  }
+
+  #camera(tokens) {
+    const action = (tokens.shift() ?? "status").toLowerCase();
+
+    if (action === "help") {
+      this.#expectMaximum(tokens, 0, "camera help");
+      return this.#cameraHelp();
+    }
+    if (action === "status") {
+      this.#expectMaximum(tokens, 0, "camera status");
+      return this.queries.execute("viewer.camera.snapshot");
+    }
+    if (action === "position") {
+      this.#expectExact(tokens, 3, "camera position x y z");
+      return this.commands.execute("viewer.camera.pose.set", {
+        position: tokens.map(value => this.#number(value))
+      });
+    }
+    if (action === "move") {
+      if (![3, 4].includes(tokens.length)) {
+        throw new Error("Uso: camera move dx dy dz [world|local].");
+      }
+      const delta = tokens.slice(0, 3).map(value => this.#number(value));
+      const space = (tokens[3] ?? "world").toLowerCase();
+      return this.commands.execute("viewer.camera.move", {
+        delta,
+        space
+      });
+    }
+    if (action === "quaternion") {
+      this.#expectExact(tokens, 4, "camera quaternion x y z w");
+      return this.commands.execute("viewer.camera.pose.set", {
+        quaternion: tokens.map(value => this.#number(value))
+      });
+    }
+    if (action === "lookat") {
+      this.#expectExact(tokens, 3, "camera lookat x y z");
+      return this.commands.execute("viewer.camera.look-at", {
+        target: tokens.map(value => this.#number(value))
+      });
+    }
+    if (action === "orbit") {
+      if (![2, 3].includes(tokens.length)) {
+        throw new Error(
+          "Uso: camera orbit yawDeg pitchDeg [distância]."
+        );
+      }
+      return this.commands.execute("viewer.camera.orbit", {
+        yawDegrees: this.#number(tokens[0]),
+        pitchDegrees: this.#number(tokens[1]),
+        ...(tokens[2] === undefined
+          ? {}
+          : { distance: this.#positive(tokens[2]) })
+      });
+    }
+    if (action === "frame") {
+      this.#expectMaximum(tokens, 1, "camera frame [margem]");
+      return this.commands.execute("viewer.camera.frame-selection", {
+        ...(tokens[0] === undefined
+          ? {}
+          : { padding: this.#positive(tokens[0]) })
+      });
+    }
+    if (action === "projection") {
+      if (![2, 3].includes(tokens.length)) {
+        throw new Error("Uso: camera projection near far [fov].");
+      }
+      return this.commands.execute("viewer.camera.projection.set", {
+        near: this.#positive(tokens[0]),
+        far: this.#positive(tokens[1]),
+        ...(tokens[2] === undefined
+          ? {}
+          : { fov: this.#positive(tokens[2]) })
+      });
+    }
+    if (action === "restore") {
+      if (!tokens.length) {
+        throw new Error("Uso: camera restore câmera-JSON.");
+      }
+      return this.commands.execute("viewer.camera.restore", {
+        camera: parseJson(tokens.join(" "), "Câmera")
+      });
+    }
+    if (action === "interpolate") {
+      if (tokens.length < 2) {
+        throw new Error(
+          "Uso: camera interpolate alpha câmera-JSON."
+        );
+      }
+      const alpha = this.#number(tokens.shift());
+      return this.commands.execute("viewer.camera.interpolate", {
+        alpha,
+        to: parseJson(tokens.join(" "), "Câmera")
+      });
+    }
+
+    throw new Error(`Ação de câmera desconhecida: ${action}.`);
   }
 
   #animate(tokens) {

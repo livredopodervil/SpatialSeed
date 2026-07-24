@@ -8,6 +8,10 @@ import {
   createSpatialPlanningFacade,
   SPATIAL_CREATE_COMMAND
 } from "./SpatialPlanningFacade.js";
+import {
+  CAMERA_PLAN_COMMANDS,
+  createCameraPlanningFacade
+} from "./CameraPlanningFacade.js";
 
 const MAX_SOURCE_LENGTH = 100000;
 
@@ -34,6 +38,14 @@ export function executeProgramRequest(
         ? createSpatialPlanningFacade({
             run,
             geometryTypes: normalized.geometryTypes
+          })
+        : null,
+      camera: normalized.allowedCommands.some(command =>
+        CAMERA_PLAN_COMMANDS.includes(command)
+      )
+        ? createCameraPlanningFacade({
+            run,
+            snapshot: normalized.snapshot?.viewer?.camera ?? null
           })
         : null
     });
@@ -103,7 +115,8 @@ export function createCalculationEnvironment({
   seed = 0,
   snapshot = null,
   maxOutput = 100,
-  spatial = null
+  spatial = null,
+  camera = null
 } = {}) {
   const outputLines = [];
   const randomSource = createSeededRandom(seed);
@@ -130,7 +143,8 @@ export function createCalculationEnvironment({
       math,
       print,
       snapshot: clone(snapshot),
-      ...(spatial === null ? {} : { spatial })
+      ...(spatial === null ? {} : { spatial }),
+      ...(camera === null ? {} : { camera })
     },
     output() {
       return [...outputLines];

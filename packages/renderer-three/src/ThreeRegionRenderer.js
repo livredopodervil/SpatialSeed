@@ -10,8 +10,9 @@ import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
 import {
-  normalizeCameraProjection
-} from "../../runtime-layers/src/index.js?build=20260724-0029b";
+  normalizeCameraProjection,
+  normalizeNavigationCamera
+} from "../../runtime-layers/src/index.js?build=20260724-0029c";
 import {
   affectedHierarchyIds,
   applyProjectedWorldMatrix,
@@ -34,7 +35,7 @@ import {
 } from "./AnimationTransformOverlay.js?build=20260720-0028d";
 
 export class ThreeRegionRenderer {
-  static apiVersion = "renderer-three-selection-pivot-v2";
+  static apiVersion = "renderer-three-navigation-camera-v1";
   #meshes = new Map();
   #selectionSnapshot = null;
   #session = null;
@@ -53,6 +54,7 @@ export class ThreeRegionRenderer {
   #batchCapacity = 65536;
   #hierarchy = new HierarchyIndex([]);
   #frameListeners = new Set();
+  #cameraListeners = new Set();
   #lastFrameTimestamp = null;
   #animationTargetIds = new Set();
   #animationPivotOverrides = new Map();
@@ -168,6 +170,10 @@ export class ThreeRegionRenderer {
     this.orbit = new OrbitControls(this.camera, canvas);
     this.orbit.enableDamping = true;
     this.orbit.target.set(0, 1, 0);
+    this.orbit.addEventListener(
+      "change",
+      () => this.#notifyNavigationCamera()
+    );
 
     this.transformAnchor = new THREE.Group();
     this.transformAnchor.name = "editor-selection-anchor";
@@ -265,14 +271,74 @@ export class ThreeRegionRenderer {
     });
   }
 
+  readNavigationCamera() {
+    return Object.freeze({
+      position: this.camera.position.toArray(),
+      quaternion: this.camera.quaternion.toArray(),
+      focusDistance: Math.max(
+        this.camera.position.distanceTo(this.orbit.target),
+        1e-9
+      ),
+      fov: this.camera.fov,
+      near: this.camera.near,
+      far: this.camera.far,
+      aspect: this.camera.aspect
+    });
+  }
+
+  applyNavigationCamera(camera = {}) {
+    const next = normalizeNavigationCamera(
+      camera,
+      this.readNavigationCamera()
+    );
+    this.camera.position.fromArray(next.position);
+    this.camera.quaternion.fromArray(next.quaternion);
+    this.camera.fov = next.fov;
+    this.camera.near = next.near;
+    this.camera.far = next.far;
+    this.camera.aspect = next.aspect;
+    this.camera.updateProjectionMatrix();
+    const forward = new THREE.Vector3(0, 0, -1)
+      .applyQuaternion(this.camera.quaternion)
+      .multiplyScalar(next.focusDistance);
+    this.orbit.target.copy(this.camera.position).add(forward);
+    this.orbit.update();
+    return this.readNavigationCamera();
+  }
+
+  subscribeNavigationCamera(listener) {
+    if (typeof listener !== "function") {
+      throw new TypeError("Listener de câmera deve ser função.");
+    }
+    this.#cameraListeners.add(listener);
+    listener(this.readNavigationCamera());
+    return () => this.#cameraListeners.delete(listener);
+  }
+
+  readSelectionBounds() {
+    const members = this.#selectionSnapshot?.members ?? [];
+    if (!members.length) return null;
+    const bounds = new THREE.Box3().makeEmpty();
+    for (const member of members) {
+      bounds.union(this.#worldBoundsForObjectId(member.objectId));
+    }
+    return bounds.isEmpty()
+      ? null
+      : Object.freeze({
+          min: bounds.min.toArray(),
+          max: bounds.max.toArray()
+        });
+  }
+
   setCameraProjection({
     near = this.camera.near,
     far = this.camera.far
   } = {}) {
     const projection = normalizeCameraProjection({ near, far });
-    this.camera.near = projection.near;
-    this.camera.far = projection.far;
-    this.camera.updateProjectionMatrix();
+    this.applyNavigationCamera({
+      ...this.readNavigationCamera(),
+      ...projection
+    });
     return this.getCameraProjection();
   }
 
@@ -1377,6 +1443,19 @@ export class ThreeRegionRenderer {
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(innerWidth, innerHeight);
+    this.#notifyNavigationCamera();
+  }
+
+  #notifyNavigationCamera() {
+    if (!this.#cameraListeners.size) return;
+    const snapshot = this.readNavigationCamera();
+    for (const listener of [...this.#cameraListeners]) {
+      try {
+        listener(snapshot);
+      } catch (error) {
+        console.error("Navigation camera listener failed", error);
+      }
+    }
   }
 
 getResourceDiagnostics() {

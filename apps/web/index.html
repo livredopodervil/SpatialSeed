@@ -140,14 +140,41 @@
 
 <section id="camera-panel" hidden>
   <header>
-    <strong>Projeção da câmera</strong>
+    <strong>Câmera de navegação</strong>
     <button id="close-camera" title="Fechar">×</button>
   </header>
   <form id="camera-projection-form" onsubmit="return false">
     <p>
-      Objetos anteriores ao plano <em>near</em> ou posteriores ao plano
-      <em>far</em> não são renderizados.
+      Esta câmera pertence somente a este viewer. Sua orientação é guardada
+      como quaternion; o alvo abaixo é derivado para edição.
     </p>
+    <fieldset>
+      <legend>Posição</legend>
+      <div class="camera-vector">
+        <label><span>X</span><input id="camera-position-x" type="number"
+          step="any" inputmode="decimal" required></label>
+        <label><span>Y</span><input id="camera-position-y" type="number"
+          step="any" inputmode="decimal" required></label>
+        <label><span>Z</span><input id="camera-position-z" type="number"
+          step="any" inputmode="decimal" required></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Alvo derivado</legend>
+      <div class="camera-vector">
+        <label><span>X</span><input id="camera-target-x" type="number"
+          step="any" inputmode="decimal" required></label>
+        <label><span>Y</span><input id="camera-target-y" type="number"
+          step="any" inputmode="decimal" required></label>
+        <label><span>Z</span><input id="camera-target-z" type="number"
+          step="any" inputmode="decimal" required></label>
+      </div>
+    </fieldset>
+    <label>
+      <span>Campo visual — graus</span>
+      <input id="camera-fov" type="number" min="1" max="179"
+        step="any" inputmode="decimal" required>
+    </label>
     <label>
       <span>Near — distância mínima</span>
       <input id="camera-near" type="number" min="0.000001"
@@ -159,10 +186,43 @@
         step="any" inputmode="decimal" required>
     </label>
     <div class="actions">
+      <button id="camera-view-apply" type="button">
+        Aplicar vista
+      </button>
       <button id="camera-projection-apply" type="button">
         Aplicar recorte
       </button>
+      <button id="camera-frame-selection" type="button">
+        Enquadrar seleção
+      </button>
+      <button id="camera-reset" type="button">
+        Restaurar inicial
+      </button>
     </div>
+    <fieldset>
+      <legend>Órbita incremental</legend>
+      <label>
+        <span>Yaw — graus horizontais</span>
+        <input id="camera-orbit-yaw" type="number" step="any"
+          inputmode="decimal" value="15">
+      </label>
+      <label>
+        <span>Pitch — graus verticais</span>
+        <input id="camera-orbit-pitch" type="number" step="any"
+          inputmode="decimal" value="0">
+      </label>
+      <label>
+        <span>Distância — vazio preserva</span>
+        <input id="camera-orbit-distance" type="number" min="0.000001"
+          step="any" inputmode="decimal">
+      </label>
+      <div class="actions">
+        <button id="camera-orbit-apply" type="button">
+          Aplicar órbita
+        </button>
+      </div>
+    </fieldset>
+    <output id="camera-summary"></output>
   </form>
 </section>
 

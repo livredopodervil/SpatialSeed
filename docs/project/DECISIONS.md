@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029b`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029c`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -448,20 +448,23 @@ rejeitadas por auditoria offline estrita.
 
 ## D-030 — Projeção da câmera pertence ao viewer
 
-**Estado:** implementada para os planos de recorte.
+**Estado:** implementada para a câmera de navegação.
 
-Os planos `near` e `far` são validados e armazenados no `ViewerState`. O
-renderer aplica esse estado e atualiza a matriz de projeção; o documento, a
-região e o sandbox não recebem esses valores. A interface usa o comando
-`viewer.camera.projection.set` e consulta `viewer.camera.snapshot`.
+Posição, quaternion, distância de foco, campo visual, `near` e `far` são
+validados e armazenados no `ViewerState`. O alvo é derivado da posição,
+orientação e distância de foco; não existe como segunda orientação
+autoritativa. `ViewerCameraController` aplica o estado pelo adaptador do
+renderer e sincroniza de volta a navegação manual do `OrbitControls`.
 
 **Motivação:** diferentes viewers do mesmo sandbox precisam poder escolher
 recorte, navegação e câmera ativa sem produzir comandos editoriais nem
 sobrescrever a experiência dos demais.
 
 **Consequências:** `0 < near < far` é uma invariante pública; alterações não
-entram em undo/redo nem no arquivo; posição, quaternion, foco, órbita e
-interpolação devem ampliar o mesmo estado e a mesma API no 0029c.
+entram em undo/redo nem no arquivo; painel e console chamam comandos
+`viewer.camera.*`; procedimentos recebem uma capability declarativa que produz
+plano revisável. Planos de câmera local não podem misturar mutações espaciais
+persistentes na mesma transação.
 
 ## Decisões superadas ou rejeitadas
 
