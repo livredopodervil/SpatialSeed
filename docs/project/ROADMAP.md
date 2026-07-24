@@ -130,7 +130,7 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - checkpoint e comandos confirmados em IndexedDB;
 - diálogo explícito para continuar, exportar ou descartar recuperação.
 
-### 0029e — Múltiplas instâncias locais
+### 0029e — Múltiplas instâncias locais — implementado
 
 - viewers com seleção e câmera próprias sobre um sandbox lógico comum;
 - coordenação por revisão e `BroadcastChannel`;

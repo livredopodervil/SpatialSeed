@@ -26,7 +26,7 @@ Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
 
 Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 
-## Estado funcional até 0029d
+## Estado funcional até 0029e
 
 - portal HTML na raiz e catálogo canônico de experimentos;
 - protótipos históricos offline, com seleção móvel, recorte configurável e
@@ -46,6 +46,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 - projetos `.spatialseed`, PWA offline e transporte de arquivos;
 - identidade persistente de sandbox e recuperação IndexedDB por checkpoint mais
   comandos confirmados;
+- múltiplos viewers locais com câmera e seleção próprias, sandbox coordenado por
+  revisão e rejeição explícita de intenções obsoletas;
 - runtime Worker/SES, sessões, planos e procedimentos;
 - laboratório declarativo de experimentos;
 - ações e atalhos configuráveis sobre os mesmos comandos;
@@ -75,6 +77,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 19. Animação efêmera não altera cena canônica, histórico ou arquivo.
 20. Grupos só são expandidos em descendentes quando o escopo declarar isso.
 21. Preservar manifesto, preferências e múltiplos painéis ao mudar a interface.
+22. Somente o viewer autoritativo substitui projeto, recuperação ou base
+    regional; réplicas enviam comandos pela coordenação local.
 
 ## Fluxo
 
@@ -104,9 +108,9 @@ animate status
 
 Continuar o ciclo 0029 em incrementos independentes:
 
-1. múltiplas instâncias locais do mesmo sandbox;
-2. objetos câmera;
-3. animação procedural de câmera.
+1. objetos câmera persistentes;
+2. animação procedural de câmera;
+3. consolidação do ciclo 0029.
 
 Referência: `docs/project/ROADMAP.md`.
 

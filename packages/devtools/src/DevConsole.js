@@ -530,6 +530,9 @@ export class DevConsole {
       case "recovery":
         return this.#recovery(tokens);
 
+      case "viewers":
+        return this.#viewers(tokens);
+
       case "scale":
         this.#expectExact(tokens, 3, "scale sx sy sz");
         return this.commands.execute("selection.scale", {
@@ -622,6 +625,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "recovery") {
         return this.#recoveryHelp();
       }
+      if (String(topic).toLowerCase() === "viewers") {
+        return this.#viewersHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -654,6 +660,7 @@ export class DevConsole {
         "animate pause|resume|stop|status|list|help",
         "camera status|position|move|quaternion|lookat|orbit|frame|projection|restore|interpolate",
         "recovery status|help",
+        "viewers status|open|sync|help",
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
         "help create",
@@ -750,6 +757,43 @@ export class DevConsole {
       return this.queries.execute("recovery.status");
     }
     throw new Error("Uso: recovery status|help.");
+  }
+
+  #viewersHelp() {
+    return {
+      commands: [
+        "viewers status",
+        "viewers open",
+        "viewers sync",
+        "runtime test viewer-coordination"
+      ],
+      notes: [
+        "Cada viewer conserva seleção e câmera próprias.",
+        "O sandbox lógico é coordenado por revisão entre abas locais.",
+        "Uma intenção obsoleta é rejeitada e o viewer recebe o estado atual."
+      ]
+    };
+  }
+
+  #viewers(tokens) {
+    const action = (tokens.shift() ?? "status").toLowerCase();
+    if (action === "help") {
+      this.#expectMaximum(tokens, 0, "viewers help");
+      return this.#viewersHelp();
+    }
+    if (action === "status") {
+      this.#expectMaximum(tokens, 0, "viewers status");
+      return this.queries.execute("viewer.instances.status");
+    }
+    if (action === "open") {
+      this.#expectMaximum(tokens, 0, "viewers open");
+      return this.commands.execute("viewer.instance.open");
+    }
+    if (action === "sync") {
+      this.#expectMaximum(tokens, 0, "viewers sync");
+      return this.commands.execute("viewer.instance.sync");
+    }
+    throw new Error("Uso: viewers status|open|sync|help.");
   }
 
   #programHelp() {

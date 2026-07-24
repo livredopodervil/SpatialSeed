@@ -1,6 +1,6 @@
 # Workflow verificável do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029d`. Este é o processo canônico
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e`. Este é o processo canônico
 > para colaboração local, patches, testes, autoria e integração.
 
 ## Objetivos
@@ -278,6 +278,8 @@ aplicável:
 - salvar, abrir e novo projeto;
 - fechar/reabrir PWA e conferir cache;
 - recuperar rascunho, exportar cópia e descartar recuperação local;
+- abrir um segundo viewer, preservar câmeras/seleções distintas e confirmar a
+  propagação ordenada de edições;
 - console, planos e procedimentos.
 
 Um teste automático verde não invalida uma regressão visual observada.

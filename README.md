@@ -24,6 +24,8 @@ O resultado atual combina:
 - propriedades, materiais, texturas e cores de instância editáveis em lote;
 - aplicação web instalável, utilizável offline depois do primeiro carregamento;
 - recuperação automática local por checkpoint e comandos confirmados;
+- múltiplos viewers locais sobre o mesmo sandbox, com câmeras e seleções
+  independentes;
 - testes, diagnósticos, auditoria de recursos e benchmarks executáveis no próprio aplicativo.
 
 ## Por que existe
@@ -118,6 +120,7 @@ Um servidor HTTP é necessário porque módulos ES, import maps e service worker
 | Editar propriedades literais ou procedurais, inclusive abrindo grupos | **Inspector** |
 | Reproduzir presets ou compor faixas diferentes por objeto | **Animação** |
 | Posicionar, orientar, orbitar, enquadrar e configurar o recorte | **Câmera** |
+| Abrir outra projeção local do mesmo sandbox | **Painéis → Novo viewer** |
 | Executar laboratórios paramétricos que geram planos revisáveis | **Explorar** |
 | Ver árvore regional, diagnóstico, recursos e console | **Painéis** |
 | Salvar, abrir, instalar e trocar catálogos de procedimentos | **Projeto** |
@@ -180,6 +183,18 @@ distância, evitando duas fontes concorrentes de verdade.
 O painel **Câmera** permite editar posição e alvo, orbitar incrementalmente,
 enquadrar a seleção e restaurar a vista inicial. Essas ações não alteram o
 sandbox, não entram no undo e não são salvas no arquivo `.spatialseed`.
+
+### Viewers locais
+
+**Novo viewer** abre outra aba sobre a mesma identidade de sandbox. Cada aba
+mantém câmera, seleção e painéis próprios; objetos e histórico são coordenados
+por revisão. Uma aba é a autoridade local e as demais enviam comandos canônicos
+em fila. Se uma intenção foi produzida sobre revisão antiga, ela é rejeitada, o
+viewer recebe o estado atual e a ação pode ser repetida conscientemente.
+
+Use `viewers status`, `viewers open` e `viewers sync` no console. Essa
+coordenação usa `BroadcastChannel` na mesma origem e não deve ser confundida com
+colaboração remota ou multiusuário.
 
 ### Produção afim
 
@@ -420,6 +435,7 @@ flowchart TD
 | `packages/core` | região, sandbox e eventos |
 | `packages/runtime-api` | fachada pública de comandos, consultas, eventos e capacidades |
 | `packages/runtime-layers` | estado local do viewer e controlador da câmera de navegação |
+| `packages/local-viewers` | coordenação por revisão entre viewers da mesma origem |
 | `packages/editor-commands` | registro canônico das operações editoriais |
 | `packages/region-box` | reducer puro e modelo de estado da região atual |
 | `packages/scene-hierarchy` | grupos, parentesco, transforms locais e ciclo de subárvores |
@@ -570,7 +586,6 @@ SpatialSeed ainda não é um modelador DCC completo nem um motor de jogo pronto 
 - persistência de clips, keyframes e animações no documento;
 - eventos, colisões e interatividade programável contínua;
 - serialização compacta de grandes receitas procedurais e instâncias hierárquicas;
-- sincronização do mesmo sandbox entre múltiplos viewers;
 - colaboração multiusuário e autoridade distribuída em produção;
 - importação e exportação completas de formatos como glTF, STL e Collada;
 - auditoria de segurança suficiente para executar código não confiável em contexto crítico.

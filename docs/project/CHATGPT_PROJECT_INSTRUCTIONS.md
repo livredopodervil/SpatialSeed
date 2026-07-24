@@ -1,6 +1,6 @@
 # Instruções para assistentes no projeto SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029d`. Estas instruções resumem o
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e`. Estas instruções resumem o
 > contrato de colaboração; o processo operacional completo está em
 > [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -71,6 +71,8 @@ busca manual no terminal.
 18. Animação efêmera é uma sobreposição restaurável, não estado editorial.
 19. Escopo de seleção direta e expansão de grupos são decisões explícitas.
 20. Expressões em lote são compiladas e validadas antes de uma mutação atômica.
+21. Viewers locais compartilham apenas o sandbox coordenado; câmera, seleção e
+    painéis não atravessam a fronteira entre abas.
 
 Se uma solicitação contradisser esses princípios, explique o conflito e proponha
 uma implementação compatível antes de escrever código.

@@ -7,7 +7,8 @@ export function createEditorCommands({
   projectService,
   benchmarkRunner,
   resourceAudit,
-  propertyService = null
+  propertyService = null,
+  canMutateProject = () => true
 }) {
   const commands = new CommandRegistry();
 
@@ -152,12 +153,14 @@ export function createEditorCommands({
     .register("project.save", () =>
       projectService.save()
     )
-    .register("project.open", ({ text }) =>
-      projectService.openText(text)
-    )
-    .register("project.new", () =>
-      projectService.newProject()
-    );
+    .register("project.open", ({ text }) => {
+      canMutateProject("abrir outro projeto");
+      return projectService.openText(text);
+    })
+    .register("project.new", () => {
+      canMutateProject("criar outro projeto");
+      return projectService.newProject();
+    });
 
   commands
     .register(

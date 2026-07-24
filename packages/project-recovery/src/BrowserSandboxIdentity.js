@@ -6,21 +6,27 @@ export class BrowserSandboxIdentity {
   constructor({
     storage = globalThis.localStorage,
     cryptoApi = globalThis.crypto,
-    storageKey = DEFAULT_STORAGE_KEY
+    storageKey = DEFAULT_STORAGE_KEY,
+    requestedId = null
   } = {}) {
     this.storage = storage;
     this.crypto = cryptoApi;
     this.storageKey = storageKey;
+    this.requestedId = isSandboxId(requestedId)
+      ? String(requestedId)
+      : null;
     this.fallbackId = null;
   }
 
   current() {
+    if (this.requestedId) return this.requestedId;
     const stored = this.#read();
     if (stored) return stored;
     return this.rotate();
   }
 
   rotate() {
+    this.requestedId = null;
     const id = createSandboxId(this.crypto);
     this.fallbackId = id;
     try {

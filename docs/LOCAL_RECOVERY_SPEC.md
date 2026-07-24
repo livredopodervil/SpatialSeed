@@ -41,10 +41,10 @@ Recarregar a mesma página usa essa identidade. Abrir um arquivo ou criar um
 projeto vazio gera outra identidade e remove o registro anterior, pois essas
 ações são substituições explícitas do documento.
 
-O suporte a `?sandbox=<id>` e coordenação entre abas pertence ao `0029e`; não é
-simulado por este marco. Até lá, duas abas sobre a mesma origem não devem editar
-simultaneamente: ambas compartilham a identidade local e a última gravação pode
-substituir a anterior.
+O suporte a `?sandbox=<id>` e a coordenação entre abas foi acrescentado no
+`0029e`. Somente o viewer autoritativo grava este registro; réplicas recebem o
+mesmo checkpoint e journal pelo coordenador local sem disputar a última
+gravação no IndexedDB.
 
 ## Experiência de restauração
 

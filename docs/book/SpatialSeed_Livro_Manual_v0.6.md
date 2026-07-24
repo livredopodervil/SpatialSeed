@@ -1163,10 +1163,17 @@ definir copy-on-write para regenerar estruturas sem destruir exceções locais.
 
 ### Segundo viewer
 
-O outline já oferece uma segunda projeção diagnóstica. Um viewer funcionalmente
-independente, textual, documental ou WebGPU ampliaria o teste de
-substituibilidade. O critério não seria pixel idêntico, mas preservação de IDs,
-transforms, aparência lógica, seleção e deltas observáveis.
+O marco 0029e acrescentou viewers WebGL locais em abas diferentes. Eles
+compartilham a identidade e o histórico do sandbox por revisão, mas conservam
+câmera, seleção e painéis próprios. Uma autoridade local ordena as edições;
+intenções produzidas sobre revisão antiga são rejeitadas e recebem o snapshot
+vigente, em vez de serem mescladas pela ordem acidental das mensagens.
+
+Esse resultado prova duas projeções interativas do mesmo mundo, não apenas o
+outline diagnóstico. Um viewer textual, documental ou WebGPU continua sendo um
+teste posterior de substituibilidade: o critério será preservar IDs,
+transforms, aparência lógica e deltas observáveis, não produzir pixels
+idênticos.
 
 ## 32 — Possibilidades distribuídas
 

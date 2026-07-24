@@ -90,14 +90,19 @@ import {
 } from "../../project-files/src/ProjectValidator.js?build=20260716-0025d";
 import {
   ProjectService
-} from "../../project-files/src/ProjectService.js?build=20260724-0029d1";
+} from "../../project-files/src/ProjectService.js?build=20260724-0029e";
 import {
   BrowserSandboxIdentity,
   MemoryRecoveryStore,
   SandboxRecoveryController,
   createRecoveryRecord,
   validateRecoveryRecord
-} from "../../project-recovery/src/index.js?build=20260724-0029d";
+} from "../../project-recovery/src/index.js?build=20260724-0029e";
+import {
+  CoordinatedSandbox,
+  LocalViewerCoordinator,
+  createSharedViewerUrl
+} from "../../local-viewers/src/index.js?build=20260724-0029e";
 import {
   boxRegionReducer
 } from "../../region-box/src/reducer.js?build=20260716-0024d";
@@ -119,7 +124,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260720-0028d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260724-0029d";
+} from "../../devtools/src/DevConsole.js?build=20260724-0029e";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -1948,6 +1953,285 @@ export function createRuntimeLayerTests() {
             "viewer.camera.look-at",
             "viewer.camera.orbit",
             "viewer.camera.frame-selection"
+          ]
+        );
+      }
+    },
+
+    "viewer-coordination": {
+      "URL compartilhada preserva origem e identifica a réplica"() {
+        const url = new URL(createSharedViewerUrl(
+          "https://example.test/apps/web/?build=current#scene",
+          { sandboxId: "sandbox-coordination-url" }
+        ));
+
+        assertEqual(url.searchParams.get("build"), "current");
+        assertEqual(
+          url.searchParams.get("sandbox"),
+          "sandbox-coordination-url"
+        );
+        assertEqual(url.searchParams.get("viewer"), "replica");
+        assertEqual(url.hash, "#scene");
+      },
+
+      async "réplica sem BroadcastChannel não finge aceitar edição"() {
+        const network = {
+          channelFactory() {
+            throw new Error("BroadcastChannel indisponível.");
+          }
+        };
+        const replica = createLocalViewerHarness({
+          sandboxId: "sandbox-local-viewer-unavailable",
+          viewerId: "viewer-unavailable",
+          role: "replica",
+          network
+        });
+        await replica.coordinator.start();
+
+        assertEqual(replica.coordinator.status().available, false);
+        assertThrowsMessage(
+          () => replica.coordinated.dispatch({
+            type: "object.create",
+            id: "must-not-queue"
+          }),
+          "sem o canal de coordenação"
+        );
+        assertThrowsMessage(
+          () => replica.coordinator.viewerUrl(
+            "https://example.test/apps/web/"
+          ),
+          "BroadcastChannel indisponível"
+        );
+        replica.coordinator.dispose();
+      },
+
+      async "autoridade sincroniza revisão e estado com réplica"() {
+        const pair = await createLocalViewerPair();
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "shared-a",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+
+        assertEqual(pair.authority.sandbox.objectCount, 1);
+        assertEqual(pair.replica.sandbox.objectCount, 1);
+        assertDeepEqual(
+          pair.replica.sandbox.getState(),
+          pair.authority.sandbox.getState()
+        );
+        assertEqual(
+          pair.replica.coordinator.status().sharedRevision,
+          pair.authority.sandbox.revision
+        );
+        pair.dispose();
+      },
+
+      async "réplica serializa duas intenções pela revisão aceita"() {
+        const pair = await createLocalViewerPair();
+        pair.replica.coordinated.dispatch({
+          type: "object.create",
+          id: "queued-a",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        pair.replica.coordinated.dispatch({
+          type: "object.create",
+          id: "queued-b",
+          position: [2, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+
+        assertEqual(pair.authority.sandbox.objectCount, 2);
+        assertEqual(pair.replica.sandbox.objectCount, 2);
+        assertEqual(
+          pair.replica.coordinator.status().pendingIntents,
+          0
+        );
+        assertEqual(
+          pair.replica.coordinator.status().lastOutcome.status,
+          "accepted"
+        );
+        pair.dispose();
+      },
+
+      async "intenção obsoleta é rejeitada e força convergência"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        network.pause("sync");
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "authority-first",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+
+        pair.replica.coordinated.dispatch({
+          type: "object.create",
+          id: "stale-replica",
+          position: [2, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+
+        const status = pair.replica.coordinator.status();
+        assertEqual(status.lastOutcome.status, "rejected-stale");
+        assertEqual(pair.authority.sandbox.objectCount, 1);
+        assertDeepEqual(
+          pair.replica.sandbox.getState(),
+          pair.authority.sandbox.getState()
+        );
+        pair.dispose();
+      },
+
+      async "undo solicitado pela réplica usa o histórico comum"() {
+        const pair = await createLocalViewerPair();
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "undo-shared",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+        assertEqual(pair.replica.coordinated.undo(), true);
+        await settleLocalViewers(20);
+
+        assertEqual(pair.authority.sandbox.objectCount, 0);
+        assertEqual(pair.replica.sandbox.objectCount, 0);
+        assertEqual(pair.authority.sandbox.canRedo, true);
+        assertEqual(pair.replica.coordinated.canRedo, true);
+        assertEqual(pair.replica.coordinated.redo(), true);
+        await settleLocalViewers(20);
+        assertEqual(pair.authority.sandbox.objectCount, 1);
+        assertEqual(pair.replica.sandbox.objectCount, 1);
+        pair.dispose();
+      },
+
+      async "câmera e seleção continuam locais por viewer"() {
+        const pair = await createLocalViewerPair();
+        const authorityViewer = new ViewerState({
+          viewerId: "viewer-authority",
+          camera: navigationCameraFixture({ position: [1, 2, 3] }),
+          selection: ["a"]
+        });
+        const replicaViewer = new ViewerState({
+          viewerId: "viewer-replica",
+          camera: navigationCameraFixture({ position: [8, 9, 10] }),
+          selection: ["b"]
+        });
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "shared-camera-proof",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+
+        assertVectorNear(
+          authorityViewer.snapshot().camera.position,
+          [1, 2, 3]
+        );
+        assertVectorNear(
+          replicaViewer.snapshot().camera.position,
+          [8, 9, 10]
+        );
+        assertDeepEqual(authorityViewer.snapshot().selection, ["a"]);
+        assertDeepEqual(replicaViewer.snapshot().selection, ["b"]);
+        pair.dispose();
+      },
+
+      async "réplica não substitui projeto por uma via local"() {
+        const pair = await createLocalViewerPair();
+        assertThrowsMessage(
+          () => pair.replica.coordinated.replaceState({
+            schemaVersion: 1,
+            objects: []
+          }),
+          "Somente o viewer autoritativo"
+        );
+        pair.dispose();
+      },
+
+      async "troca de projeto migra todas as abas para nova identidade"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "before-switch",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+        network.pause("intent");
+        pair.replica.coordinated.dispatch({
+          type: "object.create",
+          id: "cancelled-by-switch",
+          position: [2, 1, 0],
+          size: [1, 1, 1]
+        });
+
+        pair.authority.coordinator.switchSandbox(
+          "sandbox-local-viewer-switched"
+        );
+        await settleLocalViewers(20);
+
+        assertEqual(
+          pair.authority.coordinator.status().sandboxId,
+          "sandbox-local-viewer-switched"
+        );
+        assertEqual(
+          pair.replica.coordinator.status().sandboxId,
+          "sandbox-local-viewer-switched"
+        );
+        assertEqual(pair.replica.sandbox.objectCount, 1);
+        assertEqual(
+          pair.replica.coordinator.status().pendingIntents,
+          0
+        );
+        assertEqual(
+          pair.replica.coordinator.status().lastOutcome.status,
+          "rejected-sandbox-replaced"
+        );
+        pair.dispose();
+      },
+
+      "console encaminha diagnóstico e sincronização de viewers"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            describe: () => [],
+            execute(id, args) {
+              calls.push({ id, args });
+              return { id };
+            }
+          },
+          queries: {
+            execute(id) {
+              calls.push({ id });
+              return { role: "authority" };
+            }
+          }
+        });
+
+        const results = console.execute(
+          "viewers status; viewers open; viewers sync"
+        );
+
+        assert(results.every(result => result.ok));
+        assertDeepEqual(
+          calls.map(call => call.id),
+          [
+            "viewer.instances.status",
+            "viewer.instance.open",
+            "viewer.instance.sync"
           ]
         );
       }
@@ -4515,10 +4799,13 @@ assets: {
 
       async "abrir projeto troca identidade sem sobrescrever o anterior"() {
         const store = new MemoryRecoveryStore();
+        const identityChanges = [];
         const harness = createRecoveryHarness({
           sandboxId: "sandbox-test-before",
           rotatedId: "sandbox-test-after",
-          store
+          store,
+          onIdentityChanged: change =>
+            identityChanges.push(change)
         });
         await harness.controller.initialize();
         await harness.controller.flush();
@@ -4536,6 +4823,10 @@ assets: {
           harness.controller.status().sandboxId,
           "sandbox-test-after"
         );
+        assertDeepEqual(identityChanges, [{
+          previousId: "sandbox-test-before",
+          sandboxId: "sandbox-test-after"
+        }]);
         harness.controller.dispose();
       },
 
@@ -8276,7 +8567,8 @@ function recoveryCheckpoint(name = "Projeto Spatial Seed") {
 function createRecoveryHarness({
   sandboxId,
   rotatedId = `${sandboxId}-rotated`,
-  store
+  store,
+  onIdentityChanged = () => {}
 }) {
   const region = new Region(
     { id: "region-main", name: "Principal", type: "box-region" },
@@ -8334,7 +8626,8 @@ function createRecoveryHarness({
     identity,
     debounceMs: 100000,
     setTimer: () => 1,
-    clearTimer: () => {}
+    clearTimer: () => {},
+    onIdentityChanged
   });
   return { controller, identity, projectService, region, sandbox };
 }
@@ -9041,5 +9334,147 @@ function assertMatricesNear(actual, expected, epsilon = 1e-9) {
   assertEqual(actual.length,expected.length);
   for (let index=0; index<actual.length; index+=1) {
     assertNear(actual[index],expected[index],epsilon);
+  }
+}
+
+async function createLocalViewerPair({
+  network = createLocalViewerNetwork()
+} = {}) {
+  const sandboxId = "sandbox-local-viewer-tests";
+  const authority = createLocalViewerHarness({
+    sandboxId,
+    viewerId: "viewer-authority",
+    role: "authority",
+    network
+  });
+  const replica = createLocalViewerHarness({
+    sandboxId,
+    viewerId: "viewer-replica",
+    role: "replica",
+    network
+  });
+  await authority.coordinator.start();
+  await replica.coordinator.start();
+  await settleLocalViewers();
+  return {
+    authority,
+    replica,
+    dispose() {
+      replica.coordinator.dispose();
+      authority.coordinator.dispose();
+    }
+  };
+}
+
+function createLocalViewerHarness({
+  sandboxId,
+  viewerId,
+  role,
+  network
+}) {
+  const region = new Region(
+    {
+      id: `region-${viewerId}`,
+      name: "Viewer local",
+      type: "box-region"
+    },
+    { schemaVersion: 1, objects: [] }
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const coordinator = new LocalViewerCoordinator({
+    sandbox,
+    sandboxId,
+    viewerId,
+    requestedRole: role,
+    channelFactory: network.channelFactory,
+    lockManager: null,
+    now: () => Date.parse("2026-07-24T12:00:00.000Z")
+  });
+  coordinator.connectSnapshotAdapter({
+    capture() {
+      const proposal = sandbox.createProposal();
+      return {
+        revision: sandbox.revision,
+        baseVersion: sandbox.baseVersion,
+        baseState: sandbox.getBaseState(),
+        commands: proposal.commands
+      };
+    },
+    restore(snapshot) {
+      return sandbox.restoreCommandSequence({
+        baseState: snapshot.baseState,
+        commands: snapshot.commands,
+        baseVersion: snapshot.baseVersion,
+        revision: snapshot.revision
+      });
+    },
+    prepareIntent(command) {
+      return { command };
+    },
+    applyIntent(intent) {
+      return sandbox.dispatch(intent.command);
+    }
+  });
+  return {
+    region,
+    sandbox,
+    coordinator,
+    coordinated: new CoordinatedSandbox({
+      sandbox,
+      coordinator
+    })
+  };
+}
+
+function createLocalViewerNetwork() {
+  const groups = new Map();
+  const paused = new Set();
+  const channelFactory = name => {
+    const listeners = new Set();
+    const channel = {
+      closed: false,
+      addEventListener(type, listener) {
+        if (type === "message") listeners.add(listener);
+      },
+      removeEventListener(type, listener) {
+        if (type === "message") listeners.delete(listener);
+      },
+      postMessage(message) {
+        if (channel.closed || paused.has(message.type)) return;
+        for (const peer of groups.get(name) ?? []) {
+          if (peer === channel || peer.closed) continue;
+          const payload = structuredClone(message);
+          queueMicrotask(() => {
+            for (const listener of peer.listeners) {
+              listener({ data: payload });
+            }
+          });
+        }
+      },
+      close() {
+        channel.closed = true;
+        groups.get(name)?.delete(channel);
+      },
+      listeners
+    };
+    const group = groups.get(name) ?? new Set();
+    group.add(channel);
+    groups.set(name, group);
+    return channel;
+  };
+  return {
+    channelFactory,
+    pause(type) {
+      paused.add(type);
+    },
+    resume(type) {
+      paused.delete(type);
+    }
+  };
+}
+
+async function settleLocalViewers(turns = 8) {
+  for (let index = 0; index < turns; index += 1) {
+    await Promise.resolve();
   }
 }

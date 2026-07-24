@@ -26,6 +26,7 @@ export function bindWebInterface({
     transformToolPanel,
     experimentPanel,
     sandboxRecovery,
+    viewerCoordinator,
     connectUiDiagnostics
   } = web;
 
@@ -67,8 +68,13 @@ export function bindWebInterface({
   let consoleHistoryIndex = 0;
   let lastConsoleText = "";
   let statusTimer = null;
+  let lastViewerOutcome = null;
   let latestSelection = runtime.query("selection.snapshot");
   let latestEditor = runtime.query("editor.snapshot");
+  let latestViewerInstances = runtime.query(
+    "viewer.instances.status"
+  );
+  let latestSandboxId = latestViewerInstances.sandboxId;
   const initialCamera = runtime.query("viewer.camera.snapshot");
   const toolbarBinding = composeToolbar({
     root: documentRoot,
@@ -194,11 +200,17 @@ export function bindWebInterface({
     $("undo").disabled = !status.canUndo;
     $("redo").disabled = !status.canRedo;
     $("review").disabled = !status.dirty;
+    const replica = latestViewerInstances.role === "replica";
+    $("project-open").disabled = replica;
+    $("project-new").disabled = replica;
+    $("confirm-proposal").disabled = replica;
+    $("viewer-new").disabled = !latestViewerInstances.available;
     const selectionActions=runtime.query("selection.actions.describe");
     $("group-selection").disabled=!selectionActions.canGroup;
     $("ungroup-selection").disabled=!selectionActions.canUngroup;
     const count=latestSelection?.members?.length??0,active=latestSelection?.activeMember?.objectId??"∅",mode=latestEditor?.tool?.mode??"select",operation=latestEditor?.selectionOperation??"replace";
-    $("status").textContent=`${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"}`;
+    const viewerRole = replica ? "viewer réplica" : "viewer autoritativo";
+    $("status").textContent=`${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"} · ${viewerRole}`;
   }
 
   const scheduleUiFrame = callback =>
@@ -302,6 +314,15 @@ export function bindWebInterface({
   uiActions
     .register("scene.toggle", () => setSceneOnly(!sceneOnly))
     .register("viewport.fullscreen", () => toggleViewportFullscreen())
+    .register("viewer.instance.open", () => {
+      const result = execute("viewer.instance.open", {
+        href: browserWindow.location.href
+      });
+      if (!result?.url) return result;
+      browserWindow.open(result.url, "_blank", "noopener");
+      showNotice("Novo viewer solicitado para o mesmo sandbox.");
+      return result;
+    })
     .register("panel.animation.toggle", () => {
       const panel = $("animation-panel");
       return panel.hidden
@@ -576,6 +597,58 @@ export function bindWebInterface({
       refreshCameraPanel();
     }
   );
+  const unsubscribeViewerInstances = runtime.subscribe(
+    "viewer.instances.changed",
+    snapshot => {
+      latestViewerInstances = snapshot;
+      if (snapshot.sandboxId !== latestSandboxId) {
+        const url = new URL(browserWindow.location.href);
+        url.searchParams.set("sandbox", snapshot.sandboxId);
+        if (snapshot.role === "replica") {
+          url.searchParams.set("viewer", "replica");
+        } else {
+          url.searchParams.delete("viewer");
+        }
+        browserWindow.history.replaceState(
+          browserWindow.history.state,
+          "",
+          url
+        );
+      }
+      latestSandboxId = snapshot.sandboxId;
+      const outcome = snapshot.lastOutcome;
+      if (
+        outcome?.requestId &&
+        outcome.requestId !== lastViewerOutcome
+      ) {
+        lastViewerOutcome = outcome.requestId;
+        if (outcome.status === "accepted") {
+          showNotice(
+            `Edição aceita na revisão ${outcome.revision}.`
+          );
+        } else if (outcome.status === "rejected-stale") {
+          showNotice(
+            "A edição estava obsoleta e não foi aplicada; " +
+            "o viewer foi sincronizado."
+          );
+        } else if (
+          outcome.status === "rejected-error" ||
+          outcome.status === "rejected-no-change"
+        ) {
+          showNotice(
+            `Edição rejeitada: ${outcome.error ?? outcome.status}.`
+          );
+        } else if (
+          outcome.status === "rejected-sandbox-replaced"
+        ) {
+          showNotice(
+            "A edição pendente foi cancelada porque o projeto mudou."
+          );
+        }
+      }
+      uiRefresh.request("viewer.instances.changed");
+    }
+  );
 
   async function saveProjectPayload(project) {
     if (!project?.prepared) return null;
@@ -624,6 +697,10 @@ export function bindWebInterface({
   $("project-save").addEventListener("click", async () => {
     await saveProjectPayload(execute("project.save"));
   });
+  uiActions.bindControl(
+    $("viewer-new"),
+    "viewer.instance.open"
+  );
 
   $("project-open").addEventListener(
     "click",
@@ -832,6 +909,12 @@ export function bindWebInterface({
   });
 
   const recoveryReady = (async () => {
+    if (!viewerCoordinator.isAuthority) {
+      const status = runtime.query("recovery.status");
+      resolveRecoveryReady?.(status);
+      resolveRecoveryReady = null;
+      return status;
+    }
     const status = await sandboxRecovery.initialize();
     if (status.mode === "draft") {
       const pending = status.pending;
@@ -863,7 +946,9 @@ export function bindWebInterface({
     return status;
   })();
   const flushRecovery = () => {
-    void sandboxRecovery.flush();
+    if (viewerCoordinator.isAuthority) {
+      void sandboxRecovery.flush();
+    }
   };
   const flushHiddenRecovery = () => {
     if (documentRoot.visibilityState === "hidden") {
@@ -1174,6 +1259,14 @@ export function bindWebInterface({
   );
 
   $("confirm-proposal").addEventListener("click", () => {
+    try {
+      viewerCoordinator.requireAuthority(
+        "publicar uma proposta"
+      );
+    } catch (error) {
+      showError(error);
+      return;
+    }
     const proposal = sandbox.createProposal();
     const result = region.acceptProposal(proposal);
 
@@ -1201,6 +1294,7 @@ export function bindWebInterface({
       unsubscribeSelection();
       unsubscribeWorld();
       unsubscribeViewer();
+      unsubscribeViewerInstances();
       unsubscribeInstall();
       disconnectUiDiagnostics();
       uiActions.dispose();

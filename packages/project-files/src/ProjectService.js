@@ -102,7 +102,10 @@ export class ProjectService {
     return result;
   }
 
-  restoreRecovery(record) {
+  restoreRecovery(record, {
+    restoreEditorState = true,
+    restoreRendererState = true
+  } = {}) {
     const project = this.validator.validate(record.checkpoint);
     const commands = structuredClone(record.commands ?? []);
     this.sandbox.previewCommandSequence(project.scene, commands);
@@ -118,9 +121,18 @@ export class ProjectService {
       baseVersion: record.baseVersion ?? project.region?.version ?? 0,
       revision: record.revision
     });
-    this.editor.selection.clear();
-    restoreEditor(this.editor, project.editor);
-    this.#restoreRenderer(project);
+    if (restoreEditorState) {
+      this.editor.selection.clear();
+      restoreEditor(this.editor, project.editor);
+    } else {
+      reconcileSelection(
+        this.editor.selection,
+        this.sandbox.getState()
+      );
+    }
+    if (restoreRendererState) {
+      this.#restoreRenderer(project);
+    }
     this.#restoreMetadata(project);
 
     return {
@@ -216,6 +228,24 @@ export class ProjectService {
         console.error("ProjectService subscriber failed", error);
       }
     }
+  }
+}
+
+function reconcileSelection(selection, scene) {
+  const known = new Set(
+    (scene.objects ?? []).map(object => object.id)
+  );
+  const snapshot = selection.snapshot();
+  const members = snapshot.members.filter(member =>
+    known.has(member.objectId)
+  );
+  const activeObjectId = known.has(
+    snapshot.activeMember?.objectId
+  )
+    ? snapshot.activeMember.objectId
+    : null;
+  if (members.length !== snapshot.members.length) {
+    selection.replaceMany(members, { activeObjectId });
   }
 }
 

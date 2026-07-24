@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029d`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -472,6 +472,25 @@ entram em undo/redo nem no arquivo; painel e console chamam comandos
 `viewer.camera.*`; procedimentos recebem uma capability declarativa que produz
 plano revisável. Planos de câmera local não podem misturar mutações espaciais
 persistentes na mesma transação.
+
+## D-031 — Viewers locais coordenam um sandbox por revisão
+
+**Estado:** implementada localmente.
+
+Cada aba conserva apresentação e seleção próprias, mas referencia a mesma
+identidade de sandbox. Uma autoridade local serializa `dispatch`, `undo` e
+`redo`; réplicas enviam intenções pela revisão observada e recebem snapshots
+atômicos por `BroadcastChannel`. A Web Locks API escolhe a autoridade quando
+disponível.
+
+**Motivação:** provar múltiplas projeções simultâneas sem transformar renderer,
+IndexedDB ou ordem de chegada das mensagens em autoridade do mundo.
+
+**Consequências:** intenção obsoleta é rejeitada e não reavaliada
+silenciosamente; somente a autoridade substitui projeto, recuperação ou base
+regional; câmera, seleção, hover e painéis nunca entram no snapshot
+compartilhado. O protocolo é local e não antecipa CRDT, identidade remota ou
+autorização distribuída.
 
 ## Decisões superadas ou rejeitadas
 

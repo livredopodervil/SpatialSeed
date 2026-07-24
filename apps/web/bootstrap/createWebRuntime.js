@@ -11,16 +11,16 @@ import {
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029c";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029d";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029e";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260718-0027h";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260720-0028d";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029d1";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260724-0029e";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029e";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029d1";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029e";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -76,9 +76,14 @@ import {
 } from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
 import {
   BrowserSandboxIdentity,
+  createRecoveryRecord,
   IndexedDbRecoveryStore,
   SandboxRecoveryController
-} from "../../../packages/project-recovery/src/index.js?build=20260724-0029d";
+} from "../../../packages/project-recovery/src/index.js?build=20260724-0029e";
+import {
+  CoordinatedSandbox,
+  LocalViewerCoordinator
+} from "../../../packages/local-viewers/src/index.js?build=20260724-0029e";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v1";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -152,8 +157,9 @@ export async function createWebRuntime({
     initialScene
   );
 
-  const sandbox = new Sandbox(region, reducer);
+  const baseSandbox = new Sandbox(region, reducer);
   const editor = new EditorState();
+  let commandSandbox = baseSandbox;
 
   function dispatchRuntimeCommand(command) {
     const next = structuredClone(command);
@@ -167,7 +173,7 @@ export async function createWebRuntime({
       delete next.patch.material;
     }
 
-    return sandbox.dispatch(next);
+    return commandSandbox.dispatch(next);
   }
 
   const renderer = new ThreeRegionRenderer(canvas, {
@@ -182,6 +188,7 @@ export async function createWebRuntime({
     uiConfiguration?.presentation?.transform ?? {}
   );
   const viewer = new ViewerState({
+    viewerId: crypto.randomUUID(),
     camera: renderer.readNavigationCamera()
   });
   const cameraController = new ViewerCameraController({
@@ -191,6 +198,69 @@ export async function createWebRuntime({
   const animationRuntime = new AnimationRuntime({ surface: renderer });
 
   const outline = new OutlineRenderer(outlineRoot);
+  const locationParameters = new URLSearchParams(
+    globalThis.location?.search ?? ""
+  );
+  const sandboxIdentity = new BrowserSandboxIdentity({
+    requestedId: locationParameters.get("sandbox")
+  });
+  const sandboxId = sandboxIdentity.current();
+  const projectService = new ProjectService({
+    sandbox: baseSandbox,
+    editor,
+    renderer,
+    region,
+    appearanceRuntime
+  });
+  const viewerCoordinator = new LocalViewerCoordinator({
+    sandbox: baseSandbox,
+    sandboxId,
+    viewerId: viewer.viewerId,
+    requestedRole:
+      locationParameters.get("viewer") === "replica"
+        ? "replica"
+        : "auto"
+  });
+  viewerCoordinator.connectSnapshotAdapter({
+    capture: ({ sandboxId: snapshotSandboxId }) => {
+      const proposal = baseSandbox.createProposal();
+      return createRecoveryRecord({
+        sandboxId: snapshotSandboxId,
+        checkpoint: projectService.createCheckpoint(),
+        commands: proposal.commands,
+        baseVersion: proposal.baseVersion,
+        revision: baseSandbox.revision,
+        dirty: baseSandbox.dirty,
+        updatedAt: new Date().toISOString()
+      });
+    },
+    restore: snapshot =>
+      projectService.restoreRecovery(snapshot, {
+        restoreEditorState: false,
+        restoreRendererState: false
+      }),
+    prepareIntent: command => ({
+      command,
+      assets: appearanceRuntime.exportAssets()
+    }),
+    applyIntent: intent => {
+      baseSandbox.previewCommandSequence(
+        baseSandbox.getState(),
+        [intent.command]
+      );
+      appearanceRuntime.importAssets(
+        intent.assets,
+        { replace: false }
+      );
+      return baseSandbox.dispatch(intent.command);
+    }
+  });
+  await viewerCoordinator.start();
+  const sandbox = new CoordinatedSandbox({
+    sandbox: baseSandbox,
+    coordinator: viewerCoordinator
+  });
+  commandSandbox = sandbox;
   const selectionOperations = new SelectionOperations({
     editor,
     sandbox,
@@ -199,19 +269,23 @@ export async function createWebRuntime({
     appearanceRuntime
   });
 
-  const projectService = new ProjectService({
-    sandbox,
-    editor,
-    renderer,
-    region,
-    appearanceRuntime
-  });
   const sandboxRecovery = new SandboxRecoveryController({
-    sandbox,
+    sandbox: baseSandbox,
     projectService,
     store: new IndexedDbRecoveryStore(),
-    identity: new BrowserSandboxIdentity()
+    identity: sandboxIdentity,
+    onIdentityChanged: ({ sandboxId: nextSandboxId }) =>
+      viewerCoordinator.switchSandbox(nextSandboxId)
   });
+  const recoveryStatus = () => viewerCoordinator.isAuthority
+    ? sandboxRecovery.status()
+    : Object.freeze({
+        mode: "viewer-replica",
+        sandboxId: viewerCoordinator.sandboxId,
+        available: false,
+        pending: null,
+        lastError: null
+      });
 
   const benchmarkRunner = new BenchmarkRunner({
     reducer,
@@ -241,7 +315,9 @@ export async function createWebRuntime({
     projectService,
     benchmarkRunner,
     resourceAudit,
-    propertyService
+    propertyService,
+    canMutateProject: action =>
+      viewerCoordinator.requireAuthority(action)
   });
   const animationCommands = new AnimationCommandService({
     runtime: animationRuntime,
@@ -306,7 +382,7 @@ export async function createWebRuntime({
     )
     .register(
       "recovery.status",
-      () => sandboxRecovery.status(),
+      () => recoveryStatus(),
       { category: "recovery", mutates: false }
     )
     .register(
@@ -317,6 +393,20 @@ export async function createWebRuntime({
         mutates: false,
         asynchronous: true
       }
+    )
+    .register(
+      "viewer.instance.open",
+      ({ href = globalThis.location?.href } = {}) => ({
+        changed: false,
+        url: viewerCoordinator.viewerUrl(href),
+        sandboxId: viewerCoordinator.sandboxId
+      }),
+      { category: "viewer", mutates: false }
+    )
+    .register(
+      "viewer.instance.sync",
+      () => viewerCoordinator.requestSync(),
+      { category: "viewer", mutates: false }
     );
 
   const spatialPlanCommitService = new SpatialPlanCommitService({
@@ -343,6 +433,11 @@ export async function createWebRuntime({
     if (hasCamera && hasSpatial) {
       throw new Error(
         "Um plano não pode misturar câmera local e mutações espaciais."
+      );
+    }
+    if (hasSpatial) {
+      viewerCoordinator.requireAuthority(
+        "confirmar um plano espacial"
       );
     }
     return hasCamera
@@ -378,8 +473,12 @@ export async function createWebRuntime({
   });
   commands.register(
     "experiment.create",
-    ({ id, parameters = {} }) =>
-      experimentActionService.create(id, parameters),
+    ({ id, parameters = {} }) => {
+      viewerCoordinator.requireAuthority(
+        "confirmar um experimento espacial"
+      );
+      return experimentActionService.create(id, parameters);
+    },
     {
       category: "experiments",
       mutates: true,
@@ -474,6 +573,9 @@ export async function createWebRuntime({
     .register("viewer.camera.snapshot", () =>
       cameraController.snapshot()
     )
+    .register("viewer.instances.status", () =>
+      viewerCoordinator.status()
+    )
     .register("runtime.ui-stats", () => uiDiagnosticsProvider());
 
   const transformToolPanel = new TransformToolPanel({
@@ -563,7 +665,7 @@ export async function createWebRuntime({
       objectCount: sandbox.objectCount
     }))
     .register("recovery.status", () =>
-      sandboxRecovery.status()
+      recoveryStatus()
     )
     .register("developer.state", () => ({
       build: buildInfo.build,
@@ -587,7 +689,8 @@ export async function createWebRuntime({
         canRedo: sandbox.canRedo,
         objectCount: sandbox.objectCount
       },
-      recovery: sandboxRecovery.status(),
+      recovery: recoveryStatus(),
+      viewers: viewerCoordinator.status(),
       renderer: renderer.renderer?.info?.render ?? null,
       appearance: appearanceRuntime.stats(),
       incremental: renderer.getIncrementalDiagnostics(),
@@ -620,6 +723,10 @@ export async function createWebRuntime({
     .register("viewer", () => ({
       apiVersion: ViewerState.apiVersion,
       cameraControllerApiVersion: ViewerCameraController.apiVersion,
+      coordinatorApiVersion: LocalViewerCoordinator.apiVersion,
+      coordinatedSandboxApiVersion: CoordinatedSandbox.apiVersion,
+      multipleLocalViewers: true,
+      sharedSandbox: viewerCoordinator.sandboxId,
       cameraProjection: true,
       cameraPose: true,
       cameraOrbit: true,
@@ -679,8 +786,13 @@ export async function createWebRuntime({
   const unsubscribeViewer = viewer.subscribe(
     snapshot => runtime.emit("viewer.changed", snapshot)
   );
+  const unsubscribeViewerInstances = viewerCoordinator.subscribe(
+    snapshot => runtime.emit("viewer.instances.changed", snapshot)
+  );
 
   runtime
+    .onDispose(() => viewerCoordinator.dispose())
+    .onDispose(unsubscribeViewerInstances)
     .onDispose(unsubscribeViewer)
     .onDispose(unsubscribeEditor)
     .onDispose(unsubscribeSelection)
@@ -694,6 +806,7 @@ export async function createWebRuntime({
       sandbox,
       editor,
       viewer,
+      viewerCoordinator,
       cameraController,
       renderer,
       outline,

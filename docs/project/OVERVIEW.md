@@ -1,6 +1,6 @@
 # Visão geral do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029d`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e`.
 > O build exato nunca deve ser copiado para este texto: sua fonte autoritativa
 > é [`apps/web/build-info.json`](../../apps/web/build-info.json).
 
@@ -108,6 +108,8 @@ Esse desenho procura tornar o sistema:
 - abrir e salvar projetos com API nativa quando disponível e fallback móvel;
 - recuperação automática local com identidade de sandbox, checkpoint e journal
   de comandos confirmados;
+- múltiplos viewers locais com seleção e câmera próprias, transporte por
+  `BroadcastChannel` e serialização de edições por revisão;
 - catálogos de procedimentos em JSON legível;
 - configuração declarativa de barra, painéis e apresentação;
 - diagnóstico, testes, auditoria de recursos e benchmarks pelo console.
@@ -118,7 +120,6 @@ Esse desenho procura tornar o sistema:
 - eventos e interatividade programável além do preview temporal atual;
 - curvas, polylines e sistema geométrico 2D completo;
 - edição direta de vértices, arestas, faces e meshes arbitrárias;
-- múltiplos viewers locais sincronizados sobre o mesmo sandbox;
 - serialização compacta de receitas procedurais e grandes hierarquias;
 - interoperabilidade completa com glTF, STL, Collada e formatos equivalentes;
 - servidor colaborativo, autoridade regional remota e sincronização multiusuário;
@@ -146,6 +147,8 @@ capacidades já entregues.
 14. Animações de preview são restauráveis e não produzem histórico.
 15. Expansão de grupos em objetos é explícita e determinística.
 16. Recuperação local não persiste estado transitório do viewer ou da animação.
+17. Coordenação local rejeita intenção obsoleta em vez de mesclar por ordem de
+    chegada.
 
 ## Públicos possíveis
 

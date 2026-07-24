@@ -22,11 +22,17 @@ export class SandboxRecoveryController {
     debounceMs = 300,
     setTimer = globalThis.setTimeout?.bind(globalThis),
     clearTimer = globalThis.clearTimeout?.bind(globalThis),
-    now = () => new Date()
+    now = () => new Date(),
+    onIdentityChanged = () => {}
   }) {
     if (!sandbox || !projectService || !store || !identity) {
       throw new TypeError(
         "SandboxRecoveryController exige sandbox, projeto, store e identidade."
+      );
+    }
+    if (typeof onIdentityChanged !== "function") {
+      throw new TypeError(
+        "onIdentityChanged deve ser função."
       );
     }
     this.sandbox = sandbox;
@@ -37,6 +43,7 @@ export class SandboxRecoveryController {
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
     this.now = now;
+    this.onIdentityChanged = onIdentityChanged;
     this.sandboxId = null;
   }
 
@@ -194,6 +201,14 @@ export class SandboxRecoveryController {
     const previousId = this.sandboxId;
     this.#cancelTimer();
     this.sandboxId = this.identity.rotate();
+    try {
+      this.onIdentityChanged(Object.freeze({
+        previousId,
+        sandboxId: this.sandboxId
+      }));
+    } catch (error) {
+      this.#lastError = error;
+    }
     Promise.resolve(this.store.delete(previousId)).catch(error => {
       this.#lastError = error;
     });
