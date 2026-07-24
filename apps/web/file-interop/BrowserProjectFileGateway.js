@@ -92,6 +92,11 @@ export class BrowserProjectFileGateway {
         return fallbackRequest(error.name);
       }
     }
+    if (saveAs) {
+      return fallbackRequest(
+        this.nativeSaveBlocked ? "platform-blocked" : "native-unavailable"
+      );
+    }
     if (this.nativeSaveBlocked && !this.fallbackSaveApproved) {
       return fallbackRequest("platform-blocked");
     }

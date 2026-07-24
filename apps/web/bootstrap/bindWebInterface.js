@@ -1,7 +1,7 @@
 import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260720-0028c";
 import {
   BrowserProjectFileGateway
-} from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0026i";
+} from "../file-interop/BrowserProjectFileGateway.js?build=20260724-0029b2";
 
 export function bindWebInterface({
   runtime,
@@ -501,12 +501,14 @@ export function bindWebInterface({
     try {
       let result = await projectFiles.save(project, { saveAs: true });
       if (result.fallbackRequired) {
-        const approved = browserWindow.confirm(
-          "O Chrome deste aparelho oferece um seletor nativo, " +
-          "mas não permite usá-lo neste contexto. " +
-          "Deseja salvar por download compatível?"
-        );
-        if (!approved) return;
+        if (result.fallbackReason !== "native-unavailable") {
+          const approved = browserWindow.confirm(
+            "O Chrome deste aparelho oferece um seletor nativo, " +
+            "mas não permite usá-lo neste contexto. " +
+            "Deseja salvar por download compatível?"
+          );
+          if (!approved) return;
+        }
         const requestedName = browserWindow.prompt(
           "Nome do arquivo para salvar:",
           project.filename

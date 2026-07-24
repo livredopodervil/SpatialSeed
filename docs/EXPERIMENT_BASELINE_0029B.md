@@ -58,8 +58,9 @@ própria projeção sobre o mesmo sandbox.
 
 No aplicativo mantido, clicar em “Salvar” sempre usa a opção `saveAs`, mesmo
 quando já existe um handle anterior. Assim, o seletor nativo oferece o nome em
-toda operação. Quando a plataforma bloqueia essa API, a interface pede um nome
-antes do download compatível.
+toda operação. Quando a API não existe ou a plataforma a bloqueia, o gateway
+não inicia um download silencioso: a interface pede um nome antes de cada
+download compatível.
 
 Nos snapshots históricos, a mesma regra é fornecida pela camada comum. Nomes
 sem `.spatialseed` ou `.json` recebem a extensão `.spatialseed`.

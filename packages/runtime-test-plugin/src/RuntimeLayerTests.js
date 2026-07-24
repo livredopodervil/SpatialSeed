@@ -136,7 +136,7 @@ import {
 import {
   BrowserProjectFileGateway,
   isPlatformBlock
-} from "../../../apps/web/file-interop/BrowserProjectFileGateway.js";
+} from "../../../apps/web/file-interop/BrowserProjectFileGateway.js?build=20260724-0029b2";
 import {
   BrowserProcedureCatalogStore
 } from "../../../apps/web/procedures/BrowserProcedureCatalogStore.js";
@@ -3968,6 +3968,35 @@ assets: {
         assertEqual(pickerCalls,1);
         assertEqual(result.filename,"novo-nome.spatialseed");
         assertDeepEqual(writes,["{}","closed"]);
+      },
+
+      async "saveAs móvel nunca baixa sem antes solicitar um nome"() {
+        const harness=createFileGatewayHarness();
+        const project={
+          prepared:true,
+          filename:"projeto.spatialseed",
+          mediaType:"application/json",
+          text:"{}",
+          bytes:2
+        };
+
+        const first=await harness.gateway.save(project,{saveAs:true});
+        assertDeepEqual(first,{
+          saved:false,
+          fallbackRequired:true,
+          fallbackReason:"native-unavailable"
+        });
+        assertDeepEqual(harness.calls,[]);
+
+        harness.gateway.saveFallback(project,{
+          fallbackReason:first.fallbackReason
+        });
+        const callsAfterFirstDownload=harness.calls.length;
+        const second=await harness.gateway.save(project,{saveAs:true});
+
+        assertEqual(second.fallbackRequired,true);
+        assertEqual(second.fallbackReason,"native-unavailable");
+        assertEqual(harness.calls.length,callsAfterFirstDownload);
       },
 
       "novo projeto descarta referência de arquivo anterior"() {
