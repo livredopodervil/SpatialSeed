@@ -178,6 +178,14 @@ runtime test pwa-status
 runtime test program-session
 runtime test procedure-catalog
 runtime test spatial-plan-commit
+runtime test experiment-contract
+runtime test experiment-plugin
+runtime test experiment-panel
+runtime test ui-actions
+runtime test ui-configuration
+runtime test animation-runtime
+runtime test animation-commands
+runtime test animation-tracks
 ```
 
 A lista correta é a retornada por `runtime test help`.
@@ -212,6 +220,9 @@ A lista correta é a retornada por `runtime test help`.
 - [ ] mesma textura em famílias diferentes não trava;
 - [ ] editar cor não regride transform UV;
 - [ ] Inspector abre com seleção simples e múltipla.
+- [ ] lote procedural falha atomicamente e expande grupos apenas no escopo
+  solicitado;
+- [ ] alça central `XYZ` produz escala uniforme.
 
 ### 9.4 Console e programas
 
@@ -223,6 +234,18 @@ A lista correta é a retornada por `runtime test help`.
 - [ ] plano obsoleto é rejeitado;
 - [ ] catálogo define, executa, exporta, importa, mescla e substitui;
 - [ ] editor de catálogo salva fonte sem executar.
+- [ ] laboratório de experimentos gera plano sem tocar a cena;
+- [ ] painel e console produzem planos equivalentes para o mesmo experimento.
+
+### 9.5 Ações, atalhos e animação
+
+- [ ] atalhos do viewport executam as mesmas ações dos botões;
+- [ ] campo textual focado preserva digitação e undo próprios;
+- [ ] `mode=selection` mantém grupo rígido;
+- [ ] `mode=objects` permite programas distintos por objeto;
+- [ ] pausa e retomada preservam o relógio esperado;
+- [ ] `animate stop` restaura matrizes e cores;
+- [ ] preview temporal não cria histórico nem altera o projeto salvo.
 
 ## 10. Arquivos e compatibilidade
 

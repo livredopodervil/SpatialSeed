@@ -1,7 +1,7 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 16 de julho de 2026 após a conclusão funcional do
-> marco `0026`. A ordem expressa dependências técnicas, não promessa de prazo.
+> Documento vivo. Auditado em 24 de julho de 2026 após a promoção do marco
+> `0028e`. A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
 
@@ -62,39 +62,49 @@ Cada marco deve:
 - importação/exportação de catálogos textuais;
 - editor de procedimentos.
 
-## Prioridade atual — 0027: tempo, animação e interatividade
+### 0027 — Laboratório declarativo e desempenho de autoria
 
-O próximo marco deve provar que a linguagem pode conhecer tempo e eventos sem
-receber autoridade direta sobre o mundo editorial.
+- contrato serializável de experimentos e parâmetros;
+- catálogo inicial ativado por capability de plugin;
+- painel gerado por descritores e comandos equivalentes no console;
+- execução pelo runtime de programas, produzindo plano antes do commit;
+- seleção individual em lotes com outlines instanciados;
+- reconstrução correta de outlines após crescimento;
+- leituras de UI coalescidas por frame e perfis de custo do runtime.
 
-### Escopo mínimo
+### 0028 — Tempo, ações, lotes e espaço de animação
 
-- main loop explícito e pausável;
-- relógio monotônico e passo de simulação definido;
-- eventos de início, atualização, pausa e interação básica;
-- scripts anexáveis por identidade, não por referência ao renderer;
-- snapshot de leitura e fila de intenções para o próximo passo;
-- separação entre simulação contínua e comandos editoriais;
-- orçamento de CPU, timeout e encerramento do script;
-- uma demonstração simples de animação e uma de interação;
-- testes determinísticos sem depender da taxa de quadros visual.
+- runtime efêmero com passo fixo, pausa, retomada, parada e restauração;
+- comandos temporais sem mutação de sandbox, histórico ou documento;
+- matrizes, presets e expressões com `t`, `i`, `u` e `count`;
+- captura rígida por raiz ou expansão em objetos renderizáveis;
+- ações semânticas comuns a botão e teclado;
+- atalhos configuráveis com contextos e proteção de campos textuais;
+- interface padrão reorganizada sobre o manifesto existente;
+- Inspector coletivo e expressões procedurais atômicas;
+- faixas de animação distintas por objeto;
+- cor animada por instância e restauração canônica;
+- alça central `XYZ` adequada a toque para escala uniforme.
 
-### Questões que precisam de decisão antes do código
+### Limites deliberados após 0028e
 
-- passo fixo, variável ou combinação dos dois;
-- onde vive o estado privado de cada script;
-- quais eventos atravessam a fronteira SES;
-- como conflitos entre scripts e edição manual são resolvidos;
-- quando intenções da simulação tornam-se deltas publicáveis;
-- como pausar, reiniciar e inspecionar sem perder determinismo.
+- clips e keyframes ainda não pertencem ao documento;
+- eventos, colisões e scripts anexados não participam do loop;
+- o editor visual completo de workspaces/atalhos ainda não existe;
+- política de origens individuais para manipulação manual precisa de contrato
+  próprio além do modo por objeto da animação;
+- a interface permanece configurável por manifesto e preferências locais, mas
+  ainda não exporta um workspace editado.
 
-### Critério de saída
+## Prioridade atual — consolidação de interação e continuidade
 
-Uma cena deve animar e responder a um evento com resultados reproduzíveis,
-enquanto encerrar o runtime interrompe a dinâmica sem corromper a cena ou o
-histórico editorial.
+Antes de ampliar o domínio geométrico, o próximo incremento deve fechar os
+fluxos já expostos: comportamento de grupo e origens individuais, editor interno
+de atalhos/workspaces, persistência opcional de clips e eventos explícitos. A
+ordem entre esses itens deve ser escolhida por teste de uso, não pelo número
+histórico do roadmap.
 
-## 0028 — Geometria 2D, polylines e curvas
+## Marco geométrico seguinte — 2D, polylines e curvas
 
 ### Escopo
 
@@ -112,7 +122,7 @@ histórico editorial.
 O usuário deve conseguir construir e editar trajetórias 2D/3D reproduzíveis,
 usar curvas em procedimentos e preparar a base para perfis, extrusões e meshes.
 
-## 0029 — Edição de mesh
+## Marco posterior — edição de mesh
 
 ### Preparação
 
@@ -135,7 +145,7 @@ Antes de oferecer ferramentas visuais, definir:
 5. operações de face e extrusão;
 6. importação/exportação e reparo.
 
-## 0030 — Persistência compacta e recuperação local
+## Persistência compacta e recuperação local
 
 - evolução versionada do schema `.spatialseed`;
 - preservação retrocompatível dos arquivos atuais;
@@ -146,7 +156,7 @@ Antes de oferecer ferramentas visuais, definir:
 - diálogo de recuperação ao iniciar;
 - limpeza e migração explícitas.
 
-## 0031 — Interoperabilidade, plugins e colaboração
+## Interoperabilidade, plugins e colaboração
 
 - importação/exportação por adapters, começando por glTF e STL;
 - avaliação de Collada/DAE apenas quando houver caso de uso e testes;
@@ -167,7 +177,7 @@ Antes de oferecer ferramentas visuais, definir:
 - convergência estrutural precisa ser acompanhada por validação geométrica e
   testes de conflitos semânticos.
 
-## 0032 — Operadores procedurais e gramáticas de forma
+## Operadores procedurais e gramáticas de forma
 
 - escopo orientado ligado a shape, frame local e pivô;
 - perfil, extrusão, `split`, repetição e seleção de componentes;

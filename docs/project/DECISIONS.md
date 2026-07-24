@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 16 de julho de 2026 contra o marco `0026`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -359,6 +359,73 @@ entra depois que os operadores forem independentes da superfície linguística.
 
 As premissas, provas de conceito e custos destas três decisões estão detalhados
 em [`STRATEGIC_ARCHITECTURE_REVIEW.md`](STRATEGIC_ARCHITECTURE_REVIEW.md).
+
+## D-025 — Experimentos são definições declarativas que produzem planos
+
+**Estado:** implementada internamente.
+
+Um experimento registra identidade, parâmetros tipados e fonte de programa. O
+host gera a interface a partir dos descritores e executa a fonte pelo runtime de
+programas. O experimento não fornece DOM, CSS, handlers ou nomes arbitrários de
+comandos e não altera a cena durante a geração.
+
+**Motivação:** permitir laboratórios reutilizáveis por painel e console sem
+instalar um segundo sistema de plugins nem conceder autoridade visual ao código
+do experimento.
+
+**Consequências:** a mesma definição deve produzir o mesmo plano para os mesmos
+parâmetros, seed, snapshot e revisão; somente o commit explícito altera o
+sandbox; a API ainda é interna e não autoriza JavaScript externo.
+
+## D-026 — Ações de interface possuem identidade semântica
+
+**Estado:** implementada.
+
+Botões e atalhos identificam ações estáveis em `UiActionRegistry`. A ação
+encaminha intenção para comandos e serviços existentes; não se torna uma nova
+camada de domínio. Layout, menus, painéis e preferências continuam descritos
+pelo manifesto e pelos compositores anteriores.
+
+**Motivação:** impedir handlers de teclado paralelos, permitir configuração e
+detecção de conflitos e preparar extensões da interface sem duplicar operações.
+
+**Consequências:** campos textuais retêm seu próprio teclado; contextos de
+atalho são explícitos; reorganizar a barra não muda a semântica; futuros
+editores de atalhos e workspaces devem editar os mesmos identificadores.
+
+## D-027 — Animação de preview é overlay efêmero e restaurável
+
+**Estado:** implementada para transformações e cores.
+
+O runtime temporal captura alvos, compila expressões e projeta matrizes e cores
+temporárias sobre o renderer em passo fixo. Pausar conserva o instante; parar
+restaura o estado canônico. O overlay não altera sandbox, histórico nem arquivo
+`.spatialseed`.
+
+**Motivação:** provar tempo, presets e composição por objeto sem decidir
+prematuramente o formato persistente de clips, eventos ou scripts anexados.
+
+**Consequências:** mudanças editoriais invalidam ou restauram a projeção
+temporal; materiais não são recriados por quadro; persistência futura exige um
+contrato próprio e não pode serializar acidentalmente o cache visual.
+
+## D-028 — Escopo de grupo e lote procedural são explícitos e atômicos
+
+**Estado:** implementada no Inspector e na animação.
+
+Uma operação pode tratar raízes selecionadas como unidades rígidas ou expandir
+grupos aninhados em objetos renderizáveis. Expressões de propriedade são
+compiladas uma vez, avaliadas e normalizadas para todos os alvos antes de um
+único comando.
+
+**Motivação:** seleções hierárquicas têm dois significados legítimos e não podem
+ser expandidas silenciosamente. Lotes procedurais precisam da mesma garantia de
+atomicidade das edições literais.
+
+**Consequências:** falha em qualquer alvo rejeita o lote inteiro; a ordem de
+`i` e `u` é determinística; grupos lógicos não recebem propriedades visuais ao
+usar escopo renderizável; animações diferentes por objeto são compostas em
+faixas sem transformar o grupo numa lista informal de meshes.
 
 ## Decisões superadas ou rejeitadas
 

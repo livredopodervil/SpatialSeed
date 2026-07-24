@@ -4,7 +4,7 @@
 
 **Um ambiente espacial, procedural e orientado a comandos para criar, editar, programar, salvar e habitar mundos digitais.**
 
-[Experimentar no GitHub Pages](https://livredopodervil.github.io/SpatialSeed/apps/web/) · [Documentação técnica](docs/) · [Decisões do projeto](docs/project/DECISIONS.md)
+[Experimentar no GitHub Pages](https://livredopodervil.github.io/SpatialSeed/apps/web/) · [Livro e manual](docs/book/SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf) · [Documentação técnica](docs/) · [Decisões do projeto](docs/project/DECISIONS.md)
 
 > **Estado:** protótipo experimental em desenvolvimento ativo. A versão pública acompanha o branch `main`; branches `feature/*` podem conter capacidades mais recentes ainda em validação.
 
@@ -98,7 +98,9 @@ Um servidor HTTP é necessário porque módulos ES, import maps e service worker
 | Escolher seleção única/múltipla e operações de inclusão/remoção | **Seleção** |
 | Alterar pivô, snapping e visualização do gizmo | **Transformar** |
 | Agrupar, desagrupar, desfazer e refazer | **Editar** |
-| Editar nome, transformações, cor, textura e propriedades em lote | **Inspector** |
+| Editar propriedades literais ou procedurais, inclusive abrindo grupos | **Inspector** |
+| Reproduzir presets ou compor faixas diferentes por objeto | **Animação** |
+| Executar laboratórios paramétricos que geram planos revisáveis | **Explorar** |
 | Ver árvore regional, diagnóstico, recursos e console | **Painéis** |
 | Salvar, abrir, instalar e trocar catálogos de procedimentos | **Projeto** |
 
@@ -114,6 +116,7 @@ Os painéis são móveis e redimensionáveis. Sua disposição, o layout da barr
 - pivôs por mediana, limites, objeto ativo ou posição personalizada;
 - snapping de translação, rotação, escala e grade;
 - preview visual separado do commit da transformação;
+- escala proporcional nos três eixos pela alça central branca `XYZ`;
 - undo e redo locais sobre comandos confirmados.
 
 ### Hierarquia
@@ -135,6 +138,18 @@ Os painéis são móveis e redimensionáveis. Sua disposição, o layout da barr
 - cor por instância sem separar desnecessariamente o lote de renderização;
 - superfícies abertas renderizadas pelos dois lados;
 - recursos de geometria, material e textura compartilhados e contados por referência.
+
+### Interface configurável e atalhos
+
+- barra horizontal, vertical ou flutuante, composta pelo manifesto
+  `apps/web/config/ui.default.json`;
+- vários painéis móveis e redimensionáveis abertos simultaneamente;
+- posições, dimensões, layout e perfil de atalhos persistidos localmente;
+- ações semânticas comuns a botões e teclado;
+- `Ctrl/Cmd+Z`, `Ctrl/Cmd+Shift+Z`, `Ctrl/Cmd+Y`, `Ctrl/Cmd+D`, `Delete`,
+  `Backspace`, `Tab` e `F`;
+- ferramentas por `Q`, `S`, `W`, `E` e `R`;
+- campos textuais preservam edição e undo próprios.
 
 ### Produção afim
 
@@ -189,6 +204,17 @@ property unset instance.color
 ```
 
 Uma edição sobre vários objetos é validada por inteiro e gera uma única entrada de histórico. Valores mistos permanecem identificáveis; campos não tocados não são sobrescritos.
+
+O Inspector também pode avaliar uma expressão por alvo. O escopo
+`renderables` abre grupos aninhados e preserva o nó lógico:
+
+```text
+property batch instance.color "hsl(300*u,0.8,0.55)" scope=renderables
+property batch transform.position "x; y + 2*sin(tau*u); z"
+```
+
+A expressão é compilada uma vez; qualquer erro rejeita o lote inteiro antes da
+primeira mutação.
 
 ### Calculadora e sessão persistente
 
@@ -253,6 +279,44 @@ plan commit
 
 O menu **Projeto** importa e exporta catálogos JSON editáveis em outros editores. O **Editor de procedimentos** permite manter fontes nomeadas com numeração de linhas, quebra visual e realce léxico. Importar uma biblioteca nunca executa seu código; a avaliação só ocorre quando o usuário chama `procedure run`.
 
+### Experimentos declarativos
+
+O laboratório em **Explorar** apresenta definições registradas pelo plugin
+interno de experimentos. Parâmetros tipados geram controles; painel e console
+produzem o mesmo plano:
+
+```text
+experiment list
+experiment show math.helix
+experiment helix radius=4 turns=5 count=160 color=#5b8bd9
+plan status
+plan commit
+```
+
+O experimento não fornece HTML nem acessa DOM, renderer ou sandbox. A API ainda
+é interna e não instala JavaScript externo.
+
+### Animação efêmera
+
+O painel **Animação** e o console controlam a mesma sobreposição temporal:
+
+```text
+animate spin speed=45 axis=y
+animate wave amplitude=1 frequency=0.5 phase=0.35 mode=objects
+animate rainbow speed=60 saturation=0.8 mode=objects
+animate color "hsl(60*t + 360*u,0.8,0.55)" mode=objects
+animate pause
+animate resume
+animate status
+animate stop
+```
+
+`mode=selection` mantém cada raiz selecionada como unidade rígida;
+`mode=objects` abre grupos em objetos renderizáveis, permitindo movimentos e
+cores diferentes. Faixas do painel podem usar programas distintos por alvo.
+Animação é preview: não altera o sandbox, não cria histórico, não é salva no
+projeto e `animate stop` restaura matrizes e cores canônicas.
+
 ## Arquitetura
 
 ```mermaid
@@ -260,9 +324,12 @@ flowchart TD
     UI["Editor, Inspector e painéis"] --> API["Comandos e consultas públicas"]
     CONSOLE["Console e automação"] --> API
     SCRIPT["Worker SES e procedimentos"] --> PLAN["Plano espacial serializável"]
+    EXP["Experimentos declarativos"] --> PLAN
+    ACTION["Botões e atalhos"] --> API
     PLAN --> API
     API --> SANDBOX["Sandbox, reducers e histórico"]
     SANDBOX --> VIEW["Projeções: Three.js, outline e diagnóstico"]
+    TIME["Runtime temporal efêmero"] --> VIEW
 ```
 
 ### Princípios preservados
@@ -287,13 +354,24 @@ flowchart TD
 | `packages/geometry-registry` | famílias paramétricas e providers de geometria |
 | `packages/property-registry` | propriedades tipadas, inspeção e edição atômica em lote |
 | `packages/script-runtime` | Workers, SES, sessões, planos espaciais e procedimentos |
+| `packages/experiment-runtime` | definições, parâmetros e planejamento de experimentos |
+| `packages/experiment-panel` | painel declarativo do laboratório |
+| `packages/ui-config` | manifesto e perfil de atalhos |
+| `packages/ui-widgets` | ações, barra e painéis configuráveis |
+| `packages/animation-runtime` | relógio, programas, presets e faixas efêmeras |
+| `packages/animation-panel` | composição visual e controles de reprodução |
 | `packages/renderer-three` | projeção WebGL, instancing, picking, highlights e gizmos |
 | `packages/appearance-runtime` | aparências normalizadas, compartilhamento e projeção legada |
 | `packages/project-files` | validação, serialização e abertura de projetos |
 | `packages/runtime-test-plugin` | testes arquiteturais executáveis no aplicativo |
 | `apps/web` | composição concreta da PWA e suas superfícies visuais |
 
-Consulte [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/COMMAND_ARCHITECTURE.md`](docs/COMMAND_ARCHITECTURE.md) e [`docs/SCRIPT_RUNTIME_0026A.md`](docs/SCRIPT_RUNTIME_0026A.md) para os contratos detalhados.
+Consulte [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
+[`docs/COMMAND_ARCHITECTURE.md`](docs/COMMAND_ARCHITECTURE.md),
+[`docs/SCRIPT_RUNTIME_0026A.md`](docs/SCRIPT_RUNTIME_0026A.md),
+[`docs/EXPERIMENT_PLUGIN_0027A.md`](docs/EXPERIMENT_PLUGIN_0027A.md),
+[`docs/INTERACTION_SURFACE_0028C.md`](docs/INTERACTION_SURFACE_0028C.md) e
+[`docs/ANIMATION_WORKSPACE_0028D.md`](docs/ANIMATION_WORKSPACE_0028D.md).
 
 ## Projetos, arquivos e funcionamento offline
 
@@ -317,6 +395,11 @@ runtime test spatial-plan-commit
 runtime test property-contract
 runtime test geometry-creation
 runtime test file-interop
+runtime test experiment-contract
+runtime test experiment-panel
+runtime test ui-actions
+runtime test animation-runtime
+runtime test animation-tracks
 runtime resources
 ```
 
@@ -346,6 +429,7 @@ docs/                     arquitetura, decisões, testes e desempenho
 docs/project/             estado, roadmap e continuidade do projeto
 tools/                    servidor, precache e utilitários operacionais
 vendor/                   Three.js, add-ons e SES vendorizados
+AGENTS.md                  entrada operacional para assistentes
 PROJECT_SEED.md            semente técnica para retomada do projeto
 ```
 
@@ -379,7 +463,7 @@ Commits devem preservar a autoria efetiva. Quando houver assistência técnica a
 Assisted-by: OpenAI Codex
 ```
 
-As decisões de workflow estão documentadas em [`docs/project/WORKFLOW.md`](docs/project/WORKFLOW.md) e [`docs/WORKFLOW.md`](docs/WORKFLOW.md).
+As decisões de workflow estão documentadas em [`docs/project/WORKFLOW.md`](docs/project/WORKFLOW.md) e [`docs/WORKFLOW.md`](docs/WORKFLOW.md). Assistentes devem começar por [`AGENTS.md`](AGENTS.md) e [`PROJECT_SEED.md`](PROJECT_SEED.md).
 
 ## Limites atuais
 
@@ -387,7 +471,8 @@ SpatialSeed ainda não é um modelador DCC completo nem um motor de jogo pronto 
 
 - edição direta de vértices, arestas, faces e meshes arbitrárias;
 - curvas Bézier, polylines e um sistema geométrico 2D completo;
-- main loop público para animação, eventos e interatividade programável;
+- persistência de clips, keyframes e animações no documento;
+- eventos, colisões e interatividade programável contínua;
 - serialização compacta de grandes receitas procedurais e instâncias hierárquicas;
 - recuperação automática da última sessão;
 - colaboração multiusuário e autoridade distribuída em produção;
@@ -398,11 +483,11 @@ Esses limites são mantidos explícitos para evitar que uma demonstração seja 
 
 ## Próximos marcos
 
-1. main loop de animação/interatividade com tempo, eventos e scripts controlados;
-2. geometria 2D, polylines e curvas Bézier;
-3. edição de vértices e meshes;
-4. persistência compacta e recuperação local de sessão;
-5. interoperabilidade com formatos 3D e evolução para colaboração regional.
+1. consolidar origens individuais, grupos e customização interna da interface;
+2. decidir persistência de clips/keyframes e modelo de eventos;
+3. geometria 2D, polylines e curvas Bézier;
+4. edição de vértices e meshes;
+5. persistência compacta, recuperação local, formatos 3D e colaboração regional.
 
 Os registros de planejamento e prioridades anteriores permanecem em [`docs/project/ROADMAP.md`](docs/project/ROADMAP.md).
 

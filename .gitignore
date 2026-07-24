@@ -4,9 +4,12 @@
 # Runtime local
 .seed-server.log
 .seed-server.pid
+tmp/
 .backups/
 
 # Pacotes e artefatos
+__pycache__/
+*.pyc
 *.bundle
 *.zip
 *.tar

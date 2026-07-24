@@ -1,0 +1,13 @@
+select only box-1
+position 5.25 3.5 0
+scale 0.12 0.12 0.12
+duplicate count 240 move "(4+1.25*cos(5*tau*i/count+0))*cos(2*tau*i/count)-(4+1.25*cos(5*tau*(i-1)/count+0))*cos(2*tau*(i-1)/count)" "1.25*sin(5*tau*i/count+0)-1.25*sin(5*tau*(i-1)/count+0)" "(4+1.25*cos(5*tau*i/count+0))*sin(2*tau*i/count)-(4+1.25*cos(5*tau*(i-1)/count+0))*sin(2*tau*(i-1)/count)" rotate 7 11 13 scale "0.72+0.28*(0.5+0.5*sin(12*tau*u+0))" "0.72+0.28*(0.5+0.5*sin(12*tau*u+0))" "0.72+0.28*(0.5+0.5*sin(12*tau*u+0))"
+select only box-2
+position 3.375 4.5825317547 0
+scale 0.12 0.12 0.12
+duplicate count 240 move "(4+1.25*cos(5*tau*i/count+tau/3))*cos(2*tau*i/count)-(4+1.25*cos(5*tau*(i-1)/count+tau/3))*cos(2*tau*(i-1)/count)" "1.25*sin(5*tau*i/count+tau/3)-1.25*sin(5*tau*(i-1)/count+tau/3)" "(4+1.25*cos(5*tau*i/count+tau/3))*sin(2*tau*i/count)-(4+1.25*cos(5*tau*(i-1)/count+tau/3))*sin(2*tau*(i-1)/count)" rotate 7 11 13 scale "0.72+0.28*(0.5+0.5*sin(12*tau*u+tau/3))" "0.72+0.28*(0.5+0.5*sin(12*tau*u+tau/3))" "0.72+0.28*(0.5+0.5*sin(12*tau*u+tau/3))"
+select only box-3
+position 3.375 2.4174682453 0
+scale 0.12 0.12 0.12
+duplicate count 240 move "(4+1.25*cos(5*tau*i/count+2*tau/3))*cos(2*tau*i/count)-(4+1.25*cos(5*tau*(i-1)/count+2*tau/3))*cos(2*tau*(i-1)/count)" "1.25*sin(5*tau*i/count+2*tau/3)-1.25*sin(5*tau*(i-1)/count+2*tau/3)" "(4+1.25*cos(5*tau*i/count+2*tau/3))*sin(2*tau*i/count)-(4+1.25*cos(5*tau*(i-1)/count+2*tau/3))*sin(2*tau*(i-1)/count)" rotate 7 11 13 scale "0.72+0.28*(0.5+0.5*sin(12*tau*u+2*tau/3))" "0.72+0.28*(0.5+0.5*sin(12*tau*u+2*tau/3))" "0.72+0.28*(0.5+0.5*sin(12*tau*u+2*tau/3))"
+select clear

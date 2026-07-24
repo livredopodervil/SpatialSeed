@@ -1,0 +1,13 @@
+select only box-1
+position 4 0 0
+scale 0.14 0.14 0.14
+duplicate count 180 move "4*cos(3*tau*i/count+0)*cos(tau*i/count)-4*cos(3*tau*(i-1)/count+0)*cos(tau*(i-1)/count)" "0.5*sin(6*tau*i/count+0)-0.5*sin(6*tau*(i-1)/count+0)" "4*cos(3*tau*i/count+0)*sin(tau*i/count)-4*cos(3*tau*(i-1)/count+0)*sin(tau*(i-1)/count)" rotate 5 7 11 scale "0.65+0.35*(0.5+0.5*sin(9*tau*u+0))" "0.65+0.35*(0.5+0.5*sin(9*tau*u+0))" "0.65+0.35*(0.5+0.5*sin(9*tau*u+0))"
+select only box-2
+position -2 0.4330127019 0
+scale 0.14 0.14 0.14
+duplicate count 180 move "4*cos(3*tau*i/count+tau/3)*cos(tau*i/count)-4*cos(3*tau*(i-1)/count+tau/3)*cos(tau*(i-1)/count)" "0.5*sin(6*tau*i/count+tau/3)-0.5*sin(6*tau*(i-1)/count+tau/3)" "4*cos(3*tau*i/count+tau/3)*sin(tau*i/count)-4*cos(3*tau*(i-1)/count+tau/3)*sin(tau*(i-1)/count)" rotate 5 7 11 scale "0.65+0.35*(0.5+0.5*sin(9*tau*u+tau/3))" "0.65+0.35*(0.5+0.5*sin(9*tau*u+tau/3))" "0.65+0.35*(0.5+0.5*sin(9*tau*u+tau/3))"
+select only box-3
+position -2 -0.4330127019 0
+scale 0.14 0.14 0.14
+duplicate count 180 move "4*cos(3*tau*i/count+2*tau/3)*cos(tau*i/count)-4*cos(3*tau*(i-1)/count+2*tau/3)*cos(tau*(i-1)/count)" "0.5*sin(6*tau*i/count+2*tau/3)-0.5*sin(6*tau*(i-1)/count+2*tau/3)" "4*cos(3*tau*i/count+2*tau/3)*sin(tau*i/count)-4*cos(3*tau*(i-1)/count+2*tau/3)*sin(tau*(i-1)/count)" rotate 5 7 11 scale "0.65+0.35*(0.5+0.5*sin(9*tau*u+2*tau/3))" "0.65+0.35*(0.5+0.5*sin(9*tau*u+2*tau/3))" "0.65+0.35*(0.5+0.5*sin(9*tau*u+2*tau/3))"
+select clear

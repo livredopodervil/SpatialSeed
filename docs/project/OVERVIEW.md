@@ -1,6 +1,6 @@
 # Visão geral do SpatialSeed
 
-> Documento vivo. Auditado em 16 de julho de 2026 contra o marco `0026`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`.
 > O build exato nunca deve ser copiado para este texto: sua fonte autoritativa
 > é [`apps/web/build-info.json`](../../apps/web/build-info.json).
 
@@ -76,6 +76,22 @@ Esse desenho procura tornar o sistema:
 - validação e commit atômico de planos espaciais;
 - procedimentos nomeados, persistentes, importáveis e exportáveis;
 - editor textual de procedimentos no navegador.
+- catálogo e painel declarativos de experimentos sobre o mesmo mecanismo de
+  plano e commit;
+- parâmetros de experimento gerados por descritores, sem HTML ou handlers
+  fornecidos pelo experimento.
+
+### Interação, lotes e animação
+
+- ações semânticas comuns a botões e atalhos configuráveis;
+- isolamento de atalhos quando um campo textual ou editor possui foco;
+- Inspector coletivo com escopo direto ou expansão explícita de grupos;
+- expressões procedurais atômicas para propriedades, transformações e cores;
+- runtime de animação efêmero com relógio de passo fixo;
+- presets, matrizes e faixas diferentes por objeto;
+- animação de transformações e cores de instância sem material por quadro;
+- painel de reprodução com pausa, retomada, parada e restauração;
+- escala uniforme pelos três eixos através da alça central `XYZ`.
 
 ### Portabilidade e operação
 
@@ -88,7 +104,8 @@ Esse desenho procura tornar o sistema:
 
 ## O que ainda não está implementado
 
-- main loop público para animações, eventos e interatividade programável;
+- persistência de clips, keyframes e scripts de animação no documento;
+- eventos e interatividade programável além do preview temporal atual;
 - curvas, polylines e sistema geométrico 2D completo;
 - edição direta de vértices, arestas, faces e meshes arbitrárias;
 - recuperação automática da última sessão;
@@ -114,6 +131,10 @@ capacidades já entregues.
 10. Recursos iguais devem ser compartilhados sempre que a semântica permitir.
 11. Build, capacidades e testes devem possuir fontes autoritativas consultáveis.
 12. Alterações arquiteturais são pequenas, reversíveis e acompanhadas de testes.
+13. Ações da interface identificam intenção; comandos continuam sendo a via de
+    mutação.
+14. Animações de preview são restauráveis e não produzem histórico.
+15. Expansão de grupos em objetos é explícita e determinística.
 
 ## Públicos possíveis
 
@@ -141,3 +162,6 @@ script privilegiado, a arquitetura ainda não a integrou.
 - [`WORKFLOW.md`](WORKFLOW.md): processo de alteração e integração;
 - [`../ARCHITECTURE.md`](../ARCHITECTURE.md): arquitetura técnica do monorepo;
 - [`../SCRIPT_RUNTIME_0026A.md`](../SCRIPT_RUNTIME_0026A.md): runtime de programas.
+- [`../EXPERIMENT_PLUGIN_0027A.md`](../EXPERIMENT_PLUGIN_0027A.md): laboratório declarativo.
+- [`../INTERACTION_SURFACE_0028C.md`](../INTERACTION_SURFACE_0028C.md): ações e atalhos.
+- [`../ANIMATION_WORKSPACE_0028D.md`](../ANIMATION_WORKSPACE_0028D.md): lotes e animação.

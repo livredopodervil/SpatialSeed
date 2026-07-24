@@ -1,6 +1,6 @@
 # Distribuição, instalação e portabilidade
 
-> Documento vivo. Auditado em 16 de julho de 2026 contra o marco `0026`.
+> Documento vivo. Revalidado em 24 de julho de 2026 até o marco `0028e`.
 
 ## Modelo atual
 

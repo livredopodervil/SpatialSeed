@@ -1,0 +1,5 @@
+select only box-2
+position -12 1 0
+scale 0.35 0.35 0.35
+duplicate count 60 move 0.4 "0.28*sin(2*tau*u)" 0 rotate 0 0 5 scale "0.55+0.45*(0.5+0.5*sin(6*pi*u))" "0.55+0.45*(0.5+0.5*sin(6*pi*u))" "0.55+0.45*(0.5+0.5*sin(6*pi*u))"
+select clear

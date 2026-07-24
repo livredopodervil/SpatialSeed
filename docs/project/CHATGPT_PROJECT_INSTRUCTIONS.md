@@ -1,6 +1,6 @@
 # Instruções para assistentes no projeto SpatialSeed
 
-> Documento vivo. Auditado em 16 de julho de 2026. Estas instruções resumem o
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`. Estas instruções resumem o
 > contrato de colaboração; o processo operacional completo está em
 > [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -64,6 +64,12 @@ busca manual no terminal.
 13. Importar ou editar procedimento não executa código.
 14. PWA offline não é persistência automática da cena.
 15. Build e capabilities possuem fontes autoritativas, não listas replicadas.
+16. Ações visuais e atalhos usam identificadores semânticos estáveis.
+17. Experimentos declarativos produzem planos; não recebem DOM nem comandos
+    arbitrários.
+18. Animação efêmera é uma sobreposição restaurável, não estado editorial.
+19. Escopo de seleção direta e expansão de grupos são decisões explícitas.
+20. Expressões em lote são compiladas e validadas antes de uma mutação atômica.
 
 Se uma solicitação contradisser esses princípios, explique o conflito e proponha
 uma implementação compatível antes de escrever código.
@@ -79,6 +85,8 @@ uma implementação compatível antes de escrever código.
 - não usar operações Git destrutivas;
 - não apagar experimentos ou mudanças não relacionadas;
 - preferir patches e módulos pequenos a substituições textuais frágeis.
+- preservar `ui.default.json`, perfis persistentes e múltiplos painéis ao
+  reorganizar a interface; não criar um segundo sistema de configuração.
 
 ## Autoria e Git
 
@@ -102,6 +110,11 @@ O assistente não deve fazer push autônomo. Por padrão:
 4. Rogério aplica e testa no aparelho;
 5. Rogério publica e integra quando decidir.
 
+Quando uma entrega usa patch canônico, ela deve informar a base exata, o
+SHA-256 do arquivo e o commit esperado, e aplicar com
+`git am --committer-date-is-author-date` quando a reprodução do hash depender da
+data do commit.
+
 Não atribua a autoria principal ao Codex por ter gerado um patch. Não reescreva
 commits já publicados apenas para alterar crédito sem solicitação explícita.
 
@@ -115,6 +128,9 @@ runtime test all
 
 Acrescente e execute a suíte específica. Mudanças visuais exigem teste visual.
 Mudanças de custo exigem benchmark comparável com metadados do dispositivo.
+Para interação e animação, verifique também foco textual, restauração após
+`animate stop`, grupo rígido versus objetos expandidos e ausência de histórico
+durante preview.
 
 Validações locais mínimas:
 
@@ -150,12 +166,16 @@ mudar; não crie ruído em commits documentais.
 Ao concluir uma etapa, verifique:
 
 - README principal;
+- `AGENTS.md` e `PROJECT_SEED.md`, quando muda o contrato de colaboração ou a
+  arquitetura de continuidade;
 - `docs/project/DECISIONS.md`;
 - `docs/project/ROADMAP.md`;
 - documento técnico da feature;
 - ajuda do console;
 - testes e exemplos;
 - manifesto PWA, se aplicável.
+- livro/manual, quando a mudança altera a narrativa, o manual público ou o
+  estado técnico de referência.
 
 Snapshots históricos marcados como obsoletos não devem ser reescritos. Uma fonte
 viva pode apontar para eles como evidência, mas não herdar seus números.

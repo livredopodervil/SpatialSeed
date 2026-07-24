@@ -1,6 +1,6 @@
 # Workflow verificável do SpatialSeed
 
-> Documento vivo. Auditado em 16 de julho de 2026. Este é o processo canônico
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`. Este é o processo canônico
 > para colaboração local, patches, testes, autoria e integração.
 
 ## Objetivos
@@ -132,6 +132,24 @@ criado por `git am` pode ter hash diferente de um commit temporário usado para
 gerá-lo, porque committer, data ou parentesco fazem parte do hash. O hash
 canônico é o que foi revisado e publicado no repositório do projeto.
 
+Nas entregas reproduzíveis usadas pelo projeto, registre:
+
+```text
+EXPECTED_BASE=<hash completo do pai>
+EXPECTED_SHA=<sha256 do arquivo .patch>
+EXPECTED_COMMIT=<hash completo após git am>
+```
+
+Valide base, árvore limpa e SHA-256 antes da aplicação. Quando o patch foi
+congelado com datas iguais, aplique com:
+
+```bash
+git am --committer-date-is-author-date arquivo.patch
+```
+
+Se a validação falhar, pare e inspecione; não use `--3way`, `--reject` ou edição
+manual para forçar um patch que prometia reprodução canônica.
+
 ## Autoria
 
 Configuração local esperada:
@@ -178,6 +196,11 @@ publica.
 8. Um valor hard-coded não duplica manifesto ou query autoritativa.
 9. Código de programa não recebe novas capabilities sem decisão e teste.
 10. Otimização precisa de linha de base comparável.
+11. Ações de UI, atalhos e botões reutilizam o mesmo registro semântico.
+12. Layouts e painéis estendem o manifesto existente e as preferências locais.
+13. Animação de preview não altera sandbox, histórico ou arquivo.
+14. Operações procedurais em grupos declaram se tratam a raiz como unidade ou
+    expandem descendentes renderizáveis.
 
 ## Validação antes do commit
 
@@ -219,6 +242,14 @@ runtime test geometry-creation
 runtime test spatial-plan-commit
 runtime test procedure-catalog
 runtime test file-interop
+runtime test experiment-contract
+runtime test experiment-plugin
+runtime test experiment-panel
+runtime test ui-actions
+runtime test ui-configuration
+runtime test animation-runtime
+runtime test animation-commands
+runtime test animation-tracks
 ```
 
 Não transforme a duração total de `runtime test all` em benchmark de
@@ -236,8 +267,13 @@ aplicável:
 - duplicar, repetir, agrupar, desagrupar e excluir;
 - undo/redo;
 - Inspector em seleção única e múltipla;
+- Inspector em lote procedural, com seleção direta e grupos expandidos;
 - cor, textura e cor por instância;
 - criar cada família geométrica;
+- atalhos com viewport focado e com campo textual focado;
+- animação por seleção rígida e por objeto;
+- pausa, retomada, parada e restauração exata da cena;
+- escala uniforme pela alça central `XYZ`;
 - salvar, abrir e novo projeto;
 - fechar/reabrir PWA e conferir cache;
 - console, planos e procedimentos.
@@ -322,20 +358,27 @@ git log --graph --oneline --decorate -15
 git ls-remote --heads origin main feature/NNNN-descricao-curta
 ```
 
-O merge do `main` possui hash próprio. O branch continua apontando para seu
-último commit; isso é esperado.
+Integração pode ser merge explícito ou fast-forward. Use fast-forward quando o
+branch parte diretamente do `main` e o objetivo é manter ambos no mesmo commit.
+Quando uma promoção substituir uma linha pública importante, preserve antes o
+`main` anterior numa branch de backup com nome datado e confirme os três hashes
+remotos. Não reescreva o `main`.
 
 ## Documentação
 
 Uma feature não está concluída se muda comportamento público sem atualizar:
 
 - README, quando muda a experiência de entrada;
+- `AGENTS.md`, `PROJECT_SEED.md` e o contrato para assistentes, quando muda o
+  processo ou uma fronteira que futuras LLMs precisam preservar;
 - `DECISIONS.md`, quando muda fronteira durável;
 - `ROADMAP.md`, quando conclui ou reordena marco;
 - documento técnico da feature;
 - ajuda do console gerada pelo runtime;
 - testes e exemplos correspondentes;
 - manifesto PWA, quando arquivos estáticos mudam.
+- livro/manual, quando o estado técnico de referência ou a experiência pública
+  mudou materialmente.
 
 Não replique contagens de testes ou builds em documentos vivos. Consulte a
 fonte executável.

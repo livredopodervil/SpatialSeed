@@ -1,0 +1,130 @@
+[
+  {
+    "name": "onda-integrada",
+    "source": "01_onda_integrada_0021d.txt",
+    "commands": 5,
+    "errors": [],
+    "objects": 63,
+    "expectedObjects": 63,
+    "selected": 0,
+    "colors": {
+      "#5b8bd9": 1,
+      "#d98067": 61,
+      "#72b883": 1
+    },
+    "bounds": [
+      {
+        "min": -12,
+        "max": 12.000000000000012
+      },
+      {
+        "min": 0.9925383200508445,
+        "max": 3.624887571659773
+      },
+      {
+        "min": 0,
+        "max": 0
+      }
+    ],
+    "validationMedianMs": 4.7688400000000115,
+    "validationMinMs": 2.1273339999999905,
+    "validationMaxMs": 14.232011999999997,
+    "note": "Tempo de console e geração lógica em Node no contêiner; não inclui WebGL, layout HTML ou dispositivo móvel."
+  },
+  {
+    "name": "helice-ascendente",
+    "source": "02_helice_ascendente_0021d.txt",
+    "commands": 5,
+    "errors": [],
+    "objects": 163,
+    "expectedObjects": 163,
+    "selected": 0,
+    "colors": {
+      "#5b8bd9": 161,
+      "#d98067": 1,
+      "#72b883": 1
+    },
+    "bounds": [
+      {
+        "min": -4,
+        "max": 4
+      },
+      {
+        "min": -4,
+        "max": 3.9999999999999885
+      },
+      {
+        "min": -4,
+        "max": 4
+      }
+    ],
+    "validationMedianMs": 4.994135,
+    "validationMinMs": 4.418451000000005,
+    "validationMaxMs": 7.705124000000012,
+    "note": "Tempo de console e geração lógica em Node no contêiner; não inclui WebGL, layout HTML ou dispositivo móvel."
+  },
+  {
+    "name": "roseta-tricromatica",
+    "source": "03_roseta_tricromatica_0021d.txt",
+    "commands": 13,
+    "errors": [],
+    "objects": 543,
+    "expectedObjects": 543,
+    "selected": 0,
+    "colors": {
+      "#5b8bd9": 181,
+      "#d98067": 181,
+      "#72b883": 181
+    },
+    "bounds": [
+      {
+        "min": -3.7833861167528138,
+        "max": 4
+      },
+      {
+        "min": -0.49726094769191764,
+        "max": 0.4972609476919177
+      },
+      {
+        "min": -3.9393731065901845,
+        "max": 3.9393731065901854
+      }
+    ],
+    "validationMedianMs": 31.74767099999997,
+    "validationMinMs": 17.84632099999999,
+    "validationMaxMs": 44.436980000000005,
+    "note": "Tempo de console e geração lógica em Node no contêiner; não inclui WebGL, layout HTML ou dispositivo móvel."
+  },
+  {
+    "name": "cidade-policentrica",
+    "source": "04_cidade_policentrica_0021d.txt",
+    "commands": 17,
+    "errors": [],
+    "objects": 79,
+    "expectedObjects": 79,
+    "selected": 0,
+    "colors": {
+      "#5b8bd9": 32,
+      "#d98067": 32,
+      "#72b883": 15
+    },
+    "bounds": [
+      {
+        "min": -8.4,
+        "max": 9.600000000000012
+      },
+      {
+        "min": 0.05,
+        "max": 5
+      },
+      {
+        "min": -7.2,
+        "max": 9.6
+      }
+    ],
+    "validationMedianMs": 3.2739139999999907,
+    "validationMinMs": 3.12352199999998,
+    "validationMaxMs": 4.6010219999999435,
+    "note": "Tempo de console e geração lógica em Node no contêiner; não inclui WebGL, layout HTML ou dispositivo móvel."
+  }
+]

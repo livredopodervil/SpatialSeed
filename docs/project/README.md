@@ -1,7 +1,7 @@
 # Documentação de controle do projeto
 
-> Índice vivo. Auditoria integral realizada em 16 de julho de 2026 contra o
-> marco `0026`.
+> Índice vivo. Auditoria atualizada em 24 de julho de 2026 até o marco
+> `0028e`.
 
 Esta pasta reúne documentos duráveis de direção, decisão, operação e
 continuidade. Ela não participa do runtime. Especificações técnicas de features
@@ -28,12 +28,12 @@ repetidos em documentos vivos quando podem ser consultados diretamente.
 
 | Documento | Estado | Função atual | Resultado da auditoria |
 | --- | --- | --- | --- |
-| [`OVERVIEW.md`](OVERVIEW.md) | vivo | propósito, escopo e invariantes | reescrito para propriedades, hierarquia, geometrias, PWA e runtime 0026 |
-| [`DECISIONS.md`](DECISIONS.md) | vivo | registro arquitetural durável | reescrito como ledger de decisões vigentes, planejadas e superadas |
+| [`OVERVIEW.md`](OVERVIEW.md) | vivo | propósito, escopo e invariantes | inclui experimentos, ações, lotes e animação até 0028e |
+| [`DECISIONS.md`](DECISIONS.md) | vivo | registro arquitetural durável | inclui laboratório declarativo, ações semânticas e overlay temporal |
 | [`DISTRIBUTION.md`](DISTRIBUTION.md) | vivo | Pages, PWA, HTTP e arquivos | atualizado com escopo do worker, cache efetivo e fallback móvel |
-| [`ROADMAP.md`](ROADMAP.md) | vivo | sequência de marcos | concluídos 0022–0026 registrados; 0027 passa a ser tempo/animação |
-| [`WORKFLOW.md`](WORKFLOW.md) | vivo | branches, patches, autoria, testes e integração | reescrito para o processo real no Termux |
-| [`CHATGPT_PROJECT_INSTRUCTIONS.md`](CHATGPT_PROJECT_INSTRUCTIONS.md) | vivo | contrato para assistentes | atualizado com arquitetura, autoria e limites de autonomia |
+| [`ROADMAP.md`](ROADMAP.md) | vivo | sequência de marcos | cronologia real 0022–0028e e prioridades posteriores |
+| [`WORKFLOW.md`](WORKFLOW.md) | vivo | branches, patches, autoria, testes e integração | inclui patches canônicos, promoção e testes 0027–0028 |
+| [`CHATGPT_PROJECT_INSTRUCTIONS.md`](CHATGPT_PROJECT_INSTRUCTIONS.md) | vivo | contrato para assistentes | inclui ações, experimentos, animação e escopos de grupo |
 | [`STRATEGIC_ARCHITECTURE_REVIEW.md`](STRATEGIC_ARCHITECTURE_REVIEW.md) | vivo | auditoria crítica e gates tecnológicos | integra propostas de CRDT, QuickJS/WASM e gramáticas de forma com custos |
 | [`DOCUMENTS_TO_WRITE.md`](DOCUMENTS_TO_WRITE.md) | vivo | backlog documental | criado nesta auditoria |
 | [`CURRENT_STATE.md`](CURRENT_STATE.md) | obsoleto | snapshot do marco 0019g-c2 | cabeçalho de obsolescência; corpo preservado |
@@ -70,6 +70,9 @@ Eles descrevem conceitos e processo, não snapshots de execução.
   autoria, push e merge.
 - [`CHATGPT_PROJECT_INSTRUCTIONS.md`](CHATGPT_PROJECT_INSTRUCTIONS.md): versão
   compacta do contrato para assistentes.
+- [`../../AGENTS.md`](../../AGENTS.md): entrada operacional reconhecível por
+  agentes de código.
+- [`../../PROJECT_SEED.md`](../../PROJECT_SEED.md): semente curta para retomada.
 
 ## Snapshots históricos
 
@@ -88,6 +91,10 @@ recicle o nome histórico como se fosse fonte viva.
 [`../../README.md`](../../README.md) apresenta produto, execução, capacidades,
 console, arquitetura e limites para quem chega ao repositório.
 
+[`../book/SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf`](../book/SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf)
+integra manifesto, manual, atlas procedural, evidência e método de colaboração;
+a fonte e o processo de compilação estão em [`../book/`](../book/).
+
 ### Especificações técnicas
 
 Documentos como os seguintes descrevem contratos específicos:
@@ -104,6 +111,9 @@ Documentos como os seguintes descrevem contratos específicos:
 - [`../PROPERTY_SYSTEM_0022A.md`](../PROPERTY_SYSTEM_0022A.md)
 - [`../GEOMETRY_PANEL_0024G.md`](../GEOMETRY_PANEL_0024G.md)
 - [`../UI_CONFIGURATION_0024F.md`](../UI_CONFIGURATION_0024F.md)
+- [`../EXPERIMENT_PLUGIN_0027A.md`](../EXPERIMENT_PLUGIN_0027A.md)
+- [`../INTERACTION_SURFACE_0028C.md`](../INTERACTION_SURFACE_0028C.md)
+- [`../ANIMATION_WORKSPACE_0028D.md`](../ANIMATION_WORKSPACE_0028D.md)
 
 ### Estado executável
 
@@ -126,8 +136,8 @@ Documentos como os seguintes descrevem contratos específicos:
 
 ## Próxima ação documental
 
-Os seis documentos P0 foram escritos. Antes do marco 0027, as próximas
-especificações são o runtime de animação e o modelo de eventos. Elas exigem
-decisões novas; não devem apenas descrever o `SimulationClock` experimental.
-A lista completa e revisada está em
+O runtime temporal já possui contrato implementado e documentação no marco
+0028. As lacunas prioritárias agora são persistência de clips/keyframes, modelo
+de eventos/interatividade, especificação consolidada da hierarquia e geometria
+2D/topológica. A lista revisada permanece em
 [`DOCUMENTS_TO_WRITE.md`](DOCUMENTS_TO_WRITE.md).

@@ -71,3 +71,30 @@ Os menus não se fecham ao executar um comando; isso permite repetir ações sem
 reabrir o grupo. **Duplicar** e **Repetir** passam a integrar os controles
 primários. O atalho legado **Caixa** fica oculto, pois a família está disponível
 no painel **Criar** junto às demais geometrias.
+
+## Extensão 0028c — ações e atalhos
+
+O manifesto passa a declarar `shortcuts`, com perfil, chave de persistência e
+bindings por ação semântica. `UiActionRegistry` associa o mesmo ID a botões e
+teclado. Campos de texto, seletores e regiões editáveis retêm seus eventos;
+conflitos no mesmo contexto são rejeitados. O contrato completo está em
+[`INTERACTION_SURFACE_0028C.md`](INTERACTION_SURFACE_0028C.md).
+
+## Extensão 0028d — reorganização sem substituição
+
+A configuração padrão prioriza seleção, transformação, Inspector, criação,
+animação e modo de cena. O laboratório de experimentos permanece em
+**Explorar**. O painel de animação é apenas mais um item do
+`FloatingPanelManager`: ele pode coexistir com Inspector, console e estrutura,
+herda posição e tamanho iniciais do manifesto e preserva preferências locais.
+
+Essa reorganização não introduz docks autoritativos nem um segundo formato de
+interface. Exportação de workspaces e editor visual do manifesto permanecem
+planejados.
+
+## Extensão 0028e — affordance de escala uniforme
+
+`presentation.transform` continua controlando a aparência inicial do gizmo. A
+alça composta `XYZ` do `TransformControls` foi ampliada e tornou-se visível para
+toque. A mudança não cria um comando novo: o arraste usa a mesma sessão
+transacional da ferramenta de escala.

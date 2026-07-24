@@ -1,9 +1,9 @@
-# Documentos que deveriam ter sido escritos
+# Backlog documental do SpatialSeed
 
-> Backlog documental criado na auditoria de 16 de julho de 2026. “Deveria ter
-> sido escrito” significa que a implementação ou a decisão já possui complexidade
-> suficiente para exigir uma fonte canônica própria. A lista não implica escrever
-> tudo antes da próxima linha de código.
+> Backlog criado em 16 de julho e revisado em 24 de julho de 2026 até o marco
+> `0028e`. Um item existe quando uma implementação ou decisão possui
+> complexidade suficiente para exigir fonte canônica própria. A lista não
+> implica escrever tudo antes da próxima linha de código.
 
 ## Critério de prioridade
 
@@ -166,11 +166,14 @@ critérios já estão nos seis documentos P0.
 
 ### 7. Especificação do runtime de animação
 
-**Caminho sugerido:** `docs/ANIMATION_RUNTIME_SPEC.md`
+**Status:** contrato efêmero implementado e documentado em
+[`../ANIMATION_WORKSPACE_0028D.md`](../ANIMATION_WORKSPACE_0028D.md) e
+[`../LANGUAGE_REFERENCE.md`](../LANGUAGE_REFERENCE.md).
 
-Deve preceder o marco 0027 e definir relógio, passo fixo/variável, estado privado,
-eventos, orçamento, pausa, reinício, determinismo, fila de intenções e relação
-com edição manual.
+**Lacuna restante:** criar `docs/ANIMATION_DOCUMENT_MODEL.md` antes de persistir
+clips ou keyframes. O documento deve definir identidade, canais, composição,
+serialização, vínculo de alvo, migração, conflito com edição manual e relação
+entre preview efêmero e estado publicável.
 
 ### 8. Modelo de eventos e interatividade
 
@@ -220,6 +223,15 @@ testes exigidos.
 
 Deve explicar tipos, codecs, cardinalidade, valores mistos, set/unset, edição em
 lote, atomicidade, dependências, UI gerada, console e testes.
+
+### 13A. Workspaces e customização interna da interface
+
+**Caminho sugerido:** `docs/UI_WORKSPACE_MODEL.md`
+
+Deve consolidar as camadas padrão, plugin, projeto, usuário e sessão; IDs de
+ações; atalhos e conflitos; disposição de barra e painéis; importação e
+exportação; preview, aplicar e reverter; e limites que impedem configuração
+declarativa de se tornar JavaScript arbitrário.
 
 ## P2 — Consolidação arquitetural
 
@@ -356,21 +368,15 @@ que esta auditoria procura remover.
 
 ## Ordem recomendada de escrita
 
-Os seis documentos P0 foram concluídos. Antes de implementar o marco 0027:
+Os seis documentos P0 foram concluídos. Após o marco 0028e, a ordem recomendada
+é:
 
-1. `ANIMATION_RUNTIME_SPEC.md`;
-2. `EVENT_MODEL.md`;
-3. atualizar `SECURITY_MODEL.md` com as capabilities aprovadas;
-4. criar casos de teste a partir dessas duas especificações.
-
-Depois, antes das respectivas implementações:
-
+1. `UI_WORKSPACE_MODEL.md` antes do customizador interno;
+2. `ANIMATION_DOCUMENT_MODEL.md` antes de clips/keyframes persistentes;
+3. `EVENT_MODEL.md` antes de eventos chegarem a scripts;
+4. `HIERARCHY_SPEC.md`, incluindo origens individuais e escopos de grupo;
 5. `GEOMETRY_2D_AND_CURVES.md`;
-6. `HIERARCHY_SPEC.md` e os guias de providers;
+6. guias de providers geométricos e de propriedades;
 7. `MESH_EDITING_MODEL.md`;
 8. `VERSIONING_AND_MIGRATIONS.md` antes de um schema 3;
 9. `LOCAL_RECOVERY_SPEC.md` antes de persistência automática da cena.
-
-`ANIMATION_RUNTIME_SPEC.md` e `EVENT_MODEL.md` exigem decisões novas sobre
-tempo, orçamento, eventos e autoridade; não devem ser inferidos apenas do
-`SimulationClock` experimental.
