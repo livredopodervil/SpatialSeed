@@ -32,6 +32,10 @@ MATHJS_SHA256 = (
 )
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 FETCH_PATTERN = re.compile(r"""\bfetch\(\s*["']([^"']+)["']""")
+DOM_ID_PATTERN = re.compile(r"""\bid\s*=\s*["']([^"']+)["']""")
+GET_ELEMENT_BY_ID_PATTERN = re.compile(
+    r"""\bgetElementById\(\s*["']([^"']+)["']\s*\)"""
+)
 RESOURCE_ATTRIBUTES = {
     "a": "href",
     "iframe": "src",
@@ -185,6 +189,21 @@ def audit_js_fetches(path: Path, errors: list[str]) -> None:
             resolve_local_reference(path, Reference("fetch", value), errors)
 
 
+def audit_static_dom_bindings(
+    path: Path,
+    source: str,
+    errors: list[str],
+) -> None:
+    declared_ids = set(DOM_ID_PATTERN.findall(source))
+    referenced_ids = set(GET_ELEMENT_BY_ID_PATTERN.findall(source))
+    missing_ids = sorted(referenced_ids - declared_ids)
+    if missing_ids:
+        errors.append(
+            f"{relative(path)}: getElementById referencia IDs ausentes: "
+            + ", ".join(missing_ids)
+        )
+
+
 def load_catalog(errors: list[str]) -> dict:
     try:
         payload = json.loads(CATALOG_MANIFEST.read_text(encoding="utf-8"))
@@ -245,6 +264,7 @@ def audit_experiment_baseline(errors: list[str]) -> int:
         except (OSError, UnicodeError) as error:
             errors.append(f"{relative(snapshot)}: não pôde ser lido: {error}")
             continue
+        audit_static_dom_bindings(snapshot, source, errors)
         for marker, message in required_markers.items():
             if marker not in source:
                 errors.append(f"{relative(snapshot)}: {message}")
