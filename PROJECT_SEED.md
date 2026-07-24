@@ -26,7 +26,7 @@ Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
 
 Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 
-## Estado funcional até 0029e1
+## Estado funcional até 0029e2
 
 - portal HTML na raiz e catálogo canônico de experimentos;
 - protótipos históricos offline, com seleção móvel, recorte configurável e
@@ -48,6 +48,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   comandos confirmados;
 - múltiplos viewers locais com câmera e seleção próprias, sandbox coordenado por
   revisão e rejeição explícita de intenções obsoletas;
+- diretório transitório de projetos ativos, escolha explícita de destino para
+  novos viewers e sucessão local da autoridade;
 - sessões efêmeras de animação compartilhadas por descritor, sequência e época
   absoluta, com cálculo de quadros local em cada viewer;
 - runtime Worker/SES, sessões, planos e procedimentos;

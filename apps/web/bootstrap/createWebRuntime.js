@@ -11,7 +11,7 @@ import {
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029c";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029e1";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029e2";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
@@ -20,7 +20,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029e";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029e1";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029e2";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -79,12 +79,13 @@ import {
   createRecoveryRecord,
   IndexedDbRecoveryStore,
   SandboxRecoveryController
-} from "../../../packages/project-recovery/src/index.js?build=20260724-0029e";
+} from "../../../packages/project-recovery/src/index.js?build=20260724-0029e2";
 import {
   CoordinatedSandbox,
   LocalAnimationCoordinator,
-  LocalViewerCoordinator
-} from "../../../packages/local-viewers/src/index.js?build=20260724-0029e1";
+  LocalViewerCoordinator,
+  LocalViewerSessionDirectory
+} from "../../../packages/local-viewers/src/index.js?build=20260724-0029e2";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v1";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -222,7 +223,7 @@ export async function createWebRuntime({
     sandboxId,
     viewerId: viewer.viewerId,
     requestedRole:
-      locationParameters.get("viewer") === "replica"
+      locationParameters.get("viewer") === "fixed-replica"
         ? "replica"
         : "auto"
   });
@@ -261,6 +262,21 @@ export async function createWebRuntime({
     }
   });
   await viewerCoordinator.start();
+  const viewerDirectory = new LocalViewerSessionDirectory({
+    describe: () => ({
+      sandboxId: viewerCoordinator.sandboxId,
+      viewerId: viewer.viewerId,
+      role: viewerCoordinator.role,
+      projectName: projectService.metadata.name,
+      revision: baseSandbox.revision,
+      dirty: baseSandbox.dirty,
+      objectCount: baseSandbox.objectCount
+    })
+  });
+  viewerDirectory.start();
+  const unsubscribeProjectDirectory = projectService.subscribe(
+    () => viewerDirectory.announce()
+  );
   const sharedAnimations = new LocalAnimationCoordinator({
     sandbox: baseSandbox,
     sandboxId: viewerCoordinator.sandboxId,
@@ -413,12 +429,37 @@ export async function createWebRuntime({
     )
     .register(
       "viewer.instance.open",
-      ({ href = globalThis.location?.href } = {}) => ({
-        changed: false,
-        url: viewerCoordinator.viewerUrl(href),
-        sandboxId: viewerCoordinator.sandboxId
-      }),
+      ({
+        href = globalThis.location?.href,
+        sandboxId: targetSandboxId = viewerCoordinator.sandboxId
+      } = {}) => {
+        const active = viewerDirectory.status().sessions.some(
+          session => session.sandboxId === targetSandboxId
+        );
+        if (!active) {
+          throw new Error(
+            `O projeto ${targetSandboxId} não está ativo neste navegador.`
+          );
+        }
+        return {
+          changed: false,
+          url: viewerCoordinator.viewerUrl(href, {
+            sandboxId: targetSandboxId
+          }),
+          sandboxId: targetSandboxId
+        };
+      },
       { category: "viewer", mutates: false }
+    )
+    .register(
+      "viewer.sessions.discover",
+      ({ waitMs = 80 } = {}) =>
+        viewerDirectory.discover({ waitMs }),
+      {
+        category: "viewer",
+        mutates: false,
+        asynchronous: true
+      }
     )
     .register(
       "viewer.instance.sync",
@@ -595,6 +636,9 @@ export async function createWebRuntime({
     .register("viewer.instances.status", () =>
       viewerCoordinator.status()
     )
+    .register("viewer.sessions.status", () =>
+      viewerDirectory.status()
+    )
     .register("runtime.ui-stats", () => uiDiagnosticsProvider());
 
   const transformToolPanel = new TransformToolPanel({
@@ -710,6 +754,7 @@ export async function createWebRuntime({
       },
       recovery: recoveryStatus(),
       viewers: viewerCoordinator.status(),
+      viewerSessions: viewerDirectory.status(),
       renderer: renderer.renderer?.info?.render ?? null,
       appearance: appearanceRuntime.stats(),
       incremental: renderer.getIncrementalDiagnostics(),
@@ -745,8 +790,12 @@ export async function createWebRuntime({
       apiVersion: ViewerState.apiVersion,
       cameraControllerApiVersion: ViewerCameraController.apiVersion,
       coordinatorApiVersion: LocalViewerCoordinator.apiVersion,
+      sessionDirectoryApiVersion:
+        LocalViewerSessionDirectory.apiVersion,
       coordinatedSandboxApiVersion: CoordinatedSandbox.apiVersion,
       multipleLocalViewers: true,
+      activeProjectSelection: true,
+      authorityFailover: true,
       sharedSandbox: viewerCoordinator.sandboxId,
       cameraProjection: true,
       cameraPose: true,
@@ -793,6 +842,7 @@ export async function createWebRuntime({
         changes,
         classification
       });
+      viewerDirectory.announce();
     }
   );
 
@@ -811,8 +861,12 @@ export async function createWebRuntime({
       if (sharedAnimations.sandboxId !== snapshot.sandboxId) {
         sharedAnimations.switchSandbox(snapshot.sandboxId);
       }
+      viewerDirectory.announce();
       runtime.emit("viewer.instances.changed", snapshot);
     }
+  );
+  const unsubscribeViewerSessions = viewerDirectory.subscribe(
+    snapshot => runtime.emit("viewer.sessions.changed", snapshot)
   );
   const unsubscribeSharedAnimations = sharedAnimations.subscribe(
     snapshot => runtime.emit("animation.shared.changed", snapshot)
@@ -820,7 +874,10 @@ export async function createWebRuntime({
 
   runtime
     .onDispose(() => viewerCoordinator.dispose())
+    .onDispose(() => viewerDirectory.dispose())
+    .onDispose(unsubscribeProjectDirectory)
     .onDispose(unsubscribeSharedAnimations)
+    .onDispose(unsubscribeViewerSessions)
     .onDispose(unsubscribeViewerInstances)
     .onDispose(unsubscribeViewer)
     .onDispose(unsubscribeEditor)
@@ -836,6 +893,7 @@ export async function createWebRuntime({
       editor,
       viewer,
       viewerCoordinator,
+      viewerDirectory,
       cameraController,
       renderer,
       outline,

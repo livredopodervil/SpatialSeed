@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e1`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e2`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -491,6 +491,13 @@ silenciosamente; somente a autoridade substitui projeto, recuperação ou base
 regional; câmera, seleção, hover e painéis nunca entram no snapshot
 compartilhado. O protocolo é local e não antecipa CRDT, identidade remota ou
 autorização distribuída.
+
+Um diretório transitório anuncia somente sessões vivas da mesma origem e agrupa
+viewers por `sandboxId`. **Novo viewer** conecta diretamente quando existe um
+único projeto ativo e exige escolha quando existem vários. Ao fechar a
+autoridade, uma réplica automática adquire a trava liberada, conserva o
+snapshot já sincronizado e adota o diário de recuperação sem restaurar por cima
+dele um checkpoint anterior.
 
 ## D-032 — Reprodução local compartilha definição e época
 

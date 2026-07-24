@@ -57,6 +57,25 @@
     </div>
   </form>
 </dialog>
+<dialog id="viewer-session-dialog" aria-labelledby="viewer-session-title">
+  <form method="dialog">
+    <h2 id="viewer-session-title">Conectar novo viewer</h2>
+    <p>
+      Escolha um projeto que está ativo neste navegador. O novo viewer terá
+      câmera, seleção e painéis próprios.
+    </p>
+    <div
+      id="viewer-session-list"
+      class="viewer-session-list"
+      role="radiogroup"
+      aria-label="Projetos ativos"
+    ></div>
+    <div class="actions">
+      <button id="viewer-session-open" type="button">Abrir viewer</button>
+      <button type="submit" value="cancel">Cancelar</button>
+    </div>
+  </form>
+</dialog>
 
 <header id="toolbar">
   <button id="tool-navigate" data-tool-mode="navigate" title="Navegar">☝</button>

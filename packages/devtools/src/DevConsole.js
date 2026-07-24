@@ -763,13 +763,15 @@ export class DevConsole {
     return {
       commands: [
         "viewers status",
-        "viewers open",
+        "viewers sessions",
+        "viewers open [sandboxId]",
         "viewers sync",
         "runtime test viewer-coordination"
       ],
       notes: [
         "Cada viewer conserva seleção e câmera próprias.",
         "O sandbox lógico é coordenado por revisão entre abas locais.",
+        "Sessões listam os projetos que estão ativos neste navegador.",
         "Uma intenção obsoleta é rejeitada e o viewer recebe o estado atual."
       ]
     };
@@ -785,15 +787,25 @@ export class DevConsole {
       this.#expectMaximum(tokens, 0, "viewers status");
       return this.queries.execute("viewer.instances.status");
     }
+    if (action === "sessions") {
+      this.#expectMaximum(tokens, 0, "viewers sessions");
+      return this.queries.execute("viewer.sessions.status");
+    }
     if (action === "open") {
-      this.#expectMaximum(tokens, 0, "viewers open");
-      return this.commands.execute("viewer.instance.open");
+      this.#expectMaximum(tokens, 1, "viewers open [sandboxId]");
+      const sandboxId = tokens.shift();
+      return this.commands.execute(
+        "viewer.instance.open",
+        sandboxId ? { sandboxId } : {}
+      );
     }
     if (action === "sync") {
       this.#expectMaximum(tokens, 0, "viewers sync");
       return this.commands.execute("viewer.instance.sync");
     }
-    throw new Error("Uso: viewers status|open|sync|help.");
+    throw new Error(
+      "Uso: viewers status|sessions|open [sandboxId]|sync|help."
+    );
   }
 
   #programHelp() {

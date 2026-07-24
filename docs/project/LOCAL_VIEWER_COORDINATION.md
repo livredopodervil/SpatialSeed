@@ -1,6 +1,6 @@
 # Coordenação de viewers locais
 
-> Contrato técnico implementado nos marcos `0029e` e `0029e1`.
+> Contrato técnico implementado nos marcos `0029e`, `0029e1` e `0029e2`.
 
 ## Fronteira
 
@@ -10,8 +10,17 @@ os comandos confirmados e o histórico pertencem ao sandbox compartilhado.
 
 `LocalViewerCoordinator` usa `BroadcastChannel` apenas como transporte local.
 Quando a Web Locks API está disponível, uma trava exclusiva escolhe a aba
-autoritativa. O botão **Novo viewer** abre uma réplica explícita com o mesmo
-`sandboxId`.
+autoritativa. O botão **Novo viewer** usa o diretório de sessões vivas: conecta
+diretamente ao projeto atual quando ele é o único ativo ou apresenta um seletor
+de `sandboxId` quando há vários projetos.
+
+Cada viewer anuncia periodicamente nome do projeto, identidade, papel, revisão
+e contagens num canal de diretório separado. O diretório não persiste projetos:
+uma despedida remove a entrada imediatamente e anúncios abandonados expiram.
+
+Ao fechar a autoridade, as réplicas automáticas disputam a trava liberada. A
+vencedora mantém o snapshot espelhado, torna-se autoridade e adota o diário de
+recuperação vigente sem reler um checkpoint antigo sobre o estado vivo.
 
 ## Protocolo
 
@@ -76,9 +85,13 @@ compartilhada.
 
 - botão **Novo viewer**;
 - `viewers status`;
+- `viewers sessions`;
 - `viewers open`;
+- `viewers open sandboxId`;
 - `viewers sync`;
 - query `viewer.instances.status`;
+- query `viewer.sessions.status`;
+- comando `viewer.sessions.discover`;
 - comandos `viewer.instance.open` e `viewer.instance.sync`;
 - evento `viewer.instances.changed`;
 - suíte `runtime test viewer-coordination`;
@@ -87,7 +100,7 @@ compartilhada.
 
 ## Roteiro manual
 
-1. abra **Painéis → Novo viewer**;
+1. abra **Painéis → Novo viewer** e escolha o projeto se o seletor aparecer;
 2. mantenha as duas abas lado a lado ou alterne entre elas;
 3. mova a câmera e selecione objetos diferentes em cada viewer;
 4. crie ou transforme um objeto numa aba e confirme a atualização na outra;
@@ -97,6 +110,8 @@ compartilhada.
 8. deixe uma aba em segundo plano, retorne e confirme o mesmo instante;
 9. execute `runtime test viewer-coordination`, `runtime test viewer-animation`
    e `runtime test all`.
+10. feche a aba autoritativa, confirme a promoção da réplica e abra outro viewer
+    sem perder o projeto.
 
 O teste de conflito obsoleto é automatizado porque depende de controlar a ordem
 das mensagens. A validação visual confirma separadamente que câmera e seleção

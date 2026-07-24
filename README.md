@@ -188,13 +188,16 @@ sandbox, não entram no undo e não são salvas no arquivo `.spatialseed`.
 
 ### Viewers locais
 
-**Novo viewer** abre outra aba sobre a mesma identidade de sandbox. Cada aba
+**Novo viewer** abre outra aba sobre uma identidade de sandbox ativa. Quando há
+mais de um projeto rodando, um seletor permite escolher o destino. Cada aba
 mantém câmera, seleção e painéis próprios; objetos e histórico são coordenados
 por revisão. Uma aba é a autoridade local e as demais enviam comandos canônicos
 em fila. Se uma intenção foi produzida sobre revisão antiga, ela é rejeitada, o
 viewer recebe o estado atual e a ação pode ser repetida conscientemente.
 
-Use `viewers status`, `viewers open` e `viewers sync` no console. Essa
+Use `viewers status`, `viewers sessions`, `viewers open [sandboxId]` e
+`viewers sync` no console. Ao fechar a autoridade, uma réplica automática assume
+o projeto e seu diário de recuperação. Essa
 coordenação usa `BroadcastChannel` na mesma origem e não deve ser confundida com
 colaboração remota ou multiusuário.
 

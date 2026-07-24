@@ -80,6 +80,22 @@ export class SandboxRecoveryController {
     }
   }
 
+  adoptCurrentSession(sandboxId = this.identity.current()) {
+    if (this.#started) return this.status();
+    const nextId = String(sandboxId ?? "");
+    if (!/^sandbox-[a-zA-Z0-9-]{8,}$/.test(nextId)) {
+      throw new TypeError(
+        "Não é possível adotar recuperação sem sandboxId válido."
+      );
+    }
+    this.#started = true;
+    this.sandboxId = nextId;
+    this.#pendingRecord = null;
+    this.#attach();
+    this.#schedulePersist();
+    return this.status("adopted-current");
+  }
+
   async continueRecovery() {
     if (!this.#pendingRecord) {
       return this.status("empty");

@@ -1,6 +1,6 @@
 # Workflow verificável do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e1`. Este é o processo canônico
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e2`. Este é o processo canônico
 > para colaboração local, patches, testes, autoria e integração.
 
 ## Objetivos

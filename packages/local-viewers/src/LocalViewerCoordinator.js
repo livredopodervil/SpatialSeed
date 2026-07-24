@@ -19,6 +19,8 @@ export class LocalViewerCoordinator {
   #lastError = null;
   #releaseLock = null;
   #lockTask = null;
+  #promotionTask = null;
+  #promotionAbort = null;
 
   constructor({
     sandbox,
@@ -169,6 +171,7 @@ export class LocalViewerCoordinator {
     }
     if (nextId === this.sandboxId) return this.status();
 
+    this.#cancelPromotionWait();
     const snapshot = this.#captureSnapshot(nextId);
     this.#post("sandbox-switch", {
       nextSandboxId: nextId,
@@ -189,14 +192,17 @@ export class LocalViewerCoordinator {
     return this.status();
   }
 
-  viewerUrl(href = globalThis.location?.href) {
+  viewerUrl(
+    href = globalThis.location?.href,
+    { sandboxId = this.sandboxId } = {}
+  ) {
     if (!this.#channel) {
       throw new Error(
         "Não é possível abrir outro viewer: BroadcastChannel indisponível."
       );
     }
     return createSharedViewerUrl(href, {
-      sandboxId: this.sandboxId
+      sandboxId
     });
   }
 
@@ -242,6 +248,7 @@ export class LocalViewerCoordinator {
     this.#unsubscribeSandbox?.();
     this.#unsubscribeSandbox = null;
     this.#closeChannel();
+    this.#cancelPromotionWait();
     this.#releaseLock?.();
     this.#releaseLock = null;
     this.#listeners.clear();
@@ -337,10 +344,18 @@ export class LocalViewerCoordinator {
         case "hello":
           if (this.isAuthority) {
             this.#sendSnapshot(message.source);
+          } else if (message.payload?.role === "authority") {
+            this.#cancelPromotionWait();
           }
           break;
         case "bye":
-          this.#peers.delete(message.source);
+          {
+            const departing = this.#peers.get(message.source);
+            this.#peers.delete(message.source);
+            if (departing?.role === "authority") {
+              void this.#promoteAfterAuthorityDeparture();
+            }
+          }
           break;
         case "sync-request":
           if (this.isAuthority) {
@@ -384,6 +399,83 @@ export class LocalViewerCoordinator {
       revision: Number(message.payload?.revision ?? 0),
       lastSeen: new Date(this.now()).toISOString()
     });
+  }
+
+  async #promoteAfterAuthorityDeparture() {
+    if (
+      this.#promotionTask ||
+      this.#disposed ||
+      this.isAuthority ||
+      this.requestedRole !== "auto"
+    ) {
+      return false;
+    }
+    this.#promotionTask = this.#waitForAuthorityLock();
+    try {
+      const acquired = await this.#promotionTask;
+      if (!acquired || this.#disposed) return false;
+      this.role = "authority";
+      this.sharedRevision = this.sandbox.revision;
+      this.sharedHistory = historySnapshot(this.sandbox);
+      this.#post("hello", {
+        role: this.role,
+        revision: this.sandbox.revision
+      });
+      this.#broadcastSnapshot();
+      this.#notify();
+      return true;
+    } finally {
+      this.#promotionTask = null;
+    }
+  }
+
+  #waitForAuthorityLock() {
+    if (typeof this.lockManager?.request !== "function") {
+      return Promise.resolve(false);
+    }
+    let resolveDecision;
+    const decision = new Promise(resolve => {
+      resolveDecision = resolve;
+    });
+    const name = `spatial-seed:${this.sandboxId}:authority`;
+    const AbortControllerClass = globalThis.AbortController;
+    const abort = typeof AbortControllerClass === "function"
+      ? new AbortControllerClass()
+      : null;
+    this.#promotionAbort = abort;
+    const options = {
+      mode: "exclusive",
+      ...(abort ? { signal: abort.signal } : {})
+    };
+    try {
+      this.#lockTask = Promise.resolve(
+        this.lockManager.request(name, options, lock => {
+          if (!lock || this.#disposed) {
+            resolveDecision(false);
+            return false;
+          }
+          this.#promotionAbort = null;
+          resolveDecision(true);
+          return new Promise(resolve => {
+            this.#releaseLock = resolve;
+          });
+        })
+      ).catch(error => {
+        if (error?.name !== "AbortError") {
+          this.#lastError = error;
+        }
+        resolveDecision(false);
+      });
+    } catch (error) {
+      this.#lastError = error;
+      resolveDecision(false);
+    }
+    return decision;
+  }
+
+  #cancelPromotionWait() {
+    this.#promotionAbort?.abort();
+    this.#promotionAbort = null;
   }
 
   #sandboxChanged(changes = []) {
@@ -536,6 +628,7 @@ export class LocalViewerCoordinator {
         "Troca de sandbox compartilhado inválida."
       );
     }
+    this.#cancelPromotionWait();
     if (this.#inFlight || this.#intentQueue.length) {
       this.#lastOutcome = {
         status: "rejected-sandbox-replaced",
@@ -659,7 +752,7 @@ export function createSharedViewerUrl(
     throw new TypeError("Identidade de sandbox inválida.");
   }
   url.searchParams.set("sandbox", String(sandboxId));
-  url.searchParams.set("viewer", "replica");
+  url.searchParams.set("viewer", "auto");
   return url.href;
 }
 

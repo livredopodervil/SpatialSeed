@@ -97,13 +97,14 @@ import {
   SandboxRecoveryController,
   createRecoveryRecord,
   validateRecoveryRecord
-} from "../../project-recovery/src/index.js?build=20260724-0029e";
+} from "../../project-recovery/src/index.js?build=20260724-0029e2";
 import {
   CoordinatedSandbox,
   LocalAnimationCoordinator,
   LocalViewerCoordinator,
+  LocalViewerSessionDirectory,
   createSharedViewerUrl
-} from "../../local-viewers/src/index.js?build=20260724-0029e1";
+} from "../../local-viewers/src/index.js?build=20260724-0029e2";
 import {
   boxRegionReducer
 } from "../../region-box/src/reducer.js?build=20260716-0024d";
@@ -125,7 +126,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260720-0028d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260724-0029e1";
+} from "../../devtools/src/DevConsole.js?build=20260724-0029e2";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -1971,7 +1972,7 @@ export function createRuntimeLayerTests() {
           url.searchParams.get("sandbox"),
           "sandbox-coordination-url"
         );
-        assertEqual(url.searchParams.get("viewer"), "replica");
+        assertEqual(url.searchParams.get("viewer"), "auto");
         assertEqual(url.hash, "#scene");
       },
 
@@ -2199,6 +2200,163 @@ export function createRuntimeLayerTests() {
         pair.dispose();
       },
 
+      async "réplica automática assume quando a autoridade fecha"() {
+        const network = createLocalViewerNetwork();
+        const lockManager = createLocalViewerLockManager();
+        const authority = createLocalViewerHarness({
+          sandboxId: "sandbox-viewer-failover",
+          viewerId: "viewer-failover-a",
+          role: "auto",
+          network,
+          lockManager
+        });
+        const replica = createLocalViewerHarness({
+          sandboxId: "sandbox-viewer-failover",
+          viewerId: "viewer-failover-b",
+          role: "auto",
+          network,
+          lockManager
+        });
+        const observer = createLocalViewerHarness({
+          sandboxId: "sandbox-viewer-failover",
+          viewerId: "viewer-failover-c",
+          role: "auto",
+          network,
+          lockManager
+        });
+        await authority.coordinator.start();
+        await replica.coordinator.start();
+        await observer.coordinator.start();
+        authority.coordinated.dispatch({
+          type: "object.create",
+          id: "survives-authority-close",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+
+        assertEqual(authority.coordinator.status().role, "authority");
+        assertEqual(replica.coordinator.status().role, "replica");
+        assertEqual(observer.coordinator.status().role, "replica");
+        authority.coordinator.dispose();
+        await settleLocalViewers(30);
+
+        const survivors = [replica, observer];
+        const promoted = survivors.find(
+          viewer => viewer.coordinator.status().role === "authority"
+        );
+        const remaining = survivors.find(
+          viewer => viewer !== promoted
+        );
+        assert(Boolean(promoted));
+        assertEqual(remaining.coordinator.status().role, "replica");
+        assertEqual(promoted.sandbox.objectCount, 1);
+        assertEqual(remaining.sandbox.objectCount, 1);
+
+        promoted.coordinator.switchSandbox(
+          "sandbox-viewer-failover-next"
+        );
+        await settleLocalViewers(20);
+        assertEqual(
+          remaining.coordinator.status().sandboxId,
+          "sandbox-viewer-failover-next"
+        );
+        assertEqual(remaining.coordinator.status().role, "replica");
+        remaining.coordinator.dispose();
+        promoted.coordinator.dispose();
+      },
+
+      async "diretório agrupa viewers e separa projetos ativos"() {
+        const network = createLocalViewerNetwork();
+        const descriptors = [
+          {
+            sandboxId: "sandbox-directory-alpha",
+            viewerId: "viewer-directory-alpha-a",
+            role: "authority",
+            projectName: "Projeto Alfa",
+            revision: 4,
+            dirty: true,
+            objectCount: 3
+          },
+          {
+            sandboxId: "sandbox-directory-alpha",
+            viewerId: "viewer-directory-alpha-b",
+            role: "replica",
+            projectName: "Projeto Alfa",
+            revision: 4,
+            dirty: true,
+            objectCount: 3
+          },
+          {
+            sandboxId: "sandbox-directory-beta",
+            viewerId: "viewer-directory-beta",
+            role: "authority",
+            projectName: "Projeto Beta",
+            revision: 2,
+            dirty: false,
+            objectCount: 1
+          }
+        ];
+        const directories = descriptors.map(descriptor =>
+          new LocalViewerSessionDirectory({
+            describe: () => descriptor,
+            channelFactory: network.channelFactory,
+            setIntervalFn: null,
+            setTimeoutFn: null
+          })
+        );
+        directories.forEach(directory => directory.start());
+        await settleLocalViewers(20);
+
+        const status = directories[0].status();
+        assertEqual(status.sessions.length, 2);
+        assertEqual(status.sessions[0].projectName, "Projeto Alfa");
+        assertEqual(status.sessions[0].viewerCount, 2);
+        assertEqual(status.sessions[0].current, true);
+        assertEqual(status.sessions[1].projectName, "Projeto Beta");
+        assertEqual(status.sessions[1].viewerCount, 1);
+        directories.forEach(directory => directory.dispose());
+      },
+
+      async "diretório remove viewer fechado da sessão"() {
+        const network = createLocalViewerNetwork();
+        const first = new LocalViewerSessionDirectory({
+          describe: () => ({
+            sandboxId: "sandbox-directory-close",
+            viewerId: "viewer-directory-close-a",
+            role: "authority",
+            projectName: "Projeto Fechável",
+            revision: 1,
+            objectCount: 2
+          }),
+          channelFactory: network.channelFactory,
+          setIntervalFn: null,
+          setTimeoutFn: null
+        });
+        const second = new LocalViewerSessionDirectory({
+          describe: () => ({
+            sandboxId: "sandbox-directory-close",
+            viewerId: "viewer-directory-close-b",
+            role: "replica",
+            projectName: "Projeto Fechável",
+            revision: 1,
+            objectCount: 2
+          }),
+          channelFactory: network.channelFactory,
+          setIntervalFn: null,
+          setTimeoutFn: null
+        });
+        first.start();
+        second.start();
+        await settleLocalViewers();
+        assertEqual(second.status().sessions[0].viewerCount, 2);
+
+        first.dispose();
+        await settleLocalViewers();
+        assertEqual(second.status().sessions[0].viewerCount, 1);
+        second.dispose();
+      },
+
       "console encaminha diagnóstico e sincronização de viewers"() {
         const calls = [];
         const console = new DevConsole({
@@ -2223,7 +2381,8 @@ export function createRuntimeLayerTests() {
         });
 
         const results = console.execute(
-          "viewers status; viewers open; viewers sync"
+          "viewers status; viewers sessions; " +
+          "viewers open sandbox-selected; viewers sync"
         );
 
         assert(results.every(result => result.ok));
@@ -2231,10 +2390,14 @@ export function createRuntimeLayerTests() {
           calls.map(call => call.id),
           [
             "viewer.instances.status",
+            "viewer.sessions.status",
             "viewer.instance.open",
             "viewer.instance.sync"
           ]
         );
+        assertDeepEqual(calls[2].args, {
+          sandboxId: "sandbox-selected"
+        });
       }
     },
 
@@ -5070,6 +5233,56 @@ assets: {
         assertEqual(target.sandbox.undo(), true);
         assertEqual(target.sandbox.objectCount, 0);
         target.controller.dispose();
+      },
+
+      async "autoridade promovida adota o snapshot vivo sem restaurar o antigo"() {
+        const sandboxId = "sandbox-test-promoted-authority";
+        const store = new MemoryRecoveryStore([
+          createRecoveryRecord({
+            sandboxId,
+            checkpoint: recoveryCheckpoint("Antigo"),
+            commands: [{
+              type: "object.create",
+              id: "stale-recovery-object",
+              position: [0, 1, 0],
+              size: [1, 1, 1]
+            }],
+            baseVersion: 0,
+            revision: 1,
+            dirty: true,
+            updatedAt: "2026-07-24T12:00:00.000Z"
+          })
+        ]);
+        const harness = createRecoveryHarness({
+          sandboxId,
+          store
+        });
+        harness.sandbox.dispatch({
+          type: "object.create",
+          id: "live-replica-object",
+          position: [3, 1, 0],
+          size: [1, 1, 1]
+        });
+
+        const adopted = harness.controller.adoptCurrentSession(
+          sandboxId
+        );
+        assertEqual(adopted.mode, "adopted-current");
+        assertEqual(harness.projectService.restoreCalls, 0);
+        assertEqual(harness.sandbox.objectCount, 1);
+        assertEqual(
+          harness.sandbox.getState().objects[0].id,
+          "live-replica-object"
+        );
+
+        await harness.controller.flush();
+        const persisted = await store.load(sandboxId);
+        assertEqual(persisted.commands.length, 1);
+        assertEqual(
+          persisted.commands[0].id,
+          "live-replica-object"
+        );
+        harness.controller.dispose();
       },
 
       async "serviço real continua rascunho e reabre cópia exportada"() {
@@ -9874,7 +10087,8 @@ function createLocalViewerHarness({
   sandboxId,
   viewerId,
   role,
-  network
+  network,
+  lockManager = null
 }) {
   const region = new Region(
     {
@@ -9891,7 +10105,7 @@ function createLocalViewerHarness({
     viewerId,
     requestedRole: role,
     channelFactory: network.channelFactory,
-    lockManager: null,
+    lockManager,
     now: () => Date.parse("2026-07-24T12:00:00.000Z")
   });
   coordinator.connectSnapshotAdapter({
@@ -9927,6 +10141,75 @@ function createLocalViewerHarness({
       sandbox,
       coordinator
     })
+  };
+}
+
+function createLocalViewerLockManager() {
+  const locks = new Map();
+  const stateFor = name => {
+    const state = locks.get(name) ?? {
+      held: false,
+      queue: []
+    };
+    locks.set(name, state);
+    return state;
+  };
+  const drain = name => {
+    const state = stateFor(name);
+    if (state.held || !state.queue.length) return;
+    const request = state.queue.shift();
+    if (request.aborted) {
+      drain(name);
+      return;
+    }
+    state.held = true;
+    Promise.resolve(request.callback({ name })).then(
+      value => {
+        state.held = false;
+        request.resolve(value);
+        drain(name);
+      },
+      error => {
+        state.held = false;
+        request.reject(error);
+        drain(name);
+      }
+    );
+  };
+  return {
+    request(name, options = {}, callback) {
+      const state = stateFor(name);
+      if (options.ifAvailable && state.held) {
+        return Promise.resolve(callback(null));
+      }
+      return new Promise((resolve, reject) => {
+        const request = {
+          callback,
+          resolve,
+          reject,
+          aborted: false
+        };
+        const abort = () => {
+          request.aborted = true;
+          const index = state.queue.indexOf(request);
+          if (index >= 0) state.queue.splice(index, 1);
+          const error = new Error("Lock request aborted.");
+          error.name = "AbortError";
+          reject(error);
+        };
+        if (options.signal?.aborted) {
+          abort();
+          return;
+        }
+        options.signal?.addEventListener?.(
+          "abort",
+          abort,
+          { once: true }
+        );
+        state.queue.push(request);
+        drain(name);
+      });
+    }
   };
 }
 

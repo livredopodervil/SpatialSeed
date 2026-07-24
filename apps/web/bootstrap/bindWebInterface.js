@@ -27,6 +27,7 @@ export function bindWebInterface({
     experimentPanel,
     sandboxRecovery,
     viewerCoordinator,
+    viewerDirectory,
     connectUiDiagnostics
   } = web;
 
@@ -58,6 +59,7 @@ export function bindWebInterface({
   };
   refreshProjectFileCapabilities();
   const recoveryDialog = $("recovery-dialog");
+  const viewerSessionDialog = $("viewer-session-dialog");
   let resolveRecoveryReady = null;
   const recoveryDecision = new Promise(resolve => {
     resolveRecoveryReady = resolve;
@@ -74,6 +76,7 @@ export function bindWebInterface({
   let latestViewerInstances = runtime.query(
     "viewer.instances.status"
   );
+  let latestViewerRole = latestViewerInstances.role;
   let latestSandboxId = latestViewerInstances.sandboxId;
   const initialCamera = runtime.query("viewer.camera.snapshot");
   const toolbarBinding = composeToolbar({
@@ -314,14 +317,31 @@ export function bindWebInterface({
   uiActions
     .register("scene.toggle", () => setSceneOnly(!sceneOnly))
     .register("viewport.fullscreen", () => toggleViewportFullscreen())
-    .register("viewer.instance.open", () => {
+    .register("viewer.instance.open", ({ sandboxId } = {}) => {
       const result = execute("viewer.instance.open", {
-        href: browserWindow.location.href
+        href: browserWindow.location.href,
+        sandboxId: sandboxId ?? latestSandboxId
       });
       if (!result?.url) return result;
       browserWindow.open(result.url, "_blank", "noopener");
-      showNotice("Novo viewer solicitado para o mesmo sandbox.");
+      showNotice("Novo viewer solicitado para o projeto escolhido.");
       return result;
+    })
+    .register("viewer.instance.choose", () => {
+      const directory = runtime.query("viewer.sessions.status");
+      const sessions = directory.sessions ?? [];
+      if (sessions.length <= 1) {
+        return uiActions.execute("viewer.instance.open", {
+          sandboxId: sessions[0]?.sandboxId ?? latestSandboxId
+        });
+      }
+      renderViewerSessions(sessions);
+      if (typeof viewerSessionDialog.showModal === "function") {
+        viewerSessionDialog.showModal();
+      } else {
+        viewerSessionDialog.setAttribute("open", "");
+      }
+      return directory;
     })
     .register("panel.animation.toggle", () => {
       const panel = $("animation-panel");
@@ -601,11 +621,21 @@ export function bindWebInterface({
     "viewer.instances.changed",
     snapshot => {
       latestViewerInstances = snapshot;
+      if (
+        latestViewerRole === "replica" &&
+        snapshot.role === "authority"
+      ) {
+        sandboxRecovery.adoptCurrentSession(snapshot.sandboxId);
+        showNotice(
+          "Este viewer assumiu a autoridade do projeto ativo."
+        );
+      }
+      latestViewerRole = snapshot.role;
       if (snapshot.sandboxId !== latestSandboxId) {
         const url = new URL(browserWindow.location.href);
         url.searchParams.set("sandbox", snapshot.sandboxId);
         if (snapshot.role === "replica") {
-          url.searchParams.set("viewer", "replica");
+          url.searchParams.set("viewer", "auto");
         } else {
           url.searchParams.delete("viewer");
         }
@@ -699,8 +729,21 @@ export function bindWebInterface({
   });
   uiActions.bindControl(
     $("viewer-new"),
-    "viewer.instance.open"
+    "viewer.instance.choose"
   );
+  $("viewer-session-open").addEventListener("click", () => {
+    const selected = documentRoot.querySelector(
+      'input[name="viewer-session"]:checked'
+    );
+    if (!selected) {
+      showNotice("Escolha um projeto ativo.");
+      return;
+    }
+    viewerSessionDialog.close();
+    uiActions.execute("viewer.instance.open", {
+      sandboxId: selected.value
+    });
+  });
 
   $("project-open").addEventListener(
     "click",
@@ -956,6 +999,12 @@ export function bindWebInterface({
     }
   };
   browserWindow.addEventListener("pagehide", flushRecovery);
+  const releaseViewerSession = event => {
+    if (event.persisted) return;
+    viewerDirectory.dispose();
+    viewerCoordinator.dispose();
+  };
+  browserWindow.addEventListener("pagehide", releaseViewerSession);
   documentRoot.addEventListener(
     "visibilitychange",
     flushHiddenRecovery
@@ -1279,6 +1328,36 @@ export function bindWebInterface({
     }
   });
 
+  function renderViewerSessions(sessions) {
+    const root = $("viewer-session-list");
+    root.replaceChildren();
+    for (const session of sessions) {
+      const label = documentRoot.createElement("label");
+      label.className = "viewer-session-choice";
+      const input = documentRoot.createElement("input");
+      input.type = "radio";
+      input.name = "viewer-session";
+      input.value = session.sandboxId;
+      input.checked = Boolean(session.current);
+      const name = documentRoot.createElement("strong");
+      name.textContent =
+        `${session.projectName}${session.current ? " · atual" : ""}`;
+      const details = documentRoot.createElement("small");
+      const authority = session.authorityAvailable
+        ? "autoridade ativa"
+        : "assumindo autoridade";
+      details.textContent =
+        `${session.viewerCount} viewer(s) · ${session.objectCount} objeto(s) · ` +
+        `revisão ${session.revision} · ${authority} · ` +
+        session.sandboxId;
+      label.append(input, name, details);
+      root.append(label);
+    }
+    if (!root.querySelector("input:checked")) {
+      root.querySelector("input")?.click();
+    }
+  }
+
   uiRefresh.flushNow("initial");
 
   const initialSelection = runtime.query("selection.snapshot");
@@ -1309,6 +1388,10 @@ export function bindWebInterface({
       panelManager.dispose();
       sandboxRecovery.dispose();
       browserWindow.removeEventListener("pagehide", flushRecovery);
+      browserWindow.removeEventListener(
+        "pagehide",
+        releaseViewerSession
+      );
       documentRoot.removeEventListener(
         "visibilitychange",
         flushHiddenRecovery

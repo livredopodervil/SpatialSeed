@@ -144,6 +144,14 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - conflitos temporais obsoletos rejeitados explicitamente;
 - nenhum quadro, matriz ou estado temporal inserido no documento.
 
+### 0029e2 — Seleção e sucessão de sessões locais — implementado
+
+- diretório transitório de projetos ativos na mesma origem;
+- escolha explícita do `sandboxId` quando mais de um projeto está rodando;
+- remoção de viewers fechados e expiração de anúncios abandonados;
+- promoção de réplica após fechamento da autoridade;
+- adoção do snapshot vivo pelo diário de recuperação promovido.
+
 ### 0029f — Objetos câmera
 
 - nós de câmera persistentes e hierárquicos;

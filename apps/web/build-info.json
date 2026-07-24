@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260724-0029e1",
-  "channel": "feature/0029-shared-animation"
+  "build": "20260724-0029e2",
+  "channel": "fix/0029e2-viewer-session-selection"
 }
