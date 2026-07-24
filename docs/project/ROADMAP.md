@@ -124,7 +124,7 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - posição, quaternion, foco, órbita, enquadramento e interpolação;
 - painel, console e procedimentos sobre a mesma API.
 
-### 0029d — Recuperação automática
+### 0029d — Recuperação automática — implementado
 
 - identidade persistente de sandbox;
 - checkpoint e comandos confirmados em IndexedDB;

@@ -38,6 +38,25 @@
     </div>
   </form>
 </dialog>
+<dialog id="recovery-dialog" aria-labelledby="recovery-title">
+  <form method="dialog">
+    <h2 id="recovery-title">Rascunho recuperável</h2>
+    <p>
+      O sandbox <strong id="recovery-project-name"></strong> contém alterações
+      confirmadas localmente que ainda não foram descartadas.
+    </p>
+    <p id="recovery-details"></p>
+    <p>
+      A recuperação existe somente neste navegador. O arquivo
+      <code>.spatialseed</code> continua sendo a cópia portátil.
+    </p>
+    <div class="actions">
+      <button id="recovery-continue" type="button">Continuar</button>
+      <button id="recovery-export" type="button">Exportar cópia</button>
+      <button id="recovery-discard" type="button">Descartar</button>
+    </div>
+  </form>
+</dialog>
 
 <header id="toolbar">
   <button id="tool-navigate" data-tool-mode="navigate" title="Navegar">☝</button>

@@ -1,6 +1,6 @@
 import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-0020b-a";
-import { Region } from "../../../packages/core/src/Region.js?build=20260714-0020b-a";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260718-0027h";
+import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260724-0029d";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
 import {
@@ -11,16 +11,16 @@ import {
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029c";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029c";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029d";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260718-0027h";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260720-0028d";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260716-0025d";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029d";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029c";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029d";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -74,6 +74,11 @@ import {
 import {
   AnimationPanel
 } from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
+import {
+  BrowserSandboxIdentity,
+  IndexedDbRecoveryStore,
+  SandboxRecoveryController
+} from "../../../packages/project-recovery/src/index.js?build=20260724-0029d";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v1";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -201,6 +206,12 @@ export async function createWebRuntime({
     region,
     appearanceRuntime
   });
+  const sandboxRecovery = new SandboxRecoveryController({
+    sandbox,
+    projectService,
+    store: new IndexedDbRecoveryStore(),
+    identity: new BrowserSandboxIdentity()
+  });
 
   const benchmarkRunner = new BenchmarkRunner({
     reducer,
@@ -292,6 +303,20 @@ export async function createWebRuntime({
       "animation.presets.describe",
       () => animationCommands.presets(),
       { category: "animation", mutates: false }
+    )
+    .register(
+      "recovery.status",
+      () => sandboxRecovery.status(),
+      { category: "recovery", mutates: false }
+    )
+    .register(
+      "recovery.flush",
+      () => sandboxRecovery.flush(),
+      {
+        category: "recovery",
+        mutates: false,
+        asynchronous: true
+      }
     );
 
   const spatialPlanCommitService = new SpatialPlanCommitService({
@@ -537,6 +562,9 @@ export async function createWebRuntime({
       canRedo: sandbox.canRedo,
       objectCount: sandbox.objectCount
     }))
+    .register("recovery.status", () =>
+      sandboxRecovery.status()
+    )
     .register("developer.state", () => ({
       build: buildInfo.build,
       version: buildInfo.version,
@@ -559,6 +587,7 @@ export async function createWebRuntime({
         canRedo: sandbox.canRedo,
         objectCount: sandbox.objectCount
       },
+      recovery: sandboxRecovery.status(),
       renderer: renderer.renderer?.info?.render ?? null,
       appearance: appearanceRuntime.stats(),
       incremental: renderer.getIncrementalDiagnostics(),
@@ -570,6 +599,13 @@ export async function createWebRuntime({
     .register("runtime.performance", () => runtime.metrics());
 
   capabilities
+    .register("recovery", () => ({
+      apiVersion: SandboxRecoveryController.apiVersion,
+      storeApiVersion: IndexedDbRecoveryStore.apiVersion,
+      identityApiVersion: BrowserSandboxIdentity.apiVersion,
+      mode: "indexeddb-command-journal",
+      portable: false
+    }))
     .register("animation", () => ({
       apiVersion: ANIMATION_RUNTIME_VERSION,
       commandApiVersion: ANIMATION_COMMAND_SERVICE_VERSION,
@@ -682,6 +718,7 @@ export async function createWebRuntime({
       cameraPlanCommitService,
       animationRuntime,
       animationCommands,
+      sandboxRecovery,
       connectUiDiagnostics
     })
   });

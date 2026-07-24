@@ -12,6 +12,34 @@ export class Region {
   getSnapshot() { return this.#state; }
   getState() { return structuredClone(this.#state); }
 
+  restoreCheckpoint(state, { version = 0 } = {}) {
+    const next = structuredClone(state);
+    const nextVersion = Number(version);
+
+    if (
+      !next ||
+      typeof next !== "object" ||
+      !Array.isArray(next.objects)
+    ) {
+      throw new TypeError(
+        "O checkpoint regional deve conter um array objects."
+      );
+    }
+    if (!Number.isInteger(nextVersion) || nextVersion < 0) {
+      throw new TypeError(
+        "A versão do checkpoint regional deve ser inteira e não negativa."
+      );
+    }
+
+    this.#state = next;
+    this.#version = nextVersion;
+    this.#notify({
+      type: "region-checkpoint-restored",
+      version: this.#version
+    });
+    return true;
+  }
+
   acceptProposal(proposal) {
     if (proposal.regionId !== this.descriptor.id) {
       return { accepted:false, reason:"wrong-region" };

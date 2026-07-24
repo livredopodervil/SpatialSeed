@@ -1,6 +1,6 @@
 # Distribuição, instalação e portabilidade
 
-> Documento vivo. Revalidado em 24 de julho de 2026 até o marco `0029b`.
+> Documento vivo. Revalidado em 24 de julho de 2026 até o marco `0029d`.
 
 ## Modelo atual
 
@@ -24,7 +24,7 @@ ocupava esse caminho foi preservado em
 | Modalidade | Estado | Uso principal | Limites |
 | --- | --- | --- | --- |
 | GitHub Pages | implementada | demonstração e acesso público | depende da publicação do `main` |
-| PWA instalada | implementada | abertura offline após primeiro acesso | não salva a cena automaticamente |
+| PWA instalada | implementada | abertura offline e recuperação local | IndexedDB não é cópia portátil |
 | servidor local | implementada | desenvolvimento e teste | exige origem HTTP local |
 | pasta portátil com servidor embutido | planejada | distribuição sem Python/Termux | ainda não empacotada |
 | aplicativo nativo/híbrido | hipótese | integração profunda com arquivos e sistema | não é dependência do núcleo |
@@ -89,9 +89,22 @@ aplicativo sem rede. Isso não equivale a persistência da cena:
 
 - recursos do programa ficam no cache do service worker;
 - preferências e catálogo de procedimentos ficam em armazenamento local;
-- o projeto espacial precisa ser salvo em arquivo;
-- limpar dados do navegador pode remover cache, preferências e catálogos;
-- recuperação automática da sessão ainda é planejada.
+- checkpoint e comandos confirmados do sandbox ficam no IndexedDB;
+- limpar dados do navegador pode remover cache, preferências, catálogos e
+  recuperação;
+- o projeto espacial precisa ser salvo em arquivo para ser portátil.
+
+### Recuperação local
+
+Cada sandbox possui uma identidade persistida pelo navegador. Um checkpoint
+limpo e a sequência posterior de comandos confirmados são gravados com debounce
+no IndexedDB. Checkpoints limpos reabrem automaticamente. Um rascunho sujo abre
+um diálogo com três ações: continuar, exportar uma cópia `.spatialseed` ou
+descartar.
+
+Abrir um arquivo ou criar um projeto inicia outra identidade local. A
+recuperação não inclui seleção, câmera, painéis, previews nem animação e não
+substitui o transporte explícito por arquivo.
 
 ## Interoperabilidade de arquivos
 

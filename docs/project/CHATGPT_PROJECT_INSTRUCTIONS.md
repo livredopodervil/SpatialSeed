@@ -1,6 +1,6 @@
 # Instruções para assistentes no projeto SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029c`. Estas instruções resumem o
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029d`. Estas instruções resumem o
 > contrato de colaboração; o processo operacional completo está em
 > [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -62,7 +62,8 @@ busca manual no terminal.
 11. Grupos usam transforms locais e podem ser aninhados.
 12. Programas SES recebem capabilities mínimas e produzem planos.
 13. Importar ou editar procedimento não executa código.
-14. PWA offline não é persistência automática da cena.
+14. PWA offline, recuperação IndexedDB e arquivo portátil são responsabilidades
+    distintas.
 15. Build e capabilities possuem fontes autoritativas, não listas replicadas.
 16. Ações visuais e atalhos usam identificadores semânticos estáveis.
 17. Experimentos declarativos produzem planos; não recebem DOM nem comandos

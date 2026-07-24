@@ -29,6 +29,7 @@ export async function startApplication(
     uiConfiguration,
     pwaInstallController
   });
+  await interfaceBinding.ready;
 
   application.runtime.onDispose(() =>
     interfaceBinding.dispose()

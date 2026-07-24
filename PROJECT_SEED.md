@@ -26,7 +26,7 @@ Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
 
 Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 
-## Estado funcional até 0029c
+## Estado funcional até 0029d
 
 - portal HTML na raiz e catálogo canônico de experimentos;
 - protótipos históricos offline, com seleção móvel, recorte configurável e
@@ -44,6 +44,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   explícita de grupos;
 - recursos compartilhados, instancing e projeção incremental;
 - projetos `.spatialseed`, PWA offline e transporte de arquivos;
+- identidade persistente de sandbox e recuperação IndexedDB por checkpoint mais
+  comandos confirmados;
 - runtime Worker/SES, sessões, planos e procedimentos;
 - laboratório declarativo de experimentos;
 - ações e atalhos configuráveis sobre os mesmos comandos;
@@ -102,9 +104,9 @@ animate status
 
 Continuar o ciclo 0029 em incrementos independentes:
 
-1. recuperação automática em IndexedDB;
-2. múltiplas instâncias locais do mesmo sandbox;
-3. objetos câmera e animação procedural de câmera.
+1. múltiplas instâncias locais do mesmo sandbox;
+2. objetos câmera;
+3. animação procedural de câmera.
 
 Referência: `docs/project/ROADMAP.md`.
 

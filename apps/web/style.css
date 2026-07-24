@@ -723,7 +723,7 @@ html[data-toolbar-layout="vertical"] #selection-panel{
 #animation-panel>header{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:.5rem;padding:.65rem;border-bottom:1px solid #ffffff18;background:#08101af7}
 #animation-panel>header strong{flex:1}.ss-animation-content{padding:.7rem}.ss-animation-content>label,.ss-animation-content [data-animation-parameters]>label{display:grid;grid-template-columns:8.5rem minmax(0,1fr);gap:.5rem;align-items:center;margin:.55rem 0}.ss-animation-content select,.ss-animation-content input{width:100%;min-width:0;padding:.42rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff}.ss-animation-content fieldset{margin:.7rem 0;border:1px solid #ffffff18;border-radius:10px}.ss-animation-content fieldset p{color:#9fb0c6;font-size:.8rem}.ss-animation-track{display:flex;align-items:center;gap:.4rem;padding:.35rem;border-bottom:1px solid #ffffff12}.ss-animation-track span{flex:1}.ss-animation-content [data-animation-status]{white-space:pre-wrap;font-size:.72rem;max-height:12rem;overflow:auto;padding:.55rem;border-radius:9px;background:#02060c}.ss-animation-content [data-animation-status][data-error="true"]{color:#ff9d9d}#animation-panel[data-state="playing"]>header{box-shadow:inset 3px 0 #52d68a}#animation-panel[data-state="paused"]>header{box-shadow:inset 3px 0 #efc36b}
 @media(max-width:700px){#animation-panel{top:auto;bottom:.55rem;max-height:72vh}.ss-animation-content>label,.ss-animation-content [data-animation-parameters]>label{grid-template-columns:7rem minmax(0,1fr)}}
-#scene-help-dialog{
+#scene-help-dialog,#recovery-dialog{
   width:min(26rem,calc(100vw - 2rem));
   padding:0;
   border:1px solid #ffffff2b;
@@ -732,10 +732,10 @@ html[data-toolbar-layout="vertical"] #selection-panel{
   color:#edf4ff;
   box-shadow:0 1rem 4rem #000c;
 }
-#scene-help-dialog::backdrop{background:#02060cb8;backdrop-filter:blur(3px)}
-#scene-help-dialog form{display:grid;gap:.85rem;padding:1.1rem}
-#scene-help-dialog h2,#scene-help-dialog p{margin:0}
-#scene-help-dialog p{line-height:1.45;color:#cbd7e8}
+#scene-help-dialog::backdrop,#recovery-dialog::backdrop{background:#02060cb8;backdrop-filter:blur(3px)}
+#scene-help-dialog form,#recovery-dialog form{display:grid;gap:.85rem;padding:1.1rem}
+#scene-help-dialog h2,#scene-help-dialog p,#recovery-dialog h2,#recovery-dialog p{margin:0}
+#scene-help-dialog p,#recovery-dialog p{line-height:1.45;color:#cbd7e8}
 #scene-help-dialog kbd{
   padding:.1rem .35rem;
   border:1px solid #ffffff2b;

@@ -254,8 +254,8 @@ ser mostrado ao usuário sem stack trace bruto.
 
 **Caminho sugerido:** `docs/LOCAL_RECOVERY_SPEC.md`
 
-Deve definir IndexedDB, OPFS, debounce, atomicidade, comandos confirmados,
-quotas, limpeza, migração, privacidade e UX de restauração.
+**Estado:** especificação inicial criada no 0029d. OPFS, quotas mensuradas e
+política de limpeza de múltiplos sandboxes serão ampliados nos marcos seguintes.
 
 ### 17. Matriz de compatibilidade
 
@@ -379,4 +379,4 @@ Os seis documentos P0 foram concluídos. Após o marco 0028e, a ordem recomendad
 6. guias de providers geométricos e de propriedades;
 7. `MESH_EDITING_MODEL.md`;
 8. `VERSIONING_AND_MIGRATIONS.md` antes de um schema 3;
-9. `LOCAL_RECOVERY_SPEC.md` antes de persistência automática da cena.
+9. ampliar `LOCAL_RECOVERY_SPEC.md` antes de OPFS e políticas de quota.

@@ -25,6 +25,7 @@ export function bindWebInterface({
     objectInspector,
     transformToolPanel,
     experimentPanel,
+    sandboxRecovery,
     connectUiDiagnostics
   } = web;
 
@@ -55,6 +56,11 @@ export function bindWebInterface({
       projectFiles.capabilities();
   };
   refreshProjectFileCapabilities();
+  const recoveryDialog = $("recovery-dialog");
+  let resolveRecoveryReady = null;
+  const recoveryDecision = new Promise(resolve => {
+    resolveRecoveryReady = resolve;
+  });
 
   const consoleLines = [];
   const consoleInputHistory = [];
@@ -571,10 +577,8 @@ export function bindWebInterface({
     }
   );
 
-  $("project-save").addEventListener("click", async () => {
-    const project = execute("project.save");
-    if (!project?.prepared) return;
-
+  async function saveProjectPayload(project) {
+    if (!project?.prepared) return null;
     try {
       let result = await projectFiles.save(project, { saveAs: true });
       if (result.fallbackRequired) {
@@ -608,11 +612,17 @@ export function bindWebInterface({
           : "";
         showNotice(`Projeto salvo: ${result.filename}${mode}`);
       }
+      return result;
     } catch (error) {
       showError(error);
+      return null;
     } finally {
       refreshProjectFileCapabilities();
     }
+  }
+
+  $("project-save").addEventListener("click", async () => {
+    await saveProjectPayload(execute("project.save"));
   });
 
   $("project-open").addEventListener(
@@ -626,7 +636,7 @@ export function bindWebInterface({
       try {
         const opened = await projectFiles.open();
         if (opened.opened) {
-          loadProjectText(opened.text);
+          await loadProjectText(opened.text);
         } else if (opened.fallbackRequired) {
           showNotice("Usando seletor de arquivos compatível.");
           $("project-file-input").click();
@@ -648,7 +658,7 @@ export function bindWebInterface({
       try {
         projectFiles.reset();
         const opened = await projectFiles.readFile(file);
-        loadProjectText(opened.text);
+        await loadProjectText(opened.text);
       } catch (error) {
         showError(error);
       } finally {
@@ -725,7 +735,7 @@ export function bindWebInterface({
     }
   );
 
-  $("project-new").addEventListener("click", () => {
+  $("project-new").addEventListener("click", async () => {
     if (!confirm(
       "Criar um projeto vazio? Alterações não salvas serão descartadas."
     )) return;
@@ -757,7 +767,7 @@ export function bindWebInterface({
     }
   });
 
-  function loadProjectText(text) {
+  async function loadProjectText(text) {
     const result = execute("project.open", { text });
     if (result?.loaded) {
       showNotice(
@@ -769,6 +779,102 @@ export function bindWebInterface({
     }
     return result;
   }
+
+  function closeRecoveryDialog() {
+    if (typeof recoveryDialog.close === "function") {
+      recoveryDialog.close();
+    } else {
+      recoveryDialog.removeAttribute("open");
+    }
+  }
+
+  function finishRecoveryDecision(result) {
+    closeRecoveryDialog();
+    resolveRecoveryReady?.(result);
+    resolveRecoveryReady = null;
+  }
+
+  recoveryDialog.addEventListener("cancel", event => {
+    event.preventDefault();
+  });
+
+  $("recovery-continue").addEventListener("click", async () => {
+    try {
+      const result = await sandboxRecovery.continueRecovery();
+      showNotice(
+        `Rascunho recuperado: ${result.result?.commandCount ?? 0} comandos.`
+      );
+      finishRecoveryDecision(result);
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("recovery-export").addEventListener("click", async () => {
+    try {
+      await saveProjectPayload(sandboxRecovery.prepareExport());
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("recovery-discard").addEventListener("click", async () => {
+    if (!browserWindow.confirm(
+      "Descartar definitivamente este rascunho recuperável?"
+    )) return;
+    try {
+      const result = await sandboxRecovery.discardRecovery();
+      showNotice("Rascunho local descartado.");
+      finishRecoveryDecision(result);
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  const recoveryReady = (async () => {
+    const status = await sandboxRecovery.initialize();
+    if (status.mode === "draft") {
+      const pending = status.pending;
+      $("recovery-project-name").textContent = pending.projectName;
+      $("recovery-details").textContent =
+        `${pending.commandCount} comandos confirmados · ` +
+        `revisão ${pending.revision} · ` +
+        `última recuperação ${new Date(
+          pending.updatedAt
+        ).toLocaleString()}`;
+      if (typeof recoveryDialog.showModal === "function") {
+        recoveryDialog.showModal();
+      } else {
+        recoveryDialog.setAttribute("open", "");
+      }
+      return recoveryDecision;
+    }
+    if (status.mode === "restored-clean") {
+      showNotice("Sandbox local reaberto.");
+    } else if (status.mode === "unavailable") {
+      showNotice("Recuperação automática indisponível neste navegador.");
+    } else if (status.mode === "error") {
+      showNotice(
+        `A recuperação local falhou: ${status.lastError}`
+      );
+    }
+    resolveRecoveryReady?.(status);
+    resolveRecoveryReady = null;
+    return status;
+  })();
+  const flushRecovery = () => {
+    void sandboxRecovery.flush();
+  };
+  const flushHiddenRecovery = () => {
+    if (documentRoot.visibilityState === "hidden") {
+      flushRecovery();
+    }
+  };
+  browserWindow.addEventListener("pagehide", flushRecovery);
+  documentRoot.addEventListener(
+    "visibilitychange",
+    flushHiddenRecovery
+  );
 
   function loadProcedureLibraryText(text) {
     if (
@@ -1087,6 +1193,7 @@ export function bindWebInterface({
   runtime.emit("editor.changed", runtime.query("editor.snapshot"));
 
   return Object.freeze({
+    ready: recoveryReady,
     dispose() {
       clearInterval(developerTimer);
       clearTimeout(statusTimer);
@@ -1106,6 +1213,12 @@ export function bindWebInterface({
       );
       toolbarBinding.dispose();
       panelManager.dispose();
+      sandboxRecovery.dispose();
+      browserWindow.removeEventListener("pagehide", flushRecovery);
+      documentRoot.removeEventListener(
+        "visibilitychange",
+        flushHiddenRecovery
+      );
     }
   });
 }

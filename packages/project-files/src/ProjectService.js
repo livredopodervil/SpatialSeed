@@ -2,7 +2,9 @@ import { ProjectSerializer } from "./ProjectSerializer.js";
 import { ProjectValidator } from "./ProjectValidator.js?build=20260716-0025d";
 
 export class ProjectService {
-  static apiVersion = "project-service-v4";
+  static apiVersion = "project-service-v5";
+
+  #subscribers = new Set();
 
   constructor({
     sandbox,
@@ -33,6 +35,12 @@ export class ProjectService {
     return this.serializer.serialize(this.metadata);
   }
 
+  createCheckpoint() {
+    return this.serializer.serialize(this.metadata, {
+      state: this.sandbox.getBaseState()
+    });
+  }
+
   save() {
     const text = JSON.stringify(this.inspect(), null, 2);
     const filename = `${safeName(this.metadata.name)}.spatialseed`;
@@ -49,37 +57,9 @@ export class ProjectService {
 
   openText(text) {
     const project = this.validator.parse(text);
+    const scene = this.#restoreProject(project);
 
-    this.appearanceRuntime.reset();
-
-    if (project.schemaVersion === 2) {
-      this.appearanceRuntime.importAssets(
-        project.assets,
-        { replace: true }
-      );
-    }
-
-    const scene = this.appearanceRuntime.normalizeScene(
-      project.scene
-    );
-
-    this.sandbox.replaceState(scene, { markClean: true });
-    this.editor.selection.clear();
-    restoreEditor(this.editor, project.editor);
-
-    if (project.renderer?.transformConfig) {
-      this.renderer.setTransformConfig(
-        project.renderer.transformConfig
-      );
-    }
-
-    this.metadata = {
-      name: project.metadata?.name ?? "Projeto Spatial Seed",
-      createdAt:
-        project.metadata?.createdAt ?? new Date().toISOString()
-    };
-
-    return {
+    const result = {
       changed: true,
       loaded: true,
       name: this.metadata.name,
@@ -87,14 +67,15 @@ export class ProjectService {
       schemaVersion: project.schemaVersion,
       normalizedRuntime: true
     };
+    this.#notify({ type: "project-opened", result });
+    return result;
   }
 
   newProject() {
     this.appearanceRuntime.reset();
-    this.sandbox.replaceState(
-      { schemaVersion: 1, objects: [] },
-      { markClean: true }
-    );
+    const scene = { schemaVersion: 1, objects: [] };
+    this.region.restoreCheckpoint(scene, { version: 0 });
+    this.sandbox.replaceState(scene, { markClean: true });
     this.editor.selection.clear();
     restoreEditor(this.editor, {
       tool: { type: "transform", mode: "translate" },
@@ -111,11 +92,129 @@ export class ProjectService {
       name: "Projeto Spatial Seed",
       createdAt: new Date().toISOString()
     };
-    return {
+    const result = {
       changed: true,
       created: true,
       name: this.metadata.name
     };
+    this.#notify({ type: "project-created", result });
+    return result;
+  }
+
+  restoreRecovery(record) {
+    const project = this.validator.validate(record.checkpoint);
+    const commands = structuredClone(record.commands ?? []);
+    this.sandbox.previewCommandSequence(project.scene, commands);
+    const scene = this.#normalizeProjectScene(project);
+
+    this.sandbox.previewCommandSequence(scene, commands);
+    this.region.restoreCheckpoint(scene, {
+      version: record.baseVersion ?? project.region?.version ?? 0
+    });
+    this.sandbox.restoreCommandSequence({
+      baseState: scene,
+      commands,
+      baseVersion: record.baseVersion ?? project.region?.version ?? 0,
+      revision: record.revision
+    });
+    this.editor.selection.clear();
+    restoreEditor(this.editor, project.editor);
+    this.#restoreRenderer(project);
+    this.#restoreMetadata(project);
+
+    return {
+      changed: true,
+      recovered: true,
+      name: this.metadata.name,
+      objectCount: this.sandbox.objectCount,
+      commandCount: commands.length,
+      schemaVersion: project.schemaVersion
+    };
+  }
+
+  prepareRecoveryExport(record) {
+    const project = this.validator.validate(record.checkpoint);
+    const scene = this.#normalizeProjectScene(project, { mutate: false });
+    const recovered = this.sandbox.previewCommandSequence(
+      scene,
+      record.commands ?? []
+    );
+    const document = structuredClone(project);
+    document.scene = recovered;
+    document.metadata = {
+      ...document.metadata,
+      savedAt: new Date().toISOString()
+    };
+    const text = JSON.stringify(document, null, 2);
+    return {
+      changed: false,
+      prepared: true,
+      filename: `${safeName(
+        document.metadata?.name ?? "projeto-recuperado"
+      )}-recuperado.spatialseed`,
+      mediaType: "application/json;charset=utf-8",
+      text,
+      bytes: new TextEncoder().encode(text).byteLength
+    };
+  }
+
+  subscribe(listener) {
+    this.#subscribers.add(listener);
+    return () => this.#subscribers.delete(listener);
+  }
+
+  #restoreProject(project) {
+    const scene = this.#normalizeProjectScene(project);
+    this.region.restoreCheckpoint(scene, {
+      version: project.region?.version ?? 0
+    });
+    this.sandbox.replaceState(scene, { markClean: true });
+    this.editor.selection.clear();
+    restoreEditor(this.editor, project.editor);
+    this.#restoreRenderer(project);
+    this.#restoreMetadata(project);
+    return scene;
+  }
+
+  #normalizeProjectScene(project, { mutate = true } = {}) {
+    if (mutate) {
+      this.appearanceRuntime.reset();
+      if (project.schemaVersion === 2) {
+        this.appearanceRuntime.importAssets(
+          project.assets,
+          { replace: true }
+        );
+      }
+      return this.appearanceRuntime.normalizeScene(project.scene);
+    }
+
+    return structuredClone(project.scene);
+  }
+
+  #restoreRenderer(project) {
+    if (project.renderer?.transformConfig) {
+      this.renderer.setTransformConfig(
+        project.renderer.transformConfig
+      );
+    }
+  }
+
+  #restoreMetadata(project) {
+    this.metadata = {
+      name: project.metadata?.name ?? "Projeto Spatial Seed",
+      createdAt:
+        project.metadata?.createdAt ?? new Date().toISOString()
+    };
+  }
+
+  #notify(event) {
+    for (const listener of this.#subscribers) {
+      try {
+        listener(Object.freeze(structuredClone(event)));
+      } catch (error) {
+        console.error("ProjectService subscriber failed", error);
+      }
+    }
   }
 }
 

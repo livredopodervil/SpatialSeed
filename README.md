@@ -23,6 +23,7 @@ O resultado atual combina:
 - hierarquia de grupos aninháveis com transformações locais;
 - propriedades, materiais, texturas e cores de instância editáveis em lote;
 - aplicação web instalável, utilizável offline depois do primeiro carregamento;
+- recuperação automática local por checkpoint e comandos confirmados;
 - testes, diagnósticos, auditoria de recursos e benchmarks executáveis no próprio aplicativo.
 
 ## Por que existe
@@ -120,6 +121,7 @@ Um servidor HTTP é necessário porque módulos ES, import maps e service worker
 | Executar laboratórios paramétricos que geram planos revisáveis | **Explorar** |
 | Ver árvore regional, diagnóstico, recursos e console | **Painéis** |
 | Salvar, abrir, instalar e trocar catálogos de procedimentos | **Projeto** |
+| Inspecionar a recuperação automática local | console: `recovery status` |
 
 Os painéis são móveis e redimensionáveis. Sua disposição, o layout da barra e preferências de apresentação ficam no armazenamento local do navegador. A composição inicial é declarada em [`apps/web/config/ui.default.json`](apps/web/config/ui.default.json), sem duplicar operações do domínio.
 
@@ -433,6 +435,7 @@ flowchart TD
 | `packages/renderer-three` | projeção WebGL, instancing, picking, highlights e gizmos |
 | `packages/appearance-runtime` | aparências normalizadas, compartilhamento e projeção legada |
 | `packages/project-files` | validação, serialização e abertura de projetos |
+| `packages/project-recovery` | identidade, journal IndexedDB e restauração local |
 | `packages/runtime-test-plugin` | testes arquiteturais executáveis no aplicativo |
 | `apps/web` | composição concreta da PWA e suas superfícies visuais |
 
@@ -450,10 +453,18 @@ Consulte [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
 - **Abrir** usa a File System Access API quando disponível e mantém um fallback por seletor/download em navegadores móveis.
 - texturas e aparências compartilhadas são armazenadas como assets do projeto;
 - criar um projeto novo descarta a referência ao arquivo anterior, evitando sobrescrita acidental;
-- o PWA guarda os arquivos do aplicativo para uso offline, mas **a cena não é recuperada automaticamente**;
-- a persistência do trabalho continua sendo responsabilidade de **Salvar** e **Abrir**.
+- o PWA guarda os arquivos do aplicativo para uso offline;
+- o IndexedDB conserva um checkpoint local e os comandos editoriais confirmados
+  do sandbox;
+- ao reabrir, checkpoints limpos continuam automaticamente; rascunhos oferecem
+  **Continuar**, **Exportar cópia** ou **Descartar**;
+- seleção, câmera, painéis e animação não entram na recuperação;
+- limpar os dados do navegador pode apagar a recuperação local;
+- a cópia portátil do trabalho continua sendo responsabilidade de **Salvar** e
+  **Abrir**.
 
-Recuperação automática local, compactação procedural e armazenamento de blobs em OPFS estão no roadmap, não no comportamento atual.
+Compactação procedural e armazenamento de blobs grandes em OPFS continuam no
+roadmap.
 
 ## Testes, diagnóstico e desempenho
 
@@ -466,6 +477,7 @@ runtime test spatial-plan-commit
 runtime test property-contract
 runtime test geometry-creation
 runtime test file-interop
+runtime test project-recovery
 runtime test experiment-contract
 runtime test experiment-panel
 runtime test ui-actions
@@ -558,7 +570,7 @@ SpatialSeed ainda não é um modelador DCC completo nem um motor de jogo pronto 
 - persistência de clips, keyframes e animações no documento;
 - eventos, colisões e interatividade programável contínua;
 - serialização compacta de grandes receitas procedurais e instâncias hierárquicas;
-- recuperação automática da última sessão;
+- sincronização do mesmo sandbox entre múltiplos viewers;
 - colaboração multiusuário e autoridade distribuída em produção;
 - importação e exportação completas de formatos como glTF, STL e Collada;
 - auditoria de segurança suficiente para executar código não confiável em contexto crítico.
@@ -571,7 +583,7 @@ Esses limites são mantidos explícitos para evitar que uma demonstração seja 
 2. decidir persistência de clips/keyframes e modelo de eventos;
 3. geometria 2D, polylines e curvas Bézier;
 4. edição de vértices e meshes;
-5. persistência compacta, recuperação local, formatos 3D e colaboração regional.
+5. persistência compacta, múltiplos viewers, formatos 3D e colaboração regional.
 
 Os registros de planejamento e prioridades anteriores permanecem em [`docs/project/ROADMAP.md`](docs/project/ROADMAP.md).
 

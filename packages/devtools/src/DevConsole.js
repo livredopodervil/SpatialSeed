@@ -527,6 +527,9 @@ export class DevConsole {
       case "camera":
         return this.#camera(tokens);
 
+      case "recovery":
+        return this.#recovery(tokens);
+
       case "scale":
         this.#expectExact(tokens, 3, "scale sx sy sz");
         return this.commands.execute("selection.scale", {
@@ -616,6 +619,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "camera") {
         return this.#cameraHelp();
       }
+      if (String(topic).toLowerCase() === "recovery") {
+        return this.#recoveryHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -635,7 +641,7 @@ export class DevConsole {
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|" +
-        "file-interop|project-files|pwa-status|spatial-planning|" +
+        "file-interop|project-files|project-recovery|pwa-status|spatial-planning|" +
         "spatial-plan-commit|procedure-catalog|procedure-editor|all",
         "calc expressão JavaScript",
         "program código JavaScript",
@@ -647,6 +653,7 @@ export class DevConsole {
         "animate color \"hsl(...)|rgb(...)|mix(...)\" [mode=selection|objects]",
         "animate pause|resume|stop|status|list|help",
         "camera status|position|move|quaternion|lookat|orbit|frame|projection|restore|interpolate",
+        "recovery status|help",
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
         "help create",
@@ -716,6 +723,33 @@ export class DevConsole {
         "plan commit"
       ]
     };
+  }
+
+  #recoveryHelp() {
+    return {
+      commands: [
+        "recovery status",
+        "runtime test project-recovery"
+      ],
+      notes: [
+        "A recuperação local usa IndexedDB e não substitui o arquivo .spatialseed.",
+        "Somente checkpoints e comandos editoriais confirmados são persistidos.",
+        "Seleção, câmera, painéis e animação não entram no registro."
+      ]
+    };
+  }
+
+  #recovery(tokens) {
+    const action = (tokens.shift() ?? "status").toLowerCase();
+    if (action === "help") {
+      this.#expectMaximum(tokens, 0, "recovery help");
+      return this.#recoveryHelp();
+    }
+    if (action === "status") {
+      this.#expectMaximum(tokens, 0, "recovery status");
+      return this.queries.execute("recovery.status");
+    }
+    throw new Error("Uso: recovery status|help.");
   }
 
   #programHelp() {
@@ -1646,7 +1680,7 @@ export class DevConsole {
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|file-interop|" +
-        "project-files|pwa-status|spatial-planning|" +
+        "project-files|project-recovery|pwa-status|spatial-planning|" +
         "spatial-plan-commit|all"
       );
     }

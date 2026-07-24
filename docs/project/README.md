@@ -1,7 +1,7 @@
 # Documentação de controle do projeto
 
 > Índice vivo. Auditoria atualizada em 24 de julho de 2026 até o marco
-> `0029c`.
+> `0029d`.
 
 Esta pasta reúne documentos duráveis de direção, decisão, operação e
 continuidade. Ela não participa do runtime. Especificações técnicas de features
@@ -30,6 +30,7 @@ repetidos em documentos vivos quando podem ser consultados diretamente.
 | --- | --- | --- | --- |
 | [`OVERVIEW.md`](OVERVIEW.md) | vivo | propósito, escopo e invariantes | inclui linha de base do ciclo 0029 |
 | [`VIEWER_CAMERA_CONTROLLER.md`](VIEWER_CAMERA_CONTROLLER.md) | vivo | câmera local, comandos, adaptador e procedimentos | implementado no 0029c |
+| [`../LOCAL_RECOVERY_SPEC.md`](../LOCAL_RECOVERY_SPEC.md) | vivo | identidade, IndexedDB, checkpoint, journal e UX | implementado no 0029d |
 | [`DECISIONS.md`](DECISIONS.md) | vivo | registro arquitetural durável | separa portal, aplicativo, laboratório e protótipos |
 | [`DISTRIBUTION.md`](DISTRIBUTION.md) | vivo | Pages, PWA, HTTP e arquivos | registra raiz pública, catálogo e escopos offline |
 | [`ROADMAP.md`](ROADMAP.md) | vivo | sequência de marcos | detalha a sequência segura 0029a–0029h |

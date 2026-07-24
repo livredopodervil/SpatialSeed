@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029c`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029d`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -284,16 +284,23 @@ sem operações destrutivas.
 publica; hashes temporários podem diferir após `git am`, e o hash do repositório
 publicado torna-se o identificador canônico.
 
-## D-020 — Recuperação local preservará apenas commits editoriais
+## D-020 — Recuperação local preserva apenas commits editoriais
 
-**Estado:** planejada.
+**Estado:** implementada para checkpoints e comandos no IndexedDB.
 
-A futura recuperação em IndexedDB deve gravar comandos confirmados, de forma
-atômica, versionada e postergada. Previews nunca serão persistidos. Blobs grandes
-podem migrar para OPFS.
+A recuperação em IndexedDB grava um checkpoint limpo e a sequência vigente de
+comandos confirmados, de forma versionada, postergada e substituída por
+transação. Previews nunca são persistidos. A restauração valida e reaplica toda
+a sequência antes de substituir o histórico do sandbox. Blobs grandes poderão
+migrar para OPFS.
 
 **Motivação:** recuperar acidentes sem confundir cache local com formato
 portátil ou salvar estados transitórios.
+
+**Consequências:** cada sandbox possui identidade local persistente; abrir ou
+criar projeto inicia outra identidade; checkpoint limpo reabre automaticamente
+e rascunho sujo exige continuar, exportar ou descartar. Seleção, câmera, painéis
+e animação não entram no registro. Limpar dados do navegador pode removê-lo.
 
 ## D-021 — Persistência compacta será retrocompatível
 

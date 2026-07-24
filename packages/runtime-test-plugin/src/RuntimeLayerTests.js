@@ -24,7 +24,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260718-0027h";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260724-0029d";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -89,6 +89,13 @@ import {
   ProjectValidator
 } from "../../project-files/src/ProjectValidator.js?build=20260716-0025d";
 import {
+  BrowserSandboxIdentity,
+  MemoryRecoveryStore,
+  SandboxRecoveryController,
+  createRecoveryRecord,
+  validateRecoveryRecord
+} from "../../project-recovery/src/index.js?build=20260724-0029d";
+import {
   boxRegionReducer
 } from "../../region-box/src/reducer.js?build=20260716-0024d";
 import {
@@ -109,7 +116,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260720-0028d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260724-0029c";
+} from "../../devtools/src/DevConsole.js?build=20260724-0029d";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -4364,6 +4371,166 @@ assets: {
       }
     },
 
+    "project-recovery": {
+      "registro versionado preserva checkpoint e comandos"() {
+        const record = createRecoveryRecord({
+          sandboxId: "sandbox-test-record",
+          checkpoint: recoveryCheckpoint("Registro"),
+          commands: [{
+            type: "object.create",
+            id: "recovered",
+            position: [0, 1, 0],
+            size: [1, 1, 1]
+          }],
+          baseVersion: 0,
+          revision: 1,
+          dirty: true,
+          updatedAt: "2026-07-24T12:00:00.000Z"
+        });
+
+        assertEqual(record.format, "spatial-seed-recovery");
+        assertEqual(record.schemaVersion, 1);
+        assertEqual(record.commands.length, 1);
+        assertEqual(Object.isFrozen(record), true);
+        assertThrowsMessage(
+          () => validateRecoveryRecord({
+            ...record,
+            schemaVersion: 99
+          }),
+          "Versão de recuperação incompatível"
+        );
+      },
+
+      async "comandos confirmados sobrevivem recarga e mantêm undo"() {
+        const store = new MemoryRecoveryStore();
+        const source = createRecoveryHarness({
+          sandboxId: "sandbox-test-reload",
+          store
+        });
+        await source.controller.initialize();
+        source.sandbox.dispatch({
+          type: "object.create",
+          id: "recovered",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await source.controller.flush();
+        source.controller.dispose();
+
+        const target = createRecoveryHarness({
+          sandboxId: "sandbox-test-reload",
+          store
+        });
+        const pending = await target.controller.initialize();
+        assertEqual(pending.mode, "draft");
+        assertEqual(pending.pending.commandCount, 1);
+
+        const continued = await target.controller.continueRecovery();
+        assertEqual(continued.result.commandCount, 1);
+        assertEqual(target.sandbox.objectCount, 1);
+        assertEqual(target.sandbox.canUndo, true);
+        assertEqual(target.sandbox.undo(), true);
+        assertEqual(target.sandbox.objectCount, 0);
+        target.controller.dispose();
+      },
+
+      async "checkpoint limpo reabre sem diálogo de rascunho"() {
+        const sandboxId = "sandbox-test-clean";
+        const store = new MemoryRecoveryStore([
+          createRecoveryRecord({
+            sandboxId,
+            checkpoint: recoveryCheckpoint("Limpo"),
+            commands: [],
+            baseVersion: 0,
+            revision: 0,
+            dirty: false,
+            updatedAt: "2026-07-24T12:00:00.000Z"
+          })
+        ]);
+        const harness = createRecoveryHarness({ sandboxId, store });
+        const status = await harness.controller.initialize();
+
+        assertEqual(status.mode, "restored-clean");
+        assertEqual(harness.projectService.restoreCalls, 1);
+        assertEqual(harness.sandbox.dirty, false);
+        harness.controller.dispose();
+      },
+
+      async "abrir projeto troca identidade sem sobrescrever o anterior"() {
+        const store = new MemoryRecoveryStore();
+        const harness = createRecoveryHarness({
+          sandboxId: "sandbox-test-before",
+          rotatedId: "sandbox-test-after",
+          store
+        });
+        await harness.controller.initialize();
+        await harness.controller.flush();
+        assert(Boolean(await store.load("sandbox-test-before")));
+
+        harness.projectService.emit({ type: "project-opened" });
+        await harness.controller.flush();
+
+        assertEqual(
+          await store.load("sandbox-test-before"),
+          null
+        );
+        assert(Boolean(await store.load("sandbox-test-after")));
+        assertEqual(
+          harness.controller.status().sandboxId,
+          "sandbox-test-after"
+        );
+        harness.controller.dispose();
+      },
+
+      "identidade persiste no armazenamento local"() {
+        const values = new Map();
+        const identity = new BrowserSandboxIdentity({
+          storage: {
+            getItem(key) { return values.get(key) ?? null; },
+            setItem(key, value) { values.set(key, value); }
+          },
+          cryptoApi: {
+            randomUUID() {
+              return "12345678-1234-1234-1234-123456789abc";
+            }
+          }
+        });
+        const first = identity.current();
+        const second = identity.current();
+        assertEqual(first, second);
+        assertEqual(
+          first,
+          "sandbox-12345678-1234-1234-1234-123456789abc"
+        );
+      },
+
+      "console consulta o controlador de recuperação"() {
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            describe: () => [],
+            execute() {
+              throw new Error("Consulta não deve executar comando.");
+            }
+          },
+          queries: {
+            execute(id) {
+              assertEqual(id, "recovery.status");
+              return { mode: "active", sandboxId: "sandbox-console" };
+            }
+          }
+        });
+
+        const [entry] = console.execute("recovery status");
+        assertEqual(entry.ok, true);
+        assertEqual(entry.result.sandboxId, "sandbox-console");
+      }
+    },
+
     "pwa-status": {
       "escopo local permanece limitado à aplicação"() {
         const locations=resolvePwaLocations(
@@ -8021,6 +8188,98 @@ function createFileGatewayHarness(windowOverrides={}) {
     BlobCtor:TestBlob
   });
   return {gateway,calls,link};
+}
+
+function recoveryCheckpoint(name = "Projeto Spatial Seed") {
+  return {
+    format: "spatial-seed",
+    schemaVersion: 1,
+    metadata: {
+      name,
+      createdAt: "2026-07-24T12:00:00.000Z",
+      savedAt: "2026-07-24T12:00:00.000Z"
+    },
+    region: {
+      descriptor: {
+        id: "region-main",
+        name: "Região principal",
+        type: "box-region"
+      },
+      version: 0
+    },
+    scene: {
+      schemaVersion: 1,
+      objects: []
+    },
+    editor: {},
+    renderer: {}
+  };
+}
+
+function createRecoveryHarness({
+  sandboxId,
+  rotatedId = `${sandboxId}-rotated`,
+  store
+}) {
+  const region = new Region(
+    { id: "region-main", name: "Principal", type: "box-region" },
+    { schemaVersion: 1, objects: [] }
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const listeners = new Set();
+  const projectService = {
+    restoreCalls: 0,
+    createCheckpoint() {
+      return recoveryCheckpoint();
+    },
+    restoreRecovery(record) {
+      this.restoreCalls += 1;
+      sandbox.restoreCommandSequence({
+        baseState: record.checkpoint.scene,
+        commands: record.commands,
+        baseVersion: record.baseVersion,
+        revision: record.revision
+      });
+      return {
+        recovered: true,
+        commandCount: record.commands.length
+      };
+    },
+    prepareRecoveryExport(record) {
+      const document = structuredClone(record.checkpoint);
+      document.scene = sandbox.previewCommandSequence(
+        document.scene,
+        record.commands
+      );
+      return {
+        prepared: true,
+        filename: "recuperado.spatialseed",
+        text: JSON.stringify(document),
+        bytes: 1
+      };
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    emit(event) {
+      for (const listener of listeners) listener(event);
+    }
+  };
+  const identity = {
+    current: () => sandboxId,
+    rotate: () => rotatedId
+  };
+  const controller = new SandboxRecoveryController({
+    sandbox,
+    projectService,
+    store,
+    identity,
+    debounceMs: 100000,
+    setTimer: () => 1,
+    clearTimer: () => {}
+  });
+  return { controller, identity, projectService, region, sandbox };
 }
 
 function createExperimentDefinition() {
