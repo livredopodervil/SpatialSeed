@@ -26,9 +26,12 @@ Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
 
 Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 
-## Estado funcional até 0029a
+## Estado funcional até 0029b
 
 - portal HTML na raiz e catálogo canônico de experimentos;
+- protótipos históricos offline, com seleção móvel, recorte configurável e
+  salvamento nomeado;
+- `near` e `far` validados como estado local do viewer principal;
 - região local, sandbox com undo/redo e planos revisáveis;
 - seleção múltipla/área, pivôs, snapping e gizmos;
 - escala uniforme pela alça central `XYZ`;
@@ -96,12 +99,10 @@ animate status
 
 Continuar o ciclo 0029 em incrementos independentes:
 
-1. paridade básica dos protótipos: dependências locais, seleção móvel,
-   `near`/`far` e nome ao salvar;
-2. controlador público da câmera de navegação;
-3. recuperação automática em IndexedDB;
-4. múltiplas instâncias locais do mesmo sandbox;
-5. objetos câmera e animação procedural de câmera.
+1. controlador público da câmera de navegação;
+2. recuperação automática em IndexedDB;
+3. múltiplas instâncias locais do mesmo sandbox;
+4. objetos câmera e animação procedural de câmera.
 
 Referência: `docs/project/ROADMAP.md`.
 

@@ -39,13 +39,10 @@
       "kind": "standalone",
       "status": "historical",
       "path": "../../experiments/algebraic-structures/00-engine.html",
-      "offline": "network-required",
-      "externalDependencies": [
-        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
-      ],
+      "offline": "local-assets",
+      "externalDependencies": [],
       "knownIssues": [
-        "Math.js ainda é carregado por CDN.",
-        "Multisseleção depende de modificador de teclado."
+        "Snapshot histórico; não usa os comandos canônicos do aplicativo mantido."
       ]
     },
     {
@@ -55,14 +52,10 @@
       "kind": "standalone",
       "status": "historical",
       "path": "../../experiments/algebraic-structures/02-formula.html",
-      "offline": "network-required",
-      "externalDependencies": [
-        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
-      ],
+      "offline": "local-assets",
+      "externalDependencies": [],
       "knownIssues": [
-        "Math.js ainda é carregado por CDN.",
-        "Multisseleção depende de modificador de teclado.",
-        "A exportação usa nome fixo."
+        "Snapshot histórico; não usa os comandos canônicos do aplicativo mantido."
       ]
     },
     {
@@ -72,14 +65,10 @@
       "kind": "standalone",
       "status": "historical",
       "path": "../../experiments/algebraic-structures/03-affine.html",
-      "offline": "network-required",
-      "externalDependencies": [
-        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
-      ],
+      "offline": "local-assets",
+      "externalDependencies": [],
       "knownIssues": [
-        "Math.js ainda é carregado por CDN.",
-        "Multisseleção depende de modificador de teclado.",
-        "A exportação usa nome fixo."
+        "Snapshot histórico; não usa os comandos canônicos do aplicativo mantido."
       ]
     },
     {
@@ -87,16 +76,13 @@
       "title": "Foco de câmera e importação",
       "summary": "Ramo histórico mantido para reproduzir e diagnosticar o fluxo de foco, importação e caminhos de recursos.",
       "kind": "standalone",
-      "status": "diagnostic",
+      "status": "historical",
       "path": "../../experiments/algebraic-structures/04-focus-import-path-broken.html",
-      "offline": "network-required",
-      "externalDependencies": [
-        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
-      ],
+      "offline": "local-assets",
+      "externalDependencies": [],
       "knownIssues": [
-        "Math.js ainda é carregado por CDN.",
-        "O próprio ramo registra regressão histórica de caminho de importação.",
-        "Multisseleção depende de modificador de teclado."
+        "O nome do arquivo preserva a regressão histórica já corrigida.",
+        "Snapshot histórico; não usa os comandos canônicos do aplicativo mantido."
       ]
     },
     {
@@ -106,14 +92,10 @@
       "kind": "standalone",
       "status": "historical",
       "path": "../../experiments/algebraic-structures/05-complex-primes.html",
-      "offline": "network-required",
-      "externalDependencies": [
-        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
-      ],
+      "offline": "local-assets",
+      "externalDependencies": [],
       "knownIssues": [
-        "Math.js ainda é carregado por CDN.",
-        "Multisseleção depende de modificador de teclado.",
-        "A exportação usa nome fixo."
+        "Snapshot histórico; não usa os comandos canônicos do aplicativo mantido."
       ]
     },
     {
@@ -123,13 +105,10 @@
       "kind": "standalone",
       "status": "historical",
       "path": "../../experiments/algebraic-structures/09-editor.html",
-      "offline": "network-required",
-      "externalDependencies": [
-        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
-      ],
+      "offline": "local-assets",
+      "externalDependencies": [],
       "knownIssues": [
-        "Math.js ainda é carregado por CDN.",
-        "Multisseleção depende de modificador de teclado."
+        "Snapshot histórico; não usa os comandos canônicos do aplicativo mantido."
       ]
     },
     {
@@ -139,13 +118,10 @@
       "kind": "standalone",
       "status": "historical",
       "path": "../../experiments/algebraic-structures/11-editor.html",
-      "offline": "network-required",
-      "externalDependencies": [
-        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
-      ],
+      "offline": "local-assets",
+      "externalDependencies": [],
       "knownIssues": [
-        "Math.js ainda é carregado por CDN.",
-        "Multisseleção depende de modificador de teclado."
+        "Snapshot histórico; não usa os comandos canônicos do aplicativo mantido."
       ]
     }
   ]

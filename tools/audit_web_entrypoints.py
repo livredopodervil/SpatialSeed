@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import hashlib
 from html.parser import HTMLParser
 import json
 from pathlib import Path
@@ -18,6 +19,17 @@ PORTAL = ROOT / "index.html"
 CATALOG_PAGE = ROOT / "apps/web/experiments/index.html"
 CATALOG_MANIFEST = ROOT / "apps/web/experiments/catalog.json"
 HISTORICAL_ROOT = ROOT / "apps/experiments"
+ALGEBRAIC_ROOT = HISTORICAL_ROOT / "algebraic-structures"
+MATHJS_BUNDLE = ROOT / "vendor/mathjs-11.11.0/math.js"
+MATHJS_REQUIRED_FILES = (
+    MATHJS_BUNDLE,
+    ROOT / "vendor/mathjs-11.11.0/math.js.LICENSE.txt",
+    ROOT / "vendor/mathjs-11.11.0/LICENSE",
+    ROOT / "vendor/mathjs-11.11.0/NOTICE",
+)
+MATHJS_SHA256 = (
+    "aaccf701adf44cdddf2161d06132471ca9668dffd355aefd52c3c54d74bfd4ee"
+)
 ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 FETCH_PATTERN = re.compile(r"""\bfetch\(\s*["']([^"']+)["']""")
 RESOURCE_ATTRIBUTES = {
@@ -186,6 +198,64 @@ def load_catalog(errors: list[str]) -> dict:
     return payload
 
 
+def audit_experiment_baseline(errors: list[str]) -> int:
+    snapshots = sorted(ALGEBRAIC_ROOT.glob("*.html"))
+    if len(snapshots) != 7:
+        errors.append(
+            "linha de base 0029b: esperados 7 snapshots algébricos, "
+            f"encontrados {len(snapshots)}"
+        )
+
+    for required_file in MATHJS_REQUIRED_FILES:
+        if not required_file.is_file():
+            errors.append(
+                f"{relative(required_file)}: arquivo vendorizado ausente"
+            )
+
+    try:
+        digest = hashlib.sha256(MATHJS_BUNDLE.read_bytes()).hexdigest()
+    except OSError as error:
+        errors.append(
+            f"{relative(MATHJS_BUNDLE)}: bundle ausente ou ilegível: {error}"
+        )
+    else:
+        if digest != MATHJS_SHA256:
+            errors.append(
+                f"{relative(MATHJS_BUNDLE)}: SHA-256 inesperado: {digest}"
+            )
+
+    required_markers = {
+        "../../../vendor/mathjs-11.11.0/math.js":
+            "não carrega Math.js vendorizado",
+        "./legacy-experiment-controls.js":
+            "não carrega os controles comuns",
+        "SpatialSeedLegacy.install({":
+            "não instala os controles comuns",
+        "SpatialSeedLegacy.selectObject(":
+            "não usa a seleção móvel comum",
+        "instancedMesh.computeBoundingBox();":
+            "não recalcula o bounding box das instâncias",
+        "instancedMesh.computeBoundingSphere();":
+            "não recalcula a bounding sphere das instâncias",
+    }
+
+    for snapshot in snapshots:
+        try:
+            source = snapshot.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            errors.append(f"{relative(snapshot)}: não pôde ser lido: {error}")
+            continue
+        for marker, message in required_markers.items():
+            if marker not in source:
+                errors.append(f"{relative(snapshot)}: {message}")
+        if 'id="btn-export"' in source and \
+                "SpatialSeedLegacy.saveJson(" not in source:
+            errors.append(
+                f"{relative(snapshot)}: exportação não usa salvamento nomeado"
+            )
+    return len(snapshots)
+
+
 def audit_catalog(
     payload: dict,
     errors: list[str],
@@ -323,6 +393,7 @@ def main() -> int:
     audit_html(PORTAL, errors, audit_fetches=True)
     audit_html(CATALOG_PAGE, errors, audit_fetches=True)
     payload = load_catalog(errors)
+    baseline_snapshots = audit_experiment_baseline(errors)
     entries, standalone, external = audit_catalog(
         payload,
         errors,
@@ -338,7 +409,8 @@ def main() -> int:
     print(
         "Auditoria web aprovada: "
         f"portal, catálogo, {entries} entradas e "
-        f"{standalone} protótipos independentes."
+        f"{standalone} protótipos independentes; "
+        f"linha de base em {baseline_snapshots} snapshots algébricos."
     )
     if external:
         print(

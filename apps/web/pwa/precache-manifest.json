@@ -175,6 +175,7 @@
     "vendor/addons/controls/OrbitControls.js",
     "vendor/addons/controls/TransformControls.js",
     "vendor/addons/loaders/GLTFLoader.js",
+    "vendor/mathjs-11.11.0/math.js",
     "vendor/ses/ses.umd.min.js",
     "vendor/three.core.js",
     "vendor/three.module.js"

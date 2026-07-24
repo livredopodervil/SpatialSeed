@@ -146,6 +146,7 @@ export function bindWebInterface({
     "#outline",
     "#review-panel",
     "#diagnostic-panel",
+    "#camera-panel",
     "#developer-panel",
     "#console-panel",
     "#procedure-editor-panel",
@@ -467,12 +468,38 @@ export function bindWebInterface({
     () => panelManager.hide("#outline")
   );
 
+  const refreshCameraProjection = () => {
+    const projection = runtime.query("viewer.camera.snapshot");
+    $("camera-near").value = String(projection.near);
+    $("camera-far").value = String(projection.far);
+  };
+
+  $("camera-settings").addEventListener("click", () => {
+    refreshCameraProjection();
+    panelManager.show("#camera-panel");
+  });
+
+  $("close-camera").addEventListener(
+    "click",
+    () => panelManager.hide("#camera-panel")
+  );
+
+  $("camera-projection-apply").addEventListener("click", () => {
+    const result = execute("viewer.camera.projection.set", {
+      near: $("camera-near").value,
+      far: $("camera-far").value
+    });
+    if (!result) return;
+    refreshCameraProjection();
+    showNotice(`Recorte da câmera: ${result.near} – ${result.far}`);
+  });
+
   $("project-save").addEventListener("click", async () => {
     const project = execute("project.save");
     if (!project?.prepared) return;
 
     try {
-      let result = await projectFiles.save(project);
+      let result = await projectFiles.save(project, { saveAs: true });
       if (result.fallbackRequired) {
         const approved = browserWindow.confirm(
           "O Chrome deste aparelho oferece um seletor nativo, " +
@@ -480,7 +507,19 @@ export function bindWebInterface({
           "Deseja salvar por download compatível?"
         );
         if (!approved) return;
-        result = projectFiles.saveFallback(project, {
+        const requestedName = browserWindow.prompt(
+          "Nome do arquivo para salvar:",
+          project.filename
+        );
+        if (requestedName === null) return;
+        const trimmedName = requestedName.trim();
+        const filename = /\.(?:json|spatialseed)$/i.test(trimmedName)
+          ? trimmedName
+          : `${trimmedName || project.filename}.spatialseed`;
+        result = projectFiles.saveFallback({
+          ...project,
+          filename
+        }, {
           fallbackReason: result.fallbackReason
         });
       }

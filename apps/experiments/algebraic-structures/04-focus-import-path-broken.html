@@ -40,7 +40,8 @@
         .expr-grid input { width: 100%; box-sizing: border-box; text-align: left; background: #0b111bed; color: #a5d6ff; }
     </style>
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"></script>
+    <script src="../../../vendor/mathjs-11.11.0/math.js"></script>
+    <script src="./legacy-experiment-controls.js"></script>
     
     <!-- Caminhos locais exatos como solicitado (para Termux/Servidor Local) -->
     <script type="importmap">
@@ -260,6 +261,8 @@
             
             instancedMesh.instanceMatrix.needsUpdate = true;
             if(instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+            instancedMesh.computeBoundingBox();
+            instancedMesh.computeBoundingSphere();
             rebuildAnchor();
             updateUI();
         }
@@ -338,9 +341,10 @@
             const intersects = raycaster.intersectObject(instancedMesh);
             if (intersects.length > 0) {
                 const objId = indexToIdMap.get(intersects[0].instanceId);
-                if (event.shiftKey) { Selection.has(objId) ? Selection.delete(objId) : Selection.add(objId); } 
-                else { if (!Selection.has(objId)) { Selection.clear(); Selection.add(objId); } }
-            } else { Selection.clear(); }
+                SpatialSeedLegacy.selectObject(event, Selection, objId);
+            } else {
+                SpatialSeedLegacy.clearSelection(Selection);
+            }
             syncScene();
         });
 
@@ -377,11 +381,7 @@
         document.getElementById('check-grid').onchange = (e) => { gridHelper.visible = e.target.checked; };
 
         // --- EXPORTAR E IMPORTAR ---
-        document.getElementById('btn-export').onclick = () => {
-            let filename = prompt("Nome do ficheiro para guardar:", "cena.spatialseed");
-            if (!filename) return;
-            if (!filename.endsWith('.spatialseed') && !filename.endsWith('.json')) filename += '.spatialseed';
-            
+        document.getElementById('btn-export').onclick = async () => {
             const objects = State.history[State.currentIndex].objects.map(obj => {
                 const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(obj.rot[0], obj.rot[1], obj.rot[2]));
                 return {
@@ -389,8 +389,10 @@
                     position: obj.pos, rotation: [quat.x, quat.y, quat.z, quat.w], scale: obj.scale, size: [2, 2, 2], material: { color: obj.color }, value: obj.value
                 };
             });
-            const blob = new Blob([JSON.stringify({ schemaVersion: 1, objects }, null, 2)], { type: 'application/json' });
-            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+            await SpatialSeedLegacy.saveJson(
+                { schemaVersion: 1, objects },
+                'foco-importacao-04.spatialseed',
+            );
         };
 
         document.getElementById('btn-import').onclick = () => document.getElementById('file-import').click();
@@ -581,11 +583,15 @@
 
         window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
+        SpatialSeedLegacy.install({
+            camera,
+            selection: Selection,
+            getObjects: () => State.history[State.currentIndex].objects,
+            onSelectionChanged: syncScene,
+        });
         syncScene();
         function animate() { requestAnimationFrame(animate); orbitControls.update(); renderer.render(scene, camera); }
         animate();
     </script>
 </body>
 </html>
-
- 

@@ -10,10 +10,11 @@ import {
 } from "../../runtime-api/src/index.js?build=20260718-0027h";
 import {
   ViewerState,
+  normalizeCameraProjection,
   EditorSession,
   SimulationClock,
   SimulationBridge
-} from "../../runtime-layers/src/index.js?build=20260719-0028a";
+} from "../../runtime-layers/src/index.js?build=20260724-0029b";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
@@ -1633,6 +1634,21 @@ export function createRuntimeLayerTests() {
         assertEqual(received.length, 2);
         assertEqual(received.at(-1).hover, "instance-b");
         assertEqual(received.at(-1).revision, 1);
+      },
+
+      "projeção de câmera aceita apenas intervalo ordenado"() {
+        assertDeepEqual(
+          normalizeCameraProjection({ near: "0.25", far: "5000" }),
+          { near: 0.25, far: 5000 }
+        );
+        assertThrowsMessage(
+          () => normalizeCameraProjection({ near: 2, far: 2 }),
+          "0 < near < far"
+        );
+        assertThrowsMessage(
+          () => normalizeCameraProjection({ near: "x", far: 10 }),
+          "números finitos"
+        );
       }
     },
 
@@ -3914,6 +3930,44 @@ assets: {
           "url:revoke:blob:test"
         ]);
         assertEqual(harness.link.download,"teste.spatialseed");
+      },
+
+      async "saveAs sempre solicita um novo nome ao seletor nativo"() {
+        let pickerCalls=0;
+        const writes=[];
+        const handle={
+          name:"novo-nome.spatialseed",
+          async createWritable() {
+            return {
+              async write(value) { writes.push(value); },
+              async close() { writes.push("closed"); }
+            };
+          }
+        };
+        const harness=createFileGatewayHarness({
+          async showSaveFilePicker() {
+            pickerCalls+=1;
+            return handle;
+          }
+        });
+        harness.gateway.fileHandle={
+          name:"anterior.spatialseed",
+          async createWritable() {
+            throw new Error("handle anterior não deve ser reutilizado");
+          }
+        };
+
+        const result=await harness.gateway.save({
+          prepared:true,
+          filename:"projeto.spatialseed",
+          mediaType:"application/json",
+          text:"{}",
+          bytes:2
+        },{saveAs:true});
+
+        assertEqual(pickerCalls,1);
+        assertEqual(result.filename,"novo-nome.spatialseed");
+        assertDeepEqual(writes,["{}","closed"]);
       },
 
       "novo projeto descarta referência de arquivo anterior"() {

@@ -82,6 +82,9 @@
     title="Alternar tela cheia do viewport (F)"
     aria-pressed="false"
   >⛶</button>
+  <button id="camera-settings" title="Configurar planos de recorte">
+    Câmera
+  </button>
   <button id="inspector">Inspector</button>
   <button id="transform-tools">Transformação</button>
   <button id="geometry-create">Criar</button>
@@ -133,6 +136,34 @@
 <section id="diagnostic-panel" hidden>
   <header><strong>Diagnóstico de execução</strong><button id="copy-diagnostics">Copiar</button><button id="close-diagnostics">×</button></header>
   <textarea id="diagnostic-content" class="component-text" readonly aria-label="Diagnóstico de execução"></textarea>
+</section>
+
+<section id="camera-panel" hidden>
+  <header>
+    <strong>Projeção da câmera</strong>
+    <button id="close-camera" title="Fechar">×</button>
+  </header>
+  <form id="camera-projection-form" onsubmit="return false">
+    <p>
+      Objetos anteriores ao plano <em>near</em> ou posteriores ao plano
+      <em>far</em> não são renderizados.
+    </p>
+    <label>
+      <span>Near — distância mínima</span>
+      <input id="camera-near" type="number" min="0.000001"
+        step="any" inputmode="decimal" required>
+    </label>
+    <label>
+      <span>Far — distância máxima</span>
+      <input id="camera-far" type="number" min="0.000002"
+        step="any" inputmode="decimal" required>
+    </label>
+    <div class="actions">
+      <button id="camera-projection-apply" type="button">
+        Aplicar recorte
+      </button>
+    </div>
+  </form>
 </section>
 
 <section id="developer-panel" hidden>

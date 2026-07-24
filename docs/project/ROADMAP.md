@@ -110,7 +110,7 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - maturidade, execução offline, dependências e limites declarados;
 - auditoria estática de links, destinos e dependências.
 
-### 0029b — Paridade básica dos protótipos
+### 0029b — Paridade básica dos protótipos — implementado
 
 - Math.js vendorizado com licença;
 - camada comum de controles sem copiar lógica entre sete HTMLs;
@@ -122,7 +122,6 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 ### 0029c — Controlador público da câmera de navegação
 
 - posição, quaternion, foco, órbita, enquadramento e interpolação;
-- `near` e `far` como estado do viewer, não constantes do renderer;
 - painel, console e procedimentos sobre a mesma API.
 
 ### 0029d — Recuperação automática

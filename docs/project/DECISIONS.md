@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029a`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029b`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -445,6 +445,23 @@ protótipo parte do núcleo; todos os HTMLs históricos precisam estar
 catalogados; caminhos permanecem relativos para funcionar sob o prefixo do
 GitHub Pages; dependências externas observadas devem ser declaradas e podem ser
 rejeitadas por auditoria offline estrita.
+
+## D-030 — Projeção da câmera pertence ao viewer
+
+**Estado:** implementada para os planos de recorte.
+
+Os planos `near` e `far` são validados e armazenados no `ViewerState`. O
+renderer aplica esse estado e atualiza a matriz de projeção; o documento, a
+região e o sandbox não recebem esses valores. A interface usa o comando
+`viewer.camera.projection.set` e consulta `viewer.camera.snapshot`.
+
+**Motivação:** diferentes viewers do mesmo sandbox precisam poder escolher
+recorte, navegação e câmera ativa sem produzir comandos editoriais nem
+sobrescrever a experiência dos demais.
+
+**Consequências:** `0 < near < far` é uma invariante pública; alterações não
+entram em undo/redo nem no arquivo; posição, quaternion, foco, órbita e
+interpolação devem ampliar o mesmo estado e a mesma API no 0029c.
 
 ## Decisões superadas ou rejeitadas
 

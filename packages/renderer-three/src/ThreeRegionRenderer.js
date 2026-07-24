@@ -10,6 +10,9 @@ import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
 import {
+  normalizeCameraProjection
+} from "../../runtime-layers/src/index.js?build=20260724-0029b";
+import {
   affectedHierarchyIds,
   applyProjectedWorldMatrix,
   isRenderableSceneNode,
@@ -253,6 +256,24 @@ export class ThreeRegionRenderer {
     addEventListener("resize", () => this.resize());
 
     this.animate();
+  }
+
+  getCameraProjection() {
+    return Object.freeze({
+      near: this.camera.near,
+      far: this.camera.far
+    });
+  }
+
+  setCameraProjection({
+    near = this.camera.near,
+    far = this.camera.far
+  } = {}) {
+    const projection = normalizeCameraProjection({ near, far });
+    this.camera.near = projection.near;
+    this.camera.far = projection.far;
+    this.camera.updateProjectionMatrix();
+    return this.getCameraProjection();
   }
 
   setTransformMode(mode) {

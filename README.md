@@ -115,6 +115,7 @@ Um servidor HTTP é necessário porque módulos ES, import maps e service worker
 | Agrupar, desagrupar, desfazer e refazer | **Editar** |
 | Editar propriedades literais ou procedurais, inclusive abrindo grupos | **Inspector** |
 | Reproduzir presets ou compor faixas diferentes por objeto | **Animação** |
+| Configurar as distâncias mínima e máxima de recorte | **Câmera** |
 | Executar laboratórios paramétricos que geram planos revisáveis | **Explorar** |
 | Ver árvore regional, diagnóstico, recursos e console | **Painéis** |
 | Salvar, abrir, instalar e trocar catálogos de procedimentos | **Projeto** |
@@ -315,7 +316,9 @@ O catálogo em [`apps/web/experiments/`](apps/web/experiments/) também preserva
 protótipos independentes anteriores ao laboratório atual. Eles são evidência
 histórica, não extensões do runtime mantido. O manifesto
 [`catalog.json`](apps/web/experiments/catalog.json) registra maturidade,
-execução offline, dependências externas e limites conhecidos de cada entrada.
+execução offline, dependências e limites conhecidos de cada entrada. Desde o
+0029b, os sete snapshots algébricos usam Math.js local e compartilham controles
+de seleção móvel, recorte e salvamento nomeado.
 
 ### Animação efêmera
 
@@ -396,7 +399,8 @@ Consulte [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
 
 ## Projetos, arquivos e funcionamento offline
 
-- **Salvar** produz um documento `.spatialseed`/JSON validado e portável.
+- **Salvar** produz um documento `.spatialseed`/JSON validado e portável e
+  sempre oferece a escolha do nome;
 - **Abrir** usa a File System Access API quando disponível e mantém um fallback por seletor/download em navegadores móveis.
 - texturas e aparências compartilhadas são armazenadas como assets do projeto;
 - criar um projeto novo descarta a referência ao arquivo anterior, evitando sobrescrita acidental;
@@ -459,7 +463,7 @@ packages/                 contratos e implementações modulares
 docs/                     arquitetura, decisões, testes e desempenho
 docs/project/             estado, roadmap e continuidade do projeto
 tools/                    servidor, precache, auditoria e utilitários
-vendor/                   Three.js, add-ons e SES vendorizados
+vendor/                   Three.js, add-ons, SES e Math.js vendorizados
 AGENTS.md                  entrada operacional para assistentes
 PROJECT_SEED.md            semente técnica para retomada do projeto
 ```

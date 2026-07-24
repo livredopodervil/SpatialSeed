@@ -1,6 +1,6 @@
 # Distribuição, instalação e portabilidade
 
-> Documento vivo. Revalidado em 24 de julho de 2026 até o marco `0029a`.
+> Documento vivo. Revalidado em 24 de julho de 2026 até o marco `0029b`.
 
 ## Modelo atual
 
@@ -63,7 +63,9 @@ recursos necessários de `packages/` e `vendor/`.
 O catálogo em `apps/web/experiments/` pertence ao cache do aplicativo. Os
 protótipos em `apps/experiments/` não pertencem ao escopo do service worker;
 seu estado offline e suas dependências são declarados individualmente no
-catálogo.
+catálogo. Desde o 0029b, os sete protótipos algébricos usam Math.js
+vendorizado e podem ser servidos sem rede, embora ainda precisem ser visitados
+pela origem local porque não pertencem ao precache do aplicativo.
 
 O arquivo `service-worker.js` da raiz é uma ponte de migração para instalações
 antigas que possuíam escopo amplo. Ele não deve voltar a manter um segundo cache.

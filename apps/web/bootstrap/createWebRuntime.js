@@ -3,8 +3,12 @@ import { Region } from "../../../packages/core/src/Region.js?build=20260714-0020
 import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260718-0027h";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
+import {
+  ViewerState,
+  normalizeCameraProjection
+} from "../../../packages/runtime-layers/src/index.js?build=20260724-0029b";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260720-0028d";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029b";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260720-0028d";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -169,6 +173,12 @@ export async function createWebRuntime({
   renderer.setTransformConfig(
     uiConfiguration?.presentation?.transform ?? {}
   );
+  const viewer = new ViewerState({
+    camera: renderer.getCameraProjection()
+  });
+  const unsubscribeViewerProjection = viewer.subscribe(snapshot => {
+    renderer.setCameraProjection(snapshot.camera);
+  });
   const animationRuntime = new AnimationRuntime({ surface: renderer });
 
   const outline = new OutlineRenderer(outlineRoot);
@@ -223,6 +233,15 @@ export async function createWebRuntime({
     selection: () => editor.selection.snapshot()
   });
   commands
+    .register(
+      "viewer.camera.projection.set",
+      args => {
+        const projection = normalizeCameraProjection(args);
+        viewer.update({ camera: projection });
+        return viewer.snapshot().camera;
+      },
+      { category: "viewer", mutates: false }
+    )
     .register(
       "animation.start",
       args => animationCommands.start(args),
@@ -395,6 +414,9 @@ export async function createWebRuntime({
       animationCommands.presets()
     )
     .register("runtime.profile", () => profile)
+    .register("viewer.camera.snapshot", () =>
+      viewer.snapshot().camera
+    )
     .register("runtime.ui-stats", () => uiDiagnosticsProvider());
 
   const transformToolPanel = new TransformToolPanel({
@@ -487,6 +509,7 @@ export async function createWebRuntime({
       channel: buildInfo.channel,
       selection: editor.selection.snapshot(),
       editor: editor.snapshot(),
+      viewer: viewer.snapshot(),
       input: renderer.getInputDiagnostics(),
       transform: {
         mode: renderer.transform?.mode ?? null,
@@ -522,6 +545,10 @@ export async function createWebRuntime({
     .register("runtimeProfiles", () => ({
       active: profile,
       available: describeRuntimeProfiles()
+    }))
+    .register("viewer", () => ({
+      apiVersion: ViewerState.apiVersion,
+      cameraProjection: true
     }))
     .register("modules", () => modules.describe())
     .register("renderer", () => ({
@@ -574,6 +601,7 @@ export async function createWebRuntime({
   );
 
   runtime
+    .onDispose(unsubscribeViewerProjection)
     .onDispose(unsubscribeEditor)
     .onDispose(unsubscribeSelection)
     .onDispose(unsubscribeSandbox);
@@ -585,6 +613,7 @@ export async function createWebRuntime({
       region,
       sandbox,
       editor,
+      viewer,
       renderer,
       outline,
       modules,

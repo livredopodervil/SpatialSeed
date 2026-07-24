@@ -1,6 +1,6 @@
 # Visão geral do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029a`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029b`.
 > O build exato nunca deve ser copiado para este texto: sua fonte autoritativa
 > é [`apps/web/build-info.json`](../../apps/web/build-info.json).
 
@@ -92,6 +92,9 @@ Esse desenho procura tornar o sistema:
 - animação de transformações e cores de instância sem material por quadro;
 - painel de reprodução com pausa, retomada, parada e restauração;
 - escala uniforme pelos três eixos através da alça central `XYZ`.
+- planos de recorte `near` e `far` validados como estado local do viewer;
+- portal, catálogo e protótipos históricos executáveis com recursos locais;
+- multisseleção móvel e salvamento nomeado na linha de base dos protótipos.
 
 ### Portabilidade e operação
 

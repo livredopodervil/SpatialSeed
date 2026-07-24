@@ -8,14 +8,15 @@ button:disabled{opacity:.35}
 #selection-panel{position:fixed;z-index:15;left:.55rem;bottom:.55rem;width:min(350px,calc(100vw - 1.1rem));padding:.65rem;border:1px solid #ffffff22;border-radius:12px;background:#0b111be8;font-size:.76rem}
 #selection-content,#pivot-content,#build-content{margin-top:.35rem;opacity:.82;overflow-wrap:anywhere}
 #build-content{font-family:monospace;font-size:.68rem;opacity:.55}
-#outline,#review-panel,#diagnostic-panel{position:fixed;z-index:24;right:.55rem;top:4rem;width:min(430px,calc(100vw - 1.1rem));max-height:72vh;overflow:auto;border:1px solid #ffffff22;border-radius:14px;background:#0b111bf5}
-#outline>header,#review-panel>header,#diagnostic-panel>header{display:flex;gap:.5rem;align-items:center;padding:.65rem;border-bottom:1px solid #ffffff18}
-#outline>header strong,#review-panel>header strong,#diagnostic-panel>header strong{flex:1}
-#outline-content,#review-panel>p,#review-panel>pre,#review-panel>.actions,#diagnostic-panel>pre{padding:.7rem}
+#outline,#review-panel,#diagnostic-panel,#camera-panel{position:fixed;z-index:24;right:.55rem;top:4rem;width:min(430px,calc(100vw - 1.1rem));max-height:72vh;overflow:auto;border:1px solid #ffffff22;border-radius:14px;background:#0b111bf5}
+#outline>header,#review-panel>header,#diagnostic-panel>header,#camera-panel>header{display:flex;gap:.5rem;align-items:center;padding:.65rem;border-bottom:1px solid #ffffff18}
+#outline>header strong,#review-panel>header strong,#diagnostic-panel>header strong,#camera-panel>header strong{flex:1}
+#outline-content,#review-panel>p,#review-panel>pre,#review-panel>.actions,#diagnostic-panel>pre,#camera-projection-form{padding:.7rem}
+#camera-projection-form label{display:grid;grid-template-columns:1fr minmax(7rem,11rem);gap:.6rem;align-items:center;margin:.55rem 0}#camera-projection-form input{width:100%;box-sizing:border-box;padding:.45rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff}
 #review-panel pre,#diagnostic-panel pre{white-space:pre-wrap;font-size:.72rem;max-height:50vh;overflow:auto}
 .actions{display:flex;gap:.4rem;flex-wrap:wrap}
 #error-box{position:fixed;z-index:100;inset:4rem .7rem auto .7rem;max-height:70vh;overflow:auto;background:#400;color:white;padding:1rem;border-radius:12px;white-space:pre-wrap}
-@media(max-width:700px){#toolbar button,#toolbar select{font-size:.73rem;padding:.42rem .54rem}#outline,#review-panel,#diagnostic-panel{top:auto;bottom:.6rem;max-height:58vh}#selection-panel{font-size:.7rem}}
+@media(max-width:700px){#toolbar button,#toolbar select{font-size:.73rem;padding:.42rem .54rem}#outline,#review-panel,#diagnostic-panel,#camera-panel{top:auto;bottom:.6rem;max-height:58vh}#selection-panel{font-size:.7rem}#camera-projection-form label{grid-template-columns:1fr 7.5rem}}
 
 
 /* Painel do desenvolvedor — update 0007 */
@@ -221,6 +222,7 @@ body.ss-scene-only #selection-panel,
 body.ss-scene-only #outline,
 body.ss-scene-only #review-panel,
 body.ss-scene-only #diagnostic-panel,
+body.ss-scene-only #camera-panel,
 body.ss-scene-only #developer-panel,
 body.ss-scene-only #console-panel,
 body.ss-scene-only #procedure-editor-panel,

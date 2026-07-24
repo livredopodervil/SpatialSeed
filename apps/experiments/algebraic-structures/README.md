@@ -22,10 +22,19 @@ O catálogo público, com maturidade, dependências e limites por arquivo, está
 - promover código ao núcleo somente após testes;
 - registrar problemas conhecidos no próprio experimento.
 
-## Dívida conhecida
+## Linha de base compartilhada
 
-Os sete snapshots ainda carregam Math.js 11.11.0 por CDN e, portanto, não
-cumprem hoje a convenção de dependências vendorizadas. A divergência está
-declarada no catálogo e será removida no marco 0029b. Até lá, a auditoria normal
-aceita apenas dependências externas declaradas; `--strict-offline` permanece
-vermelho de forma intencional.
+Desde o 0029b, os sete snapshots carregam Math.js 11.11.0 de `vendor/` e usam
+`legacy-experiment-controls.js` para:
+
+- alternar multisseleção por toque;
+- selecionar todos os objetos;
+- validar e aplicar os planos `near` e `far`;
+- salvar com nome escolhido, por seletor nativo ou download compatível.
+
+Depois de cada atualização das matrizes de instância, os volumes de seleção e
+recorte são recalculados. A auditoria `--strict-offline` é um gate verde.
+
+Essa camada oferece paridade operacional mínima, mas não transforma snapshots
+históricos em superfícies mantidas. Novas capacidades devem nascer no runtime
+canônico e não nesta camada.
