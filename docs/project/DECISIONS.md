@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029a`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -427,13 +427,32 @@ atomicidade das edições literais.
 usar escopo renderizável; animações diferentes por objeto são compostas em
 faixas sem transformar o grupo numa lista informal de meshes.
 
+## D-029 — Portal, aplicativo e protótipos são superfícies distintas
+
+**Estado:** implementada para entrada e catálogo.
+
+A raiz publicada é um portal estático de orientação. O editor mantido continua
+em `apps/web/`; seu laboratório declarativo continua dentro do runtime; HTMLs
+independentes ficam em `apps/experiments/` e são descritos por um manifesto
+canônico em `apps/web/experiments/catalog.json`.
+
+**Motivação:** a antiga raiz apresentava um protótipo obsoleto como se fosse a
+aplicação atual, enquanto experimentos independentes não tinham entrada comum,
+maturidade explícita nem inventário verificável de dependências.
+
+**Consequências:** o portal não implementa edição; o catálogo não torna um
+protótipo parte do núcleo; todos os HTMLs históricos precisam estar
+catalogados; caminhos permanecem relativos para funcionar sob o prefixo do
+GitHub Pages; dependências externas observadas devem ser declaradas e podem ser
+rejeitadas por auditoria offline estrita.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.
 - **Lógica própria no Inspector ou no console:** rejeitada em favor dos mesmos
   comandos e registros.
-- **Aplicação mantida na raiz do repositório:** superada; a aplicação atual é
-  `apps/web/`; arquivos da raiz são históricos.
+- **Aplicação mantida na raiz do repositório:** superada; a raiz é portal e a
+  aplicação atual é `apps/web/`.
 - **PWA como persistência automática da cena:** rejeitada; offline e documento
   de projeto são responsabilidades diferentes.
 - **Grupo como seleção persistida sem transform local:** superada pela hierarquia

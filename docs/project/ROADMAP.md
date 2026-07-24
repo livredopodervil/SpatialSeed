@@ -1,7 +1,7 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 após a promoção do marco
-> `0028e`. A ordem expressa dependências técnicas, não promessa de prazo.
+> Documento vivo. Auditado em 24 de julho de 2026 durante o marco `0029`.
+> A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
 
@@ -96,13 +96,64 @@ Cada marco deve:
 - a interface permanece configurável por manifesto e preferências locais, mas
   ainda não exporta um workspace editado.
 
-## Prioridade atual — consolidação de interação e continuidade
+## Marco atual — 0029, entrada, continuidade e câmeras
 
-Antes de ampliar o domínio geométrico, o próximo incremento deve fechar os
-fluxos já expostos: comportamento de grupo e origens individuais, editor interno
-de atalhos/workspaces, persistência opcional de clips e eventos explícitos. A
-ordem entre esses itens deve ser escolhida por teste de uso, não pelo número
-histórico do roadmap.
+O ciclo 0029 reúne capacidades que dependem de fronteiras comuns de distribuição,
+viewer e sandbox. Elas devem ser entregues em incrementos independentes:
+
+### 0029a — Portal e catálogo — implementado
+
+- portal HTML na raiz, sem segundo editor;
+- aplicativo mantido e experimentos acessíveis por caminhos relativos;
+- catálogo JSON canônico para laboratório integrado e protótipos históricos;
+- protótipo da antiga raiz preservado fora da entrada pública;
+- maturidade, execução offline, dependências e limites declarados;
+- auditoria estática de links, destinos e dependências.
+
+### 0029b — Paridade básica dos protótipos
+
+- Math.js vendorizado com licença;
+- camada comum de controles sem copiar lógica entre sete HTMLs;
+- seleção móvel e ação “Selecionar tudo”;
+- planos `near` e `far` configuráveis e validados;
+- escolha explícita do nome ao salvar;
+- recursos locais e auditoria offline estrita verde.
+
+### 0029c — Controlador público da câmera de navegação
+
+- posição, quaternion, foco, órbita, enquadramento e interpolação;
+- `near` e `far` como estado do viewer, não constantes do renderer;
+- painel, console e procedimentos sobre a mesma API.
+
+### 0029d — Recuperação automática
+
+- identidade persistente de sandbox;
+- checkpoint e comandos confirmados em IndexedDB;
+- diálogo explícito para continuar, exportar ou descartar recuperação.
+
+### 0029e — Múltiplas instâncias locais
+
+- viewers com seleção e câmera próprias sobre um sandbox lógico comum;
+- coordenação por revisão e `BroadcastChannel`;
+- rejeição ou reavaliação explícita de intenções obsoletas.
+
+### 0029f — Objetos câmera
+
+- nós de câmera persistentes e hierárquicos;
+- múltiplas câmeras, câmera ativa local e câmera padrão opcional do documento;
+- migração retrocompatível do schema.
+
+### 0029g — Procedimentos e animação de câmera
+
+- adaptadores de alvo para câmera de navegação e objeto câmera;
+- posição, orientação, órbita, campo visual e recorte animáveis;
+- restauração exata ao parar o overlay.
+
+### 0029h — Consolidação e livro 0.7
+
+- migração progressiva das construções úteis para o laboratório declarativo;
+- HTMLs históricos reduzidos a wrappers ou evidência comparativa;
+- reescrita majoritária do livro a partir do estado estabilizado do 0029.
 
 ## Marco geométrico seguinte — 2D, polylines e curvas
 

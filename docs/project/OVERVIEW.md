@@ -1,6 +1,6 @@
 # Visão geral do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029a`.
 > O build exato nunca deve ser copiado para este texto: sua fonte autoritativa
 > é [`apps/web/build-info.json`](../../apps/web/build-info.json).
 
@@ -95,6 +95,7 @@ Esse desenho procura tornar o sistema:
 
 ### Portabilidade e operação
 
+- portal HTML na raiz e catálogo auditável de experimentos;
 - publicação estática pelo GitHub Pages;
 - PWA instalável e cache offline do aplicativo;
 - abrir e salvar projetos com API nativa quando disponível e fallback móvel;

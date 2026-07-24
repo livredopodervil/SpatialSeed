@@ -58,6 +58,7 @@ Execute validação proporcional ao risco:
 
 ```bash
 git diff --check
+python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 ```
 

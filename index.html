@@ -1,1 +1,164 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Spatial Seed Regions Fork</title><link rel="stylesheet" href="./style.css"><script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script></head><body><canvas id="world"></canvas><header id="toolbar"><button id="add-box">Caixa</button><button id="undo" disabled>Desfazer local</button><button id="redo" disabled>Refazer local</button><button id="propose" disabled>Propor alterações</button><button id="discard" disabled>Descartar sandbox</button><button id="toggle-outline">Estrutura</button><span id="status">Inicializando…</span></header><aside id="outline" hidden><header><strong>Região e sandbox</strong><button id="close-outline">×</button></header><div id="outline-content"></div></aside><section id="proposal" hidden><strong>Proposta local criada</strong><pre id="proposal-content"></pre><button id="close-proposal">Fechar</button></section><pre id="error-box" hidden></pre><script type="module" src="./main.js"></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Portal, introdução e manual breve do SpatialSeed.">
+  <meta name="theme-color" content="#08111f">
+  <title>SpatialSeed — portal do projeto</title>
+  <link rel="icon" href="./apps/web/icons/spatial-seed.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./portal.css">
+</head>
+<body>
+  <main class="portal-shell">
+    <header class="hero">
+      <nav class="topbar" aria-label="Navegação principal">
+        <a class="brand" href="./" aria-label="Página inicial do SpatialSeed">
+          <img src="./apps/web/icons/spatial-seed.svg" alt="">
+          <span>SpatialSeed</span>
+        </a>
+        <div class="topbar-links">
+          <a href="./apps/web/">Editor</a>
+          <a href="./apps/web/experiments/">Experimentos</a>
+          <a href="./docs/book/SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf">Livro</a>
+        </div>
+      </nav>
+
+      <div class="hero-grid">
+        <section class="hero-copy">
+          <p class="eyebrow">Ambiente espacial · procedural · orientado a comandos</p>
+          <h1>Um mundo digital deve conservar identidade enquanto aprende novas formas de existir.</h1>
+          <p class="lead">
+            SpatialSeed reúne edição 3D, linguagem procedural, experimentos e
+            animação sobre uma camada comum de comandos. Este portal é o ponto
+            de entrada; o editor mantido continua isolado em <code>apps/web/</code>.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="./apps/web/">Abrir o editor</a>
+            <a class="button secondary" href="./apps/web/experiments/">Explorar experimentos</a>
+          </div>
+          <p class="build-line" id="build-status" aria-live="polite">
+            Consultando o build publicado…
+          </p>
+          <noscript>
+            <p class="build-line">O portal funciona sem JavaScript; apenas a leitura automática do build foi desativada.</p>
+          </noscript>
+        </section>
+
+        <aside class="principle-card" aria-label="Princípio arquitetural">
+          <span class="principle-index">01</span>
+          <p>Botão, gizmo, Inspector, console e programa não ganham regras próprias.</p>
+          <strong>Todos traduzem intenção para a mesma camada pública de comandos.</strong>
+        </aside>
+      </div>
+    </header>
+
+    <section class="section" aria-labelledby="start-title">
+      <div class="section-heading">
+        <p class="eyebrow">Comece por aqui</p>
+        <h2 id="start-title">Escolha a superfície adequada ao que deseja fazer.</h2>
+      </div>
+      <div class="card-grid">
+        <article class="route-card route-card-primary">
+          <p class="route-type">Aplicativo mantido</p>
+          <h3>Editor espacial</h3>
+          <p>Crie, selecione, agrupe, transforme, programe, anime e salve projetos.</p>
+          <a href="./apps/web/">Entrar no editor <span aria-hidden="true">→</span></a>
+        </article>
+        <article class="route-card">
+          <p class="route-type">Catálogo auditável</p>
+          <h3>Experimentos</h3>
+          <p>Compare o laboratório integrado com protótipos históricos e seus limites conhecidos.</p>
+          <a href="./apps/web/experiments/">Abrir catálogo <span aria-hidden="true">→</span></a>
+        </article>
+        <article class="route-card">
+          <p class="route-type">Referência longa</p>
+          <h3>Livro e manual</h3>
+          <p>Leia fundamentos, arquitetura, manual operacional, atlas procedural e evidências.</p>
+          <a href="./docs/book/SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf">Ler edição 0.6 <span aria-hidden="true">→</span></a>
+        </article>
+      </div>
+    </section>
+
+    <section class="section manual" aria-labelledby="manual-title">
+      <div class="section-heading">
+        <p class="eyebrow">Manual breve</p>
+        <h2 id="manual-title">Um primeiro percurso em quatro movimentos.</h2>
+      </div>
+      <ol class="steps">
+        <li>
+          <span>1</span>
+          <div>
+            <h3>Abra o editor</h3>
+            <p>Use a barra para criar uma geometria ou o painel <strong>Explorar</strong> para gerar uma construção declarativa.</p>
+          </div>
+        </li>
+        <li>
+          <span>2</span>
+          <div>
+            <h3>Selecione e transforme</h3>
+            <p>Escolha seleção única ou múltipla. Mova, gire ou escale; a alça branca central aplica escala proporcional nos três eixos.</p>
+          </div>
+        </li>
+        <li>
+          <span>3</span>
+          <div>
+            <h3>Programe pela mesma via</h3>
+            <p>Abra o console e consulte <code>help</code>. Comandos, procedimentos e Inspector convergem nos mesmos contratos editoriais.</p>
+          </div>
+        </li>
+        <li>
+          <span>4</span>
+          <div>
+            <h3>Teste antes de conservar</h3>
+            <p>Use <code>runtime test all</code>, revise a cena e salve um arquivo <code>.spatialseed</code> quando quiser torná-la portátil.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section class="section layers" aria-labelledby="layers-title">
+      <div class="section-heading">
+        <p class="eyebrow">Mapa do projeto</p>
+        <h2 id="layers-title">Três níveis que não devem ser confundidos.</h2>
+      </div>
+      <div class="layer-grid">
+        <article>
+          <span>Portal</span>
+          <h3>Orientação</h3>
+          <p>Esta raiz apresenta o projeto e conduz às superfícies publicadas. Não contém um segundo editor.</p>
+        </article>
+        <article>
+          <span>Aplicativo</span>
+          <h3>Estado mantido</h3>
+          <p><code>apps/web/</code> reúne o viewer/editor, o laboratório declarativo, testes e o PWA.</p>
+        </article>
+        <article>
+          <span>Protótipos</span>
+          <h3>Evidência histórica</h3>
+          <p>Experimentos independentes permanecem acessíveis para comparação, com maturidade e dependências explicitadas.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section project-links" aria-labelledby="project-title">
+      <div>
+        <p class="eyebrow">Projeto aberto</p>
+        <h2 id="project-title">Código, decisões e documentação permanecem consultáveis.</h2>
+      </div>
+      <div class="link-list">
+        <a href="https://github.com/livredopodervil/SpatialSeed">Repositório no GitHub <span aria-hidden="true">↗</span></a>
+        <a href="./README.md">README do projeto <span aria-hidden="true">→</span></a>
+        <a href="./docs/ARCHITECTURE.md">Arquitetura técnica <span aria-hidden="true">→</span></a>
+        <a href="./docs/project/DECISIONS.md">Decisões arquiteturais <span aria-hidden="true">→</span></a>
+      </div>
+    </section>
+
+    <footer>
+      <img src="./apps/web/icons/spatial-seed.svg" alt="">
+      <p>SpatialSeed é um protótipo experimental em desenvolvimento ativo.</p>
+    </footer>
+  </main>
+  <script src="./portal.js"></script>
+</body>
+</html>

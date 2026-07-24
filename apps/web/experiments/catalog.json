@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "title": "Catálogo de experimentos do SpatialSeed",
+  "policy": {
+    "maintainedSurface": "../",
+    "historicalRoot": "../../experiments/",
+    "externalDependencies": "Toda dependência externa observada precisa estar declarada na entrada correspondente."
+  },
+  "entries": [
+    {
+      "id": "integrated-declarative-lab",
+      "title": "Laboratório declarativo integrado",
+      "summary": "Experimentos paramétricos descritos por dados, executados pelo runtime isolado e convertidos em planos revisáveis antes do commit.",
+      "kind": "integrated",
+      "status": "maintained",
+      "path": "../",
+      "offline": "app-cache",
+      "externalDependencies": [],
+      "knownIssues": []
+    },
+    {
+      "id": "root-region-prototype",
+      "title": "Protótipo regional da antiga raiz",
+      "summary": "Estado anterior ao portal, preservado para comparação da região, sandbox local, proposta e outline.",
+      "kind": "standalone",
+      "status": "historical",
+      "path": "../../experiments/root-region-prototype/",
+      "offline": "local-assets",
+      "externalDependencies": [],
+      "knownIssues": [
+        "Não representa o cliente mantido em apps/web.",
+        "Não participa do cache offline do PWA atual."
+      ]
+    },
+    {
+      "id": "algebraic-engine-00",
+      "title": "Motor algébrico inicial",
+      "summary": "Protótipo independente de criação, fórmulas algébricas, transformação e snapping.",
+      "kind": "standalone",
+      "status": "historical",
+      "path": "../../experiments/algebraic-structures/00-engine.html",
+      "offline": "network-required",
+      "externalDependencies": [
+        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
+      ],
+      "knownIssues": [
+        "Math.js ainda é carregado por CDN.",
+        "Multisseleção depende de modificador de teclado."
+      ]
+    },
+    {
+      "id": "formula-engine-02",
+      "title": "Fórmulas e geração em lote",
+      "summary": "Variação histórica com geração por fórmula, operações em lote e exportação de cena.",
+      "kind": "standalone",
+      "status": "historical",
+      "path": "../../experiments/algebraic-structures/02-formula.html",
+      "offline": "network-required",
+      "externalDependencies": [
+        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
+      ],
+      "knownIssues": [
+        "Math.js ainda é carregado por CDN.",
+        "Multisseleção depende de modificador de teclado.",
+        "A exportação usa nome fixo."
+      ]
+    },
+    {
+      "id": "affine-engine-03",
+      "title": "Transformação afim cumulativa",
+      "summary": "Protótipo da série afim anterior à AST e aos comandos canônicos do aplicativo mantido.",
+      "kind": "standalone",
+      "status": "historical",
+      "path": "../../experiments/algebraic-structures/03-affine.html",
+      "offline": "network-required",
+      "externalDependencies": [
+        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
+      ],
+      "knownIssues": [
+        "Math.js ainda é carregado por CDN.",
+        "Multisseleção depende de modificador de teclado.",
+        "A exportação usa nome fixo."
+      ]
+    },
+    {
+      "id": "focus-import-04",
+      "title": "Foco de câmera e importação",
+      "summary": "Ramo histórico mantido para reproduzir e diagnosticar o fluxo de foco, importação e caminhos de recursos.",
+      "kind": "standalone",
+      "status": "diagnostic",
+      "path": "../../experiments/algebraic-structures/04-focus-import-path-broken.html",
+      "offline": "network-required",
+      "externalDependencies": [
+        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
+      ],
+      "knownIssues": [
+        "Math.js ainda é carregado por CDN.",
+        "O próprio ramo registra regressão histórica de caminho de importação.",
+        "Multisseleção depende de modificador de teclado."
+      ]
+    },
+    {
+      "id": "complex-primes-05",
+      "title": "Complexos e primos",
+      "summary": "Experimento visual para construções algébricas com números complexos e padrões relacionados a primos.",
+      "kind": "standalone",
+      "status": "historical",
+      "path": "../../experiments/algebraic-structures/05-complex-primes.html",
+      "offline": "network-required",
+      "externalDependencies": [
+        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
+      ],
+      "knownIssues": [
+        "Math.js ainda é carregado por CDN.",
+        "Multisseleção depende de modificador de teclado.",
+        "A exportação usa nome fixo."
+      ]
+    },
+    {
+      "id": "standalone-editor-09",
+      "title": "Editor independente 09",
+      "summary": "Snapshot histórico de editor com arquivo, fórmulas, lote afim e transformação direta.",
+      "kind": "standalone",
+      "status": "historical",
+      "path": "../../experiments/algebraic-structures/09-editor.html",
+      "offline": "network-required",
+      "externalDependencies": [
+        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
+      ],
+      "knownIssues": [
+        "Math.js ainda é carregado por CDN.",
+        "Multisseleção depende de modificador de teclado."
+      ]
+    },
+    {
+      "id": "standalone-editor-11",
+      "title": "Editor independente 11",
+      "summary": "Iteração posterior do editor histórico, preservada para comparação de escopo e comportamento procedural.",
+      "kind": "standalone",
+      "status": "historical",
+      "path": "../../experiments/algebraic-structures/11-editor.html",
+      "offline": "network-required",
+      "externalDependencies": [
+        "https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"
+      ],
+      "knownIssues": [
+        "Math.js ainda é carregado por CDN.",
+        "Multisseleção depende de modificador de teclado."
+      ]
+    }
+  ]
+}

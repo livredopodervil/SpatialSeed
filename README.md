@@ -4,7 +4,7 @@
 
 **Um ambiente espacial, procedural e orientado a comandos para criar, editar, programar, salvar e habitar mundos digitais.**
 
-[Experimentar no GitHub Pages](https://livredopodervil.github.io/SpatialSeed/apps/web/) · [Livro e manual](docs/book/SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf) · [Documentação técnica](docs/) · [Decisões do projeto](docs/project/DECISIONS.md)
+[Portal no GitHub Pages](https://livredopodervil.github.io/SpatialSeed/) · [Abrir o editor](https://livredopodervil.github.io/SpatialSeed/apps/web/) · [Experimentos](https://livredopodervil.github.io/SpatialSeed/apps/web/experiments/) · [Livro e manual](docs/book/SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf) · [Documentação técnica](docs/) · [Decisões do projeto](docs/project/DECISIONS.md)
 
 > **Estado:** protótipo experimental em desenvolvimento ativo. A versão pública acompanha o branch `main`; branches `feature/*` podem conter capacidades mais recentes ainda em validação.
 
@@ -38,9 +38,18 @@ Isso permite que edição manual, geração procedural, testes e futuras interfa
 
 ## Experimente agora
 
-A aplicação pública está em:
+O portal público, com introdução e manual breve, está em:
+
+**https://livredopodervil.github.io/SpatialSeed/**
+
+A aplicação mantida continua em:
 
 **https://livredopodervil.github.io/SpatialSeed/apps/web/**
+
+O catálogo canônico distingue o laboratório integrado dos protótipos
+históricos e explicita dependências e limitações:
+
+**https://livredopodervil.github.io/SpatialSeed/apps/web/experiments/**
 
 No menu **Projeto**, use **Como instalar** para adicionar o PWA ao aparelho. O primeiro acesso precisa de rede; depois que o service worker instalar os recursos, o aplicativo pode abrir offline.
 
@@ -58,7 +67,13 @@ cd SpatialSeed
 python3 -m http.server 8082 --bind 127.0.0.1
 ```
 
-Abra:
+Abra o portal:
+
+```text
+http://127.0.0.1:8082/
+```
+
+Ou entre diretamente no editor:
 
 ```text
 http://127.0.0.1:8082/apps/web/
@@ -296,6 +311,12 @@ plan commit
 O experimento não fornece HTML nem acessa DOM, renderer ou sandbox. A API ainda
 é interna e não instala JavaScript externo.
 
+O catálogo em [`apps/web/experiments/`](apps/web/experiments/) também preserva
+protótipos independentes anteriores ao laboratório atual. Eles são evidência
+histórica, não extensões do runtime mantido. O manifesto
+[`catalog.json`](apps/web/experiments/catalog.json) registra maturidade,
+execução offline, dependências externas e limites conhecidos de cada entrada.
+
 ### Animação efêmera
 
 O painel **Animação** e o console controlam a mesma sobreposição temporal:
@@ -420,20 +441,32 @@ python3 tools/generate_pwa_precache.py
 python3 tools/generate_pwa_precache.py --check
 ```
 
+Para auditar a raiz pública, o catálogo e todos os destinos históricos sem
+acessar a rede:
+
+```bash
+python3 tools/audit_web_entrypoints.py
+```
+
 ## Estrutura do repositório
 
 ```text
+index.html                portal, introdução e manual breve
 apps/web/                 aplicação web e PWA
+apps/web/experiments/     catálogo canônico de experimentos
+apps/experiments/         protótipos independentes preservados
 packages/                 contratos e implementações modulares
 docs/                     arquitetura, decisões, testes e desempenho
 docs/project/             estado, roadmap e continuidade do projeto
-tools/                    servidor, precache e utilitários operacionais
+tools/                    servidor, precache, auditoria e utilitários
 vendor/                   Three.js, add-ons e SES vendorizados
 AGENTS.md                  entrada operacional para assistentes
 PROJECT_SEED.md            semente técnica para retomada do projeto
 ```
 
-Os arquivos da raiz anteriores ao monorepo permanecem como registro histórico. A aplicação mantida e publicada é `apps/web/`.
+O protótipo que antes ocupava a raiz foi preservado em
+`apps/experiments/root-region-prototype/`. A raiz agora é somente uma superfície
+de orientação; a aplicação mantida permanece em `apps/web/`.
 
 ## Desenvolvimento e contribuição
 
@@ -452,6 +485,7 @@ Antes de integrar:
 ```bash
 git status --short
 git diff --check
+python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 ```
 

@@ -1,7 +1,7 @@
 # Documentação de controle do projeto
 
 > Índice vivo. Auditoria atualizada em 24 de julho de 2026 até o marco
-> `0028e`.
+> `0029a`.
 
 Esta pasta reúne documentos duráveis de direção, decisão, operação e
 continuidade. Ela não participa do runtime. Especificações técnicas de features
@@ -28,12 +28,12 @@ repetidos em documentos vivos quando podem ser consultados diretamente.
 
 | Documento | Estado | Função atual | Resultado da auditoria |
 | --- | --- | --- | --- |
-| [`OVERVIEW.md`](OVERVIEW.md) | vivo | propósito, escopo e invariantes | inclui experimentos, ações, lotes e animação até 0028e |
-| [`DECISIONS.md`](DECISIONS.md) | vivo | registro arquitetural durável | inclui laboratório declarativo, ações semânticas e overlay temporal |
-| [`DISTRIBUTION.md`](DISTRIBUTION.md) | vivo | Pages, PWA, HTTP e arquivos | atualizado com escopo do worker, cache efetivo e fallback móvel |
-| [`ROADMAP.md`](ROADMAP.md) | vivo | sequência de marcos | cronologia real 0022–0028e e prioridades posteriores |
-| [`WORKFLOW.md`](WORKFLOW.md) | vivo | branches, patches, autoria, testes e integração | inclui patches canônicos, promoção e testes 0027–0028 |
-| [`CHATGPT_PROJECT_INSTRUCTIONS.md`](CHATGPT_PROJECT_INSTRUCTIONS.md) | vivo | contrato para assistentes | inclui ações, experimentos, animação e escopos de grupo |
+| [`OVERVIEW.md`](OVERVIEW.md) | vivo | propósito, escopo e invariantes | inclui portal e catálogo até 0029a |
+| [`DECISIONS.md`](DECISIONS.md) | vivo | registro arquitetural durável | separa portal, aplicativo, laboratório e protótipos |
+| [`DISTRIBUTION.md`](DISTRIBUTION.md) | vivo | Pages, PWA, HTTP e arquivos | registra raiz pública, catálogo e escopos offline |
+| [`ROADMAP.md`](ROADMAP.md) | vivo | sequência de marcos | detalha a sequência segura 0029a–0029h |
+| [`WORKFLOW.md`](WORKFLOW.md) | vivo | branches, patches, autoria, testes e integração | inclui auditoria de entradas web |
+| [`CHATGPT_PROJECT_INSTRUCTIONS.md`](CHATGPT_PROJECT_INSTRUCTIONS.md) | vivo | contrato para assistentes | inclui auditoria do portal e catálogo |
 | [`STRATEGIC_ARCHITECTURE_REVIEW.md`](STRATEGIC_ARCHITECTURE_REVIEW.md) | vivo | auditoria crítica e gates tecnológicos | integra propostas de CRDT, QuickJS/WASM e gramáticas de forma com custos |
 | [`DOCUMENTS_TO_WRITE.md`](DOCUMENTS_TO_WRITE.md) | vivo | backlog documental | criado nesta auditoria |
 | [`CURRENT_STATE.md`](CURRENT_STATE.md) | obsoleto | snapshot do marco 0019g-c2 | cabeçalho de obsolescência; corpo preservado |
@@ -114,6 +114,7 @@ Documentos como os seguintes descrevem contratos específicos:
 - [`../EXPERIMENT_PLUGIN_0027A.md`](../EXPERIMENT_PLUGIN_0027A.md)
 - [`../INTERACTION_SURFACE_0028C.md`](../INTERACTION_SURFACE_0028C.md)
 - [`../ANIMATION_WORKSPACE_0028D.md`](../ANIMATION_WORKSPACE_0028D.md)
+- [`../PORTAL_AND_EXPERIMENT_CATALOG_0029A.md`](../PORTAL_AND_EXPERIMENT_CATALOG_0029A.md)
 
 ### Estado executável
 
@@ -136,8 +137,8 @@ Documentos como os seguintes descrevem contratos específicos:
 
 ## Próxima ação documental
 
-O runtime temporal já possui contrato implementado e documentação no marco
-0028. As lacunas prioritárias agora são persistência de clips/keyframes, modelo
-de eventos/interatividade, especificação consolidada da hierarquia e geometria
-2D/topológica. A lista revisada permanece em
+Durante 0029b–0029g, atualizar apenas os contratos vivos afetados por cada
+incremento. Depois de estabilizar dependências, continuidade local e câmeras, o
+0029h deve reescrever majoritariamente o livro 0.7, mantendo a edição 0.6 como
+registro histórico. A lista de especificações permanece em
 [`DOCUMENTS_TO_WRITE.md`](DOCUMENTS_TO_WRITE.md).

@@ -1,0 +1,383 @@
+:root {
+  color-scheme: dark;
+  --background: #08121e;
+  --surface: #0e2032;
+  --surface-soft: rgba(15, 35, 52, 0.76);
+  --border: rgba(160, 193, 218, 0.18);
+  --text: #f2f7fa;
+  --muted: #a5b7c5;
+  --accent: #75dfbd;
+  --blue: #7eaef4;
+  --amber: #f1bf73;
+  --rose: #ed8c9f;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 280px;
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 92% 0%, rgba(55, 123, 174, 0.2), transparent 30rem),
+    linear-gradient(180deg, #0a1725, var(--background));
+}
+
+a {
+  color: inherit;
+}
+
+.catalog-shell {
+  width: min(1160px, calc(100% - 32px));
+  margin: 0 auto;
+}
+
+.topbar {
+  padding: 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  font-weight: 760;
+}
+
+.brand img {
+  width: 34px;
+  height: 34px;
+}
+
+.topbar > div {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.topbar > div a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.topbar .app-link {
+  padding: 9px 14px;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+}
+
+.hero {
+  max-width: 890px;
+  padding: 86px 0 52px;
+}
+
+.eyebrow {
+  margin: 0 0 14px;
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 760;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 24px;
+  font-size: clamp(2.6rem, 6.4vw, 5.25rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
+}
+
+.hero > p:last-child {
+  max-width: 760px;
+  color: var(--muted);
+  font-size: 1.08rem;
+  line-height: 1.7;
+}
+
+.notice {
+  padding: 20px 22px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 18px;
+  color: var(--muted);
+  background: rgba(239, 186, 105, 0.07);
+  border: 1px solid rgba(239, 186, 105, 0.22);
+  border-radius: 0.85rem;
+  line-height: 1.55;
+}
+
+.notice strong {
+  color: var(--amber);
+}
+
+.catalog-controls {
+  padding: 42px 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.catalog-controls > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.catalog-controls button {
+  padding: 9px 14px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.catalog-controls button:hover,
+.catalog-controls button:focus-visible,
+.catalog-controls button.active {
+  color: #07120f;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+#catalog-summary {
+  margin: 0;
+  color: #8297a8;
+  font-size: 0.84rem;
+  text-align: right;
+}
+
+.catalog-grid {
+  padding-bottom: 88px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.experiment-card {
+  min-height: 370px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.14);
+}
+
+.experiment-card[data-status="maintained"] {
+  background:
+    linear-gradient(145deg, rgba(39, 101, 86, 0.4), rgba(14, 33, 49, 0.94));
+  border-color: rgba(117, 223, 189, 0.32);
+}
+
+.experiment-card[data-status="diagnostic"] {
+  border-color: rgba(237, 140, 159, 0.32);
+}
+
+.experiment-card[hidden] {
+  display: none;
+}
+
+.card-badges {
+  min-height: 29px;
+  margin-bottom: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge {
+  padding: 5px 8px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 720;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.badge-maintained {
+  color: #b8f4e0;
+  border-color: rgba(117, 223, 189, 0.3);
+}
+
+.badge-diagnostic {
+  color: #f4b8c3;
+  border-color: rgba(237, 140, 159, 0.32);
+}
+
+.badge-network {
+  color: #f4d19b;
+  border-color: rgba(241, 191, 115, 0.3);
+}
+
+.experiment-card h2 {
+  margin-bottom: 11px;
+  font-size: 1.33rem;
+  line-height: 1.22;
+}
+
+.summary {
+  min-height: 4.9em;
+  margin-bottom: 20px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.facts {
+  margin: 0 0 18px;
+  padding: 14px 0;
+  display: grid;
+  gap: 11px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.facts dt {
+  color: #7e94a6;
+  font-size: 0.76rem;
+}
+
+.facts dd {
+  margin: 0;
+  color: #c7d5df;
+  font-size: 0.76rem;
+  text-align: right;
+}
+
+.issues {
+  margin-bottom: 20px;
+  color: #98aebd;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.issues strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #b8c7d1;
+}
+
+.issues ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.open-experiment {
+  margin-top: auto;
+  color: #c5f7e7;
+  text-decoration: none;
+  font-weight: 720;
+}
+
+.open-experiment:hover,
+.open-experiment:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+
+.catalog-error {
+  grid-column: 1 / -1;
+  padding: 24px;
+  color: #f1b4bf;
+  background: rgba(237, 140, 159, 0.08);
+  border: 1px solid rgba(237, 140, 159, 0.3);
+  border-radius: 0.8rem;
+}
+
+footer {
+  padding: 28px 0 48px;
+  color: #758b9c;
+  border-top: 1px solid var(--border);
+  font-size: 0.84rem;
+}
+
+footer p {
+  margin: 0;
+}
+
+footer a {
+  color: #bcd0de;
+}
+
+@media (max-width: 940px) {
+  .catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 650px) {
+  .catalog-shell {
+    width: min(100% - 24px, 1160px);
+  }
+
+  .topbar > div {
+    gap: 12px;
+  }
+
+  .topbar > div > a:first-child {
+    display: none;
+  }
+
+  .hero {
+    padding-top: 58px;
+  }
+
+  h1 {
+    font-size: clamp(2.55rem, 13vw, 4rem);
+  }
+
+  .notice {
+    grid-template-columns: 1fr;
+  }
+
+  .catalog-controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  #catalog-summary {
+    text-align: left;
+  }
+
+  .catalog-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .experiment-card {
+    min-height: 0;
+  }
+
+  .summary {
+    min-height: 0;
+  }
+}

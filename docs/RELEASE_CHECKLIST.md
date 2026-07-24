@@ -1,6 +1,6 @@
 # Checklist de release e publicação
 
-> Política operacional P0. Auditada em 16 de julho de 2026. O processo atual é
+> Política operacional P0. Auditada em 24 de julho de 2026. O processo atual é
 > manual e verificável; ainda não existe pipeline CI no repositório.
 
 ## 1. Definição de release
@@ -67,6 +67,7 @@ git diff --check origin/main...HEAD
 git diff --stat origin/main...HEAD
 git diff --name-status origin/main...HEAD
 git log --oneline origin/main..HEAD
+python3 tools/audit_web_entrypoints.py
 ```
 
 - [ ] `git diff --check` não reporta whitespace inválido;
@@ -77,6 +78,8 @@ git log --oneline origin/main..HEAD
 - [ ] UI/console/inspector reutilizam comandos públicos;
 - [ ] renderer continua derivado do estado, sem regra editorial nova;
 - [ ] arquivos de usuário e formatos anteriores continuam cobertos.
+- [ ] portal, catálogo, destinos e dependências web passam na auditoria
+  estática.
 
 ## 5. Manifesto de build e cache busting
 

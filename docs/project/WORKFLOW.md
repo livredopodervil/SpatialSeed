@@ -1,6 +1,6 @@
 # Workflow verificável do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`. Este é o processo canônico
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029a`. Este é o processo canônico
 > para colaboração local, patches, testes, autoria e integração.
 
 ## Objetivos
@@ -209,6 +209,7 @@ publica.
 ```bash
 git diff --check
 git status --short
+python3 tools/audit_web_entrypoints.py
 ```
 
 Quando arquivos estáticos da PWA mudarem:

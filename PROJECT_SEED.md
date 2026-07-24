@@ -26,8 +26,9 @@ Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
 
 Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 
-## Estado funcional até 0028e
+## Estado funcional até 0029a
 
+- portal HTML na raiz e catálogo canônico de experimentos;
 - região local, sandbox com undo/redo e planos revisáveis;
 - seleção múltipla/área, pivôs, snapping e gizmos;
 - escala uniforme pela alça central `XYZ`;
@@ -93,13 +94,14 @@ animate status
 
 ## Próxima prioridade
 
-Escolher por teste de uso entre:
+Continuar o ciclo 0029 em incrementos independentes:
 
-1. origens individuais e coerência de transformações hierárquicas;
-2. editor interno/exportável de atalhos e workspaces;
-3. persistência de clips/keyframes e modelo de eventos;
-4. geometria 2D, polylines e curvas;
-5. recuperação local e persistência procedural compacta.
+1. paridade básica dos protótipos: dependências locais, seleção móvel,
+   `near`/`far` e nome ao salvar;
+2. controlador público da câmera de navegação;
+3. recuperação automática em IndexedDB;
+4. múltiplas instâncias locais do mesmo sandbox;
+5. objetos câmera e animação procedural de câmera.
 
 Referência: `docs/project/ROADMAP.md`.
 

@@ -1,6 +1,6 @@
 # Distribuição, instalação e portabilidade
 
-> Documento vivo. Revalidado em 24 de julho de 2026 até o marco `0028e`.
+> Documento vivo. Revalidado em 24 de julho de 2026 até o marco `0029a`.
 
 ## Modelo atual
 
@@ -14,8 +14,10 @@ A aplicação mantida é:
 apps/web/
 ```
 
-Os arquivos web da raiz pertencem à história anterior ao monorepo e não devem
-ser tratados como cliente atual.
+A raiz do repositório serve um portal HTML estático com introdução, manual breve
+e links. Ela não contém um segundo editor. O protótipo regional que antes
+ocupava esse caminho foi preservado em
+`apps/experiments/root-region-prototype/`.
 
 ## Modalidades suportadas
 
@@ -32,7 +34,9 @@ ser tratados como cliente atual.
 URL pública:
 
 ```text
+https://livredopodervil.github.io/SpatialSeed/
 https://livredopodervil.github.io/SpatialSeed/apps/web/
+https://livredopodervil.github.io/SpatialSeed/apps/web/experiments/
 ```
 
 O Pages deve publicar a raiz do branch `main`. O arquivo `.nojekyll` impede que
@@ -55,6 +59,11 @@ import JavaScript, não é uma publicação funcional.
 `apps/web/manifest.webmanifest` descreve nome, ícones, escopo e modo standalone.
 `apps/web/service-worker.js` controla somente `apps/web/`, embora armazene
 recursos necessários de `packages/` e `vendor/`.
+
+O catálogo em `apps/web/experiments/` pertence ao cache do aplicativo. Os
+protótipos em `apps/experiments/` não pertencem ao escopo do service worker;
+seu estado offline e suas dependências são declarados individualmente no
+catálogo.
 
 O arquivo `service-worker.js` da raiz é uma ponte de migração para instalações
 antigas que possuíam escopo amplo. Ele não deve voltar a manter um segundo cache.
@@ -133,6 +142,7 @@ python tools/no_cache_server.py
 Abra:
 
 ```bash
+termux-open-url 'http://127.0.0.1:8082/'
 termux-open-url 'http://127.0.0.1:8082/apps/web/'
 ```
 
@@ -166,6 +176,7 @@ Service workers exigem HTTPS, com exceção de origens locais seguras como
 ```bash
 cd ~/SpatialSeed-monorepo
 git status --short
+python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 python tools/no_cache_server.py
 ```
