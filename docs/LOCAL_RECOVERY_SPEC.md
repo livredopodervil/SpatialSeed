@@ -1,6 +1,6 @@
 # Recuperação local do sandbox
 
-> Contrato técnico implementado no marco `0029d`.
+> Contrato técnico implementado no marco `0029d` e corrigido no `0029d1`.
 
 ## Objetivo
 
@@ -93,3 +93,7 @@ Roteiro manual:
 6. recarregue, descarte e confirme que o rascunho não retorna;
 7. abra um arquivo e confirme que a identidade muda em `recovery status`;
 8. mova somente a câmera, recarregue e confirme que isso não cria rascunho.
+
+O teste de integração usa o `ProjectService` real para proteger conjuntamente
+**Continuar**, **Exportar cópia** e a reabertura do arquivo exportado. Fakes do
+serviço continuam reservados aos contratos isolados do controlador.

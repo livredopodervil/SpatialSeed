@@ -16,6 +16,7 @@ export class ProjectService {
     this.sandbox = sandbox;
     this.editor = editor;
     this.renderer = renderer;
+    this.region = region;
     this.appearanceRuntime = appearanceRuntime;
     this.serializer = new ProjectSerializer({
       sandbox,

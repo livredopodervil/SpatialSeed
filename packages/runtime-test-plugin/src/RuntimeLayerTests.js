@@ -89,6 +89,9 @@ import {
   ProjectValidator
 } from "../../project-files/src/ProjectValidator.js?build=20260716-0025d";
 import {
+  ProjectService
+} from "../../project-files/src/ProjectService.js?build=20260724-0029d1";
+import {
   BrowserSandboxIdentity,
   MemoryRecoveryStore,
   SandboxRecoveryController,
@@ -4434,6 +4437,60 @@ assets: {
         target.controller.dispose();
       },
 
+      async "serviço real continua rascunho e reabre cópia exportada"() {
+        const sandboxId = "sandbox-test-real-project-service";
+        const source = createProjectServiceRecoveryHarness({
+          sandboxId,
+          store: new MemoryRecoveryStore()
+        });
+        const appearance = source.appearanceRuntime.internLegacyMaterial({
+          color: "#336699"
+        });
+        const record = createRecoveryRecord({
+          sandboxId,
+          checkpoint: source.projectService.createCheckpoint(),
+          commands: [{
+            type: "object.create",
+            id: "recovered-real",
+            position: [0, 1, 0],
+            size: [1, 1, 1],
+            appearanceId: appearance.appearanceId
+          }],
+          baseVersion: 0,
+          revision: 1,
+          dirty: true,
+          updatedAt: "2026-07-24T12:00:00.000Z"
+        });
+        const store = new MemoryRecoveryStore([record]);
+        const target = createProjectServiceRecoveryHarness({
+          sandboxId,
+          store
+        });
+
+        const pending = await target.controller.initialize();
+        assertEqual(pending.mode, "draft");
+        const prepared = target.controller.prepareExport();
+        const continued = await target.controller.continueRecovery();
+
+        assertEqual(continued.mode, "continued");
+        assertEqual(continued.result.objectCount, 1);
+        assertEqual(target.sandbox.objectCount, 1);
+        assertEqual(target.sandbox.canUndo, true);
+
+        const opened = createProjectServiceRecoveryHarness({
+          sandboxId: `${sandboxId}-opened`,
+          store: new MemoryRecoveryStore()
+        });
+        const loaded = opened.projectService.openText(prepared.text);
+
+        assertEqual(loaded.loaded, true);
+        assertEqual(loaded.objectCount, 1);
+        assertEqual(opened.sandbox.objectCount, 1);
+        assertEqual(opened.region.getState().objects.length, 1);
+        target.controller.dispose();
+        opened.controller.dispose();
+      },
+
       async "checkpoint limpo reabre sem diálogo de rascunho"() {
         const sandboxId = "sandbox-test-clean";
         const store = new MemoryRecoveryStore([
@@ -8280,6 +8337,54 @@ function createRecoveryHarness({
     clearTimer: () => {}
   });
   return { controller, identity, projectService, region, sandbox };
+}
+
+function createProjectServiceRecoveryHarness({ sandboxId, store }) {
+  const region = new Region(
+    { id: "region-main", name: "Principal", type: "box-region" },
+    { schemaVersion: 1, objects: [] }
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const editor = new EditorState();
+  const appearanceRuntime = new AppearanceRuntime();
+  let transformConfig = {};
+  const renderer = {
+    getTransformConfig() {
+      return structuredClone(transformConfig);
+    },
+    setTransformConfig(next) {
+      transformConfig = structuredClone(next);
+    }
+  };
+  const projectService = new ProjectService({
+    sandbox,
+    editor,
+    renderer,
+    region,
+    appearanceRuntime
+  });
+  const controller = new SandboxRecoveryController({
+    sandbox,
+    projectService,
+    store,
+    identity: {
+      current: () => sandboxId,
+      rotate: () => `${sandboxId}-rotated`
+    },
+    debounceMs: 100000,
+    setTimer: () => 1,
+    clearTimer: () => {}
+  });
+
+  return {
+    appearanceRuntime,
+    controller,
+    editor,
+    projectService,
+    region,
+    renderer,
+    sandbox
+  };
 }
 
 function createExperimentDefinition() {
