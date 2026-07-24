@@ -26,7 +26,7 @@ Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
 
 Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 
-## Estado funcional até 0029e
+## Estado funcional até 0029e1
 
 - portal HTML na raiz e catálogo canônico de experimentos;
 - protótipos históricos offline, com seleção móvel, recorte configurável e
@@ -48,6 +48,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   comandos confirmados;
 - múltiplos viewers locais com câmera e seleção próprias, sandbox coordenado por
   revisão e rejeição explícita de intenções obsoletas;
+- sessões efêmeras de animação compartilhadas por descritor, sequência e época
+  absoluta, com cálculo de quadros local em cada viewer;
 - runtime Worker/SES, sessões, planos e procedimentos;
 - laboratório declarativo de experimentos;
 - ações e atalhos configuráveis sobre os mesmos comandos;
@@ -79,6 +81,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 21. Preservar manifesto, preferências e múltiplos painéis ao mudar a interface.
 22. Somente o viewer autoritativo substitui projeto, recuperação ou base
     regional; réplicas enviam comandos pela coordenação local.
+23. Reprodução compartilhada transmite intenção e tempo, nunca matrizes por
+    quadro, e continua fora do documento e da recuperação.
 
 ## Fluxo
 

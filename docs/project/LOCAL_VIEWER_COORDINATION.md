@@ -1,6 +1,6 @@
 # Coordenação de viewers locais
 
-> Contrato técnico implementado no marco `0029e`.
+> Contrato técnico implementado nos marcos `0029e` e `0029e1`.
 
 ## Fronteira
 
@@ -43,6 +43,27 @@ Este protocolo é local e deliberadamente menor que colaboração distribuída. 
 não define identidade de usuário, autorização remota, causalidade entre
 dispositivos, CRDT ou publicação regional.
 
+## Sessão temporal efêmera
+
+`LocalAnimationCoordinator` reutiliza o papel já decidido para o viewer, mas
+mantém um canal e um envelope distintos do documento. Ao iniciar, a aba resolve
+a seleção em IDs concretos e envia somente:
+
+- definição declarativa do programa, preset ou composição;
+- `playbackId` e sequência autoritativos;
+- revisão editorial observada;
+- estado `playing`, `paused` ou `idle`;
+- posição acumulada e época absoluta da última transição.
+
+Cada aba recompila a mesma definição e avalia localmente o instante corrente.
+Não há mensagens por quadro. Ao retornar do segundo plano, o viewer salta para
+o tempo derivado da época comum sem executar os passos perdidos.
+
+Início, pausa, retomada e parada exigem a sequência temporal observada. Uma
+intenção obsoleta recebe `rejected-stale` e a sessão vigente. Qualquer comando
+editorial encerra o overlay em todos os viewers antes de propagar o novo
+snapshot.
+
 ## Recuperação e arquivos
 
 Somente a aba autoritativa grava a recuperação IndexedDB e pode abrir, criar ou
@@ -60,7 +81,9 @@ compartilhada.
 - query `viewer.instances.status`;
 - comandos `viewer.instance.open` e `viewer.instance.sync`;
 - evento `viewer.instances.changed`;
-- suíte `runtime test viewer-coordination`.
+- suíte `runtime test viewer-coordination`;
+- evento `animation.shared.changed`;
+- suíte `runtime test viewer-animation`.
 
 ## Roteiro manual
 
@@ -70,7 +93,10 @@ compartilhada.
 4. crie ou transforme um objeto numa aba e confirme a atualização na outra;
 5. execute `viewers status` nas duas abas;
 6. faça duas edições rápidas na réplica e confirme que ambas chegam em ordem;
-7. execute `runtime test viewer-coordination` e `runtime test all`.
+7. inicie uma animação numa aba e pause, retome e pare pela outra;
+8. deixe uma aba em segundo plano, retorne e confirme o mesmo instante;
+9. execute `runtime test viewer-coordination`, `runtime test viewer-animation`
+   e `runtime test all`.
 
 O teste de conflito obsoleto é automatizado porque depende de controlar a ordem
 das mensagens. A validação visual confirma separadamente que câmera e seleção

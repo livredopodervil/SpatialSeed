@@ -136,6 +136,14 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - coordenação por revisão e `BroadcastChannel`;
 - rejeição ou reavaliação explícita de intenções obsoletas.
 
+### 0029e1 — Animação efêmera entre viewers — implementado
+
+- definição declarativa e alvos concretos distribuídos pela autoridade local;
+- época absoluta comum para abas suspensas ou abertas durante a reprodução;
+- início, pausa, retomada e parada sincronizados por sequência;
+- conflitos temporais obsoletos rejeitados explicitamente;
+- nenhum quadro, matriz ou estado temporal inserido no documento.
+
 ### 0029f — Objetos câmera
 
 - nós de câmera persistentes e hierárquicos;

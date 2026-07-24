@@ -2,7 +2,7 @@ import {
   SimulationClock
 } from "../../runtime-layers/src/SimulationClock.js?build=20260719-0028a";
 
-export const ANIMATION_RUNTIME_VERSION = "animation-runtime-v1";
+export const ANIMATION_RUNTIME_VERSION = "animation-runtime-v2";
 
 export class AnimationRuntime {
   constructor({
@@ -20,6 +20,9 @@ export class AnimationRuntime {
     this.now = now;
     this.state = "idle";
     this.clip = null;
+    this.timeSource = null;
+    this.timelineTime = 0;
+    this.timelineTick = 0;
     this.disposed = false;
     this.statistics = initialStatistics();
     this.unsubscribeFrame = surface.subscribeFrame(frame =>
@@ -31,11 +34,16 @@ export class AnimationRuntime {
     id = "temporary",
     targetIds,
     targetMode = "selection",
-    evaluate
+    evaluate,
+    timeSource = null,
+    initialTime = 0
   }) {
     this.#assertActive();
     if (typeof evaluate !== "function") {
       throw new TypeError("Animação exige evaluate().");
+    }
+    if (timeSource !== null && typeof timeSource !== "function") {
+      throw new TypeError("Fonte temporal deve ser função.");
     }
 
     const ids = normalizeTargetIds(targetIds);
@@ -54,6 +62,11 @@ export class AnimationRuntime {
     }
 
     this.clock.reset();
+    this.timeSource = timeSource;
+    this.timelineTime = nonNegativeTime(initialTime);
+    this.timelineTick = Math.floor(
+      this.timelineTime / this.clock.stepSeconds
+    );
     this.clip = Object.freeze({
       id: String(id),
       targetIds: Object.freeze(ids),
@@ -66,6 +79,9 @@ export class AnimationRuntime {
     this.statistics = initialStatistics();
     this.statistics.starts = 1;
     this.statistics.lastStopReason = null;
+    if (this.timelineTime > 0) {
+      this.seek(this.timelineTime);
+    }
     return this.status();
   }
 
@@ -105,6 +121,9 @@ export class AnimationRuntime {
     }
 
     this.clip = null;
+    this.timeSource = null;
+    this.timelineTime = 0;
+    this.timelineTick = 0;
     this.state = "idle";
     this.clock.reset();
     this.statistics.stops += 1;
@@ -127,6 +146,24 @@ export class AnimationRuntime {
       return Object.freeze({ advanced: false, state: this.state });
     }
 
+    if (this.timeSource) {
+      const nextTime = nonNegativeTime(this.timeSource());
+      const previousTime = this.timelineTime;
+      this.timelineTime = nextTime;
+      this.timelineTick = Math.floor(
+        nextTime / this.clock.stepSeconds
+      );
+      this.statistics.steps += 1;
+      return this.#applyFrame({
+        t: nextTime,
+        dt: Math.max(0, nextTime - previousTime),
+        tick: this.timelineTick,
+        executed: 1,
+        dropped: 0,
+        simulationTime: nextTime
+      });
+    }
+
     let latestStep = null;
     const clockResult = this.clock.advance(deltaSeconds, step => {
       latestStep = step;
@@ -142,12 +179,58 @@ export class AnimationRuntime {
       });
     }
 
+    this.timelineTime = latestStep.simulationTime;
+    this.timelineTick = latestStep.tick;
+    return this.#applyFrame({
+      t: latestStep.simulationTime,
+      dt: latestStep.deltaSeconds,
+      tick: latestStep.tick,
+      ...clockResult
+    });
+  }
+
+  setTimeSource(timeSource = null) {
+    this.#assertActive();
+    if (timeSource !== null && typeof timeSource !== "function") {
+      throw new TypeError("Fonte temporal deve ser função.");
+    }
+    this.timeSource = timeSource;
+    return this.status();
+  }
+
+  seek(simulationTime) {
+    this.#assertActive();
+    if (!this.clip) {
+      throw new Error("Nenhuma animação disponível para posicionar.");
+    }
+    const nextTime = nonNegativeTime(simulationTime);
+    const previousTime = this.timelineTime;
+    this.timelineTime = nextTime;
+    this.timelineTick = Math.floor(
+      nextTime / this.clock.stepSeconds
+    );
+    return this.#applyFrame({
+      t: nextTime,
+      dt: Math.max(0, nextTime - previousTime),
+      tick: this.timelineTick,
+      executed: 1,
+      dropped: 0,
+      simulationTime: nextTime
+    });
+  }
+
+  #applyFrame({
+    t,
+    dt,
+    tick,
+    ...clockResult
+  }) {
     const startedAt = this.now();
     try {
       const frame = this.clip.evaluate(Object.freeze({
-        t: latestStep.simulationTime,
-        dt: latestStep.deltaSeconds,
-        tick: latestStep.tick,
+        t,
+        dt,
+        tick,
         targets: this.clip.targets
       }));
       const result = this.surface.applyAnimationFrame(
@@ -195,8 +278,8 @@ export class AnimationRuntime {
         targetMode: clip.targetMode
       }) : null,
       time: Object.freeze({
-        tick: this.clock.tick,
-        simulationTime: round(this.clock.simulationTime),
+        tick: this.timelineTick,
+        simulationTime: round(this.timelineTime),
         stepSeconds: this.clock.stepSeconds
       }),
       statistics: Object.freeze({ ...this.statistics }),
@@ -291,4 +374,12 @@ function defaultNow() {
 
 function round(value) {
   return Math.round(Number(value) * 1e6) / 1e6;
+}
+
+function nonNegativeTime(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new RangeError("Tempo de animação deve ser finito e não negativo.");
+  }
+  return number;
 }

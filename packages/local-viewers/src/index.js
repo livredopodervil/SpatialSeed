@@ -5,3 +5,6 @@ export {
 export {
   CoordinatedSandbox
 } from "./CoordinatedSandbox.js";
+export {
+  LocalAnimationCoordinator
+} from "./LocalAnimationCoordinator.js";

@@ -11,7 +11,7 @@ import {
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260716-0024d";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029c";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029e";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029e1";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
@@ -20,7 +20,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029e";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029e";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029e1";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260716-0024d";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -70,7 +70,7 @@ import {
   ANIMATION_RUNTIME_VERSION,
   AnimationCommandService,
   AnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260720-0028d";
+} from "../../../packages/animation-runtime/src/index.js?build=20260724-0029e1";
 import {
   AnimationPanel
 } from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
@@ -82,8 +82,9 @@ import {
 } from "../../../packages/project-recovery/src/index.js?build=20260724-0029e";
 import {
   CoordinatedSandbox,
+  LocalAnimationCoordinator,
   LocalViewerCoordinator
-} from "../../../packages/local-viewers/src/index.js?build=20260724-0029e";
+} from "../../../packages/local-viewers/src/index.js?build=20260724-0029e1";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v1";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -196,6 +197,10 @@ export async function createWebRuntime({
     surface: renderer
   });
   const animationRuntime = new AnimationRuntime({ surface: renderer });
+  const animationCommands = new AnimationCommandService({
+    runtime: animationRuntime,
+    selection: () => editor.selection.snapshot()
+  });
 
   const outline = new OutlineRenderer(outlineRoot);
   const locationParameters = new URLSearchParams(
@@ -256,6 +261,20 @@ export async function createWebRuntime({
     }
   });
   await viewerCoordinator.start();
+  const sharedAnimations = new LocalAnimationCoordinator({
+    sandbox: baseSandbox,
+    sandboxId: viewerCoordinator.sandboxId,
+    viewerId: viewer.viewerId,
+    isAuthority: () => viewerCoordinator.isAuthority,
+    adapter: {
+      prepare: (operation, args) =>
+        animationCommands.prepareShared(operation, args),
+      apply: (session, { now }) =>
+        animationCommands.synchronizeShared(session, { now }),
+      status: () => animationCommands.status()
+    }
+  });
+  sharedAnimations.start();
   const sandbox = new CoordinatedSandbox({
     sandbox: baseSandbox,
     coordinator: viewerCoordinator
@@ -319,10 +338,6 @@ export async function createWebRuntime({
     canMutateProject: action =>
       viewerCoordinator.requireAuthority(action)
   });
-  const animationCommands = new AnimationCommandService({
-    runtime: animationRuntime,
-    selection: () => editor.selection.snapshot()
-  });
   for (const command of VIEWER_CAMERA_COMMANDS) {
     commands.register(
       command,
@@ -333,7 +348,7 @@ export async function createWebRuntime({
   commands
     .register(
       "animation.start",
-      args => animationCommands.start(args),
+      args => sharedAnimations.play("program", args),
       { category: "animation", mutates: false }
     )
     .register(
@@ -344,7 +359,9 @@ export async function createWebRuntime({
         targetIds = null,
         targetMode = "selection"
       } = {}) =>
-        animationCommands.preset(id, parameters, {
+        sharedAnimations.play("preset", {
+          id,
+          parameters,
           targetIds,
           targetMode
         }),
@@ -352,27 +369,27 @@ export async function createWebRuntime({
     )
     .register(
       "animation.tracks.start",
-      args => animationCommands.compose(args),
+      args => sharedAnimations.play("composition", args),
       { category: "animation", mutates: false }
     )
     .register(
       "animation.pause",
-      () => animationCommands.pause(),
+      () => sharedAnimations.pause(),
       { category: "animation", mutates: false }
     )
     .register(
       "animation.resume",
-      () => animationCommands.resume(),
+      () => sharedAnimations.resume(),
       { category: "animation", mutates: false }
     )
     .register(
       "animation.stop",
-      () => animationCommands.stop(),
+      () => sharedAnimations.stop(),
       { category: "animation", mutates: false }
     )
     .register(
       "animation.status",
-      () => animationCommands.status(),
+      () => sharedAnimations.status(),
       { category: "animation", mutates: false }
     )
     .register(
@@ -541,7 +558,9 @@ export async function createWebRuntime({
     events,
     capabilities
   });
-  runtime.onDispose(() => animationRuntime.dispose());
+  runtime
+    .onDispose(() => sharedAnimations.dispose())
+    .onDispose(() => animationRuntime.dispose());
 
   // O Inspector consulta estas propriedades durante sua construção.
   queries
@@ -564,7 +583,7 @@ export async function createWebRuntime({
       experimentService.describe(id)
     )
     .register("animation.status", () =>
-      animationCommands.status()
+      sharedAnimations.status()
     )
     .register("animation.presets.describe", () =>
       animationCommands.presets()
@@ -712,7 +731,9 @@ export async function createWebRuntime({
     .register("animation", () => ({
       apiVersion: ANIMATION_RUNTIME_VERSION,
       commandApiVersion: ANIMATION_COMMAND_SERVICE_VERSION,
-      mode: "ephemeral-render-overlay",
+      coordinatorApiVersion: LocalAnimationCoordinator.apiVersion,
+      mode: "shared-ephemeral-render-overlay",
+      multipleLocalViewers: true,
       safeMath: true,
       persistent: false
     }))
@@ -759,7 +780,6 @@ export async function createWebRuntime({
 
   const unsubscribeSandbox = sandbox.subscribe(
     (state, changes) => {
-      animationRuntime.sceneChanged();
       const classification = classifyChanges(changes);
 
       if (classification.mode === "incremental") {
@@ -787,11 +807,20 @@ export async function createWebRuntime({
     snapshot => runtime.emit("viewer.changed", snapshot)
   );
   const unsubscribeViewerInstances = viewerCoordinator.subscribe(
-    snapshot => runtime.emit("viewer.instances.changed", snapshot)
+    snapshot => {
+      if (sharedAnimations.sandboxId !== snapshot.sandboxId) {
+        sharedAnimations.switchSandbox(snapshot.sandboxId);
+      }
+      runtime.emit("viewer.instances.changed", snapshot);
+    }
+  );
+  const unsubscribeSharedAnimations = sharedAnimations.subscribe(
+    snapshot => runtime.emit("animation.shared.changed", snapshot)
   );
 
   runtime
     .onDispose(() => viewerCoordinator.dispose())
+    .onDispose(unsubscribeSharedAnimations)
     .onDispose(unsubscribeViewerInstances)
     .onDispose(unsubscribeViewer)
     .onDispose(unsubscribeEditor)
@@ -831,6 +860,7 @@ export async function createWebRuntime({
       cameraPlanCommitService,
       animationRuntime,
       animationCommands,
+      sharedAnimations,
       sandboxRecovery,
       connectUiDiagnostics
     })

@@ -83,6 +83,7 @@
     "packages/instance-batches/src/InstanceBatchManager.js",
     "packages/instance-batches/src/index.js",
     "packages/local-viewers/src/CoordinatedSandbox.js",
+    "packages/local-viewers/src/LocalAnimationCoordinator.js",
     "packages/local-viewers/src/LocalViewerCoordinator.js",
     "packages/local-viewers/src/index.js",
     "packages/math-affine/src/AffineSequence.js",

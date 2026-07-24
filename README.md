@@ -26,6 +26,8 @@ O resultado atual combina:
 - recuperação automática local por checkpoint e comandos confirmados;
 - múltiplos viewers locais sobre o mesmo sandbox, com câmeras e seleções
   independentes;
+- animações efêmeras sincronizadas por definição e relógio absoluto entre esses
+  viewers;
 - testes, diagnósticos, auditoria de recursos e benchmarks executáveis no próprio aplicativo.
 
 ## Por que existe
@@ -195,6 +197,11 @@ viewer recebe o estado atual e a ação pode ser repetida conscientemente.
 Use `viewers status`, `viewers open` e `viewers sync` no console. Essa
 coordenação usa `BroadcastChannel` na mesma origem e não deve ser confundida com
 colaboração remota ou multiusuário.
+
+Sessões de animação efêmera também atravessam esses viewers, mas por um
+protocolo temporal separado do snapshot editorial. A definição e uma época
+comum são distribuídas; cada aba calcula seus próprios quadros. Câmera, seleção
+e painéis permanecem locais.
 
 ### Produção afim
 
@@ -399,7 +406,10 @@ animate stop
 `mode=objects` abre grupos em objetos renderizáveis, permitindo movimentos e
 cores diferentes. Faixas do painel podem usar programas distintos por alvo.
 Animação é preview: não altera o sandbox, não cria histórico, não é salva no
-projeto e `animate stop` restaura matrizes e cores canônicas.
+projeto e `animate stop` restaura matrizes e cores canônicas. Nos viewers locais
+do mesmo sandbox, iniciar, pausar, retomar ou parar controla uma única sessão
+efêmera. O tempo deriva de uma época absoluta; uma aba reativada ou aberta
+durante a execução alcança diretamente o instante vigente.
 
 ## Arquitetura
 
@@ -435,7 +445,7 @@ flowchart TD
 | `packages/core` | região, sandbox e eventos |
 | `packages/runtime-api` | fachada pública de comandos, consultas, eventos e capacidades |
 | `packages/runtime-layers` | estado local do viewer e controlador da câmera de navegação |
-| `packages/local-viewers` | coordenação por revisão entre viewers da mesma origem |
+| `packages/local-viewers` | coordenação editorial e temporal entre viewers da mesma origem |
 | `packages/editor-commands` | registro canônico das operações editoriais |
 | `packages/region-box` | reducer puro e modelo de estado da região atual |
 | `packages/scene-hierarchy` | grupos, parentesco, transforms locais e ciclo de subárvores |
@@ -461,6 +471,8 @@ Consulte [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
 [`docs/EXPERIMENT_PLUGIN_0027A.md`](docs/EXPERIMENT_PLUGIN_0027A.md),
 [`docs/INTERACTION_SURFACE_0028C.md`](docs/INTERACTION_SURFACE_0028C.md) e
 [`docs/ANIMATION_WORKSPACE_0028D.md`](docs/ANIMATION_WORKSPACE_0028D.md).
+O protocolo local atual está em
+[`docs/project/LOCAL_VIEWER_COORDINATION.md`](docs/project/LOCAL_VIEWER_COORDINATION.md).
 
 ## Projetos, arquivos e funcionamento offline
 
@@ -499,6 +511,7 @@ runtime test experiment-panel
 runtime test ui-actions
 runtime test animation-runtime
 runtime test animation-tracks
+runtime test viewer-animation
 runtime resources
 ```
 

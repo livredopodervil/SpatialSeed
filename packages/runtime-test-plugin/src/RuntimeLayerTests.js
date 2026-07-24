@@ -64,7 +64,7 @@ import {
   createAnimationEvaluator,
   createAnimationTrackEvaluator,
   resolveAnimationPreset
-} from "../../animation-runtime/src/index.js?build=20260720-0028d";
+} from "../../animation-runtime/src/index.js?build=20260724-0029e1";
 import {
   composeAnimationOverlay,
   createAnimationTargetSnapshot
@@ -100,9 +100,10 @@ import {
 } from "../../project-recovery/src/index.js?build=20260724-0029e";
 import {
   CoordinatedSandbox,
+  LocalAnimationCoordinator,
   LocalViewerCoordinator,
   createSharedViewerUrl
-} from "../../local-viewers/src/index.js?build=20260724-0029e";
+} from "../../local-viewers/src/index.js?build=20260724-0029e1";
 import {
   boxRegionReducer
 } from "../../region-box/src/reducer.js?build=20260716-0024d";
@@ -124,7 +125,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260720-0028d";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260724-0029e";
+} from "../../devtools/src/DevConsole.js?build=20260724-0029e1";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -2237,6 +2238,287 @@ export function createRuntimeLayerTests() {
       }
     },
 
+    "viewer-animation": {
+      async "autoridade distribui definição declarativa sem quadros"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "spin",
+          targetIds: ["shared-a"],
+          targetMode: "objects"
+        });
+        await settleLocalViewers();
+
+        assertEqual(pair.authority.animation.status().state, "playing");
+        assertEqual(pair.replica.animation.status().state, "playing");
+        assertDeepEqual(
+          pair.replica.adapter.applied.at(-1).descriptor,
+          {
+            kind: "preset",
+            id: "spin",
+            targetIds: ["shared-a"],
+            targetMode: "objects"
+          }
+        );
+        assertEqual(
+          pair.network.messages.some(entry =>
+            entry.message.type === "animation-frame"
+          ),
+          false
+        );
+        pair.dispose();
+      },
+
+      async "réplica inicia sessão com alvos já resolvidos"() {
+        const pair = await createLocalAnimationPair();
+        pair.replica.animation.play("program", {
+          id: "from-replica",
+          operations: [{ type: "move", value: ["t", 0, 0] }],
+          targetIds: ["replica-target"]
+        });
+        await settleLocalViewers(20);
+
+        const authority = pair.authority.animation.status();
+        const replica = pair.replica.animation.status();
+        assertEqual(authority.state, "playing");
+        assertEqual(replica.state, "playing");
+        assertDeepEqual(
+          pair.authority.adapter.applied.at(-1).descriptor.targetIds,
+          ["replica-target"]
+        );
+        assertEqual(replica.shared.lastOutcome.status, "accepted");
+        pair.dispose();
+      },
+
+      async "viewer tardio alcança a sessão já ativa"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "orbit",
+          targetIds: ["late-a"]
+        });
+        await settleLocalViewers();
+        pair.clock.value += 4500;
+
+        const lateViewer = createLocalViewerHarness({
+          sandboxId: pair.sandboxId,
+          viewerId: "viewer-late",
+          role: "replica",
+          network: pair.network
+        });
+        await lateViewer.coordinator.start();
+        const late = attachLocalAnimation(lateViewer, {
+          network: pair.network,
+          clock: pair.clock
+        });
+        await settleLocalViewers(20);
+
+        assertEqual(late.animation.status().state, "playing");
+        assertNear(
+          late.animation.status().shared.positionSeconds,
+          4.5
+        );
+        late.dispose();
+        lateViewer.coordinator.dispose();
+        pair.dispose();
+      },
+
+      async "pausa e retomada preservam um tempo comum"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "float",
+          targetIds: ["time-a"]
+        });
+        await settleLocalViewers();
+        pair.clock.value += 2250;
+        pair.replica.animation.pause();
+        await settleLocalViewers(20);
+
+        const paused = pair.authority.animation.status();
+        assertEqual(paused.state, "paused");
+        assertNear(paused.shared.positionSeconds, 2.25);
+        pair.clock.value += 5000;
+        assertNear(
+          pair.replica.animation.status().shared.positionSeconds,
+          2.25
+        );
+
+        pair.authority.animation.resume();
+        await settleLocalViewers();
+        pair.clock.value += 750;
+        assertNear(
+          pair.replica.animation.status().shared.positionSeconds,
+          3
+        );
+        pair.dispose();
+      },
+
+      async "intenção temporal obsoleta é rejeitada explicitamente"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalAnimationPair({ network });
+        pair.authority.animation.play("preset", {
+          id: "wave",
+          targetIds: ["stale-a"]
+        });
+        await settleLocalViewers();
+
+        network.pause("session-sync");
+        pair.authority.animation.pause();
+        pair.replica.animation.stop();
+        await settleLocalViewers(20);
+
+        const replica = pair.replica.animation.status();
+        assertEqual(replica.shared.lastOutcome.status, "rejected-stale");
+        assertEqual(replica.state, "paused");
+        assertEqual(pair.authority.animation.status().state, "paused");
+        pair.dispose();
+      },
+
+      async "parada compartilhada restaura todos os viewers"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "pulse",
+          targetIds: ["restore-a"]
+        });
+        await settleLocalViewers();
+        pair.replica.animation.stop();
+        await settleLocalViewers(20);
+
+        assertEqual(pair.authority.animation.status().state, "idle");
+        assertEqual(pair.replica.animation.status().state, "idle");
+        assertEqual(
+          pair.authority.adapter.applied.at(-1).reason,
+          "user"
+        );
+        assertEqual(
+          pair.replica.adapter.applied.at(-1).reason,
+          "user"
+        );
+        pair.dispose();
+      },
+
+      async "mudança editorial encerra a sessão em todas as abas"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "spin",
+          targetIds: ["edited-a"]
+        });
+        await settleLocalViewers();
+        pair.authority.viewer.coordinated.dispatch({
+          type: "object.create",
+          id: "edited-a",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+
+        assertEqual(pair.authority.animation.status().state, "idle");
+        assertEqual(pair.replica.animation.status().state, "idle");
+        assertEqual(
+          pair.authority.animation.status().shared.reason,
+          "scene-changed"
+        );
+        pair.dispose();
+      },
+
+      async "troca de projeto migra o canal temporal e zera a sessão"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "rainbow",
+          targetIds: ["switch-a"]
+        });
+        await settleLocalViewers();
+        pair.authority.viewer.coordinator.switchSandbox(
+          "sandbox-animation-switched"
+        );
+        await settleLocalViewers(20);
+
+        assertEqual(
+          pair.authority.animation.status().shared.sandboxId,
+          "sandbox-animation-switched"
+        );
+        assertEqual(
+          pair.replica.animation.status().shared.sandboxId,
+          "sandbox-animation-switched"
+        );
+        assertEqual(pair.authority.animation.status().state, "idle");
+        assertEqual(pair.replica.animation.status().state, "idle");
+        pair.dispose();
+      },
+
+      async "integração real recompila e restaura em duas abas"() {
+        const network = createLocalViewerNetwork();
+        const clock = {
+          value: Date.parse("2026-07-24T12:00:00.000Z")
+        };
+        const viewers = await createLocalViewerPair({ network });
+        const authority = attachRealLocalAnimation(viewers.authority, {
+          network,
+          clock
+        });
+        const replica = attachRealLocalAnimation(viewers.replica, {
+          network,
+          clock
+        });
+        await settleLocalViewers();
+
+        replica.animation.play("preset", {
+          id: "spin",
+          parameters: { speed: 90, axis: "y" },
+          targetIds: ["group-a"]
+        });
+        await settleLocalViewers(20);
+        clock.value += 3000;
+        authority.fixture.emit({ deltaSeconds: 1 / 60 });
+        replica.fixture.emit({ deltaSeconds: 1 / 60 });
+
+        assertNear(
+          authority.animation.status().time.simulationTime,
+          3
+        );
+        assertNear(
+          replica.animation.status().time.simulationTime,
+          3
+        );
+        authority.animation.stop();
+        await settleLocalViewers();
+        assertEqual(authority.fixture.restored.length, 1);
+        assertEqual(replica.fixture.restored.length, 1);
+
+        replica.dispose();
+        authority.dispose();
+        viewers.dispose();
+      },
+
+      "réplica sem canal não finge controlar animação"() {
+        const region = new Region(
+          { id: "animation-no-channel", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const adapter = createLocalAnimationAdapter();
+        const animation = new LocalAnimationCoordinator({
+          sandbox,
+          sandboxId: "sandbox-animation-unavailable",
+          viewerId: "viewer-animation-unavailable",
+          isAuthority: () => false,
+          adapter,
+          channelFactory() {
+            throw new Error("BroadcastChannel indisponível.");
+          }
+        });
+        animation.start();
+
+        assertEqual(animation.status().shared.available, false);
+        assertThrowsMessage(
+          () => animation.play("preset", {
+            id: "spin",
+            targetIds: ["a"]
+          }),
+          "sem o canal local"
+        );
+        animation.dispose();
+      }
+    },
+
     editor: {
       "preview não publica comando"() {
         const emitted = [];
@@ -2373,6 +2655,34 @@ export function createRuntimeLayerTests() {
         assertEqual(status.statistics.steps, 2);
         assertEqual(status.statistics.frames, 1);
         assertEqual(status.clip.objectCount, 2);
+        runtime.dispose();
+      },
+
+      "relógio absoluto salta diretamente após aba suspensa"() {
+        const fixture = createAnimationFixture();
+        let wallTime = 1000;
+        const evaluations = [];
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        runtime.start({
+          id: "test.absolute-time",
+          targetIds: ["group-a"],
+          timeSource: () => (wallTime - 1000) / 1000,
+          evaluate(context) {
+            evaluations.push(context);
+            return identityAnimationFrame(context);
+          }
+        });
+
+        wallTime = 13000;
+        fixture.emit({ deltaSeconds: 1 / 60 });
+
+        assertEqual(evaluations.length, 1);
+        assertNear(evaluations[0].t, 12);
+        assertNear(runtime.status().time.simulationTime, 12);
+        assertEqual(runtime.status().statistics.droppedSteps, 0);
         runtime.dispose();
       },
 
@@ -2632,6 +2942,47 @@ export function createRuntimeLayerTests() {
         assertEqual(service.resume().state, "playing");
         assertEqual(service.stop().state, "idle");
         assertEqual(fixture.restored.length, 1);
+        runtime.dispose();
+      },
+
+      "serviço recompila descritor compartilhado e segue a época comum"() {
+        const fixture = createAnimationFixture();
+        let nowMs = 1000;
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        const service = new AnimationCommandService({
+          runtime,
+          selection: () => ({
+            members: [{ objectId: "group-a" }]
+          })
+        });
+        const descriptor = service.prepareShared("preset", {
+          id: "spin",
+          parameters: { speed: 90, axis: "y" }
+        });
+        const session = {
+          sequence: 1,
+          playbackId: "playback-shared-service",
+          state: "playing",
+          descriptor,
+          positionSeconds: 0,
+          changedAtMs: 1000,
+          baseRevision: 0,
+          reason: null
+        };
+
+        service.synchronizeShared(session, {
+          now: () => nowMs
+        });
+        nowMs = 3500;
+        fixture.emit({ deltaSeconds: 1 / 60 });
+
+        assertDeepEqual(descriptor.targetIds, ["group-a"]);
+        assertNear(service.status().time.simulationTime, 2.5);
+        assertEqual(service.status().preset.id, "spin");
+        assertEqual(structuredClone(descriptor).kind, "preset");
         runtime.dispose();
       },
 
@@ -9366,6 +9717,159 @@ async function createLocalViewerPair({
   };
 }
 
+async function createLocalAnimationPair({
+  network = createLocalViewerNetwork(),
+  clock = { value: Date.parse("2026-07-24T12:00:00.000Z") }
+} = {}) {
+  const sandboxId = "sandbox-local-viewer-tests";
+  const viewers = await createLocalViewerPair({ network });
+  const authority = attachLocalAnimation(viewers.authority, {
+    network,
+    clock
+  });
+  const replica = attachLocalAnimation(viewers.replica, {
+    network,
+    clock
+  });
+  await settleLocalViewers();
+  return {
+    sandboxId,
+    network,
+    clock,
+    authority: {
+      viewer: viewers.authority,
+      ...authority
+    },
+    replica: {
+      viewer: viewers.replica,
+      ...replica
+    },
+    dispose() {
+      replica.dispose();
+      authority.dispose();
+      viewers.dispose();
+    }
+  };
+}
+
+function attachLocalAnimation(viewer, {
+  network,
+  clock
+}) {
+  const adapter = createLocalAnimationAdapter();
+  const animation = new LocalAnimationCoordinator({
+    sandbox: viewer.sandbox,
+    sandboxId: viewer.coordinator.sandboxId,
+    viewerId: viewer.coordinator.viewerId,
+    isAuthority: () => viewer.coordinator.isAuthority,
+    adapter,
+    channelFactory: network.channelFactory,
+    now: () => clock.value
+  });
+  animation.start();
+  const unsubscribeViewer = viewer.coordinator.subscribe(status => {
+    if (status.sandboxId !== animation.sandboxId) {
+      animation.switchSandbox(status.sandboxId);
+    }
+  });
+  return {
+    animation,
+    adapter,
+    dispose() {
+      unsubscribeViewer();
+      animation.dispose();
+    }
+  };
+}
+
+function createLocalAnimationAdapter() {
+  const applied = [];
+  let session = {
+    sequence: 0,
+    state: "idle",
+    positionSeconds: 0,
+    changedAtMs: 0
+  };
+  return {
+    applied,
+    prepare(operation, args = {}) {
+      const targetIds = [...new Set(
+        (args.targetIds ?? []).map(String)
+      )];
+      if (!targetIds.length) {
+        throw new Error("Descritor de teste exige alvos.");
+      }
+      return Object.freeze({
+        kind: String(operation),
+        id: String(args.id ?? "test"),
+        ...(args.operations
+          ? { operations: structuredClone(args.operations) }
+          : {}),
+        targetIds: Object.freeze(targetIds),
+        targetMode: String(args.targetMode ?? "selection")
+      });
+    },
+    apply(next) {
+      session = structuredClone(next);
+      applied.push(session);
+      return this.status();
+    },
+    status() {
+      return Object.freeze({
+        state: session.state,
+        time: Object.freeze({
+          simulationTime: Number(session.positionSeconds ?? 0)
+        }),
+        statistics: Object.freeze({
+          frames: 0,
+          droppedSteps: 0
+        })
+      });
+    }
+  };
+}
+
+function attachRealLocalAnimation(viewer, {
+  network,
+  clock
+}) {
+  const fixture = createAnimationFixture();
+  const runtime = new AnimationRuntime({
+    surface: fixture.surface,
+    now: monotonicNow()
+  });
+  const service = new AnimationCommandService({
+    runtime,
+    selection: () => ({
+      members: [{ objectId: "group-a" }]
+    })
+  });
+  const animation = new LocalAnimationCoordinator({
+    sandbox: viewer.sandbox,
+    sandboxId: viewer.coordinator.sandboxId,
+    viewerId: viewer.coordinator.viewerId,
+    isAuthority: () => viewer.coordinator.isAuthority,
+    adapter: {
+      prepare: (operation, args) =>
+        service.prepareShared(operation, args),
+      apply: (session, { now }) =>
+        service.synchronizeShared(session, { now }),
+      status: () => service.status()
+    },
+    channelFactory: network.channelFactory,
+    now: () => clock.value
+  });
+  animation.start();
+  return {
+    animation,
+    fixture,
+    dispose() {
+      animation.dispose();
+      runtime.dispose();
+    }
+  };
+}
+
 function createLocalViewerHarness({
   sandboxId,
   viewerId,
@@ -9429,6 +9933,7 @@ function createLocalViewerHarness({
 function createLocalViewerNetwork() {
   const groups = new Map();
   const paused = new Set();
+  const messages = [];
   const channelFactory = name => {
     const listeners = new Set();
     const channel = {
@@ -9440,6 +9945,10 @@ function createLocalViewerNetwork() {
         if (type === "message") listeners.delete(listener);
       },
       postMessage(message) {
+        messages.push({
+          name,
+          message: structuredClone(message)
+        });
         if (channel.closed || paused.has(message.type)) return;
         for (const peer of groups.get(name) ?? []) {
           if (peer === channel || peer.closed) continue;
@@ -9464,6 +9973,7 @@ function createLocalViewerNetwork() {
   };
   return {
     channelFactory,
+    messages,
     pause(type) {
       paused.add(type);
     },

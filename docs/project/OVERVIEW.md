@@ -1,6 +1,6 @@
 # Visão geral do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e1`.
 > O build exato nunca deve ser copiado para este texto: sua fonte autoritativa
 > é [`apps/web/build-info.json`](../../apps/web/build-info.json).
 
@@ -87,7 +87,8 @@ Esse desenho procura tornar o sistema:
 - isolamento de atalhos quando um campo textual ou editor possui foco;
 - Inspector coletivo com escopo direto ou expansão explícita de grupos;
 - expressões procedurais atômicas para propriedades, transformações e cores;
-- runtime de animação efêmero com relógio de passo fixo;
+- runtime de animação efêmero com passo fixo local ou época absoluta
+  compartilhada;
 - presets, matrizes e faixas diferentes por objeto;
 - animação de transformações e cores de instância sem material por quadro;
 - painel de reprodução com pausa, retomada, parada e restauração;
@@ -110,6 +111,8 @@ Esse desenho procura tornar o sistema:
   de comandos confirmados;
 - múltiplos viewers locais com seleção e câmera próprias, transporte por
   `BroadcastChannel` e serialização de edições por revisão;
+- sessão de animação compartilhada entre viewers por descritor, sequência e
+  relógio comum, sem tráfego de quadros;
 - catálogos de procedimentos em JSON legível;
 - configuração declarativa de barra, painéis e apresentação;
 - diagnóstico, testes, auditoria de recursos e benchmarks pelo console.
@@ -149,6 +152,7 @@ capacidades já entregues.
 16. Recuperação local não persiste estado transitório do viewer ou da animação.
 17. Coordenação local rejeita intenção obsoleta em vez de mesclar por ordem de
     chegada.
+18. Reprodução compartilhada é efêmera e permanece separada do documento.
 
 ## Públicos possíveis
 

@@ -29,6 +29,8 @@ complementa, sem substituir:
   automações reutilizam os mesmos serviços de domínio.
 - Preview, animação efêmera, seleção, câmera e estado de painel não entram no
   documento nem no histórico editorial.
+- Viewers podem compartilhar uma sessão efêmera de animação por definição e
+  época comum; matrizes por quadro nunca atravessam essa fronteira.
 - Operações em lote são completamente resolvidas, avaliadas e validadas antes
   da primeira mutação.
 - Grupos mantêm transformações locais; expandir um grupo em alvos renderizáveis

@@ -643,7 +643,7 @@ export class DevConsole {
         "runtime ui-stats",
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
-        "runtime test animation-runtime|animation-commands|" +
+        "runtime test viewer-animation|animation-runtime|animation-commands|" +
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|" +
@@ -902,7 +902,9 @@ export class DevConsole {
       notes: [
         "A seleção atual é capturada quando a animação começa.",
         "mode=selection preserva grupos; mode=objects abre grupos em objetos.",
+        "A sessão é reproduzida em todos os viewers locais do sandbox.",
         "A animação é visual e não altera histórico nem arquivo.",
+        "Edições da cena encerram a sessão compartilhada.",
         "Expressões usam a linguagem matemática afim segura."
       ],
       examples: [

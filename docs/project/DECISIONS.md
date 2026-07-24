@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e`.
+> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029e1`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -491,6 +491,25 @@ silenciosamente; somente a autoridade substitui projeto, recuperação ou base
 regional; câmera, seleção, hover e painéis nunca entram no snapshot
 compartilhado. O protocolo é local e não antecipa CRDT, identidade remota ou
 autorização distribuída.
+
+## D-032 — Reprodução local compartilha definição e época
+
+**Estado:** implementada para animações efêmeras de objetos.
+
+Uma sessão temporal entre viewers contém alvos concretos, definição declarativa,
+`playbackId`, sequência, estado e época absoluta. A autoridade local serializa
+início, pausa, retomada e parada; cada viewer compila a definição e projeta seus
+próprios quadros.
+
+**Motivação:** transmitir matrizes por quadro aumentaria tráfego, produziria
+engasgos e ainda não resolveria abas desaceleradas pelo navegador. Uma época
+comum permite que uma aba suspensa ou aberta depois avalie diretamente o
+instante vigente.
+
+**Consequências:** a sessão usa protocolo separado do snapshot editorial;
+intenções com revisão ou sequência obsoleta são rejeitadas; uma mudança
+editorial encerra a reprodução em todas as abas. Definição, tempo e overlay não
+entram no documento, histórico, recuperação ou futura persistência de clips.
 
 ## Decisões superadas ou rejeitadas
 
