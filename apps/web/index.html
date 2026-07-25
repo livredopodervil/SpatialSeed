@@ -38,6 +38,50 @@
     </div>
   </form>
 </dialog>
+<dialog id="recovery-dialog" aria-labelledby="recovery-title">
+  <form method="dialog">
+    <h2 id="recovery-title">Rascunho recuperável</h2>
+    <p>
+      O sandbox <strong id="recovery-project-name"></strong> contém alterações
+      confirmadas localmente que ainda não foram descartadas.
+    </p>
+    <p id="recovery-details"></p>
+    <p>
+      A recuperação existe somente neste navegador. O arquivo
+      <code>.spatialseed</code> continua sendo a cópia portátil.
+    </p>
+    <div class="actions">
+      <button id="recovery-continue" type="button">Continuar</button>
+      <button id="recovery-export" type="button">Exportar cópia</button>
+      <button id="recovery-discard" type="button">Descartar</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="viewer-session-dialog" aria-labelledby="viewer-session-title">
+  <form method="dialog">
+    <h2 id="viewer-session-title">Conectar novo viewer</h2>
+    <p>
+      Escolha um projeto que está ativo neste navegador. O novo viewer terá
+      câmera, seleção e painéis próprios.
+    </p>
+    <div
+      id="viewer-session-list"
+      class="viewer-session-list"
+      role="radiogroup"
+      aria-label="Projetos ativos"
+    ></div>
+    <div class="actions">
+      <button id="viewer-session-open" type="button">Abrir viewer</button>
+      <button id="project-new-window" type="button">
+        Novo projeto em nova aba
+      </button>
+      <button id="project-open-window" type="button">
+        Abrir arquivo em nova aba
+      </button>
+      <button type="submit" value="cancel">Cancelar</button>
+    </div>
+  </form>
+</dialog>
 
 <header id="toolbar">
   <button id="tool-navigate" data-tool-mode="navigate" title="Navegar">☝</button>
@@ -82,6 +126,15 @@
     title="Alternar tela cheia do viewport (F)"
     aria-pressed="false"
   >⛶</button>
+  <button id="camera-settings" title="Configurar planos de recorte">
+    Câmera
+  </button>
+  <button
+    id="viewer-new"
+    title="Conectar viewers ou iniciar outro projeto local"
+  >
+    Projetos / viewers
+  </button>
   <button id="inspector">Inspector</button>
   <button id="transform-tools">Transformação</button>
   <button id="geometry-create">Criar</button>
@@ -106,6 +159,8 @@
   <button id="pwa-install">Como instalar</button>
   <input id="project-file-input" type="file"
     accept=".spatialseed,.json,application/json" hidden>
+  <input id="project-file-input-new-window" type="file"
+    accept=".spatialseed,.json,application/json" hidden>
   <input id="procedure-library-file-input" type="file"
     accept=".spatialseed-procedures.json,.json,application/json" hidden>
   <button id="duplicate-selection">Duplicar</button>
@@ -122,6 +177,7 @@
   <div id="selection-summary">0 selecionados</div>
   <div id="selection-content">∅</div>
   <div id="pivot-content">Pivô: mediana</div>
+  <div id="active-camera-indicator">Vista: navegação livre</div>
   <div id="build-content">build carregando…</div>
 </aside>
 
@@ -133,6 +189,137 @@
 <section id="diagnostic-panel" hidden>
   <header><strong>Diagnóstico de execução</strong><button id="copy-diagnostics">Copiar</button><button id="close-diagnostics">×</button></header>
   <textarea id="diagnostic-content" class="component-text" readonly aria-label="Diagnóstico de execução"></textarea>
+</section>
+
+<section id="camera-panel" hidden>
+  <header>
+    <strong>Câmera de navegação</strong>
+    <button id="close-camera" title="Fechar">×</button>
+  </header>
+  <form id="camera-projection-form" onsubmit="return false">
+    <p>
+      Esta câmera pertence somente a este viewer. Sua orientação é guardada
+      como quaternion; o alvo abaixo é derivado para edição.
+    </p>
+    <fieldset>
+      <legend>Posição</legend>
+      <div class="camera-vector">
+        <label><span>X</span><input id="camera-position-x" type="number"
+          step="any" inputmode="decimal" required></label>
+        <label><span>Y</span><input id="camera-position-y" type="number"
+          step="any" inputmode="decimal" required></label>
+        <label><span>Z</span><input id="camera-position-z" type="number"
+          step="any" inputmode="decimal" required></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Alvo derivado</legend>
+      <div class="camera-vector">
+        <label><span>X</span><input id="camera-target-x" type="number"
+          step="any" inputmode="decimal" required></label>
+        <label><span>Y</span><input id="camera-target-y" type="number"
+          step="any" inputmode="decimal" required></label>
+        <label><span>Z</span><input id="camera-target-z" type="number"
+          step="any" inputmode="decimal" required></label>
+      </div>
+    </fieldset>
+    <label>
+      <span>Campo visual — graus</span>
+      <input id="camera-fov" type="number" min="1" max="179"
+        step="any" inputmode="decimal" required>
+    </label>
+    <label>
+      <span>Near — distância mínima</span>
+      <input id="camera-near" type="number" min="0.000001"
+        step="any" inputmode="decimal" required>
+    </label>
+    <label>
+      <span>Far — distância máxima</span>
+      <input id="camera-far" type="number" min="0.000002"
+        step="any" inputmode="decimal" required>
+    </label>
+    <div class="actions">
+      <button id="camera-view-apply" type="button">
+        Aplicar vista
+      </button>
+      <button id="camera-projection-apply" type="button">
+        Aplicar recorte
+      </button>
+      <button id="camera-frame-selection" type="button">
+        Enquadrar seleção
+      </button>
+      <button id="camera-reset" type="button">
+        Restaurar inicial
+      </button>
+    </div>
+    <fieldset>
+      <legend>Órbita incremental</legend>
+      <label>
+        <span>Yaw — graus horizontais</span>
+        <input id="camera-orbit-yaw" type="number" step="any"
+          inputmode="decimal" value="15">
+      </label>
+      <label>
+        <span>Pitch — graus verticais</span>
+        <input id="camera-orbit-pitch" type="number" step="any"
+          inputmode="decimal" value="0">
+      </label>
+      <label>
+        <span>Distância — vazio preserva</span>
+        <input id="camera-orbit-distance" type="number" min="0.000001"
+          step="any" inputmode="decimal">
+      </label>
+      <div class="actions">
+        <button id="camera-orbit-apply" type="button">
+          Aplicar órbita
+        </button>
+      </div>
+    </fieldset>
+    <output id="camera-summary"></output>
+    <fieldset class="camera-objects">
+      <legend>Câmeras persistentes do projeto</legend>
+      <p>
+        Cada viewer escolhe localmente a câmera ativa. A câmera padrão é apenas
+        uma preferência portátil do documento.
+      </p>
+      <label>
+        <span>Câmera</span>
+        <select id="camera-object-select"></select>
+      </label>
+      <div class="actions">
+        <button id="camera-object-create" type="button">
+          Criar da vista atual
+        </button>
+        <button id="camera-object-activate" type="button">
+          Ativar neste viewer
+        </button>
+        <button id="camera-object-select-button" type="button">
+          Selecionar objeto câmera
+        </button>
+        <button id="camera-object-capture" type="button">
+          Atualizar pela vista
+        </button>
+        <button id="camera-object-default" type="button">
+          Definir como padrão
+        </button>
+        <button id="camera-object-default-clear" type="button">
+          Sem padrão
+        </button>
+        <button id="camera-object-deactivate" type="button">
+          Navegação livre
+        </button>
+      </div>
+      <label>
+        <span>Frustums auxiliares</span>
+        <select id="camera-helper-policy">
+          <option value="selected">Somente selecionados</option>
+          <option value="all">Todos</option>
+          <option value="none">Nenhum</option>
+        </select>
+      </label>
+      <output id="camera-object-summary"></output>
+    </fieldset>
+  </form>
 </section>
 
 <section id="developer-panel" hidden>

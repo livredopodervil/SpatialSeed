@@ -30,8 +30,15 @@ export {
   SPATIAL_CREATE_COMMAND
 } from "./SpatialPlanningFacade.js";
 export {
+  CAMERA_PLAN_COMMANDS,
+  createCameraPlanningFacade
+} from "./CameraPlanningFacade.js";
+export {
   SpatialPlanCommitService
 } from "./SpatialPlanCommitService.js";
+export {
+  CameraPlanCommitService
+} from "./CameraPlanCommitService.js";
 export {
   ProcedureCatalog,
   PROCEDURE_LIBRARY_SCHEMA_VERSION

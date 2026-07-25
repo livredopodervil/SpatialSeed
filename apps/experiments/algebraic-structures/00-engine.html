@@ -32,8 +32,8 @@
         textarea { width: 100%; box-sizing: border-box; background: #0b111bed; color: #a5d6ff; border: 1px solid var(--border); padding: 1rem; font-family: monospace; border-radius: 8px; resize: vertical; margin-top: 0.5rem; }
     </style>
     
-    <!-- Aviso: O Math.js ainda está via CDN. Se for usar totalmente offline, descarregue o ficheiro para a pasta vendor/ -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.0/math.js"></script>
+    <script src="../../../vendor/mathjs-11.11.0/math.js"></script>
+    <script src="./legacy-experiment-controls.js"></script>
     
     <!-- Rotas Locais Restauradas para compatibilidade com o seu servidor no Termux -->
     <script type="importmap">
@@ -206,6 +206,8 @@
             
             instancedMesh.instanceMatrix.needsUpdate = true;
             if(instancedMesh.instanceColor) instancedMesh.instanceColor.needsUpdate = true;
+            instancedMesh.computeBoundingBox();
+            instancedMesh.computeBoundingSphere();
 
             rebuildAnchor();
             updateUI();
@@ -325,13 +327,10 @@
 
             if (intersects.length > 0) {
                 const objId = indexToIdMap.get(intersects[0].instanceId);
-                if (event.shiftKey) {
-                    if (Selection.has(objId)) Selection.delete(objId);
-                    else Selection.add(objId);
-                } else {
-                    if (!Selection.has(objId)) { Selection.clear(); Selection.add(objId); }
-                }
-            } else { Selection.clear(); }
+                SpatialSeedLegacy.selectObject(event, Selection, objId);
+            } else {
+                SpatialSeedLegacy.clearSelection(Selection);
+            }
             syncScene();
         });
 
@@ -417,12 +416,15 @@
 
         window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
+        SpatialSeedLegacy.install({
+            camera,
+            selection: Selection,
+            getObjects: () => State.history[State.currentIndex].objects,
+            onSelectionChanged: syncScene,
+        });
         syncScene();
         function animate() { requestAnimationFrame(animate); orbitControls.update(); renderer.render(scene, camera); }
         animate();
     </script>
 </body>
 </html>
-
-
-

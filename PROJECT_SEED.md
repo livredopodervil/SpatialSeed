@@ -26,8 +26,15 @@ Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
 
 Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 
-## Estado funcional até 0028e
+## Estado funcional até 0029f1
 
+- portal HTML na raiz e catálogo canônico de experimentos;
+- protótipos históricos offline, com seleção móvel, recorte configurável e
+  salvamento nomeado;
+- `near` e `far` validados como estado local do viewer principal;
+- controlador público da câmera de navegação com posição, quaternion, alvo
+  derivado, campo visual, enquadramento, órbita e interpolação;
+- painel, console e procedimentos sobre as mesmas operações locais de câmera;
 - região local, sandbox com undo/redo e planos revisáveis;
 - seleção múltipla/área, pivôs, snapping e gizmos;
 - escala uniforme pela alça central `XYZ`;
@@ -37,6 +44,22 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   explícita de grupos;
 - recursos compartilhados, instancing e projeção incremental;
 - projetos `.spatialseed`, PWA offline e transporte de arquivos;
+- identidade persistente de sandbox e recuperação IndexedDB por checkpoint mais
+  comandos confirmados;
+- múltiplos viewers locais com câmera e seleção próprias, sandbox coordenado por
+  revisão e rejeição explícita de intenções obsoletas;
+- diretório transitório de projetos ativos, escolha explícita de destino para
+  novos viewers e sucessão local da autoridade;
+- criação e abertura explícitas de projetos independentes em novas abas, com
+  transferência transitória do arquivo e handshake antes da recuperação;
+- objetos câmera persistentes e hierárquicos, câmera ativa local por viewer e
+  câmera padrão opcional do documento;
+- criação transacional de câmeras em réplicas, seleção ampliada e frustums
+  configuráveis;
+- preview efêmero de gizmos compartilhado a até 30 Hz, inclusive atualizando
+  viewers que usam uma câmera transformada;
+- sessões efêmeras de animação compartilhadas por descritor, sequência e época
+  absoluta, com cálculo de quadros local em cada viewer;
 - runtime Worker/SES, sessões, planos e procedimentos;
 - laboratório declarativo de experimentos;
 - ações e atalhos configuráveis sobre os mesmos comandos;
@@ -66,6 +89,16 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 19. Animação efêmera não altera cena canônica, histórico ou arquivo.
 20. Grupos só são expandidos em descendentes quando o escopo declarar isso.
 21. Preservar manifesto, preferências e múltiplos painéis ao mudar a interface.
+22. Somente o viewer autoritativo substitui projeto, recuperação ou base
+    regional; réplicas enviam comandos pela coordenação local.
+23. Reprodução compartilhada transmite intenção e tempo, nunca matrizes por
+    quadro, e continua fora do documento e da recuperação.
+24. A câmera de navegação continua local; objetos câmera são entidades
+    persistentes e só a ativação deles pertence ao viewer.
+25. Um viewer que entra numa sessão existente aguarda o primeiro snapshot antes
+    de disputar autoridade ou iniciar recuperação.
+26. Previews de gestos manuais podem transmitir matrizes temporárias limitadas;
+    somente o comando final entra no documento, histórico e recuperação.
 
 ## Fluxo
 
@@ -93,13 +126,11 @@ animate status
 
 ## Próxima prioridade
 
-Escolher por teste de uso entre:
+Continuar o ciclo 0029 em incrementos independentes:
 
-1. origens individuais e coerência de transformações hierárquicas;
-2. editor interno/exportável de atalhos e workspaces;
-3. persistência de clips/keyframes e modelo de eventos;
-4. geometria 2D, polylines e curvas;
-5. recuperação local e persistência procedural compacta.
+1. rigs, alvos e órbitas persistentes de câmera;
+2. animação procedural e direção de cena;
+3. consolidação do ciclo 0029.
 
 Referência: `docs/project/ROADMAP.md`.
 

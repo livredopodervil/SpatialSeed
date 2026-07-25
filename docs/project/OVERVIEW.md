@@ -1,6 +1,6 @@
 # Visão geral do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`.
+> Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`.
 > O build exato nunca deve ser copiado para este texto: sua fonte autoritativa
 > é [`apps/web/build-info.json`](../../apps/web/build-info.json).
 
@@ -87,17 +87,39 @@ Esse desenho procura tornar o sistema:
 - isolamento de atalhos quando um campo textual ou editor possui foco;
 - Inspector coletivo com escopo direto ou expansão explícita de grupos;
 - expressões procedurais atômicas para propriedades, transformações e cores;
-- runtime de animação efêmero com relógio de passo fixo;
+- runtime de animação efêmero com passo fixo local ou época absoluta
+  compartilhada;
 - presets, matrizes e faixas diferentes por objeto;
 - animação de transformações e cores de instância sem material por quadro;
 - painel de reprodução com pausa, retomada, parada e restauração;
 - escala uniforme pelos três eixos através da alça central `XYZ`.
+- planos de recorte `near` e `far` validados como estado local do viewer;
+- posição, quaternion, foco, órbita, enquadramento e interpolação expostos pelo
+  controlador público da câmera de navegação;
+- painel, console e procedimentos convergindo nos mesmos comandos locais de
+  câmera, sem histórico ou persistência documental;
+- portal, catálogo e protótipos históricos executáveis com recursos locais;
+- multisseleção móvel e salvamento nomeado na linha de base dos protótipos.
 
 ### Portabilidade e operação
 
+- portal HTML na raiz e catálogo auditável de experimentos;
 - publicação estática pelo GitHub Pages;
 - PWA instalável e cache offline do aplicativo;
 - abrir e salvar projetos com API nativa quando disponível e fallback móvel;
+- recuperação automática local com identidade de sandbox, checkpoint e journal
+  de comandos confirmados;
+- múltiplos viewers locais com seleção e câmera próprias, transporte por
+  `BroadcastChannel` e serialização de edições por revisão;
+- escolha entre projetos ativos e sucessão automática da autoridade local;
+- criação e abertura explícitas de projetos independentes em novas abas, com
+  handshake de entrada antes da recuperação;
+- objetos câmera persistentes e hierárquicos, separados da câmera de navegação
+  local de cada viewer;
+- preview efêmero de transformações compartilhado entre viewers, preservando
+  um único commit editorial ao término;
+- sessão de animação compartilhada entre viewers por descritor, sequência e
+  relógio comum, sem tráfego de quadros;
 - catálogos de procedimentos em JSON legível;
 - configuração declarativa de barra, painéis e apresentação;
 - diagnóstico, testes, auditoria de recursos e benchmarks pelo console.
@@ -108,7 +130,6 @@ Esse desenho procura tornar o sistema:
 - eventos e interatividade programável além do preview temporal atual;
 - curvas, polylines e sistema geométrico 2D completo;
 - edição direta de vértices, arestas, faces e meshes arbitrárias;
-- recuperação automática da última sessão;
 - serialização compacta de receitas procedurais e grandes hierarquias;
 - interoperabilidade completa com glTF, STL, Collada e formatos equivalentes;
 - servidor colaborativo, autoridade regional remota e sincronização multiusuário;
@@ -135,6 +156,10 @@ capacidades já entregues.
     mutação.
 14. Animações de preview são restauráveis e não produzem histórico.
 15. Expansão de grupos em objetos é explícita e determinística.
+16. Recuperação local não persiste estado transitório do viewer ou da animação.
+17. Coordenação local rejeita intenção obsoleta em vez de mesclar por ordem de
+    chegada.
+18. Reprodução compartilhada é efêmera e permanece separada do documento.
 
 ## Públicos possíveis
 

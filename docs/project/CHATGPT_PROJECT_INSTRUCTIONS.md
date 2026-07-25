@@ -1,6 +1,6 @@
 # Instruções para assistentes no projeto SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`. Estas instruções resumem o
+> Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`. Estas instruções resumem o
 > contrato de colaboração; o processo operacional completo está em
 > [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -62,7 +62,8 @@ busca manual no terminal.
 11. Grupos usam transforms locais e podem ser aninhados.
 12. Programas SES recebem capabilities mínimas e produzem planos.
 13. Importar ou editar procedimento não executa código.
-14. PWA offline não é persistência automática da cena.
+14. PWA offline, recuperação IndexedDB e arquivo portátil são responsabilidades
+    distintas.
 15. Build e capabilities possuem fontes autoritativas, não listas replicadas.
 16. Ações visuais e atalhos usam identificadores semânticos estáveis.
 17. Experimentos declarativos produzem planos; não recebem DOM nem comandos
@@ -70,6 +71,17 @@ busca manual no terminal.
 18. Animação efêmera é uma sobreposição restaurável, não estado editorial.
 19. Escopo de seleção direta e expansão de grupos são decisões explícitas.
 20. Expressões em lote são compiladas e validadas antes de uma mutação atômica.
+21. Viewers locais compartilham o sandbox coordenado e podem compartilhar uma
+    sessão efêmera de animação por protocolo separado; câmera de navegação,
+    seleção e painéis não atravessam a fronteira entre abas.
+22. A sessão temporal distribui definição e época comum, nunca matrizes por
+    quadro, e não entra no documento, histórico ou recuperação.
+23. Objetos câmera são entidades persistentes; apenas sua ativação como vista
+    atual pertence ao viewer.
+24. Um viewer que entra numa sessão existente aguarda o snapshot inicial antes
+    de disputar autoridade ou consultar recuperação.
+25. Previews de gestos manuais podem distribuir matrizes temporárias com taxa
+    limitada; o gesto concluído continua gerando um único comando persistente.
 
 Se uma solicitação contradisser esses princípios, explique o conflito e proponha
 uma implementação compatível antes de escrever código.
@@ -136,6 +148,7 @@ Validações locais mínimas:
 
 ```bash
 git diff --check
+python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 ```
 

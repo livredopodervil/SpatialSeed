@@ -1,9 +1,11 @@
 export class ViewerState {
+  static apiVersion = "viewer-state-v1";
   #listeners = new Set();
 
   constructor({
     viewerId = crypto.randomUUID(),
     camera = {},
+    activeCameraId = null,
     selection = [],
     hover = null,
     panels = {},
@@ -11,6 +13,9 @@ export class ViewerState {
   } = {}) {
     this.viewerId = String(viewerId);
     this.camera = structuredClone(camera);
+    this.activeCameraId = activeCameraId === null
+      ? null
+      : String(activeCameraId);
     this.selection = [...selection];
     this.hover = hover;
     this.panels = structuredClone(panels);
@@ -23,6 +28,7 @@ export class ViewerState {
       viewerId: this.viewerId,
       revision: this.revision,
       camera: structuredClone(this.camera),
+      activeCameraId: this.activeCameraId,
       selection: Object.freeze([...this.selection]),
       hover: this.hover,
       panels: structuredClone(this.panels),
@@ -36,6 +42,12 @@ export class ViewerState {
         ...this.camera,
         ...structuredClone(patch.camera)
       };
+    }
+
+    if ("activeCameraId" in patch) {
+      this.activeCameraId = patch.activeCameraId === null
+        ? null
+        : String(patch.activeCameraId);
     }
 
     if ("selection" in patch) {
@@ -89,4 +101,31 @@ export class ViewerState {
       }
     }
   }
+}
+
+export function normalizeCameraProjection({
+  near = 0.1,
+  far = 1000
+} = {}) {
+  const normalized = {
+    near: Number(near),
+    far: Number(far)
+  };
+
+  if (
+    !Number.isFinite(normalized.near) ||
+    !Number.isFinite(normalized.far)
+  ) {
+    throw new TypeError(
+      "Os planos near e far precisam ser números finitos."
+    );
+  }
+
+  if (!(normalized.near > 0 && normalized.far > normalized.near)) {
+    throw new RangeError(
+      "A projeção precisa satisfazer 0 < near < far."
+    );
+  }
+
+  return Object.freeze(normalized);
 }

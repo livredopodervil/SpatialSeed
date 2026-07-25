@@ -233,7 +233,7 @@ export class AppearanceRuntime {
 }
 
 function isLogicalSceneNode(object) {
-  return object?.kind === "group";
+  return ["group", "camera"].includes(object?.kind);
 }
 
 function toLegacyMaterial(material, texture) {

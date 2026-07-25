@@ -27,8 +27,14 @@ complementa, sem substituir:
 - Toda mutação persistente passa por comando público.
 - Interface, Inspector, console, procedimentos, experimentos e futuras
   automações reutilizam os mesmos serviços de domínio.
-- Preview, animação efêmera, seleção, câmera e estado de painel não entram no
-  documento nem no histórico editorial.
+- Preview, animação efêmera, seleção, câmera de navegação e estado de painel não
+  entram no documento nem no histórico editorial. Objetos câmera são nós
+  persistentes distintos.
+- Viewers podem compartilhar uma sessão efêmera de animação por definição e
+  época comum; matrizes por quadro nunca atravessam essa fronteira.
+- Previews de gestos manuais podem transmitir matrizes temporárias limitadas
+  porque não possuem definição temporal reproduzível; o término continua
+  produzindo no máximo um comando persistente.
 - Operações em lote são completamente resolvidas, avaliadas e validadas antes
   da primeira mutação.
 - Grupos mantêm transformações locais; expandir um grupo em alvos renderizáveis
@@ -58,6 +64,7 @@ Execute validação proporcional ao risco:
 
 ```bash
 git diff --check
+python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 ```
 

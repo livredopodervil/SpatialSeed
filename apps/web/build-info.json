@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260720-0028e",
-  "channel": "feature/0028-animation-runtime"
+  "build": "20260725-0029f1",
+  "channel": "fix/0029f1-camera-interaction"
 }

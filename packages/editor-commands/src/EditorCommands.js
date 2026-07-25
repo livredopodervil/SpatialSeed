@@ -7,7 +7,8 @@ export function createEditorCommands({
   projectService,
   benchmarkRunner,
   resourceAudit,
-  propertyService = null
+  propertyService = null,
+  canMutateProject = () => true
 }) {
   const commands = new CommandRegistry();
 
@@ -32,6 +33,25 @@ export function createEditorCommands({
     })
     .register("selection.clear", () => {
       editor.selection.clear();
+      return editor.selection.snapshot();
+    })
+    .register("selection.select-object", ({
+      id,
+      regionId = "region-main"
+    } = {}) => {
+      const objectId = String(id ?? "").trim();
+      const exists = selectionOperations.sandbox
+        .getSnapshot()
+        .objects
+        .some(object => object.id === objectId);
+      if (!exists) {
+        throw new Error(`Objeto inexistente para seleção: ${objectId}.`);
+      }
+      editor.selection.replace({
+        kind: "object",
+        regionId: String(regionId),
+        objectId
+      });
       return editor.selection.snapshot();
     })
     .register("history.undo", () => ({
@@ -152,12 +172,14 @@ export function createEditorCommands({
     .register("project.save", () =>
       projectService.save()
     )
-    .register("project.open", ({ text }) =>
-      projectService.openText(text)
-    )
-    .register("project.new", () =>
-      projectService.newProject()
-    );
+    .register("project.open", ({ text }) => {
+      canMutateProject("abrir outro projeto");
+      return projectService.openText(text);
+    })
+    .register("project.new", () => {
+      canMutateProject("criar outro projeto");
+      return projectService.newProject();
+    });
 
   commands
     .register(

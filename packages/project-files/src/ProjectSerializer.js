@@ -1,6 +1,6 @@
 export class ProjectSerializer {
   static format = "spatial-seed";
-  static schemaVersion = 2;
+  static schemaVersion = 3;
 
   constructor({
     sandbox,
@@ -16,9 +16,9 @@ export class ProjectSerializer {
     this.appearanceRuntime = appearanceRuntime;
   }
 
-  serialize(metadata = {}) {
+  serialize(metadata = {}, { state = null } = {}) {
     const scene = this.appearanceRuntime.normalizeScene(
-      this.sandbox.getState()
+      state ?? this.sandbox.getState()
     );
 
     return {

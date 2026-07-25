@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0028e`.
+> Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -284,16 +284,23 @@ sem operações destrutivas.
 publica; hashes temporários podem diferir após `git am`, e o hash do repositório
 publicado torna-se o identificador canônico.
 
-## D-020 — Recuperação local preservará apenas commits editoriais
+## D-020 — Recuperação local preserva apenas commits editoriais
 
-**Estado:** planejada.
+**Estado:** implementada para checkpoints e comandos no IndexedDB.
 
-A futura recuperação em IndexedDB deve gravar comandos confirmados, de forma
-atômica, versionada e postergada. Previews nunca serão persistidos. Blobs grandes
-podem migrar para OPFS.
+A recuperação em IndexedDB grava um checkpoint limpo e a sequência vigente de
+comandos confirmados, de forma versionada, postergada e substituída por
+transação. Previews nunca são persistidos. A restauração valida e reaplica toda
+a sequência antes de substituir o histórico do sandbox. Blobs grandes poderão
+migrar para OPFS.
 
 **Motivação:** recuperar acidentes sem confundir cache local com formato
 portátil ou salvar estados transitórios.
+
+**Consequências:** cada sandbox possui identidade local persistente; abrir ou
+criar projeto inicia outra identidade; checkpoint limpo reabre automaticamente
+e rascunho sujo exige continuar, exportar ou descartar. Seleção, câmera, painéis
+e animação não entram no registro. Limpar dados do navegador pode removê-lo.
 
 ## D-021 — Persistência compacta será retrocompatível
 
@@ -427,13 +434,141 @@ atomicidade das edições literais.
 usar escopo renderizável; animações diferentes por objeto são compostas em
 faixas sem transformar o grupo numa lista informal de meshes.
 
+## D-029 — Portal, aplicativo e protótipos são superfícies distintas
+
+**Estado:** implementada para entrada e catálogo.
+
+A raiz publicada é um portal estático de orientação. O editor mantido continua
+em `apps/web/`; seu laboratório declarativo continua dentro do runtime; HTMLs
+independentes ficam em `apps/experiments/` e são descritos por um manifesto
+canônico em `apps/web/experiments/catalog.json`.
+
+**Motivação:** a antiga raiz apresentava um protótipo obsoleto como se fosse a
+aplicação atual, enquanto experimentos independentes não tinham entrada comum,
+maturidade explícita nem inventário verificável de dependências.
+
+**Consequências:** o portal não implementa edição; o catálogo não torna um
+protótipo parte do núcleo; todos os HTMLs históricos precisam estar
+catalogados; caminhos permanecem relativos para funcionar sob o prefixo do
+GitHub Pages; dependências externas observadas devem ser declaradas e podem ser
+rejeitadas por auditoria offline estrita.
+
+## D-030 — Projeção da câmera de navegação pertence ao viewer
+
+**Estado:** implementada para a câmera de navegação.
+
+Posição, quaternion, distância de foco, campo visual, `near` e `far` são
+validados e armazenados no `ViewerState`. O alvo é derivado da posição,
+orientação e distância de foco; não existe como segunda orientação
+autoritativa. `ViewerCameraController` aplica o estado pelo adaptador do
+renderer e sincroniza de volta a navegação manual do `OrbitControls`.
+
+**Motivação:** diferentes viewers do mesmo sandbox precisam poder escolher
+recorte, navegação e câmera ativa sem produzir comandos editoriais nem
+sobrescrever a experiência dos demais.
+
+**Consequências:** `0 < near < far` é uma invariante pública; alterações da
+câmera de navegação não entram em undo/redo nem no arquivo; painel e console chamam comandos
+`viewer.camera.*`; procedimentos recebem uma capability declarativa que produz
+plano revisável. Planos de câmera local não podem misturar mutações espaciais
+persistentes na mesma transação. Objetos câmera persistentes são entidades
+distintas e não revogam esta fronteira.
+
+## D-031 — Viewers locais coordenam um sandbox por revisão
+
+**Estado:** implementada localmente.
+
+Cada aba conserva apresentação e seleção próprias, mas referencia a mesma
+identidade de sandbox. Uma autoridade local serializa `dispatch`, `undo` e
+`redo`; réplicas enviam intenções pela revisão observada e recebem snapshots
+atômicos por `BroadcastChannel`. A Web Locks API escolhe a autoridade quando
+disponível.
+
+**Motivação:** provar múltiplas projeções simultâneas sem transformar renderer,
+IndexedDB ou ordem de chegada das mensagens em autoridade do mundo.
+
+**Consequências:** intenção obsoleta é rejeitada e não reavaliada
+silenciosamente; somente a autoridade substitui projeto, recuperação ou base
+regional; câmera, seleção, hover e painéis nunca entram no snapshot
+compartilhado. O protocolo é local e não antecipa CRDT, identidade remota ou
+autorização distribuída.
+
+Um diretório transitório anuncia somente sessões vivas da mesma origem e agrupa
+viewers por `sandboxId`. A superfície **Projetos / viewers** torna explícito o
+destino de um novo viewer e também permite criar ou abrir um projeto
+independente em nova aba. Um viewer de entrada aguarda o primeiro snapshot antes
+de disputar autoridade ou iniciar recuperação. Ao fechar a autoridade, uma
+réplica automática adquire a trava liberada, conserva o snapshot já sincronizado
+e adota o diário de recuperação sem restaurar por cima dele um checkpoint
+anterior.
+
+## D-032 — Reprodução local compartilha definição e época
+
+**Estado:** implementada para animações efêmeras de objetos.
+
+Uma sessão temporal entre viewers contém alvos concretos, definição declarativa,
+`playbackId`, sequência, estado e época absoluta. A autoridade local serializa
+início, pausa, retomada e parada; cada viewer compila a definição e projeta seus
+próprios quadros.
+
+**Motivação:** transmitir matrizes por quadro aumentaria tráfego, produziria
+engasgos e ainda não resolveria abas desaceleradas pelo navegador. Uma época
+comum permite que uma aba suspensa ou aberta depois avalie diretamente o
+instante vigente.
+
+**Consequências:** a sessão usa protocolo separado do snapshot editorial;
+intenções com revisão ou sequência obsoleta são rejeitadas; uma mudança
+editorial encerra a reprodução em todas as abas. Definição, tempo e overlay não
+entram no documento, histórico, recuperação ou futura persistência de clips.
+
+## D-033 — Objetos câmera persistem; ativação permanece local
+
+**Estado:** implementada para câmera perspectiva.
+
+Um objeto `kind: "camera"` é uma entidade hierárquica do documento, com
+transform local, parâmetros de projeção e identidade estável. A cena pode
+declarar `defaultCameraId`, mas cada `ViewerState` conserva seu próprio
+`activeCameraId`. Ativar uma câmera projeta sua pose mundial no controlador de
+navegação; navegar manualmente apenas desfaz o vínculo local.
+
+**Motivação:** múltiplas vistas precisam compartilhar enquadramentos nomeados
+sem voltar a tornar Three.js autoritativo nem sincronizar a câmera concreta de
+cada aba.
+
+**Consequências:** criar, transformar, capturar, definir projeção e escolher a
+câmera padrão são comandos persistentes com undo/redo; ativar e desativar são
+ações locais. Helpers de corpo e frustum pertencem ao renderer. O serializer
+escreve schema 3 e o leitor continua aceitando schemas 1 e 2. Animação de
+câmera permanece fora deste marco e deverá reutilizar o overlay temporal no
+`0029g`.
+
+## D-034 — Gestos compartilhados usam preview matricial limitado
+
+**Estado:** implementada localmente.
+
+Uma transformação interativa publica uma sessão efêmera com origem, identidade,
+sequência, revisão-base e matrizes mundiais amostradas a até 30 Hz. As demais
+abas aplicam essas matrizes somente ao renderer e, quando pertinente, à câmera
+ativa local. Soltar o gizmo continua produzindo um único comando persistente.
+
+**Motivação:** ao contrário de uma animação declarativa, um gesto humano não
+possui definição e época suficientes para ser recalculado localmente. Esperar o
+commit impede direção de câmera em tempo real; persistir cada amostra destrói a
+atomicidade do undo.
+
+**Consequências:** preview manual e animação usam canais distintos; nenhuma
+amostra entra no documento, histórico, arquivo ou recuperação. Cancelamento,
+rejeição, mudança editorial, despedida ou timeout restaura o estado confirmado.
+Taxa e diagnóstico pertencem ao transporte; a autoridade editorial continua
+exclusivamente na camada de comandos.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.
 - **Lógica própria no Inspector ou no console:** rejeitada em favor dos mesmos
   comandos e registros.
-- **Aplicação mantida na raiz do repositório:** superada; a aplicação atual é
-  `apps/web/`; arquivos da raiz são históricos.
+- **Aplicação mantida na raiz do repositório:** superada; a raiz é portal e a
+  aplicação atual é `apps/web/`.
 - **PWA como persistência automática da cena:** rejeitada; offline e documento
   de projeto são responsabilidades diferentes.
 - **Grupo como seleção persistida sem transform local:** superada pela hierarquia

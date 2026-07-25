@@ -9,16 +9,23 @@ import {
   resolveRuntimeProfile
 } from "../../runtime-api/src/index.js?build=20260718-0027h";
 import {
+  VIEWER_CAMERA_COMMANDS,
+  CameraObjectService,
+  ViewerCameraController,
   ViewerState,
+  cameraSnapshot,
+  normalizeNavigationCamera,
+  normalizeCameraProjection,
+  reduceNavigationCamera,
   EditorSession,
   SimulationClock,
   SimulationBridge
-} from "../../runtime-layers/src/index.js?build=20260719-0028a";
+} from "../../runtime-layers/src/index.js?build=20260725-0029f1";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260718-0027h";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260725-0029f1";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -58,7 +65,7 @@ import {
   createAnimationEvaluator,
   createAnimationTrackEvaluator,
   resolveAnimationPreset
-} from "../../animation-runtime/src/index.js?build=20260720-0028d";
+} from "../../animation-runtime/src/index.js?build=20260724-0029e1";
 import {
   composeAnimationOverlay,
   createAnimationTargetSnapshot
@@ -81,10 +88,34 @@ import {
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
-} from "../../project-files/src/ProjectValidator.js?build=20260716-0025d";
+} from "../../project-files/src/ProjectValidator.js?build=20260724-0029f";
+import {
+  ProjectSerializer
+} from "../../project-files/src/ProjectSerializer.js?build=20260724-0029f";
+import {
+  ProjectService
+} from "../../project-files/src/ProjectService.js?build=20260724-0029f";
+import {
+  BrowserSandboxIdentity,
+  MemoryRecoveryStore,
+  SandboxRecoveryController,
+  createRecoveryRecord,
+  validateRecoveryRecord
+} from "../../project-recovery/src/index.js?build=20260725-0029f1";
+import {
+  CoordinatedSandbox,
+  LocalProjectLaunchReceiver,
+  LocalProjectLaunchSender,
+  LocalAnimationCoordinator,
+  LocalTransformPreviewCoordinator,
+  LocalViewerCoordinator,
+  LocalViewerSessionDirectory,
+  createIndependentProjectUrl,
+  createSharedViewerUrl
+} from "../../local-viewers/src/index.js?build=20260725-0029f1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260716-0024d";
+} from "../../region-box/src/reducer.js?build=20260724-0029f";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -100,10 +131,10 @@ import {
   createDefaultPropertyRegistry,
   resolveSelectionTargetIds,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260720-0028d";
+} from "../../property-registry/src/index.js?build=20260724-0029f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260720-0028d";
+} from "../../devtools/src/DevConsole.js?build=20260725-0029f1";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -122,7 +153,7 @@ import {
   renderableSubtreeIds,
   selectionReferenceWorldPosition,
   selectionUnitId
-} from "../../renderer-three/src/WorldTransformProjection.js?build=20260715-0023d";
+} from "../../renderer-three/src/WorldTransformProjection.js?build=20260724-0029f";
 import {
   SelectionOutlineBatch,
   benchmarkSelectionOutlines,
@@ -135,7 +166,7 @@ import {
 import {
   BrowserProjectFileGateway,
   isPlatformBlock
-} from "../../../apps/web/file-interop/BrowserProjectFileGateway.js";
+} from "../../../apps/web/file-interop/BrowserProjectFileGateway.js?build=20260724-0029b2";
 import {
   BrowserProcedureCatalogStore
 } from "../../../apps/web/procedures/BrowserProcedureCatalogStore.js";
@@ -162,6 +193,8 @@ import {
 } from "../../ui-config/src/index.js?build=20260720-0028c";
 import { fnv1a64 } from "../../asset-store/src/index.js";
 import {
+  CAMERA_PLAN_COMMANDS,
+  CameraPlanCommitService,
   DisposableProgramRun,
   PROGRAM_PLAN_VERSION,
   ProgramRunController,
@@ -810,6 +843,50 @@ export function createRuntimeLayerTests() {
         );
         assertEqual(failure.type, "program.failed");
         assert(failure.error.message.includes("linhas de saída"));
+      },
+
+      "capability de câmera produz intenções sem renderer"() {
+        const envelope = executeProgramRequest({
+          runId: "camera-plan",
+          baseVersion: 6,
+          allowedCommands: CAMERA_PLAN_COMMANDS,
+          snapshot: {
+            viewer: {
+              camera: navigationCameraFixture({
+                position: [3, 4, 5]
+              })
+            }
+          },
+          source: [
+            "camera.orbit({yawDegrees:45});",
+            "camera.frameSelection({padding:1.3});",
+            "return camera.view.position;"
+          ].join("\n"),
+          mode: "program"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.type, "program.completed");
+        assertEqual(envelope.plan.commands.length, 2);
+        assertEqual(
+          envelope.plan.commands[0].command,
+          "viewer.camera.orbit"
+        );
+        assertDeepEqual(envelope.plan.result.value, [3, 4, 5]);
+      },
+
+      "camera permanece ausente sem capability explícita"() {
+        const envelope = executeProgramRequest({
+          runId: "no-camera-capability",
+          allowedCommands: [],
+          source: "typeof camera"
+        }, {
+          evaluate: evaluateTrustedFixture
+        });
+
+        assertEqual(envelope.plan.result.value, "undefined");
+        assertEqual(envelope.plan.commands.length, 0);
       },
 
       "fábrica solicita Worker modular dedicado"() {
@@ -1633,6 +1710,1567 @@ export function createRuntimeLayerTests() {
         assertEqual(received.length, 2);
         assertEqual(received.at(-1).hover, "instance-b");
         assertEqual(received.at(-1).revision, 1);
+      },
+
+      "projeção de câmera aceita apenas intervalo ordenado"() {
+        assertDeepEqual(
+          normalizeCameraProjection({ near: "0.25", far: "5000" }),
+          { near: 0.25, far: 5000 }
+        );
+        assertThrowsMessage(
+          () => normalizeCameraProjection({ near: 2, far: 2 }),
+          "0 < near < far"
+        );
+        assertThrowsMessage(
+          () => normalizeCameraProjection({ near: "x", far: 10 }),
+          "números finitos"
+        );
+      },
+
+      "snapshot deriva alvo sem armazenar segunda orientação"() {
+        const camera = cameraSnapshot({
+          position: [1, 2, 3],
+          quaternion: [0, 0, 0, 1],
+          focusDistance: 5,
+          fov: 55,
+          near: 0.1,
+          far: 1000,
+          aspect: 2
+        });
+
+        assertDeepEqual(camera.target, [1, 2, -2]);
+        assertEqual("target" in normalizeNavigationCamera(camera), false);
+      },
+
+      "look-at calcula quaternion e distância de foco"() {
+        const camera = reduceNavigationCamera(
+          navigationCameraFixture(),
+          "viewer.camera.look-at",
+          { target: [0, 0, -5] }
+        );
+        const snapshot = cameraSnapshot(camera);
+
+        assertVectorNear(snapshot.quaternion, [0, 0, 0, 1]);
+        assertVectorNear(snapshot.target, [0, 0, -5]);
+        assertNear(snapshot.focusDistance, 5);
+      },
+
+      "órbita preserva alvo e distância quando omitida"() {
+        const current = navigationCameraFixture({
+          position: [0, 0, 5],
+          focusDistance: 5
+        });
+        const camera = reduceNavigationCamera(
+          current,
+          "viewer.camera.orbit",
+          { yawDegrees: 90, pitchDegrees: 0 }
+        );
+        const snapshot = cameraSnapshot(camera);
+
+        assertVectorNear(snapshot.position, [5, 0, 0], 1e-8);
+        assertVectorNear(snapshot.target, [0, 0, 0], 1e-8);
+        assertNear(snapshot.focusDistance, 5);
+      },
+
+      "movimento local segue orientação autoritativa"() {
+        const oriented = reduceNavigationCamera(
+          navigationCameraFixture(),
+          "viewer.camera.look-at",
+          { target: [1, 0, 0] }
+        );
+        const moved = reduceNavigationCamera(
+          oriented,
+          "viewer.camera.move",
+          { delta: [0, 0, -2], space: "local" }
+        );
+
+        assertVectorNear(moved.position, [2, 0, 0], 1e-8);
+      },
+
+      "enquadramento usa limites e aspecto do viewer"() {
+        const camera = reduceNavigationCamera(
+          navigationCameraFixture({ position: [0, 0, 10] }),
+          "viewer.camera.frame-selection",
+          { padding: 1.2 },
+          {
+            selectionBounds: () => ({
+              min: [-1, -1, -1],
+              max: [1, 1, 1]
+            })
+          }
+        );
+        const snapshot = cameraSnapshot(camera);
+
+        assertVectorNear(snapshot.target, [0, 0, 0], 1e-8);
+        assert(snapshot.focusDistance > Math.sqrt(3));
+      },
+
+      "interpolação combina pose projeção e foco"() {
+        const from = navigationCameraFixture();
+        const to = navigationCameraFixture({
+          position: [8, 4, 2],
+          focusDistance: 9,
+          fov: 75,
+          near: 1,
+          far: 2000
+        });
+        const camera = reduceNavigationCamera(
+          from,
+          "viewer.camera.interpolate",
+          { from, to, alpha: 0.25 }
+        );
+
+        assertVectorNear(camera.position, [2, 1, 0.5]);
+        assertNear(camera.focusDistance, 3);
+        assertNear(camera.fov, 60);
+        assertNear(camera.near, 0.325);
+        assertNear(camera.far, 1250);
+      },
+
+      "controlador sincroniza navegação da superfície no viewer"() {
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          viewerId: "viewer-camera-sync",
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({
+          viewer,
+          surface
+        });
+
+        surface.emit(navigationCameraFixture({
+          position: [7, 8, 9],
+          focusDistance: 4
+        }));
+
+        assertVectorNear(controller.snapshot().position, [7, 8, 9]);
+        assertEqual("region" in viewer.snapshot(), false);
+        controller.dispose();
+      },
+
+      "sequência aplica uma única vista final na superfície"() {
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const before = surface.applyCount;
+
+        controller.applySequence([
+          {
+            sequence: 0,
+            command: "viewer.camera.move",
+            args: { delta: [1, 0, 0] }
+          },
+          {
+            sequence: 1,
+            command: "viewer.camera.look-at",
+            args: { target: [0, 0, -5] }
+          }
+        ]);
+
+        assertEqual(surface.applyCount, before + 1);
+        assertVectorNear(controller.snapshot().position, [1, 0, 0]);
+        controller.dispose();
+      },
+
+      "plano de procedimento altera só a câmera local"() {
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const service = new CameraPlanCommitService({
+          controller,
+          currentBaseVersion: () => 4
+        });
+        const result = service.commit({
+          planVersion: PROGRAM_PLAN_VERSION,
+          runId: "camera-procedure",
+          baseVersion: 4,
+          commands: [{
+            sequence: 0,
+            command: "viewer.camera.orbit",
+            args: { yawDegrees: 30 }
+          }]
+        });
+
+        assertEqual(result.domain, "viewer-camera");
+        assertEqual(result.commandCount, 1);
+        assertEqual(viewer.snapshot().selection.length, 0);
+        controller.dispose();
+      },
+
+      "plano de câmera obsoleto falha antes de aplicar"() {
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const service = new CameraPlanCommitService({
+          controller,
+          currentBaseVersion: () => 2
+        });
+        const before = controller.snapshot();
+
+        assertThrowsMessage(
+          () => service.commit({
+            planVersion: PROGRAM_PLAN_VERSION,
+            runId: "stale-camera",
+            baseVersion: 1,
+            commands: [{
+              sequence: 0,
+              command: "viewer.camera.move",
+              args: { delta: [9, 0, 0] }
+            }]
+          }),
+          "Plano obsoleto"
+        );
+        assertDeepEqual(controller.snapshot(), before);
+        controller.dispose();
+      },
+
+      "console encaminha câmera para os comandos públicos"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            describe: () => [],
+            execute(id, args) {
+              calls.push({ id, args });
+              return navigationCameraFixture();
+            }
+          },
+          queries: {
+            execute: () => cameraSnapshot(navigationCameraFixture())
+          }
+        });
+
+        const results = console.execute([
+          "camera lookat 0 1 0",
+          "camera orbit 30 -10",
+          "camera frame 1.25"
+        ].join("\n"));
+
+        assert(results.every(result => result.ok));
+        assertDeepEqual(
+          calls.map(call => call.id),
+          [
+            "viewer.camera.look-at",
+            "viewer.camera.orbit",
+            "viewer.camera.frame-selection"
+          ]
+        );
+      },
+
+      "objetos câmera persistem e a ativação continua local"() {
+        const region = new Region(
+          { id: "camera-object-region", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const firstSurface = createCameraSurfaceFixture();
+        const secondSurface = createCameraSurfaceFixture();
+        const freeSurface = createCameraSurfaceFixture();
+        const firstViewer = new ViewerState({
+          viewerId: "camera-object-viewer-a",
+          camera: navigationCameraFixture({ position: [1, 2, 3] })
+        });
+        const secondViewer = new ViewerState({
+          viewerId: "camera-object-viewer-b",
+          camera: navigationCameraFixture({ position: [8, 9, 10] })
+        });
+        const freeViewer = new ViewerState({
+          viewerId: "camera-object-viewer-free",
+          camera: navigationCameraFixture({ position: [12, 11, 10] })
+        });
+        const firstController = new ViewerCameraController({
+          viewer: firstViewer,
+          surface: firstSurface
+        });
+        const secondController = new ViewerCameraController({
+          viewer: secondViewer,
+          surface: secondSurface
+        });
+        const freeController = new ViewerCameraController({
+          viewer: freeViewer,
+          surface: freeSurface
+        });
+        const first = new CameraObjectService({
+          sandbox,
+          viewer: firstViewer,
+          controller: firstController,
+          createId: () => "camera-persistent-a"
+        });
+        const second = new CameraObjectService({
+          sandbox,
+          viewer: secondViewer,
+          controller: secondController,
+          createId: () => "camera-persistent-b"
+        });
+        const free = new CameraObjectService({
+          sandbox,
+          viewer: freeViewer,
+          controller: freeController
+        });
+
+        first.create({
+          name: "Câmera A",
+          camera: navigationCameraFixture({ position: [3, 4, 5] }),
+          activate: true
+        });
+        second.create({
+          name: "Câmera B",
+          camera: navigationCameraFixture({ position: [9, 8, 7] }),
+          activate: true
+        });
+
+        assertEqual(sandbox.objectCount, 2);
+        assertEqual(
+          firstViewer.snapshot().activeCameraId,
+          "camera-persistent-a"
+        );
+        assertEqual(
+          secondViewer.snapshot().activeCameraId,
+          "camera-persistent-b"
+        );
+        assertVectorNear(firstController.snapshot().position, [3, 4, 5]);
+        assertVectorNear(secondController.snapshot().position, [9, 8, 7]);
+
+        first.setDefault("camera-persistent-a");
+        assertEqual(
+          sandbox.getSnapshot().defaultCameraId,
+          "camera-persistent-a"
+        );
+        assertEqual(freeViewer.snapshot().activeCameraId, null);
+        assertVectorNear(
+          freeController.snapshot().position,
+          [12, 11, 10]
+        );
+        const adoptedSurface = createCameraSurfaceFixture();
+        const adoptedViewer = new ViewerState({
+          viewerId: "camera-object-viewer-default",
+          camera: navigationCameraFixture()
+        });
+        const adoptedController = new ViewerCameraController({
+          viewer: adoptedViewer,
+          surface: adoptedSurface
+        });
+        const adopted = new CameraObjectService({
+          sandbox,
+          viewer: adoptedViewer,
+          controller: adoptedController
+        });
+        assertEqual(
+          adoptedViewer.snapshot().activeCameraId,
+          "camera-persistent-a"
+        );
+        adopted.dispose();
+        adoptedController.dispose();
+        assertEqual(sandbox.undo(), true);
+        assertEqual(
+          sandbox.getSnapshot().defaultCameraId ?? null,
+          null
+        );
+        first.dispose();
+        second.dispose();
+        free.dispose();
+        firstController.dispose();
+        secondController.dispose();
+        freeController.dispose();
+      },
+
+      "câmera hierárquica combina posição e orientação dos ancestrais"() {
+        const region = new Region(
+          { id: "camera-hierarchy-region", type: "box-region" },
+          {
+            schemaVersion: 1,
+            objects: [
+              {
+                id: "camera-parent",
+                kind: "group",
+                position: [10, 0, 0],
+                rotation: eulerQuaternion([0, 90, 0]),
+                scale: [2, 2, 2]
+              },
+              {
+                id: "camera-child",
+                kind: "camera",
+                parentId: "camera-parent",
+                position: [0, 0, -2],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1],
+                camera: {
+                  projection: "perspective",
+                  fov: 60,
+                  near: 0.2,
+                  far: 500,
+                  focusDistance: 4
+                }
+              }
+            ]
+          }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const service = new CameraObjectService({
+          sandbox,
+          viewer,
+          controller
+        });
+
+        service.activate("camera-child");
+        const camera = controller.snapshot();
+        assertVectorNear(camera.position, [6, 0, 0], 1e-8);
+        assertVectorNear(camera.target, [2, 0, 0], 1e-8);
+        assertEqual(camera.fov, 60);
+        assertEqual(camera.near, 0.2);
+        assertEqual(camera.far, 500);
+
+        sandbox.dispatch({
+          type: "object.transform",
+          id: "camera-parent",
+          position: [20, 0, 0],
+          rotation: eulerQuaternion([0, 90, 0]),
+          scale: [2, 2, 2]
+        });
+        assertVectorNear(
+          controller.snapshot().position,
+          [16, 0, 0],
+          1e-8
+        );
+
+        controller.execute("viewer.camera.restore", {
+          camera: navigationCameraFixture({
+            position: [30, 2, 1],
+            quaternion: [0, 0, 0, 1]
+          })
+        });
+        assertEqual(viewer.snapshot().activeCameraId, null);
+        service.captureViewer("camera-child");
+        assertEqual(
+          viewer.snapshot().activeCameraId,
+          "camera-child"
+        );
+        assertVectorNear(
+          controller.snapshot().position,
+          [30, 2, 1],
+          1e-8
+        );
+        assertVectorNear(
+          controller.snapshot().quaternion,
+          [0, 0, 0, 1],
+          1e-8
+        );
+        service.dispose();
+        controller.dispose();
+      },
+
+      "câmera ativa acompanha preview mundial sem editar documento"() {
+        const region = new Region(
+          { id: "camera-preview-region", type: "box-region" },
+          {
+            schemaVersion: 1,
+            objects: [{
+              id: "camera-preview-active",
+              kind: "camera",
+              position: [1, 2, 3],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              camera: {
+                projection: "perspective",
+                fov: 55,
+                near: 0.1,
+                far: 1000,
+                focusDistance: 10
+              }
+            }]
+          }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const service = new CameraObjectService({
+          sandbox,
+          viewer,
+          controller
+        });
+        service.activate("camera-preview-active");
+        const revision = sandbox.revision;
+
+        assertEqual(service.applyTransformPreview([{
+          id: "camera-preview-active",
+          worldMatrix: translationMatrix([8, 9, 10])
+        }]), true);
+        assertVectorNear(controller.snapshot().position, [8, 9, 10]);
+        assertEqual(sandbox.revision, revision);
+        assertEqual(
+          viewer.snapshot().activeCameraId,
+          "camera-preview-active"
+        );
+        service.clearTransformPreview();
+        assertVectorNear(controller.snapshot().position, [1, 2, 3]);
+        assertEqual(sandbox.revision, revision);
+        service.dispose();
+        controller.dispose();
+      }
+    },
+
+    "viewer-coordination": {
+      "URL compartilhada preserva origem e identifica a réplica"() {
+        const url = new URL(createSharedViewerUrl(
+          "https://example.test/apps/web/?build=current#scene",
+          { sandboxId: "sandbox-coordination-url" }
+        ));
+
+        assertEqual(url.searchParams.get("build"), "current");
+        assertEqual(
+          url.searchParams.get("sandbox"),
+          "sandbox-coordination-url"
+        );
+        assertEqual(url.searchParams.get("viewer"), "join");
+        assertEqual(url.hash, "#scene");
+      },
+
+      "URLs independentes distinguem projeto novo e arquivo recebido"() {
+        const fresh = new URL(createIndependentProjectUrl(
+          "https://example.test/apps/web/?build=current",
+          {
+            sandboxId: "sandbox-independent-new",
+            mode: "new"
+          }
+        ));
+        const opened = new URL(createIndependentProjectUrl(
+          "https://example.test/apps/web/",
+          {
+            sandboxId: "sandbox-independent-open",
+            mode: "open",
+            launchId: "launch-independent-open"
+          }
+        ));
+        assertEqual(fresh.searchParams.get("project"), "new");
+        assertEqual(fresh.searchParams.get("viewer"), "auto");
+        assertEqual(opened.searchParams.get("project"), "open");
+        assertEqual(
+          opened.searchParams.get("launch"),
+          "launch-independent-open"
+        );
+      },
+
+      async "arquivo atravessa lançamento transitório sem virar sessão"() {
+        const network = createLocalViewerNetwork();
+        const launchId = "launch-project-transfer";
+        const sender = new LocalProjectLaunchSender({
+          launchId,
+          channelFactory: network.channelFactory
+        });
+        const receiver = new LocalProjectLaunchReceiver({
+          launchId,
+          channelFactory: network.channelFactory,
+          setTimeoutFn: null,
+          setIntervalFn: null
+        });
+        const receivedPromise = receiver.receive();
+        const acceptedPromise = sender.sendProject(
+          "{\"format\":\"spatial-seed\"}"
+        );
+        await settleLocalViewers(20);
+        const received = await receivedPromise;
+        assertEqual(
+          received.text,
+          "{\"format\":\"spatial-seed\"}"
+        );
+        receiver.accept({
+          name: "Projeto transferido",
+          objectCount: 4
+        });
+        await settleLocalViewers();
+        const accepted = await acceptedPromise;
+        assertEqual(accepted.accepted, true);
+        assertEqual(accepted.projectName, "Projeto transferido");
+        assertEqual(accepted.objectCount, 4);
+        sender.dispose();
+      },
+
+      async "viewer em junção recebe snapshot antes de disputar autoridade"() {
+        const network = createLocalViewerNetwork();
+        const lockManager = createLocalViewerLockManager();
+        const authority = createLocalViewerHarness({
+          sandboxId: "sandbox-join-handshake",
+          viewerId: "viewer-join-authority",
+          role: "auto",
+          network,
+          lockManager
+        });
+        await authority.coordinator.start();
+        authority.coordinated.dispatch({
+          type: "object.create",
+          id: "join-snapshot-object",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        const joining = createLocalViewerHarness({
+          sandboxId: "sandbox-join-handshake",
+          viewerId: "viewer-joining",
+          role: "auto",
+          joinExisting: true,
+          network,
+          lockManager
+        });
+        await joining.coordinator.start();
+        await settleLocalViewers(20);
+
+        assertEqual(joining.coordinator.status().role, "replica");
+        assertEqual(
+          joining.coordinator.status().initialSynchronized,
+          true
+        );
+        assertEqual(joining.sandbox.objectCount, 1);
+        joining.coordinator.dispose();
+        authority.coordinator.dispose();
+      },
+
+      async "réplica sem BroadcastChannel não finge aceitar edição"() {
+        const network = {
+          channelFactory() {
+            throw new Error("BroadcastChannel indisponível.");
+          }
+        };
+        const replica = createLocalViewerHarness({
+          sandboxId: "sandbox-local-viewer-unavailable",
+          viewerId: "viewer-unavailable",
+          role: "replica",
+          network
+        });
+        await replica.coordinator.start();
+
+        assertEqual(replica.coordinator.status().available, false);
+        assertThrowsMessage(
+          () => replica.coordinated.dispatch({
+            type: "object.create",
+            id: "must-not-queue"
+          }),
+          "sem o canal de coordenação"
+        );
+        assertThrowsMessage(
+          () => replica.coordinator.viewerUrl(
+            "https://example.test/apps/web/"
+          ),
+          "BroadcastChannel indisponível"
+        );
+        replica.coordinator.dispose();
+      },
+
+      async "autoridade sincroniza revisão e estado com réplica"() {
+        const pair = await createLocalViewerPair();
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "shared-a",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+
+        assertEqual(pair.authority.sandbox.objectCount, 1);
+        assertEqual(pair.replica.sandbox.objectCount, 1);
+        assertDeepEqual(
+          pair.replica.sandbox.getState(),
+          pair.authority.sandbox.getState()
+        );
+        assertEqual(
+          pair.replica.coordinator.status().sharedRevision,
+          pair.authority.sandbox.revision
+        );
+        pair.dispose();
+      },
+
+      async "réplica serializa duas intenções pela revisão aceita"() {
+        const pair = await createLocalViewerPair();
+        pair.replica.coordinated.dispatch({
+          type: "object.create",
+          id: "queued-a",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        pair.replica.coordinated.dispatch({
+          type: "object.create",
+          id: "queued-b",
+          position: [2, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+
+        assertEqual(pair.authority.sandbox.objectCount, 2);
+        assertEqual(pair.replica.sandbox.objectCount, 2);
+        assertEqual(
+          pair.replica.coordinator.status().pendingIntents,
+          0
+        );
+        assertEqual(
+          pair.replica.coordinator.status().lastOutcome.status,
+          "accepted"
+        );
+        pair.dispose();
+      },
+
+      async "câmera criada na réplica ativa somente após snapshot aceito"() {
+        const pair = await createLocalViewerPair();
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          viewerId: "camera-pending-replica",
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({
+          viewer,
+          surface
+        });
+        const service = new CameraObjectService({
+          sandbox: pair.replica.coordinated,
+          viewer,
+          controller,
+          createId: () => "camera-pending-shared"
+        });
+
+        const result = service.create({
+          name: "Câmera pendente",
+          activate: true
+        });
+        assertEqual(result.changed, true);
+        assertEqual(result.activationPending, true);
+        assertEqual(viewer.snapshot().activeCameraId, null);
+        await settleLocalViewers(20);
+
+        assertEqual(
+          viewer.snapshot().activeCameraId,
+          "camera-pending-shared"
+        );
+        assertEqual(service.list().pendingActivationId, null);
+        assertEqual(
+          service.diagnostics().pendingActivationsResolved,
+          1
+        );
+        service.dispose();
+        controller.dispose();
+        pair.dispose();
+      },
+
+      async "ativação pendente é limpa quando autoridade rejeita criação"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          viewerId: "camera-pending-rejected",
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({
+          viewer,
+          surface
+        });
+        const service = new CameraObjectService({
+          sandbox: pair.replica.coordinated,
+          viewer,
+          controller,
+          createId: () => "camera-pending-rejected"
+        });
+        network.pause("sync");
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "authority-before-camera",
+          position: [0, 0, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+
+        const result = service.create({ activate: true });
+        assertEqual(result.activationPending, true);
+        await settleLocalViewers(20);
+
+        assertEqual(service.list().pendingActivationId, null);
+        assertEqual(viewer.snapshot().activeCameraId, null);
+        assertEqual(
+          service.diagnostics().pendingActivationsRejected,
+          1
+        );
+        assertEqual(
+          pair.replica.coordinator.status().lastOutcome.status,
+          "rejected-stale"
+        );
+        service.dispose();
+        controller.dispose();
+        pair.dispose();
+      },
+
+      async "preview de transformação converge sem alterar revisão"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        let now = 0;
+        const authorityAdapter = createTransformPreviewAdapter();
+        const replicaAdapter = createTransformPreviewAdapter();
+        const authority = new LocalTransformPreviewCoordinator({
+          sandbox: pair.authority.sandbox,
+          sandboxId: pair.authority.coordinator.sandboxId,
+          viewerId: pair.authority.coordinator.viewerId,
+          adapter: authorityAdapter,
+          channelFactory: network.channelFactory,
+          now: () => now,
+          setTimeoutFn: null
+        });
+        const replica = new LocalTransformPreviewCoordinator({
+          sandbox: pair.replica.sandbox,
+          sandboxId: pair.replica.coordinator.sandboxId,
+          viewerId: pair.replica.coordinator.viewerId,
+          adapter: replicaAdapter,
+          channelFactory: network.channelFactory,
+          now: () => now,
+          setTimeoutFn: null
+        });
+        authority.start();
+        replica.start();
+        const revision = pair.authority.sandbox.revision;
+        const moved = translationMatrix([4, 5, 6]);
+
+        authority.begin({
+          previewId: "preview-shared-transform",
+          transforms: [{
+            id: "camera-preview",
+            worldMatrix: identityMatrix()
+          }]
+        });
+        now += 40;
+        authority.update({
+          previewId: "preview-shared-transform",
+          transforms: [{
+            id: "camera-preview",
+            worldMatrix: moved
+          }]
+        });
+        await settleLocalViewers();
+
+        assertEqual(pair.authority.sandbox.revision, revision);
+        assertDeepEqual(
+          replicaAdapter.applied.at(-1).transforms[0].worldMatrix,
+          moved
+        );
+        assertEqual(replica.status().remotePreviewCount, 1);
+        authority.end({
+          previewId: "preview-shared-transform",
+          transforms: [{
+            id: "camera-preview",
+            worldMatrix: moved
+          }],
+          committed: false
+        });
+        await settleLocalViewers();
+        assertEqual(replica.status().remotePreviewCount, 0);
+        assertEqual(replicaAdapter.cleared.length, 1);
+        replica.dispose();
+        authority.dispose();
+        pair.dispose();
+      },
+
+      async "preview limita amostras e libera overlay após commit"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        let now = 0;
+        const authorityAdapter = createTransformPreviewAdapter();
+        const replicaAdapter = createTransformPreviewAdapter();
+        const authority = new LocalTransformPreviewCoordinator({
+          sandbox: pair.authority.sandbox,
+          sandboxId: pair.authority.coordinator.sandboxId,
+          viewerId: pair.authority.coordinator.viewerId,
+          adapter: authorityAdapter,
+          channelFactory: network.channelFactory,
+          now: () => now,
+          setTimeoutFn: null,
+          maximumHz: 30
+        });
+        const replica = new LocalTransformPreviewCoordinator({
+          sandbox: pair.replica.sandbox,
+          sandboxId: pair.replica.coordinator.sandboxId,
+          viewerId: pair.replica.coordinator.viewerId,
+          adapter: replicaAdapter,
+          channelFactory: network.channelFactory,
+          now: () => now,
+          setTimeoutFn: null
+        });
+        authority.start();
+        replica.start();
+        authority.begin({
+          previewId: "preview-throttled",
+          transforms: [{
+            id: "preview-throttled-object",
+            worldMatrix: identityMatrix()
+          }]
+        });
+        for (let index = 1; index <= 5; index += 1) {
+          now += 5;
+          authority.update({
+            previewId: "preview-throttled",
+            transforms: [{
+              id: "preview-throttled-object",
+              worldMatrix: translationMatrix([index, 0, 0])
+            }]
+          });
+        }
+        authority.end({
+          previewId: "preview-throttled",
+          transforms: [{
+            id: "preview-throttled-object",
+            worldMatrix: translationMatrix([5, 0, 0])
+          }],
+          committed: true
+        });
+        await settleLocalViewers();
+
+        assert(
+          authority.status().diagnostics.updatesThrottled >= 4
+        );
+        assertEqual(replica.status().remotePreviewCount, 1);
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "preview-commit-proof",
+          position: [0, 0, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+        assertEqual(replica.status().remotePreviewCount, 0);
+        assert(replicaAdapter.cleared.length >= 1);
+        replica.dispose();
+        authority.dispose();
+        pair.dispose();
+      },
+
+      async "intenção obsoleta é rejeitada e força convergência"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        network.pause("sync");
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "authority-first",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+
+        pair.replica.coordinated.dispatch({
+          type: "object.create",
+          id: "stale-replica",
+          position: [2, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+
+        const status = pair.replica.coordinator.status();
+        assertEqual(status.lastOutcome.status, "rejected-stale");
+        assertEqual(pair.authority.sandbox.objectCount, 1);
+        assertDeepEqual(
+          pair.replica.sandbox.getState(),
+          pair.authority.sandbox.getState()
+        );
+        pair.dispose();
+      },
+
+      async "undo solicitado pela réplica usa o histórico comum"() {
+        const pair = await createLocalViewerPair();
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "undo-shared",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+        assertEqual(pair.replica.coordinated.undo(), true);
+        await settleLocalViewers(20);
+
+        assertEqual(pair.authority.sandbox.objectCount, 0);
+        assertEqual(pair.replica.sandbox.objectCount, 0);
+        assertEqual(pair.authority.sandbox.canRedo, true);
+        assertEqual(pair.replica.coordinated.canRedo, true);
+        assertEqual(pair.replica.coordinated.redo(), true);
+        await settleLocalViewers(20);
+        assertEqual(pair.authority.sandbox.objectCount, 1);
+        assertEqual(pair.replica.sandbox.objectCount, 1);
+        pair.dispose();
+      },
+
+      async "câmera e seleção continuam locais por viewer"() {
+        const pair = await createLocalViewerPair();
+        const authorityViewer = new ViewerState({
+          viewerId: "viewer-authority",
+          camera: navigationCameraFixture({ position: [1, 2, 3] }),
+          selection: ["a"]
+        });
+        const replicaViewer = new ViewerState({
+          viewerId: "viewer-replica",
+          camera: navigationCameraFixture({ position: [8, 9, 10] }),
+          selection: ["b"]
+        });
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "shared-camera-proof",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+
+        assertVectorNear(
+          authorityViewer.snapshot().camera.position,
+          [1, 2, 3]
+        );
+        assertVectorNear(
+          replicaViewer.snapshot().camera.position,
+          [8, 9, 10]
+        );
+        assertDeepEqual(authorityViewer.snapshot().selection, ["a"]);
+        assertDeepEqual(replicaViewer.snapshot().selection, ["b"]);
+        pair.dispose();
+      },
+
+      async "réplica não substitui projeto por uma via local"() {
+        const pair = await createLocalViewerPair();
+        assertThrowsMessage(
+          () => pair.replica.coordinated.replaceState({
+            schemaVersion: 1,
+            objects: []
+          }),
+          "Somente o viewer autoritativo"
+        );
+        pair.dispose();
+      },
+
+      async "troca de projeto migra todas as abas para nova identidade"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "before-switch",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+        network.pause("intent");
+        pair.replica.coordinated.dispatch({
+          type: "object.create",
+          id: "cancelled-by-switch",
+          position: [2, 1, 0],
+          size: [1, 1, 1]
+        });
+
+        pair.authority.coordinator.switchSandbox(
+          "sandbox-local-viewer-switched"
+        );
+        await settleLocalViewers(20);
+
+        assertEqual(
+          pair.authority.coordinator.status().sandboxId,
+          "sandbox-local-viewer-switched"
+        );
+        assertEqual(
+          pair.replica.coordinator.status().sandboxId,
+          "sandbox-local-viewer-switched"
+        );
+        assertEqual(pair.replica.sandbox.objectCount, 1);
+        assertEqual(
+          pair.replica.coordinator.status().pendingIntents,
+          0
+        );
+        assertEqual(
+          pair.replica.coordinator.status().lastOutcome.status,
+          "rejected-sandbox-replaced"
+        );
+        pair.dispose();
+      },
+
+      async "réplica automática assume quando a autoridade fecha"() {
+        const network = createLocalViewerNetwork();
+        const lockManager = createLocalViewerLockManager();
+        const authority = createLocalViewerHarness({
+          sandboxId: "sandbox-viewer-failover",
+          viewerId: "viewer-failover-a",
+          role: "auto",
+          network,
+          lockManager
+        });
+        const replica = createLocalViewerHarness({
+          sandboxId: "sandbox-viewer-failover",
+          viewerId: "viewer-failover-b",
+          role: "auto",
+          network,
+          lockManager
+        });
+        const observer = createLocalViewerHarness({
+          sandboxId: "sandbox-viewer-failover",
+          viewerId: "viewer-failover-c",
+          role: "auto",
+          network,
+          lockManager
+        });
+        await authority.coordinator.start();
+        await replica.coordinator.start();
+        await observer.coordinator.start();
+        authority.coordinated.dispatch({
+          type: "object.create",
+          id: "survives-authority-close",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+
+        assertEqual(authority.coordinator.status().role, "authority");
+        assertEqual(replica.coordinator.status().role, "replica");
+        assertEqual(observer.coordinator.status().role, "replica");
+        authority.coordinator.dispose();
+        await settleLocalViewers(30);
+
+        const survivors = [replica, observer];
+        const promoted = survivors.find(
+          viewer => viewer.coordinator.status().role === "authority"
+        );
+        const remaining = survivors.find(
+          viewer => viewer !== promoted
+        );
+        assert(Boolean(promoted));
+        assertEqual(remaining.coordinator.status().role, "replica");
+        assertEqual(promoted.sandbox.objectCount, 1);
+        assertEqual(remaining.sandbox.objectCount, 1);
+
+        promoted.coordinator.switchSandbox(
+          "sandbox-viewer-failover-next"
+        );
+        await settleLocalViewers(20);
+        assertEqual(
+          remaining.coordinator.status().sandboxId,
+          "sandbox-viewer-failover-next"
+        );
+        assertEqual(remaining.coordinator.status().role, "replica");
+        remaining.coordinator.dispose();
+        promoted.coordinator.dispose();
+      },
+
+      async "diretório agrupa viewers e separa projetos ativos"() {
+        const network = createLocalViewerNetwork();
+        const descriptors = [
+          {
+            sandboxId: "sandbox-directory-alpha",
+            viewerId: "viewer-directory-alpha-a",
+            role: "authority",
+            projectName: "Projeto Alfa",
+            revision: 4,
+            dirty: true,
+            objectCount: 3
+          },
+          {
+            sandboxId: "sandbox-directory-alpha",
+            viewerId: "viewer-directory-alpha-b",
+            role: "replica",
+            projectName: "Projeto Alfa",
+            revision: 4,
+            dirty: true,
+            objectCount: 3
+          },
+          {
+            sandboxId: "sandbox-directory-beta",
+            viewerId: "viewer-directory-beta",
+            role: "authority",
+            projectName: "Projeto Beta",
+            revision: 2,
+            dirty: false,
+            objectCount: 1
+          }
+        ];
+        const directories = descriptors.map(descriptor =>
+          new LocalViewerSessionDirectory({
+            describe: () => descriptor,
+            channelFactory: network.channelFactory,
+            setIntervalFn: null,
+            setTimeoutFn: null
+          })
+        );
+        directories.forEach(directory => directory.start());
+        await settleLocalViewers(20);
+
+        const status = directories[0].status();
+        assertEqual(status.sessions.length, 2);
+        assertEqual(status.sessions[0].projectName, "Projeto Alfa");
+        assertEqual(status.sessions[0].viewerCount, 2);
+        assertEqual(status.sessions[0].current, true);
+        assertEqual(status.sessions[1].projectName, "Projeto Beta");
+        assertEqual(status.sessions[1].viewerCount, 1);
+        directories.forEach(directory => directory.dispose());
+      },
+
+      async "diretório remove viewer fechado da sessão"() {
+        const network = createLocalViewerNetwork();
+        const first = new LocalViewerSessionDirectory({
+          describe: () => ({
+            sandboxId: "sandbox-directory-close",
+            viewerId: "viewer-directory-close-a",
+            role: "authority",
+            projectName: "Projeto Fechável",
+            revision: 1,
+            objectCount: 2
+          }),
+          channelFactory: network.channelFactory,
+          setIntervalFn: null,
+          setTimeoutFn: null
+        });
+        const second = new LocalViewerSessionDirectory({
+          describe: () => ({
+            sandboxId: "sandbox-directory-close",
+            viewerId: "viewer-directory-close-b",
+            role: "replica",
+            projectName: "Projeto Fechável",
+            revision: 1,
+            objectCount: 2
+          }),
+          channelFactory: network.channelFactory,
+          setIntervalFn: null,
+          setTimeoutFn: null
+        });
+        first.start();
+        second.start();
+        await settleLocalViewers();
+        assertEqual(second.status().sessions[0].viewerCount, 2);
+
+        first.dispose();
+        await settleLocalViewers();
+        assertEqual(second.status().sessions[0].viewerCount, 1);
+        second.dispose();
+      },
+
+      "console encaminha diagnóstico e sincronização de viewers"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            describe: () => [],
+            execute(id, args) {
+              calls.push({ id, args });
+              return { id };
+            }
+          },
+          queries: {
+            execute(id) {
+              calls.push({ id });
+              return { role: "authority" };
+            }
+          }
+        });
+
+        const results = console.execute(
+          "viewers status; viewers sessions; " +
+          "viewers open sandbox-selected; viewers sync"
+        );
+
+        assert(results.every(result => result.ok));
+        assertDeepEqual(
+          calls.map(call => call.id),
+          [
+            "viewer.instances.status",
+            "viewer.sessions.status",
+            "viewer.instance.open",
+            "viewer.instance.sync"
+          ]
+        );
+        assertDeepEqual(calls[2].args, {
+          sandboxId: "sandbox-selected"
+        });
+      }
+    },
+
+    "viewer-animation": {
+      async "autoridade distribui definição declarativa sem quadros"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "spin",
+          targetIds: ["shared-a"],
+          targetMode: "objects"
+        });
+        await settleLocalViewers();
+
+        assertEqual(pair.authority.animation.status().state, "playing");
+        assertEqual(pair.replica.animation.status().state, "playing");
+        assertDeepEqual(
+          pair.replica.adapter.applied.at(-1).descriptor,
+          {
+            kind: "preset",
+            id: "spin",
+            targetIds: ["shared-a"],
+            targetMode: "objects"
+          }
+        );
+        assertEqual(
+          pair.network.messages.some(entry =>
+            entry.message.type === "animation-frame"
+          ),
+          false
+        );
+        pair.dispose();
+      },
+
+      async "réplica inicia sessão com alvos já resolvidos"() {
+        const pair = await createLocalAnimationPair();
+        pair.replica.animation.play("program", {
+          id: "from-replica",
+          operations: [{ type: "move", value: ["t", 0, 0] }],
+          targetIds: ["replica-target"]
+        });
+        await settleLocalViewers(20);
+
+        const authority = pair.authority.animation.status();
+        const replica = pair.replica.animation.status();
+        assertEqual(authority.state, "playing");
+        assertEqual(replica.state, "playing");
+        assertDeepEqual(
+          pair.authority.adapter.applied.at(-1).descriptor.targetIds,
+          ["replica-target"]
+        );
+        assertEqual(replica.shared.lastOutcome.status, "accepted");
+        pair.dispose();
+      },
+
+      async "viewer tardio alcança a sessão já ativa"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "orbit",
+          targetIds: ["late-a"]
+        });
+        await settleLocalViewers();
+        pair.clock.value += 4500;
+
+        const lateViewer = createLocalViewerHarness({
+          sandboxId: pair.sandboxId,
+          viewerId: "viewer-late",
+          role: "replica",
+          network: pair.network
+        });
+        await lateViewer.coordinator.start();
+        const late = attachLocalAnimation(lateViewer, {
+          network: pair.network,
+          clock: pair.clock
+        });
+        await settleLocalViewers(20);
+
+        assertEqual(late.animation.status().state, "playing");
+        assertNear(
+          late.animation.status().shared.positionSeconds,
+          4.5
+        );
+        late.dispose();
+        lateViewer.coordinator.dispose();
+        pair.dispose();
+      },
+
+      async "pausa e retomada preservam um tempo comum"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "float",
+          targetIds: ["time-a"]
+        });
+        await settleLocalViewers();
+        pair.clock.value += 2250;
+        pair.replica.animation.pause();
+        await settleLocalViewers(20);
+
+        const paused = pair.authority.animation.status();
+        assertEqual(paused.state, "paused");
+        assertNear(paused.shared.positionSeconds, 2.25);
+        pair.clock.value += 5000;
+        assertNear(
+          pair.replica.animation.status().shared.positionSeconds,
+          2.25
+        );
+
+        pair.authority.animation.resume();
+        await settleLocalViewers();
+        pair.clock.value += 750;
+        assertNear(
+          pair.replica.animation.status().shared.positionSeconds,
+          3
+        );
+        pair.dispose();
+      },
+
+      async "intenção temporal obsoleta é rejeitada explicitamente"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalAnimationPair({ network });
+        pair.authority.animation.play("preset", {
+          id: "wave",
+          targetIds: ["stale-a"]
+        });
+        await settleLocalViewers();
+
+        network.pause("session-sync");
+        pair.authority.animation.pause();
+        pair.replica.animation.stop();
+        await settleLocalViewers(20);
+
+        const replica = pair.replica.animation.status();
+        assertEqual(replica.shared.lastOutcome.status, "rejected-stale");
+        assertEqual(replica.state, "paused");
+        assertEqual(pair.authority.animation.status().state, "paused");
+        pair.dispose();
+      },
+
+      async "parada compartilhada restaura todos os viewers"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "pulse",
+          targetIds: ["restore-a"]
+        });
+        await settleLocalViewers();
+        pair.replica.animation.stop();
+        await settleLocalViewers(20);
+
+        assertEqual(pair.authority.animation.status().state, "idle");
+        assertEqual(pair.replica.animation.status().state, "idle");
+        assertEqual(
+          pair.authority.adapter.applied.at(-1).reason,
+          "user"
+        );
+        assertEqual(
+          pair.replica.adapter.applied.at(-1).reason,
+          "user"
+        );
+        pair.dispose();
+      },
+
+      async "mudança editorial encerra a sessão em todas as abas"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "spin",
+          targetIds: ["edited-a"]
+        });
+        await settleLocalViewers();
+        pair.authority.viewer.coordinated.dispatch({
+          type: "object.create",
+          id: "edited-a",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+
+        assertEqual(pair.authority.animation.status().state, "idle");
+        assertEqual(pair.replica.animation.status().state, "idle");
+        assertEqual(
+          pair.authority.animation.status().shared.reason,
+          "scene-changed"
+        );
+        pair.dispose();
+      },
+
+      async "troca de projeto migra o canal temporal e zera a sessão"() {
+        const pair = await createLocalAnimationPair();
+        pair.authority.animation.play("preset", {
+          id: "rainbow",
+          targetIds: ["switch-a"]
+        });
+        await settleLocalViewers();
+        pair.authority.viewer.coordinator.switchSandbox(
+          "sandbox-animation-switched"
+        );
+        await settleLocalViewers(20);
+
+        assertEqual(
+          pair.authority.animation.status().shared.sandboxId,
+          "sandbox-animation-switched"
+        );
+        assertEqual(
+          pair.replica.animation.status().shared.sandboxId,
+          "sandbox-animation-switched"
+        );
+        assertEqual(pair.authority.animation.status().state, "idle");
+        assertEqual(pair.replica.animation.status().state, "idle");
+        pair.dispose();
+      },
+
+      async "integração real recompila e restaura em duas abas"() {
+        const network = createLocalViewerNetwork();
+        const clock = {
+          value: Date.parse("2026-07-24T12:00:00.000Z")
+        };
+        const viewers = await createLocalViewerPair({ network });
+        const authority = attachRealLocalAnimation(viewers.authority, {
+          network,
+          clock
+        });
+        const replica = attachRealLocalAnimation(viewers.replica, {
+          network,
+          clock
+        });
+        await settleLocalViewers();
+
+        replica.animation.play("preset", {
+          id: "spin",
+          parameters: { speed: 90, axis: "y" },
+          targetIds: ["group-a"]
+        });
+        await settleLocalViewers(20);
+        clock.value += 3000;
+        authority.fixture.emit({ deltaSeconds: 1 / 60 });
+        replica.fixture.emit({ deltaSeconds: 1 / 60 });
+
+        assertNear(
+          authority.animation.status().time.simulationTime,
+          3
+        );
+        assertNear(
+          replica.animation.status().time.simulationTime,
+          3
+        );
+        authority.animation.stop();
+        await settleLocalViewers();
+        assertEqual(authority.fixture.restored.length, 1);
+        assertEqual(replica.fixture.restored.length, 1);
+
+        replica.dispose();
+        authority.dispose();
+        viewers.dispose();
+      },
+
+      "réplica sem canal não finge controlar animação"() {
+        const region = new Region(
+          { id: "animation-no-channel", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const adapter = createLocalAnimationAdapter();
+        const animation = new LocalAnimationCoordinator({
+          sandbox,
+          sandboxId: "sandbox-animation-unavailable",
+          viewerId: "viewer-animation-unavailable",
+          isAuthority: () => false,
+          adapter,
+          channelFactory() {
+            throw new Error("BroadcastChannel indisponível.");
+          }
+        });
+        animation.start();
+
+        assertEqual(animation.status().shared.available, false);
+        assertThrowsMessage(
+          () => animation.play("preset", {
+            id: "spin",
+            targetIds: ["a"]
+          }),
+          "sem o canal local"
+        );
+        animation.dispose();
       }
     },
 
@@ -1772,6 +3410,34 @@ export function createRuntimeLayerTests() {
         assertEqual(status.statistics.steps, 2);
         assertEqual(status.statistics.frames, 1);
         assertEqual(status.clip.objectCount, 2);
+        runtime.dispose();
+      },
+
+      "relógio absoluto salta diretamente após aba suspensa"() {
+        const fixture = createAnimationFixture();
+        let wallTime = 1000;
+        const evaluations = [];
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        runtime.start({
+          id: "test.absolute-time",
+          targetIds: ["group-a"],
+          timeSource: () => (wallTime - 1000) / 1000,
+          evaluate(context) {
+            evaluations.push(context);
+            return identityAnimationFrame(context);
+          }
+        });
+
+        wallTime = 13000;
+        fixture.emit({ deltaSeconds: 1 / 60 });
+
+        assertEqual(evaluations.length, 1);
+        assertNear(evaluations[0].t, 12);
+        assertNear(runtime.status().time.simulationTime, 12);
+        assertEqual(runtime.status().statistics.droppedSteps, 0);
         runtime.dispose();
       },
 
@@ -2031,6 +3697,47 @@ export function createRuntimeLayerTests() {
         assertEqual(service.resume().state, "playing");
         assertEqual(service.stop().state, "idle");
         assertEqual(fixture.restored.length, 1);
+        runtime.dispose();
+      },
+
+      "serviço recompila descritor compartilhado e segue a época comum"() {
+        const fixture = createAnimationFixture();
+        let nowMs = 1000;
+        const runtime = new AnimationRuntime({
+          surface: fixture.surface,
+          now: monotonicNow()
+        });
+        const service = new AnimationCommandService({
+          runtime,
+          selection: () => ({
+            members: [{ objectId: "group-a" }]
+          })
+        });
+        const descriptor = service.prepareShared("preset", {
+          id: "spin",
+          parameters: { speed: 90, axis: "y" }
+        });
+        const session = {
+          sequence: 1,
+          playbackId: "playback-shared-service",
+          state: "playing",
+          descriptor,
+          positionSeconds: 0,
+          changedAtMs: 1000,
+          baseRevision: 0,
+          reason: null
+        };
+
+        service.synchronizeShared(session, {
+          now: () => nowMs
+        });
+        nowMs = 3500;
+        fixture.emit({ deltaSeconds: 1 / 60 });
+
+        assertDeepEqual(descriptor.targetIds, ["group-a"]);
+        assertNear(service.status().time.simulationTime, 2.5);
+        assertEqual(service.status().preset.id, "spin");
+        assertEqual(structuredClone(descriptor).kind, "preset");
         runtime.dispose();
       },
 
@@ -3916,6 +5623,73 @@ assets: {
         assertEqual(harness.link.download,"teste.spatialseed");
       },
 
+      async "saveAs sempre solicita um novo nome ao seletor nativo"() {
+        let pickerCalls=0;
+        const writes=[];
+        const handle={
+          name:"novo-nome.spatialseed",
+          async createWritable() {
+            return {
+              async write(value) { writes.push(value); },
+              async close() { writes.push("closed"); }
+            };
+          }
+        };
+        const harness=createFileGatewayHarness({
+          async showSaveFilePicker() {
+            pickerCalls+=1;
+            return handle;
+          }
+        });
+        harness.gateway.fileHandle={
+          name:"anterior.spatialseed",
+          async createWritable() {
+            throw new Error("handle anterior não deve ser reutilizado");
+          }
+        };
+
+        const result=await harness.gateway.save({
+          prepared:true,
+          filename:"projeto.spatialseed",
+          mediaType:"application/json",
+          text:"{}",
+          bytes:2
+        },{saveAs:true});
+
+        assertEqual(pickerCalls,1);
+        assertEqual(result.filename,"novo-nome.spatialseed");
+        assertDeepEqual(writes,["{}","closed"]);
+      },
+
+      async "saveAs móvel nunca baixa sem antes solicitar um nome"() {
+        const harness=createFileGatewayHarness();
+        const project={
+          prepared:true,
+          filename:"projeto.spatialseed",
+          mediaType:"application/json",
+          text:"{}",
+          bytes:2
+        };
+
+        const first=await harness.gateway.save(project,{saveAs:true});
+        assertDeepEqual(first,{
+          saved:false,
+          fallbackRequired:true,
+          fallbackReason:"native-unavailable"
+        });
+        assertDeepEqual(harness.calls,[]);
+
+        harness.gateway.saveFallback(project,{
+          fallbackReason:first.fallbackReason
+        });
+        const callsAfterFirstDownload=harness.calls.length;
+        const second=await harness.gateway.save(project,{saveAs:true});
+
+        assertEqual(second.fallbackRequired,true);
+        assertEqual(second.fallbackReason,"native-unavailable");
+        assertEqual(harness.calls.length,callsAfterFirstDownload);
+      },
+
       "novo projeto descarta referência de arquivo anterior"() {
         const harness=createFileGatewayHarness();
         harness.gateway.fileHandle={name:"anterior.spatialseed"};
@@ -3933,6 +5707,76 @@ assets: {
     },
 
     "project-files": {
+      "schema 3 preserva câmera hierárquica e câmera padrão"() {
+        const assets = new AppearanceRuntime().exportAssets();
+        const project = new ProjectValidator().validate({
+          format: "spatial-seed",
+          schemaVersion: ProjectSerializer.schemaVersion,
+          assets,
+          scene: {
+            schemaVersion: 1,
+            defaultCameraId: "camera-main",
+            objects: [
+              {
+                id: "camera-group",
+                kind: "group",
+                position: [0, 0, 0],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1]
+              },
+              {
+                id: "camera-main",
+                kind: "camera",
+                parentId: "camera-group",
+                position: [1, 2, 3],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1],
+                camera: {
+                  projection: "perspective",
+                  fov: 50,
+                  near: 0.1,
+                  far: 2000,
+                  focusDistance: 8
+                }
+              }
+            ]
+          }
+        });
+
+        assertEqual(project.schemaVersion, 3);
+        assertEqual(project.scene.defaultCameraId, "camera-main");
+        assertEqual(project.scene.objects[1].kind, "camera");
+        assertEqual("appearanceId" in project.scene.objects[1], false);
+        assertThrowsMessage(
+          () => new ProjectValidator().validate({
+            format: "spatial-seed",
+            schemaVersion: 2,
+            assets,
+            scene: {
+              schemaVersion: 1,
+              objects: [project.scene.objects[1]]
+            }
+          }),
+          "exige schema 3"
+        );
+      },
+
+      "schema 3 rejeita câmera padrão inexistente"() {
+        assertThrowsMessage(
+          () => new ProjectValidator().validate({
+            format: "spatial-seed",
+            schemaVersion: 3,
+            assets: new AppearanceRuntime().exportAssets(),
+            scene: {
+              schemaVersion: 1,
+              defaultCameraId: "camera-missing",
+              objects: []
+            }
+          }),
+          "Câmera padrão inexistente"
+        );
+      },
+
       "schema 2 aceita grupo lógico sem aparência"() {
         const sourceRuntime=new AppearanceRuntime();
         const scene=sourceRuntime.normalizeScene({
@@ -3987,6 +5831,277 @@ assets: {
           message=error.message;
         }
         assertEqual(message,"Objeto sem appearanceId: box.");
+      }
+    },
+
+    "project-recovery": {
+      "registro versionado preserva checkpoint e comandos"() {
+        const record = createRecoveryRecord({
+          sandboxId: "sandbox-test-record",
+          checkpoint: recoveryCheckpoint("Registro"),
+          commands: [{
+            type: "object.create",
+            id: "recovered",
+            position: [0, 1, 0],
+            size: [1, 1, 1]
+          }],
+          baseVersion: 0,
+          revision: 1,
+          dirty: true,
+          updatedAt: "2026-07-24T12:00:00.000Z"
+        });
+
+        assertEqual(record.format, "spatial-seed-recovery");
+        assertEqual(record.schemaVersion, 1);
+        assertEqual(record.commands.length, 1);
+        assertEqual(Object.isFrozen(record), true);
+        assertThrowsMessage(
+          () => validateRecoveryRecord({
+            ...record,
+            schemaVersion: 99
+          }),
+          "Versão de recuperação incompatível"
+        );
+      },
+
+      async "comandos confirmados sobrevivem recarga e mantêm undo"() {
+        const store = new MemoryRecoveryStore();
+        const source = createRecoveryHarness({
+          sandboxId: "sandbox-test-reload",
+          store
+        });
+        await source.controller.initialize();
+        source.sandbox.dispatch({
+          type: "object.create",
+          id: "recovered",
+          position: [0, 1, 0],
+          size: [1, 1, 1]
+        });
+        await source.controller.flush();
+        source.controller.dispose();
+
+        const target = createRecoveryHarness({
+          sandboxId: "sandbox-test-reload",
+          store
+        });
+        const pending = await target.controller.initialize();
+        assertEqual(pending.mode, "draft");
+        assertEqual(pending.pending.commandCount, 1);
+
+        const continued = await target.controller.continueRecovery();
+        assertEqual(continued.result.commandCount, 1);
+        assertEqual(target.sandbox.objectCount, 1);
+        assertEqual(target.sandbox.canUndo, true);
+        assertEqual(target.sandbox.undo(), true);
+        assertEqual(target.sandbox.objectCount, 0);
+        target.controller.dispose();
+      },
+
+      async "autoridade promovida adota o snapshot vivo sem restaurar o antigo"() {
+        const sandboxId = "sandbox-test-promoted-authority";
+        const store = new MemoryRecoveryStore([
+          createRecoveryRecord({
+            sandboxId,
+            checkpoint: recoveryCheckpoint("Antigo"),
+            commands: [{
+              type: "object.create",
+              id: "stale-recovery-object",
+              position: [0, 1, 0],
+              size: [1, 1, 1]
+            }],
+            baseVersion: 0,
+            revision: 1,
+            dirty: true,
+            updatedAt: "2026-07-24T12:00:00.000Z"
+          })
+        ]);
+        const harness = createRecoveryHarness({
+          sandboxId,
+          store
+        });
+        harness.sandbox.dispatch({
+          type: "object.create",
+          id: "live-replica-object",
+          position: [3, 1, 0],
+          size: [1, 1, 1]
+        });
+
+        const adopted = harness.controller.adoptCurrentSession(
+          sandboxId
+        );
+        assertEqual(adopted.mode, "adopted-current");
+        assertEqual(harness.projectService.restoreCalls, 0);
+        assertEqual(harness.sandbox.objectCount, 1);
+        assertEqual(
+          harness.sandbox.getState().objects[0].id,
+          "live-replica-object"
+        );
+
+        await harness.controller.flush();
+        const persisted = await store.load(sandboxId);
+        assertEqual(persisted.commands.length, 1);
+        assertEqual(
+          persisted.commands[0].id,
+          "live-replica-object"
+        );
+        harness.controller.dispose();
+      },
+
+      async "serviço real continua rascunho e reabre cópia exportada"() {
+        const sandboxId = "sandbox-test-real-project-service";
+        const source = createProjectServiceRecoveryHarness({
+          sandboxId,
+          store: new MemoryRecoveryStore()
+        });
+        const appearance = source.appearanceRuntime.internLegacyMaterial({
+          color: "#336699"
+        });
+        const record = createRecoveryRecord({
+          sandboxId,
+          checkpoint: source.projectService.createCheckpoint(),
+          commands: [{
+            type: "object.create",
+            id: "recovered-real",
+            position: [0, 1, 0],
+            size: [1, 1, 1],
+            appearanceId: appearance.appearanceId
+          }],
+          baseVersion: 0,
+          revision: 1,
+          dirty: true,
+          updatedAt: "2026-07-24T12:00:00.000Z"
+        });
+        const store = new MemoryRecoveryStore([record]);
+        const target = createProjectServiceRecoveryHarness({
+          sandboxId,
+          store
+        });
+
+        const pending = await target.controller.initialize();
+        assertEqual(pending.mode, "draft");
+        const prepared = target.controller.prepareExport();
+        const continued = await target.controller.continueRecovery();
+
+        assertEqual(continued.mode, "continued");
+        assertEqual(continued.result.objectCount, 1);
+        assertEqual(target.sandbox.objectCount, 1);
+        assertEqual(target.sandbox.canUndo, true);
+
+        const opened = createProjectServiceRecoveryHarness({
+          sandboxId: `${sandboxId}-opened`,
+          store: new MemoryRecoveryStore()
+        });
+        const loaded = opened.projectService.openText(prepared.text);
+
+        assertEqual(loaded.loaded, true);
+        assertEqual(loaded.objectCount, 1);
+        assertEqual(opened.sandbox.objectCount, 1);
+        assertEqual(opened.region.getState().objects.length, 1);
+        target.controller.dispose();
+        opened.controller.dispose();
+      },
+
+      async "checkpoint limpo reabre sem diálogo de rascunho"() {
+        const sandboxId = "sandbox-test-clean";
+        const store = new MemoryRecoveryStore([
+          createRecoveryRecord({
+            sandboxId,
+            checkpoint: recoveryCheckpoint("Limpo"),
+            commands: [],
+            baseVersion: 0,
+            revision: 0,
+            dirty: false,
+            updatedAt: "2026-07-24T12:00:00.000Z"
+          })
+        ]);
+        const harness = createRecoveryHarness({ sandboxId, store });
+        const status = await harness.controller.initialize();
+
+        assertEqual(status.mode, "restored-clean");
+        assertEqual(harness.projectService.restoreCalls, 1);
+        assertEqual(harness.sandbox.dirty, false);
+        harness.controller.dispose();
+      },
+
+      async "abrir projeto troca identidade sem sobrescrever o anterior"() {
+        const store = new MemoryRecoveryStore();
+        const identityChanges = [];
+        const harness = createRecoveryHarness({
+          sandboxId: "sandbox-test-before",
+          rotatedId: "sandbox-test-after",
+          store,
+          onIdentityChanged: change =>
+            identityChanges.push(change)
+        });
+        await harness.controller.initialize();
+        await harness.controller.flush();
+        assert(Boolean(await store.load("sandbox-test-before")));
+
+        harness.projectService.emit({ type: "project-opened" });
+        await harness.controller.flush();
+
+        assertEqual(
+          await store.load("sandbox-test-before"),
+          null
+        );
+        assert(Boolean(await store.load("sandbox-test-after")));
+        assertEqual(
+          harness.controller.status().sandboxId,
+          "sandbox-test-after"
+        );
+        assertDeepEqual(identityChanges, [{
+          previousId: "sandbox-test-before",
+          sandboxId: "sandbox-test-after"
+        }]);
+        harness.controller.dispose();
+      },
+
+      "identidade persiste no armazenamento local"() {
+        const values = new Map();
+        const identity = new BrowserSandboxIdentity({
+          storage: {
+            getItem(key) { return values.get(key) ?? null; },
+            setItem(key, value) { values.set(key, value); }
+          },
+          cryptoApi: {
+            randomUUID() {
+              return "12345678-1234-1234-1234-123456789abc";
+            }
+          }
+        });
+        const first = identity.current();
+        const second = identity.current();
+        assertEqual(first, second);
+        assertEqual(
+          first,
+          "sandbox-12345678-1234-1234-1234-123456789abc"
+        );
+      },
+
+      "console consulta o controlador de recuperação"() {
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            describe: () => [],
+            execute() {
+              throw new Error("Consulta não deve executar comando.");
+            }
+          },
+          queries: {
+            execute(id) {
+              assertEqual(id, "recovery.status");
+              return { mode: "active", sandboxId: "sandbox-console" };
+            }
+          }
+        });
+
+        const [entry] = console.execute("recovery status");
+        assertEqual(entry.ok, true);
+        assertEqual(entry.result.sandboxId, "sandbox-console");
       }
     },
 
@@ -7649,6 +9764,148 @@ function createFileGatewayHarness(windowOverrides={}) {
   return {gateway,calls,link};
 }
 
+function recoveryCheckpoint(name = "Projeto Spatial Seed") {
+  return {
+    format: "spatial-seed",
+    schemaVersion: 1,
+    metadata: {
+      name,
+      createdAt: "2026-07-24T12:00:00.000Z",
+      savedAt: "2026-07-24T12:00:00.000Z"
+    },
+    region: {
+      descriptor: {
+        id: "region-main",
+        name: "Região principal",
+        type: "box-region"
+      },
+      version: 0
+    },
+    scene: {
+      schemaVersion: 1,
+      objects: []
+    },
+    editor: {},
+    renderer: {}
+  };
+}
+
+function createRecoveryHarness({
+  sandboxId,
+  rotatedId = `${sandboxId}-rotated`,
+  store,
+  onIdentityChanged = () => {}
+}) {
+  const region = new Region(
+    { id: "region-main", name: "Principal", type: "box-region" },
+    { schemaVersion: 1, objects: [] }
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const listeners = new Set();
+  const projectService = {
+    restoreCalls: 0,
+    createCheckpoint() {
+      return recoveryCheckpoint();
+    },
+    restoreRecovery(record) {
+      this.restoreCalls += 1;
+      sandbox.restoreCommandSequence({
+        baseState: record.checkpoint.scene,
+        commands: record.commands,
+        baseVersion: record.baseVersion,
+        revision: record.revision
+      });
+      return {
+        recovered: true,
+        commandCount: record.commands.length
+      };
+    },
+    prepareRecoveryExport(record) {
+      const document = structuredClone(record.checkpoint);
+      document.scene = sandbox.previewCommandSequence(
+        document.scene,
+        record.commands
+      );
+      return {
+        prepared: true,
+        filename: "recuperado.spatialseed",
+        text: JSON.stringify(document),
+        bytes: 1
+      };
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    emit(event) {
+      for (const listener of listeners) listener(event);
+    }
+  };
+  const identity = {
+    current: () => sandboxId,
+    rotate: () => rotatedId
+  };
+  const controller = new SandboxRecoveryController({
+    sandbox,
+    projectService,
+    store,
+    identity,
+    debounceMs: 100000,
+    setTimer: () => 1,
+    clearTimer: () => {},
+    onIdentityChanged
+  });
+  return { controller, identity, projectService, region, sandbox };
+}
+
+function createProjectServiceRecoveryHarness({ sandboxId, store }) {
+  const region = new Region(
+    { id: "region-main", name: "Principal", type: "box-region" },
+    { schemaVersion: 1, objects: [] }
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const editor = new EditorState();
+  const appearanceRuntime = new AppearanceRuntime();
+  let transformConfig = {};
+  const renderer = {
+    getTransformConfig() {
+      return structuredClone(transformConfig);
+    },
+    setTransformConfig(next) {
+      transformConfig = structuredClone(next);
+    }
+  };
+  const projectService = new ProjectService({
+    sandbox,
+    editor,
+    renderer,
+    region,
+    appearanceRuntime
+  });
+  const controller = new SandboxRecoveryController({
+    sandbox,
+    projectService,
+    store,
+    identity: {
+      current: () => sandboxId,
+      rotate: () => `${sandboxId}-rotated`
+    },
+    debounceMs: 100000,
+    setTimer: () => 1,
+    clearTimer: () => {}
+  });
+
+  return {
+    appearanceRuntime,
+    controller,
+    editor,
+    projectService,
+    region,
+    renderer,
+    sandbox
+  };
+}
+
 function createExperimentDefinition() {
   return {
     apiVersion: EXPERIMENT_DEFINITION_VERSION,
@@ -7979,6 +10236,52 @@ function spatialCreationPlan({
   };
 }
 
+function navigationCameraFixture(patch = {}) {
+  return normalizeNavigationCamera({
+    position: [0, 0, 0],
+    quaternion: [0, 0, 0, 1],
+    focusDistance: 1,
+    fov: 55,
+    near: 0.1,
+    far: 1000,
+    aspect: 1,
+    ...patch
+  });
+}
+
+function createCameraSurfaceFixture() {
+  let camera = navigationCameraFixture();
+  const listeners = new Set();
+  return {
+    applyCount: 0,
+    readNavigationCamera() {
+      return structuredClone(camera);
+    },
+    applyNavigationCamera(next) {
+      camera = normalizeNavigationCamera(next, camera);
+      this.applyCount += 1;
+      return structuredClone(camera);
+    },
+    subscribeNavigationCamera(listener) {
+      listeners.add(listener);
+      listener(structuredClone(camera));
+      return () => listeners.delete(listener);
+    },
+    readSelectionBounds() {
+      return {
+        min: [-1, -1, -1],
+        max: [1, 1, 1]
+      };
+    },
+    emit(next) {
+      camera = normalizeNavigationCamera(next, camera);
+      for (const listener of listeners) {
+        listener(structuredClone(camera));
+      }
+    }
+  };
+}
+
 function createShortcutEvent({
   key,
   ctrlKey = false,
@@ -8041,6 +10344,13 @@ function assertNear(actual, expected, epsilon = 1e-9) {
   assert(
     Math.abs(actual - expected) <= epsilon,
     `Esperado aproximadamente ${expected}, recebido ${actual}.`
+  );
+}
+
+function assertVectorNear(actual, expected, epsilon = 1e-9) {
+  assertEqual(actual.length, expected.length);
+  actual.forEach((value, index) =>
+    assertNear(value, expected[index], epsilon)
   );
 }
 
@@ -8250,5 +10560,395 @@ function assertMatricesNear(actual, expected, epsilon = 1e-9) {
   assertEqual(actual.length,expected.length);
   for (let index=0; index<actual.length; index+=1) {
     assertNear(actual[index],expected[index],epsilon);
+  }
+}
+
+async function createLocalViewerPair({
+  network = createLocalViewerNetwork()
+} = {}) {
+  const sandboxId = "sandbox-local-viewer-tests";
+  const authority = createLocalViewerHarness({
+    sandboxId,
+    viewerId: "viewer-authority",
+    role: "authority",
+    network
+  });
+  const replica = createLocalViewerHarness({
+    sandboxId,
+    viewerId: "viewer-replica",
+    role: "replica",
+    network
+  });
+  await authority.coordinator.start();
+  await replica.coordinator.start();
+  await settleLocalViewers();
+  return {
+    authority,
+    replica,
+    dispose() {
+      replica.coordinator.dispose();
+      authority.coordinator.dispose();
+    }
+  };
+}
+
+async function createLocalAnimationPair({
+  network = createLocalViewerNetwork(),
+  clock = { value: Date.parse("2026-07-24T12:00:00.000Z") }
+} = {}) {
+  const sandboxId = "sandbox-local-viewer-tests";
+  const viewers = await createLocalViewerPair({ network });
+  const authority = attachLocalAnimation(viewers.authority, {
+    network,
+    clock
+  });
+  const replica = attachLocalAnimation(viewers.replica, {
+    network,
+    clock
+  });
+  await settleLocalViewers();
+  return {
+    sandboxId,
+    network,
+    clock,
+    authority: {
+      viewer: viewers.authority,
+      ...authority
+    },
+    replica: {
+      viewer: viewers.replica,
+      ...replica
+    },
+    dispose() {
+      replica.dispose();
+      authority.dispose();
+      viewers.dispose();
+    }
+  };
+}
+
+function attachLocalAnimation(viewer, {
+  network,
+  clock
+}) {
+  const adapter = createLocalAnimationAdapter();
+  const animation = new LocalAnimationCoordinator({
+    sandbox: viewer.sandbox,
+    sandboxId: viewer.coordinator.sandboxId,
+    viewerId: viewer.coordinator.viewerId,
+    isAuthority: () => viewer.coordinator.isAuthority,
+    adapter,
+    channelFactory: network.channelFactory,
+    now: () => clock.value
+  });
+  animation.start();
+  const unsubscribeViewer = viewer.coordinator.subscribe(status => {
+    if (status.sandboxId !== animation.sandboxId) {
+      animation.switchSandbox(status.sandboxId);
+    }
+  });
+  return {
+    animation,
+    adapter,
+    dispose() {
+      unsubscribeViewer();
+      animation.dispose();
+    }
+  };
+}
+
+function createLocalAnimationAdapter() {
+  const applied = [];
+  let session = {
+    sequence: 0,
+    state: "idle",
+    positionSeconds: 0,
+    changedAtMs: 0
+  };
+  return {
+    applied,
+    prepare(operation, args = {}) {
+      const targetIds = [...new Set(
+        (args.targetIds ?? []).map(String)
+      )];
+      if (!targetIds.length) {
+        throw new Error("Descritor de teste exige alvos.");
+      }
+      return Object.freeze({
+        kind: String(operation),
+        id: String(args.id ?? "test"),
+        ...(args.operations
+          ? { operations: structuredClone(args.operations) }
+          : {}),
+        targetIds: Object.freeze(targetIds),
+        targetMode: String(args.targetMode ?? "selection")
+      });
+    },
+    apply(next) {
+      session = structuredClone(next);
+      applied.push(session);
+      return this.status();
+    },
+    status() {
+      return Object.freeze({
+        state: session.state,
+        time: Object.freeze({
+          simulationTime: Number(session.positionSeconds ?? 0)
+        }),
+        statistics: Object.freeze({
+          frames: 0,
+          droppedSteps: 0
+        })
+      });
+    }
+  };
+}
+
+function createTransformPreviewAdapter() {
+  const applied = [];
+  const cleared = [];
+  return {
+    applied,
+    cleared,
+    apply(session) {
+      applied.push(structuredClone(session));
+      return true;
+    },
+    clear(session) {
+      cleared.push(structuredClone(session));
+      return true;
+    }
+  };
+}
+
+function attachRealLocalAnimation(viewer, {
+  network,
+  clock
+}) {
+  const fixture = createAnimationFixture();
+  const runtime = new AnimationRuntime({
+    surface: fixture.surface,
+    now: monotonicNow()
+  });
+  const service = new AnimationCommandService({
+    runtime,
+    selection: () => ({
+      members: [{ objectId: "group-a" }]
+    })
+  });
+  const animation = new LocalAnimationCoordinator({
+    sandbox: viewer.sandbox,
+    sandboxId: viewer.coordinator.sandboxId,
+    viewerId: viewer.coordinator.viewerId,
+    isAuthority: () => viewer.coordinator.isAuthority,
+    adapter: {
+      prepare: (operation, args) =>
+        service.prepareShared(operation, args),
+      apply: (session, { now }) =>
+        service.synchronizeShared(session, { now }),
+      status: () => service.status()
+    },
+    channelFactory: network.channelFactory,
+    now: () => clock.value
+  });
+  animation.start();
+  return {
+    animation,
+    fixture,
+    dispose() {
+      animation.dispose();
+      runtime.dispose();
+    }
+  };
+}
+
+function createLocalViewerHarness({
+  sandboxId,
+  viewerId,
+  role,
+  joinExisting = false,
+  network,
+  lockManager = null
+}) {
+  const region = new Region(
+    {
+      id: `region-${viewerId}`,
+      name: "Viewer local",
+      type: "box-region"
+    },
+    { schemaVersion: 1, objects: [] }
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const coordinator = new LocalViewerCoordinator({
+    sandbox,
+    sandboxId,
+    viewerId,
+    requestedRole: role,
+    joinExisting,
+    channelFactory: network.channelFactory,
+    lockManager,
+    now: () => Date.parse("2026-07-24T12:00:00.000Z")
+  });
+  coordinator.connectSnapshotAdapter({
+    capture() {
+      const proposal = sandbox.createProposal();
+      return {
+        revision: sandbox.revision,
+        baseVersion: sandbox.baseVersion,
+        baseState: sandbox.getBaseState(),
+        commands: proposal.commands
+      };
+    },
+    restore(snapshot) {
+      return sandbox.restoreCommandSequence({
+        baseState: snapshot.baseState,
+        commands: snapshot.commands,
+        baseVersion: snapshot.baseVersion,
+        revision: snapshot.revision
+      });
+    },
+    prepareIntent(command) {
+      return { command };
+    },
+    applyIntent(intent) {
+      return sandbox.dispatch(intent.command);
+    }
+  });
+  return {
+    region,
+    sandbox,
+    coordinator,
+    coordinated: new CoordinatedSandbox({
+      sandbox,
+      coordinator
+    })
+  };
+}
+
+function createLocalViewerLockManager() {
+  const locks = new Map();
+  const stateFor = name => {
+    const state = locks.get(name) ?? {
+      held: false,
+      queue: []
+    };
+    locks.set(name, state);
+    return state;
+  };
+  const drain = name => {
+    const state = stateFor(name);
+    if (state.held || !state.queue.length) return;
+    const request = state.queue.shift();
+    if (request.aborted) {
+      drain(name);
+      return;
+    }
+    state.held = true;
+    Promise.resolve(request.callback({ name })).then(
+      value => {
+        state.held = false;
+        request.resolve(value);
+        drain(name);
+      },
+      error => {
+        state.held = false;
+        request.reject(error);
+        drain(name);
+      }
+    );
+  };
+  return {
+    request(name, options = {}, callback) {
+      const state = stateFor(name);
+      if (options.ifAvailable && state.held) {
+        return Promise.resolve(callback(null));
+      }
+      return new Promise((resolve, reject) => {
+        const request = {
+          callback,
+          resolve,
+          reject,
+          aborted: false
+        };
+        const abort = () => {
+          request.aborted = true;
+          const index = state.queue.indexOf(request);
+          if (index >= 0) state.queue.splice(index, 1);
+          const error = new Error("Lock request aborted.");
+          error.name = "AbortError";
+          reject(error);
+        };
+        if (options.signal?.aborted) {
+          abort();
+          return;
+        }
+        options.signal?.addEventListener?.(
+          "abort",
+          abort,
+          { once: true }
+        );
+        state.queue.push(request);
+        drain(name);
+      });
+    }
+  };
+}
+
+function createLocalViewerNetwork() {
+  const groups = new Map();
+  const paused = new Set();
+  const messages = [];
+  const channelFactory = name => {
+    const listeners = new Set();
+    const channel = {
+      closed: false,
+      addEventListener(type, listener) {
+        if (type === "message") listeners.add(listener);
+      },
+      removeEventListener(type, listener) {
+        if (type === "message") listeners.delete(listener);
+      },
+      postMessage(message) {
+        messages.push({
+          name,
+          message: structuredClone(message)
+        });
+        if (channel.closed || paused.has(message.type)) return;
+        for (const peer of groups.get(name) ?? []) {
+          if (peer === channel || peer.closed) continue;
+          const payload = structuredClone(message);
+          queueMicrotask(() => {
+            for (const listener of peer.listeners) {
+              listener({ data: payload });
+            }
+          });
+        }
+      },
+      close() {
+        channel.closed = true;
+        groups.get(name)?.delete(channel);
+      },
+      listeners
+    };
+    const group = groups.get(name) ?? new Set();
+    group.add(channel);
+    groups.set(name, group);
+    return channel;
+  };
+  return {
+    channelFactory,
+    messages,
+    pause(type) {
+      paused.add(type);
+    },
+    resume(type) {
+      paused.delete(type);
+    }
+  };
+}
+
+async function settleLocalViewers(turns = 8) {
+  for (let index = 0; index < turns; index += 1) {
+    await Promise.resolve();
   }
 }

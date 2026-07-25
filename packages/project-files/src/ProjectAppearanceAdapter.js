@@ -5,6 +5,9 @@ export class ProjectAppearanceAdapter {
     const graph = new AppearanceGraph();
 
     const objects = (scene.objects ?? []).map(object => {
+      if (["group", "camera"].includes(object.kind)) {
+        return structuredClone(object);
+      }
       if (!object.material) {
         if (!object.appearanceId) {
           throw new Error(

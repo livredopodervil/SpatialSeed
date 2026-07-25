@@ -252,7 +252,8 @@ CSP compatível com SES e testar que nenhum recurso essencial foi bloqueado.
 
 ## 13. Dependências e cadeia de fornecimento
 
-Three.js e SES são vendorizados. Isso reduz dependência de CDN em execução, mas
+Three.js, SES e o Math.js restrito aos protótipos são vendorizados. Isso reduz
+dependência de CDN em execução, mas
 não prova origem, licença, integridade ou atualização. A política de dependências
 e proveniência permanece pendente em `docs/DEPENDENCY_POLICY.md`.
 

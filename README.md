@@ -4,7 +4,7 @@
 
 **Um ambiente espacial, procedural e orientado a comandos para criar, editar, programar, salvar e habitar mundos digitais.**
 
-[Experimentar no GitHub Pages](https://livredopodervil.github.io/SpatialSeed/apps/web/) · [Livro e manual](docs/book/SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf) · [Documentação técnica](docs/) · [Decisões do projeto](docs/project/DECISIONS.md)
+[Portal no GitHub Pages](https://livredopodervil.github.io/SpatialSeed/) · [Abrir o editor](https://livredopodervil.github.io/SpatialSeed/apps/web/) · [Experimentos](https://livredopodervil.github.io/SpatialSeed/apps/web/experiments/) · [Livro e manual](docs/book/SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf) · [Documentação técnica](docs/) · [Decisões do projeto](docs/project/DECISIONS.md)
 
 > **Estado:** protótipo experimental em desenvolvimento ativo. A versão pública acompanha o branch `main`; branches `feature/*` podem conter capacidades mais recentes ainda em validação.
 
@@ -19,9 +19,19 @@ O resultado atual combina:
 - editor 3D responsivo para toque, mouse e teclado;
 - linguagem afim para repetições e construções paramétricas;
 - runtime JavaScript isolado para cálculos, funções e procedimentos;
+- câmera de navegação controlável por painel, console e procedimentos;
 - hierarquia de grupos aninháveis com transformações locais;
 - propriedades, materiais, texturas e cores de instância editáveis em lote;
 - aplicação web instalável, utilizável offline depois do primeiro carregamento;
+- recuperação automática local por checkpoint e comandos confirmados;
+- múltiplos viewers locais sobre o mesmo sandbox, com câmeras e seleções
+  independentes;
+- projetos independentes criados ou abertos explicitamente em novas abas;
+- objetos câmera persistentes, hierárquicos e ativáveis por viewer;
+- preview de transformações entre viewers, inclusive para operar uma câmera
+  enquanto outra aba fornece a saída;
+- animações efêmeras sincronizadas por definição e relógio absoluto entre esses
+  viewers;
 - testes, diagnósticos, auditoria de recursos e benchmarks executáveis no próprio aplicativo.
 
 ## Por que existe
@@ -38,9 +48,18 @@ Isso permite que edição manual, geração procedural, testes e futuras interfa
 
 ## Experimente agora
 
-A aplicação pública está em:
+O portal público, com introdução e manual breve, está em:
+
+**https://livredopodervil.github.io/SpatialSeed/**
+
+A aplicação mantida continua em:
 
 **https://livredopodervil.github.io/SpatialSeed/apps/web/**
+
+O catálogo canônico distingue o laboratório integrado dos protótipos
+históricos e explicita dependências e limitações:
+
+**https://livredopodervil.github.io/SpatialSeed/apps/web/experiments/**
 
 No menu **Projeto**, use **Como instalar** para adicionar o PWA ao aparelho. O primeiro acesso precisa de rede; depois que o service worker instalar os recursos, o aplicativo pode abrir offline.
 
@@ -58,7 +77,13 @@ cd SpatialSeed
 python3 -m http.server 8082 --bind 127.0.0.1
 ```
 
-Abra:
+Abra o portal:
+
+```text
+http://127.0.0.1:8082/
+```
+
+Ou entre diretamente no editor:
 
 ```text
 http://127.0.0.1:8082/apps/web/
@@ -100,9 +125,13 @@ Um servidor HTTP é necessário porque módulos ES, import maps e service worker
 | Agrupar, desagrupar, desfazer e refazer | **Editar** |
 | Editar propriedades literais ou procedurais, inclusive abrindo grupos | **Inspector** |
 | Reproduzir presets ou compor faixas diferentes por objeto | **Animação** |
+| Posicionar, orientar, orbitar, enquadrar e configurar o recorte | **Câmera** |
+| Criar, ativar, selecionar, capturar e escolher objetos câmera | **Câmera → Câmeras do projeto** |
+| Conectar viewers ou abrir projetos independentes | **Projetos / viewers** |
 | Executar laboratórios paramétricos que geram planos revisáveis | **Explorar** |
 | Ver árvore regional, diagnóstico, recursos e console | **Painéis** |
 | Salvar, abrir, instalar e trocar catálogos de procedimentos | **Projeto** |
+| Inspecionar a recuperação automática local | console: `recovery status` |
 
 Os painéis são móveis e redimensionáveis. Sua disposição, o layout da barra e preferências de apresentação ficam no armazenamento local do navegador. A composição inicial é declarada em [`apps/web/config/ui.default.json`](apps/web/config/ui.default.json), sem duplicar operações do domínio.
 
@@ -151,6 +180,60 @@ Os painéis são móveis e redimensionáveis. Sua disposição, o layout da barr
 - ferramentas por `Q`, `S`, `W`, `E` e `R`;
 - campos textuais preservam edição e undo próprios.
 
+### Câmera de navegação
+
+A câmera de navegação pertence ao `ViewerState`, não ao documento espacial. O
+`ViewerCameraController` mantém posição, quaternion, distância de foco, campo
+visual, `near` e `far`; o alvo exibido no painel é derivado da orientação e da
+distância, evitando duas fontes concorrentes de verdade.
+
+O painel **Câmera** permite editar posição e alvo, orbitar incrementalmente,
+enquadrar a seleção e restaurar a vista inicial. Essas ações não alteram o
+sandbox, não entram no undo e não são salvas no arquivo `.spatialseed`.
+
+### Objetos câmera
+
+Objetos câmera são entidades persistentes e hierárquicas, distintas da câmera
+de navegação. Podem ser criados a partir da vista atual, selecionados,
+transformados, agrupados, capturados novamente e salvos no schema 3 do projeto.
+Cada viewer escolhe localmente qual objeto câmera ativa; o documento pode
+declarar uma câmera padrão opcional.
+
+Ativar um objeto projeta sua pose mundial e seus parâmetros de perspectiva na
+vista local. Navegar manualmente volta à câmera livre sem modificar o objeto.
+Ao mover a câmera pelo gizmo, outros viewers que a estejam usando acompanham o
+gesto por preview efêmero; somente o resultado final entra no undo. O painel
+permite selecionar o objeto diretamente, distinguir câmera selecionada, ativa e
+padrão e escolher se os frustums aparecem em todas, somente nas selecionadas ou
+em nenhuma. Use `camera objects`, `camera diagnostics` e `help camera` no
+console.
+
+### Viewers locais
+
+**Projetos / viewers** lista as identidades de sandbox ativas, conecta outra aba
+ao destino escolhido e também oferece **Novo projeto em nova aba** e **Abrir
+arquivo em nova aba**. Cada aba
+mantém câmera, seleção e painéis próprios; objetos e histórico são coordenados
+por revisão. Uma aba é a autoridade local e as demais enviam comandos canônicos
+em fila. Se uma intenção foi produzida sobre revisão antiga, ela é rejeitada, o
+viewer recebe o estado atual e a ação pode ser repetida conscientemente.
+
+Use `viewers status`, `viewers sessions`, `viewers open [sandboxId]` e
+`viewers sync` no console. Ao fechar a autoridade, uma réplica automática assume
+o projeto e seu diário de recuperação. Essa
+coordenação usa `BroadcastChannel` na mesma origem e não deve ser confundida com
+colaboração remota ou multiusuário.
+
+Um viewer que entra numa sessão existente aguarda o primeiro snapshot antes de
+participar da sucessão de autoridade. Isso evita tratar uma entrada ainda não
+sincronizada como um projeto vazio recuperável. Arquivos enviados a uma nova aba
+usam um canal transitório e não são guardados no diretório de sessões.
+
+Sessões de animação efêmera também atravessam esses viewers, mas por um
+protocolo temporal separado do snapshot editorial. A definição e uma época
+comum são distribuídas; cada aba calcula seus próprios quadros. Câmera, seleção
+e painéis permanecem locais.
+
 ### Produção afim
 
 O console pode criar até 100.000 objetos em uma série atômica. As expressões conhecem o índice `i`, o parâmetro normalizado `u`, a quantidade `count`, constantes e funções matemáticas.
@@ -171,7 +254,9 @@ Esses comandos chamam diretamente a mesma operação `object.create.geometrySeri
 
 ## Console e linguagem
 
-O console reúne comandos editoriais, consultas, testes, benchmarks e um runtime de programas. Use `help`, `help create` e `procedure help` para obter a ajuda gerada pela própria versão carregada.
+O console reúne comandos editoriais, consultas, testes, benchmarks e um runtime
+de programas. Use `help`, `help create`, `help camera` e `procedure help` para
+obter a ajuda gerada pela própria versão carregada.
 
 ### Comandos editoriais
 
@@ -230,6 +315,23 @@ session status
 
 O namespace de sessão pertence a um Worker isolado. `session reset` encerra esse estado de cálculo sem alterar a cena.
 
+### Câmera pelo console
+
+O console chama os mesmos comandos do painel:
+
+```text
+camera status
+camera position 10 8 14
+camera lookat 0 1 0
+camera orbit 30 -10
+camera frame 1.2
+camera projection 0.1 2000 55
+```
+
+`camera quaternion x y z w` define a orientação diretamente. Os quatro
+componentes `x`, `y`, `z` e `w` formam o quaternion normalizado usado como
+orientação autoritativa.
+
 ### Programas espaciais e commit atômico
 
 Programas não recebem acesso direto ao sandbox, renderer, DOM, rede ou sistema de arquivos. Eles recebem apenas capacidades explícitas e podem produzir intenções com `spatial.create`.
@@ -279,6 +381,18 @@ plan commit
 
 O menu **Projeto** importa e exporta catálogos JSON editáveis em outros editores. O **Editor de procedimentos** permite manter fontes nomeadas com numeração de linhas, quebra visual e realce léxico. Importar uma biblioteca nunca executa seu código; a avaliação só ocorre quando o usuário chama `procedure run`.
 
+Procedimentos também podem planejar operações locais da câmera:
+
+```text
+procedure define orbit ({degrees=30}={}) => camera.orbit({yawDegrees:degrees})
+procedure run orbit {"degrees":45}
+plan status
+plan commit
+```
+
+O Worker recebe apenas a fachada `camera.*`. O plano não pode misturar
+mutações espaciais persistentes e câmera local na mesma transação.
+
 ### Experimentos declarativos
 
 O laboratório em **Explorar** apresenta definições registradas pelo plugin
@@ -295,6 +409,14 @@ plan commit
 
 O experimento não fornece HTML nem acessa DOM, renderer ou sandbox. A API ainda
 é interna e não instala JavaScript externo.
+
+O catálogo em [`apps/web/experiments/`](apps/web/experiments/) também preserva
+protótipos independentes anteriores ao laboratório atual. Eles são evidência
+histórica, não extensões do runtime mantido. O manifesto
+[`catalog.json`](apps/web/experiments/catalog.json) registra maturidade,
+execução offline, dependências e limites conhecidos de cada entrada. Desde o
+0029b, os sete snapshots algébricos usam Math.js local e compartilham controles
+de seleção móvel, recorte e salvamento nomeado.
 
 ### Animação efêmera
 
@@ -315,7 +437,10 @@ animate stop
 `mode=objects` abre grupos em objetos renderizáveis, permitindo movimentos e
 cores diferentes. Faixas do painel podem usar programas distintos por alvo.
 Animação é preview: não altera o sandbox, não cria histórico, não é salva no
-projeto e `animate stop` restaura matrizes e cores canônicas.
+projeto e `animate stop` restaura matrizes e cores canônicas. Nos viewers locais
+do mesmo sandbox, iniciar, pausar, retomar ou parar controla uma única sessão
+efêmera. O tempo deriva de uma época absoluta; uma aba reativada ou aberta
+durante a execução alcança diretamente o instante vigente.
 
 ## Arquitetura
 
@@ -323,12 +448,14 @@ projeto e `animate stop` restaura matrizes e cores canônicas.
 flowchart TD
     UI["Editor, Inspector e painéis"] --> API["Comandos e consultas públicas"]
     CONSOLE["Console e automação"] --> API
-    SCRIPT["Worker SES e procedimentos"] --> PLAN["Plano espacial serializável"]
+    SCRIPT["Worker SES e procedimentos"] --> PLAN["Plano serializável"]
     EXP["Experimentos declarativos"] --> PLAN
     ACTION["Botões e atalhos"] --> API
     PLAN --> API
     API --> SANDBOX["Sandbox, reducers e histórico"]
+    API --> CAMERA["ViewerCameraController"]
     SANDBOX --> VIEW["Projeções: Three.js, outline e diagnóstico"]
+    CAMERA --> VIEW
     TIME["Runtime temporal efêmero"] --> VIEW
 ```
 
@@ -348,12 +475,14 @@ flowchart TD
 | --- | --- |
 | `packages/core` | região, sandbox e eventos |
 | `packages/runtime-api` | fachada pública de comandos, consultas, eventos e capacidades |
+| `packages/runtime-layers` | estado local do viewer, controlador de navegação e serviço de objetos câmera |
+| `packages/local-viewers` | coordenação editorial/temporal e lançamento transitório entre abas |
 | `packages/editor-commands` | registro canônico das operações editoriais |
 | `packages/region-box` | reducer puro e modelo de estado da região atual |
 | `packages/scene-hierarchy` | grupos, parentesco, transforms locais e ciclo de subárvores |
 | `packages/geometry-registry` | famílias paramétricas e providers de geometria |
 | `packages/property-registry` | propriedades tipadas, inspeção e edição atômica em lote |
-| `packages/script-runtime` | Workers, SES, sessões, planos espaciais e procedimentos |
+| `packages/script-runtime` | Workers, SES, sessões, planos espaciais/de câmera e procedimentos |
 | `packages/experiment-runtime` | definições, parâmetros e planejamento de experimentos |
 | `packages/experiment-panel` | painel declarativo do laboratório |
 | `packages/ui-config` | manifesto e perfil de atalhos |
@@ -363,6 +492,7 @@ flowchart TD
 | `packages/renderer-three` | projeção WebGL, instancing, picking, highlights e gizmos |
 | `packages/appearance-runtime` | aparências normalizadas, compartilhamento e projeção legada |
 | `packages/project-files` | validação, serialização e abertura de projetos |
+| `packages/project-recovery` | identidade, journal IndexedDB e restauração local |
 | `packages/runtime-test-plugin` | testes arquiteturais executáveis no aplicativo |
 | `apps/web` | composição concreta da PWA e suas superfícies visuais |
 
@@ -372,17 +502,32 @@ Consulte [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
 [`docs/EXPERIMENT_PLUGIN_0027A.md`](docs/EXPERIMENT_PLUGIN_0027A.md),
 [`docs/INTERACTION_SURFACE_0028C.md`](docs/INTERACTION_SURFACE_0028C.md) e
 [`docs/ANIMATION_WORKSPACE_0028D.md`](docs/ANIMATION_WORKSPACE_0028D.md).
+O protocolo local atual está em
+[`docs/project/LOCAL_VIEWER_COORDINATION.md`](docs/project/LOCAL_VIEWER_COORDINATION.md).
+O contrato de câmera está dividido entre
+[`docs/project/VIEWER_CAMERA_CONTROLLER.md`](docs/project/VIEWER_CAMERA_CONTROLLER.md)
+e [`docs/project/CAMERA_OBJECTS.md`](docs/project/CAMERA_OBJECTS.md).
 
 ## Projetos, arquivos e funcionamento offline
 
-- **Salvar** produz um documento `.spatialseed`/JSON validado e portável.
+- **Salvar** produz um documento `.spatialseed`/JSON validado e portável e
+  sempre oferece a escolha do nome;
 - **Abrir** usa a File System Access API quando disponível e mantém um fallback por seletor/download em navegadores móveis.
 - texturas e aparências compartilhadas são armazenadas como assets do projeto;
 - criar um projeto novo descarta a referência ao arquivo anterior, evitando sobrescrita acidental;
-- o PWA guarda os arquivos do aplicativo para uso offline, mas **a cena não é recuperada automaticamente**;
-- a persistência do trabalho continua sendo responsabilidade de **Salvar** e **Abrir**.
+- o PWA guarda os arquivos do aplicativo para uso offline;
+- o IndexedDB conserva um checkpoint local e os comandos editoriais confirmados
+  do sandbox;
+- ao reabrir, checkpoints limpos continuam automaticamente; rascunhos oferecem
+  **Continuar**, **Exportar cópia** ou **Descartar**;
+- seleção, câmera de navegação, câmera ativa, painéis e animação não entram na
+  recuperação; objetos câmera e a câmera padrão pertencem ao documento;
+- limpar os dados do navegador pode apagar a recuperação local;
+- a cópia portátil do trabalho continua sendo responsabilidade de **Salvar** e
+  **Abrir**.
 
-Recuperação automática local, compactação procedural e armazenamento de blobs em OPFS estão no roadmap, não no comportamento atual.
+Compactação procedural e armazenamento de blobs grandes em OPFS continuam no
+roadmap.
 
 ## Testes, diagnóstico e desempenho
 
@@ -395,11 +540,13 @@ runtime test spatial-plan-commit
 runtime test property-contract
 runtime test geometry-creation
 runtime test file-interop
+runtime test project-recovery
 runtime test experiment-contract
 runtime test experiment-panel
 runtime test ui-actions
 runtime test animation-runtime
 runtime test animation-tracks
+runtime test viewer-animation
 runtime resources
 ```
 
@@ -420,20 +567,32 @@ python3 tools/generate_pwa_precache.py
 python3 tools/generate_pwa_precache.py --check
 ```
 
+Para auditar a raiz pública, o catálogo e todos os destinos históricos sem
+acessar a rede:
+
+```bash
+python3 tools/audit_web_entrypoints.py
+```
+
 ## Estrutura do repositório
 
 ```text
+index.html                portal, introdução e manual breve
 apps/web/                 aplicação web e PWA
+apps/web/experiments/     catálogo canônico de experimentos
+apps/experiments/         protótipos independentes preservados
 packages/                 contratos e implementações modulares
 docs/                     arquitetura, decisões, testes e desempenho
 docs/project/             estado, roadmap e continuidade do projeto
-tools/                    servidor, precache e utilitários operacionais
-vendor/                   Three.js, add-ons e SES vendorizados
+tools/                    servidor, precache, auditoria e utilitários
+vendor/                   Three.js, add-ons, SES e Math.js vendorizados
 AGENTS.md                  entrada operacional para assistentes
 PROJECT_SEED.md            semente técnica para retomada do projeto
 ```
 
-Os arquivos da raiz anteriores ao monorepo permanecem como registro histórico. A aplicação mantida e publicada é `apps/web/`.
+O protótipo que antes ocupava a raiz foi preservado em
+`apps/experiments/root-region-prototype/`. A raiz agora é somente uma superfície
+de orientação; a aplicação mantida permanece em `apps/web/`.
 
 ## Desenvolvimento e contribuição
 
@@ -452,6 +611,7 @@ Antes de integrar:
 ```bash
 git status --short
 git diff --check
+python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 ```
 
@@ -474,7 +634,6 @@ SpatialSeed ainda não é um modelador DCC completo nem um motor de jogo pronto 
 - persistência de clips, keyframes e animações no documento;
 - eventos, colisões e interatividade programável contínua;
 - serialização compacta de grandes receitas procedurais e instâncias hierárquicas;
-- recuperação automática da última sessão;
 - colaboração multiusuário e autoridade distribuída em produção;
 - importação e exportação completas de formatos como glTF, STL e Collada;
 - auditoria de segurança suficiente para executar código não confiável em contexto crítico.
@@ -487,7 +646,7 @@ Esses limites são mantidos explícitos para evitar que uma demonstração seja 
 2. decidir persistência de clips/keyframes e modelo de eventos;
 3. geometria 2D, polylines e curvas Bézier;
 4. edição de vértices e meshes;
-5. persistência compacta, recuperação local, formatos 3D e colaboração regional.
+5. persistência compacta, múltiplos viewers, formatos 3D e colaboração regional.
 
 Os registros de planejamento e prioridades anteriores permanecem em [`docs/project/ROADMAP.md`](docs/project/ROADMAP.md).
 

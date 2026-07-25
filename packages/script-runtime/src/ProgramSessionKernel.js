@@ -1,6 +1,6 @@
 import {
   executeProgramRequest
-} from "./ProgramWorkerKernel.js";
+} from "./ProgramWorkerKernel.js?build=20260724-0029c";
 
 export class ProgramSessionKernel {
   #evaluate;

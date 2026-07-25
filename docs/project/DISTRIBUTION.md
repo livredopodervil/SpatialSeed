@@ -1,6 +1,6 @@
 # Distribuição, instalação e portabilidade
 
-> Documento vivo. Revalidado em 24 de julho de 2026 até o marco `0028e`.
+> Documento vivo. Revalidado em 24 de julho de 2026 até o marco `0029d`.
 
 ## Modelo atual
 
@@ -14,15 +14,17 @@ A aplicação mantida é:
 apps/web/
 ```
 
-Os arquivos web da raiz pertencem à história anterior ao monorepo e não devem
-ser tratados como cliente atual.
+A raiz do repositório serve um portal HTML estático com introdução, manual breve
+e links. Ela não contém um segundo editor. O protótipo regional que antes
+ocupava esse caminho foi preservado em
+`apps/experiments/root-region-prototype/`.
 
 ## Modalidades suportadas
 
 | Modalidade | Estado | Uso principal | Limites |
 | --- | --- | --- | --- |
 | GitHub Pages | implementada | demonstração e acesso público | depende da publicação do `main` |
-| PWA instalada | implementada | abertura offline após primeiro acesso | não salva a cena automaticamente |
+| PWA instalada | implementada | abertura offline e recuperação local | IndexedDB não é cópia portátil |
 | servidor local | implementada | desenvolvimento e teste | exige origem HTTP local |
 | pasta portátil com servidor embutido | planejada | distribuição sem Python/Termux | ainda não empacotada |
 | aplicativo nativo/híbrido | hipótese | integração profunda com arquivos e sistema | não é dependência do núcleo |
@@ -32,7 +34,9 @@ ser tratados como cliente atual.
 URL pública:
 
 ```text
+https://livredopodervil.github.io/SpatialSeed/
 https://livredopodervil.github.io/SpatialSeed/apps/web/
+https://livredopodervil.github.io/SpatialSeed/apps/web/experiments/
 ```
 
 O Pages deve publicar a raiz do branch `main`. O arquivo `.nojekyll` impede que
@@ -56,6 +60,13 @@ import JavaScript, não é uma publicação funcional.
 `apps/web/service-worker.js` controla somente `apps/web/`, embora armazene
 recursos necessários de `packages/` e `vendor/`.
 
+O catálogo em `apps/web/experiments/` pertence ao cache do aplicativo. Os
+protótipos em `apps/experiments/` não pertencem ao escopo do service worker;
+seu estado offline e suas dependências são declarados individualmente no
+catálogo. Desde o 0029b, os sete protótipos algébricos usam Math.js
+vendorizado e podem ser servidos sem rede, embora ainda precisem ser visitados
+pela origem local porque não pertencem ao precache do aplicativo.
+
 O arquivo `service-worker.js` da raiz é uma ponte de migração para instalações
 antigas que possuíam escopo amplo. Ele não deve voltar a manter um segundo cache.
 
@@ -78,9 +89,23 @@ aplicativo sem rede. Isso não equivale a persistência da cena:
 
 - recursos do programa ficam no cache do service worker;
 - preferências e catálogo de procedimentos ficam em armazenamento local;
-- o projeto espacial precisa ser salvo em arquivo;
-- limpar dados do navegador pode remover cache, preferências e catálogos;
-- recuperação automática da sessão ainda é planejada.
+- checkpoint e comandos confirmados do sandbox ficam no IndexedDB;
+- limpar dados do navegador pode remover cache, preferências, catálogos e
+  recuperação;
+- o projeto espacial precisa ser salvo em arquivo para ser portátil.
+
+### Recuperação local
+
+Cada sandbox possui uma identidade persistida pelo navegador. Um checkpoint
+limpo e a sequência posterior de comandos confirmados são gravados com debounce
+no IndexedDB. Checkpoints limpos reabrem automaticamente. Um rascunho sujo abre
+um diálogo com três ações: continuar, exportar uma cópia `.spatialseed` ou
+descartar.
+
+Abrir um arquivo ou criar um projeto inicia outra identidade local. A
+recuperação não inclui seleção, câmera de navegação, câmera ativa, painéis,
+previews nem animação e não
+substitui o transporte explícito por arquivo.
 
 ## Interoperabilidade de arquivos
 
@@ -133,6 +158,7 @@ python tools/no_cache_server.py
 Abra:
 
 ```bash
+termux-open-url 'http://127.0.0.1:8082/'
 termux-open-url 'http://127.0.0.1:8082/apps/web/'
 ```
 
@@ -166,6 +192,7 @@ Service workers exigem HTTPS, com exceção de origens locais seguras como
 ```bash
 cd ~/SpatialSeed-monorepo
 git status --short
+python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 python tools/no_cache_server.py
 ```

@@ -7,6 +7,15 @@ export class Sandbox {
   #commands = [];
   #revision = 0;
   #subscribers = new Set();
+  #performance = {
+    dispatches: 0,
+    lastReducerMs: 0,
+    maximumReducerMs: 0,
+    lastNotificationMs: 0,
+    maximumNotificationMs: 0,
+    lastDispatchMs: 0,
+    maximumDispatchMs: 0
+  };
 
   constructor(region, reducer) {
     this.region = region;
@@ -24,11 +33,15 @@ export class Sandbox {
   get objectCount() { return this.#state.objects.length; }
   getSnapshot() { return this.#state; }
   getState() { return structuredClone(this.#state); }
+  getBaseState() { return structuredClone(this.#baseState); }
 
   dispatch(command) {
+    const dispatchStartedAt = performanceNow();
     const before = this.#state;
+    const reducerStartedAt = performanceNow();
     const result = this.reducer(before, structuredClone(command));
     if (!result || result.state === before) return false;
+    const reducerMs = performanceNow() - reducerStartedAt;
 
     this.#undo.push({
       state: before,
@@ -38,7 +51,26 @@ export class Sandbox {
     this.#commands.push(structuredClone(command));
     this.#state = result.state;
     this.#revision += 1;
+    const notificationStartedAt = performanceNow();
     this.#notify(result.changes ?? []);
+    const notificationMs = performanceNow() - notificationStartedAt;
+    const dispatchMs = performanceNow() - dispatchStartedAt;
+    this.#performance.dispatches += 1;
+    this.#performance.lastReducerMs = reducerMs;
+    this.#performance.maximumReducerMs = Math.max(
+      this.#performance.maximumReducerMs,
+      reducerMs
+    );
+    this.#performance.lastNotificationMs = notificationMs;
+    this.#performance.maximumNotificationMs = Math.max(
+      this.#performance.maximumNotificationMs,
+      notificationMs
+    );
+    this.#performance.lastDispatchMs = dispatchMs;
+    this.#performance.maximumDispatchMs = Math.max(
+      this.#performance.maximumDispatchMs,
+      dispatchMs
+    );
     return true;
   }
 
@@ -130,6 +162,78 @@ export class Sandbox {
     return true;
   }
 
+  previewCommandSequence(baseState, commands = []) {
+    const base = validateState(baseState);
+    const sequence = validateCommands(commands);
+    let state = base;
+
+    for (const [index, command] of sequence.entries()) {
+      const result = this.reducer(state, structuredClone(command));
+      if (!result || result.state === state) {
+        throw new Error(
+          `Comando de recuperação ${index + 1} não altera o checkpoint.`
+        );
+      }
+      state = result.state;
+    }
+
+    return structuredClone(state);
+  }
+
+  restoreCommandSequence({
+    baseState,
+    commands = [],
+    baseVersion = this.region.version,
+    revision = commands.length
+  } = {}) {
+    const base = validateState(baseState);
+    const sequence = validateCommands(commands);
+    const restoredRevision = Number(revision);
+
+    if (
+      !Number.isInteger(restoredRevision) ||
+      restoredRevision < sequence.length
+    ) {
+      throw new TypeError(
+        "A revisão recuperada deve ser inteira e não menor que os comandos."
+      );
+    }
+
+    let state = base;
+    const undo = [];
+    for (const [index, command] of sequence.entries()) {
+      const before = state;
+      const result = this.reducer(before, structuredClone(command));
+      if (!result || result.state === before) {
+        throw new Error(
+          `Comando de recuperação ${index + 1} não altera o checkpoint.`
+        );
+      }
+      undo.push({
+        state: before,
+        command: structuredClone(command)
+      });
+      state = result.state;
+    }
+
+    this.#baseState = structuredClone(base);
+    this.#baseVersion = nonNegativeInteger(
+      baseVersion,
+      "A versão-base recuperada"
+    );
+    this.#state = state;
+    this.#undo = undo;
+    this.#redo.length = 0;
+    this.#commands = structuredClone(sequence);
+    this.#revision = restoredRevision;
+    this.#notify([{
+      type: "sandbox-recovered",
+      commandCount: sequence.length,
+      revision: restoredRevision
+    }]);
+    return true;
+  }
+
   getHistoryDiagnostics() {
     return Object.freeze({
       undoDepth: this.#undo.length,
@@ -138,7 +242,8 @@ export class Sandbox {
       commandCount: this.#commands.length,
       dirty: this.dirty,
       canUndo: this.canUndo,
-      canRedo: this.canRedo
+      canRedo: this.canRedo,
+      performance: Object.freeze({ ...this.#performance })
     });
   }
 
@@ -168,4 +273,41 @@ export class Sandbox {
       }
     }
   }
+}
+
+function validateState(value) {
+  const state = structuredClone(value);
+  if (
+    !state ||
+    typeof state !== "object" ||
+    !Array.isArray(state.objects)
+  ) {
+    throw new TypeError(
+      "O estado do sandbox deve conter um array objects."
+    );
+  }
+  return state;
+}
+
+function performanceNow() {
+  return typeof globalThis.performance?.now === "function"
+    ? globalThis.performance.now()
+    : Date.now();
+}
+
+function validateCommands(value) {
+  if (!Array.isArray(value)) {
+    throw new TypeError(
+      "A sequência de comandos recuperada deve ser um array."
+    );
+  }
+  return structuredClone(value);
+}
+
+function nonNegativeInteger(value, label) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0) {
+    throw new TypeError(`${label} deve ser um inteiro não negativo.`);
+  }
+  return number;
 }

@@ -6,5 +6,8 @@
     "apps/*",
     "packages/*"
   ],
+  "scripts": {
+    "audit:web-entrypoints": "python3 tools/audit_web_entrypoints.py"
+  },
   "description": "Monorepo sem build obrigatório; módulos ES nativos no navegador."
 }

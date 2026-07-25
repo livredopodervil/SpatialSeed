@@ -75,7 +75,7 @@ As famílias atuais incluem:
 | hierarquia | `scene-hierarchy`, `hierarchy-reparent`, `hierarchical-render-projection`, `hierarchy-world-commit`, `hierarchy-group`, `hierarchy-group-transform`, `hierarchy-subtree-lifecycle`, `hierarchy-ungroup`, `hierarchy-group-visuals`, `hierarchy-group-surfaces` |
 | propriedades e geometria | `property-contract`, `placement-frame`, `geometry-creation`, `geometry-registry` |
 | afim e seleção | `affine-math`, `affine-pivot`, `affine-contract`, `affine-repeat`, `selection-ui` |
-| arquivo, build e PWA | `build-info`, `file-interop`, `project-files`, `pwa-status`, `ui-configuration` |
+| arquivo, recuperação, build e PWA | `build-info`, `file-interop`, `project-files`, `project-recovery`, `pwa-status`, `ui-configuration` |
 
 Esta tabela é mapa de responsabilidade, não lista autoritativa. Nova suíte deve
 aparecer automaticamente em `runtime test help`.

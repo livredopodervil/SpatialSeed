@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Catálogo canônico de experimentos do SpatialSeed.">
+  <meta name="theme-color" content="#0a1522">
+  <title>Experimentos — SpatialSeed</title>
+  <link rel="icon" href="../icons/spatial-seed.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./catalog.css">
+</head>
+<body>
+  <main class="catalog-shell">
+    <nav class="topbar" aria-label="Navegação principal">
+      <a class="brand" href="../../../">
+        <img src="../icons/spatial-seed.svg" alt="">
+        <span>SpatialSeed</span>
+      </a>
+      <div>
+        <a href="../../../">Portal</a>
+        <a class="app-link" href="../">Abrir editor</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <p class="eyebrow">Catálogo canônico · marco 0029b</p>
+      <h1>Experimentos com origem, maturidade e limites visíveis.</h1>
+      <p>
+        O laboratório declarativo integrado é a via mantida. Os protótipos
+        históricos permanecem acessíveis como evidência e campo de comparação,
+        sem serem apresentados como partes equivalentes do editor atual.
+      </p>
+    </header>
+
+    <aside class="notice">
+      <strong>Fronteira desta etapa.</strong>
+      <span>
+        O catálogo torna as dependências externas auditáveis. A substituição por
+        recursos vendorizados e os controles comuns dos protótipos pertencem ao
+        marco 0029b.
+      </span>
+    </aside>
+
+    <section class="catalog-controls" aria-label="Filtros do catálogo">
+      <div>
+        <button class="active" type="button" data-filter="all">Todos</button>
+        <button type="button" data-filter="maintained">Mantidos</button>
+        <button type="button" data-filter="historical">Históricos</button>
+        <button type="button" data-filter="diagnostic">Diagnóstico</button>
+      </div>
+      <p id="catalog-summary" aria-live="polite">Carregando catálogo…</p>
+    </section>
+
+    <section id="catalog" class="catalog-grid" aria-live="polite"></section>
+
+    <template id="experiment-card-template">
+      <article class="experiment-card">
+        <div class="card-badges"></div>
+        <h2></h2>
+        <p class="summary"></p>
+        <dl class="facts">
+          <div>
+            <dt>Execução</dt>
+            <dd class="offline"></dd>
+          </div>
+          <div>
+            <dt>Dependências externas</dt>
+            <dd class="dependencies"></dd>
+          </div>
+        </dl>
+        <div class="issues"></div>
+        <a class="open-experiment" href="#">Abrir experimento <span aria-hidden="true">→</span></a>
+      </article>
+    </template>
+
+    <footer>
+      <p>
+        O manifesto legível por máquinas está em
+        <a href="./catalog.json">catalog.json</a>.
+      </p>
+    </footer>
+  </main>
+  <script src="./catalog.js"></script>
+</body>
+</html>

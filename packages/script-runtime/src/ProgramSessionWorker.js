@@ -2,7 +2,7 @@ import "../../../vendor/ses/ses.umd.min.js";
 import {
   ProgramSessionKernel,
   createSesSessionEvaluator
-} from "./ProgramSessionKernel.js";
+} from "./ProgramSessionKernel.js?build=20260724-0029c";
 import {
   PROGRAM_WORKER_PROTOCOL_VERSION
 } from "./ProgramRunController.js";

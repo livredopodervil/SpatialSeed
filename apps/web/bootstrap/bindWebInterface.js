@@ -1,7 +1,7 @@
 import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260720-0028c";
 import {
   BrowserProjectFileGateway
-} from "../file-interop/BrowserProjectFileGateway.js?build=20260716-0026i";
+} from "../file-interop/BrowserProjectFileGateway.js?build=20260724-0029b2";
 
 export function bindWebInterface({
   runtime,
@@ -25,6 +25,10 @@ export function bindWebInterface({
     objectInspector,
     transformToolPanel,
     experimentPanel,
+    sandboxRecovery,
+    viewerCoordinator,
+    viewerDirectory,
+    projectLaunch,
     connectUiDiagnostics
   } = web;
 
@@ -37,6 +41,10 @@ export function bindWebInterface({
   };
   const browserWindow = documentRoot.defaultView ?? window;
   const projectFiles = new BrowserProjectFileGateway({
+    windowRef: browserWindow,
+    documentRef: documentRoot
+  });
+  const projectWindowFiles = new BrowserProjectFileGateway({
     windowRef: browserWindow,
     documentRef: documentRoot
   });
@@ -55,14 +63,43 @@ export function bindWebInterface({
       projectFiles.capabilities();
   };
   refreshProjectFileCapabilities();
+  const recoveryDialog = $("recovery-dialog");
+  const viewerSessionDialog = $("viewer-session-dialog");
+  let resolveRecoveryReady = null;
+  const recoveryDecision = new Promise(resolve => {
+    resolveRecoveryReady = resolve;
+  });
 
   const consoleLines = [];
   const consoleInputHistory = [];
   let consoleHistoryIndex = 0;
   let lastConsoleText = "";
   let statusTimer = null;
+  let lastViewerOutcome = null;
   let latestSelection = runtime.query("selection.snapshot");
   let latestEditor = runtime.query("editor.snapshot");
+  let latestViewerInstances = runtime.query(
+    "viewer.instances.status"
+  );
+  let latestViewerRole = latestViewerInstances.role;
+  let latestSandboxId = latestViewerInstances.sandboxId;
+  let pendingProjectWindowLaunch = null;
+  if (browserWindow.location) {
+    const cleanLaunchUrl = new URL(browserWindow.location.href);
+    if (cleanLaunchUrl.searchParams.has("project")) {
+      cleanLaunchUrl.searchParams.delete("project");
+      cleanLaunchUrl.searchParams.delete("launch");
+      if (latestViewerRole === "authority") {
+        cleanLaunchUrl.searchParams.delete("viewer");
+      }
+      browserWindow.history.replaceState(
+        browserWindow.history.state,
+        "",
+        cleanLaunchUrl
+      );
+    }
+  }
+  const initialCamera = runtime.query("viewer.camera.snapshot");
   const toolbarBinding = composeToolbar({
     root: documentRoot,
     configuration: uiConfiguration?.toolbar
@@ -146,6 +183,7 @@ export function bindWebInterface({
     "#outline",
     "#review-panel",
     "#diagnostic-panel",
+    "#camera-panel",
     "#developer-panel",
     "#console-panel",
     "#procedure-editor-panel",
@@ -186,11 +224,17 @@ export function bindWebInterface({
     $("undo").disabled = !status.canUndo;
     $("redo").disabled = !status.canRedo;
     $("review").disabled = !status.dirty;
+    const replica = latestViewerInstances.role === "replica";
+    $("project-open").disabled = replica;
+    $("project-new").disabled = replica;
+    $("confirm-proposal").disabled = replica;
+    $("viewer-new").disabled = !latestViewerInstances.available;
     const selectionActions=runtime.query("selection.actions.describe");
     $("group-selection").disabled=!selectionActions.canGroup;
     $("ungroup-selection").disabled=!selectionActions.canUngroup;
     const count=latestSelection?.members?.length??0,active=latestSelection?.activeMember?.objectId??"∅",mode=latestEditor?.tool?.mode??"select",operation=latestEditor?.selectionOperation??"replace";
-    $("status").textContent=`${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"}`;
+    const viewerRole = replica ? "viewer réplica" : "viewer autoritativo";
+    $("status").textContent=`${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"} · ${viewerRole}`;
   }
 
   const scheduleUiFrame = callback =>
@@ -294,6 +338,27 @@ export function bindWebInterface({
   uiActions
     .register("scene.toggle", () => setSceneOnly(!sceneOnly))
     .register("viewport.fullscreen", () => toggleViewportFullscreen())
+    .register("viewer.instance.open", ({ sandboxId } = {}) => {
+      const result = execute("viewer.instance.open", {
+        href: browserWindow.location.href,
+        sandboxId: sandboxId ?? latestSandboxId
+      });
+      if (!result?.url) return result;
+      browserWindow.open(result.url, "_blank", "noopener");
+      showNotice("Novo viewer solicitado para o projeto escolhido.");
+      return result;
+    })
+    .register("viewer.instance.choose", () => {
+      const directory = runtime.query("viewer.sessions.status");
+      const sessions = directory.sessions ?? [];
+      renderViewerSessions(sessions);
+      if (typeof viewerSessionDialog.showModal === "function") {
+        viewerSessionDialog.showModal();
+      } else {
+        viewerSessionDialog.setAttribute("open", "");
+      }
+      return directory;
+    })
     .register("panel.animation.toggle", () => {
       const panel = $("animation-panel");
       return panel.hidden
@@ -360,7 +425,15 @@ export function bindWebInterface({
 
   const unsubscribeWorld = runtime.subscribe(
     "world.changed",
-    () => uiRefresh.request("world.changed")
+    () => {
+      uiRefresh.request("world.changed");
+      if (
+        !$("camera-panel").hidden &&
+        !$("camera-panel").contains(documentRoot.activeElement)
+      ) {
+        refreshCameraPanel();
+      }
+    }
   );
 
   const unsubscribeSelection = runtime.subscribe(
@@ -390,6 +463,12 @@ export function bindWebInterface({
       $("duplicate-selection").disabled = empty;
       $("delete-selection").disabled = empty;
       $("inspector").disabled = empty;
+      if (
+        !$("camera-panel").hidden &&
+        !$("camera-panel").contains(documentRoot.activeElement)
+      ) {
+        refreshCameraObjects();
+      }
       uiRefresh.request("selection.changed");
     }
   );
@@ -467,20 +546,349 @@ export function bindWebInterface({
     () => panelManager.hide("#outline")
   );
 
-  $("project-save").addEventListener("click", async () => {
-    const project = execute("project.save");
-    if (!project?.prepared) return;
+  const cameraVector = (prefix, values) => {
+    ["x", "y", "z"].forEach((axis, index) => {
+      $(`camera-${prefix}-${axis}`).value = String(values[index]);
+    });
+  };
+  const readCameraVector = prefix =>
+    ["x", "y", "z"].map(axis =>
+      $(`camera-${prefix}-${axis}`).value
+    );
+  const refreshCameraPanel = () => {
+    const camera = runtime.query("viewer.camera.snapshot");
+    cameraVector("position", camera.position);
+    cameraVector("target", camera.target);
+    $("camera-fov").value = String(camera.fov);
+    $("camera-near").value = String(camera.near);
+    $("camera-far").value = String(camera.far);
+    $("camera-orbit-distance").placeholder =
+      String(Number(camera.focusDistance.toFixed(6)));
+    $("camera-summary").textContent =
+      `quaternion [${camera.quaternion
+        .map(value => Number(value.toFixed(6)))
+        .join(", ")}] · foco ${Number(camera.focusDistance.toFixed(6))}`;
+    refreshCameraObjects();
+    return camera;
+  };
+  const selectedCameraObjectId = () =>
+    $("camera-object-select").value || null;
+  const refreshCameraObjects = () => {
+    const snapshot = runtime.query("camera.objects.list");
+    const selection = runtime.query("selection.snapshot");
+    const selectedObjectId =
+      selection.activeMember?.objectId ?? null;
+    const select = $("camera-object-select");
+    const previous = select.value;
+    select.replaceChildren();
+    for (const camera of snapshot.cameras) {
+      const option = documentRoot.createElement("option");
+      option.value = camera.id;
+      option.textContent = [
+        camera.name,
+        camera.id === selectedObjectId ? "selecionada" : null,
+        camera.active ? "ativa" : null,
+        camera.default ? "padrão" : null
+      ].filter(Boolean).join(" · ");
+      select.append(option);
+    }
+    if (snapshot.cameras.some(camera => camera.id === previous)) {
+      select.value = previous;
+    } else if (snapshot.activeCameraId) {
+      select.value = snapshot.activeCameraId;
+    } else if (snapshot.defaultCameraId) {
+      select.value = snapshot.defaultCameraId;
+    }
+    const selected = snapshot.cameras.find(
+      camera => camera.id === select.value
+    );
+    $("camera-object-summary").textContent = selected
+      ? `${snapshot.cameras.length} câmera(s) · id ${selected.id} · ` +
+        `${selected.camera.fov}° · ${selected.camera.near}–${selected.camera.far}`
+      : "Nenhuma câmera persistente.";
+    for (const id of [
+      "camera-object-activate",
+      "camera-object-select-button",
+      "camera-object-capture",
+      "camera-object-default"
+    ]) {
+      $(id).disabled = !selected;
+    }
+    $("camera-object-default-clear").disabled =
+      !snapshot.defaultCameraId;
+    $("camera-object-deactivate").disabled =
+      !snapshot.activeCameraId;
+    const helperState = runtime.query("viewer.camera.helpers");
+    $("camera-helper-policy").value = helperState.helperPolicy;
+    const active = snapshot.cameras.find(
+      camera => camera.id === snapshot.activeCameraId
+    );
+    $("active-camera-indicator").textContent = active
+      ? `Vista: ${active.name} · ${active.id}`
+      : "Vista: navegação livre";
+    $("active-camera-indicator").dataset.cameraActive =
+      active ? "true" : "false";
+    return snapshot;
+  };
 
-    try {
-      let result = await projectFiles.save(project);
-      if (result.fallbackRequired) {
-        const approved = browserWindow.confirm(
-          "O Chrome deste aparelho oferece um seletor nativo, " +
-          "mas não permite usá-lo neste contexto. " +
-          "Deseja salvar por download compatível?"
+  $("camera-settings").addEventListener("click", () => {
+    refreshCameraPanel();
+    panelManager.show("#camera-panel");
+  });
+
+  $("close-camera").addEventListener(
+    "click",
+    () => panelManager.hide("#camera-panel")
+  );
+
+  $("camera-projection-apply").addEventListener("click", () => {
+    const result = execute("viewer.camera.projection.set", {
+      fov: $("camera-fov").value,
+      near: $("camera-near").value,
+      far: $("camera-far").value
+    });
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice(
+      `Projeção: ${result.fov}° · ${result.near} – ${result.far}`
+    );
+  });
+
+  $("camera-view-apply").addEventListener("click", () => {
+    const result = execute("viewer.camera.look-at", {
+      position: readCameraVector("position"),
+      target: readCameraVector("target"),
+      fov: $("camera-fov").value,
+      near: $("camera-near").value,
+      far: $("camera-far").value
+    });
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice("Vista da câmera aplicada.");
+  });
+
+  $("camera-orbit-apply").addEventListener("click", () => {
+    const distance = $("camera-orbit-distance").value.trim();
+    const result = execute("viewer.camera.orbit", {
+      yawDegrees: $("camera-orbit-yaw").value,
+      pitchDegrees: $("camera-orbit-pitch").value,
+      ...(distance ? { distance } : {})
+    });
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice("Órbita da câmera aplicada.");
+  });
+
+  $("camera-frame-selection").addEventListener("click", () => {
+    const result = execute("viewer.camera.frame-selection");
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice("Seleção enquadrada.");
+  });
+
+  $("camera-reset").addEventListener("click", () => {
+    const result = execute("viewer.camera.restore", {
+      camera: initialCamera
+    });
+    if (!result || result.reason) return;
+    refreshCameraPanel();
+    showNotice("Vista inicial restaurada.");
+  });
+
+  $("camera-object-create").addEventListener("click", () => {
+    const snapshot = runtime.query("camera.objects.list");
+    const name = browserWindow.prompt(
+      "Nome da câmera persistente:",
+      `Câmera ${snapshot.cameras.length + 1}`
+    );
+    if (name === null) return;
+    const result = execute("camera.object.create", {
+      name: name.trim() || null,
+      camera: runtime.query("viewer.camera.snapshot"),
+      activate: true
+    });
+    if (!result?.changed) return;
+    refreshCameraPanel();
+    $("camera-object-select").value = result.id;
+    showNotice(result.activationPending
+      ? "Câmera enviada à autoridade; ativação aguardando confirmação."
+      : "Câmera persistente criada e ativada.");
+  });
+
+  $("camera-object-activate").addEventListener("click", () => {
+    const id = selectedCameraObjectId();
+    if (!id) return;
+    execute("viewer.camera.object.activate", { id });
+    refreshCameraPanel();
+    showNotice("Câmera ativada somente neste viewer.");
+  });
+
+  $("camera-object-select-button").addEventListener("click", () => {
+    const id = selectedCameraObjectId();
+    if (!id) return;
+    execute("selection.select-object", { id });
+    refreshCameraObjects();
+    showNotice("Objeto câmera selecionado no editor.");
+  });
+
+  $("camera-object-capture").addEventListener("click", () => {
+    const id = selectedCameraObjectId();
+    if (!id) return;
+    const result = execute("camera.object.capture-viewer", { id });
+    if (!result?.changed) return;
+    refreshCameraPanel();
+    showNotice("Câmera persistente atualizada pela vista atual.");
+  });
+
+  $("camera-object-default").addEventListener("click", () => {
+    const id = selectedCameraObjectId();
+    if (!id) return;
+    execute("camera.object.default.set", { id });
+    refreshCameraObjects();
+    showNotice("Câmera padrão do documento atualizada.");
+  });
+
+  $("camera-object-default-clear").addEventListener("click", () => {
+    execute("camera.object.default.set", { id: null });
+    refreshCameraObjects();
+    showNotice("O documento não possui câmera padrão.");
+  });
+
+  $("camera-object-deactivate").addEventListener("click", () => {
+    execute("viewer.camera.object.deactivate");
+    refreshCameraObjects();
+    showNotice("Navegação livre neste viewer.");
+  });
+
+  $("camera-helper-policy").addEventListener("change", event => {
+    execute("viewer.camera.helpers.set", {
+      helperPolicy: event.currentTarget.value
+    });
+    refreshCameraObjects();
+  });
+
+  const unsubscribeViewer = runtime.subscribe(
+    "viewer.changed",
+    () => {
+      if (
+        $("camera-panel").hidden ||
+        $("camera-panel").contains(documentRoot.activeElement)
+      ) {
+        return;
+      }
+      refreshCameraPanel();
+    }
+  );
+  const unsubscribeCameraObjects = runtime.subscribe(
+    "camera.objects.changed",
+    () => {
+      if (
+        !$("camera-panel").hidden &&
+        !$("camera-panel").contains(documentRoot.activeElement)
+      ) {
+        refreshCameraObjects();
+        return;
+      }
+      const snapshot = runtime.query("camera.objects.list");
+      const active = snapshot.cameras.find(
+        camera => camera.id === snapshot.activeCameraId
+      );
+      $("active-camera-indicator").textContent = active
+        ? `Vista: ${active.name} · ${active.id}`
+        : "Vista: navegação livre";
+      $("active-camera-indicator").dataset.cameraActive =
+        active ? "true" : "false";
+    }
+  );
+  const unsubscribeViewerInstances = runtime.subscribe(
+    "viewer.instances.changed",
+    snapshot => {
+      latestViewerInstances = snapshot;
+      if (
+        latestViewerRole === "replica" &&
+        snapshot.role === "authority"
+      ) {
+        sandboxRecovery.adoptCurrentSession(snapshot.sandboxId);
+        showNotice(
+          "Este viewer assumiu a autoridade do projeto ativo."
         );
-        if (!approved) return;
-        result = projectFiles.saveFallback(project, {
+      }
+      latestViewerRole = snapshot.role;
+      if (snapshot.sandboxId !== latestSandboxId) {
+        const url = new URL(browserWindow.location.href);
+        url.searchParams.set("sandbox", snapshot.sandboxId);
+        if (snapshot.role === "replica") {
+          url.searchParams.set("viewer", "join");
+        } else {
+          url.searchParams.delete("viewer");
+        }
+        browserWindow.history.replaceState(
+          browserWindow.history.state,
+          "",
+          url
+        );
+      }
+      latestSandboxId = snapshot.sandboxId;
+      const outcome = snapshot.lastOutcome;
+      if (
+        outcome?.requestId &&
+        outcome.requestId !== lastViewerOutcome
+      ) {
+        lastViewerOutcome = outcome.requestId;
+        if (outcome.status === "accepted") {
+          showNotice(
+            `Edição aceita na revisão ${outcome.revision}.`
+          );
+        } else if (outcome.status === "rejected-stale") {
+          showNotice(
+            "A edição estava obsoleta e não foi aplicada; " +
+            "o viewer foi sincronizado."
+          );
+        } else if (
+          outcome.status === "rejected-error" ||
+          outcome.status === "rejected-no-change"
+        ) {
+          showNotice(
+            `Edição rejeitada: ${outcome.error ?? outcome.status}.`
+          );
+        } else if (
+          outcome.status === "rejected-sandbox-replaced"
+        ) {
+          showNotice(
+            "A edição pendente foi cancelada porque o projeto mudou."
+          );
+        }
+      }
+      uiRefresh.request("viewer.instances.changed");
+    }
+  );
+
+  async function saveProjectPayload(project) {
+    if (!project?.prepared) return null;
+    try {
+      let result = await projectFiles.save(project, { saveAs: true });
+      if (result.fallbackRequired) {
+        if (result.fallbackReason !== "native-unavailable") {
+          const approved = browserWindow.confirm(
+            "O Chrome deste aparelho oferece um seletor nativo, " +
+            "mas não permite usá-lo neste contexto. " +
+            "Deseja salvar por download compatível?"
+          );
+          if (!approved) return;
+        }
+        const requestedName = browserWindow.prompt(
+          "Nome do arquivo para salvar:",
+          project.filename
+        );
+        if (requestedName === null) return;
+        const trimmedName = requestedName.trim();
+        const filename = /\.(?:json|spatialseed)$/i.test(trimmedName)
+          ? trimmedName
+          : `${trimmedName || project.filename}.spatialseed`;
+        result = projectFiles.saveFallback({
+          ...project,
+          filename
+        }, {
           fallbackReason: result.fallbackReason
         });
       }
@@ -490,12 +898,134 @@ export function bindWebInterface({
           : "";
         showNotice(`Projeto salvo: ${result.filename}${mode}`);
       }
+      return result;
     } catch (error) {
       showError(error);
+      return null;
     } finally {
       refreshProjectFileCapabilities();
     }
+  }
+
+  $("project-save").addEventListener("click", async () => {
+    await saveProjectPayload(execute("project.save"));
   });
+  uiActions.bindControl(
+    $("viewer-new"),
+    "viewer.instance.choose"
+  );
+  $("viewer-session-open").addEventListener("click", () => {
+    const selected = documentRoot.querySelector(
+      'input[name="viewer-session"]:checked'
+    );
+    if (!selected) {
+      showNotice("Escolha um projeto ativo.");
+      return;
+    }
+    viewerSessionDialog.close();
+    uiActions.execute("viewer.instance.open", {
+      sandboxId: selected.value
+    });
+  });
+
+  $("project-new-window").addEventListener("click", () => {
+    const plan = execute("viewer.project.new-window", {
+      href: browserWindow.location.href
+    });
+    if (!plan?.url) return;
+    const opened = browserWindow.open(plan.url, "_blank");
+    if (!opened) {
+      showNotice("O navegador bloqueou a nova aba.");
+      return;
+    }
+    opened.opener = null;
+    viewerSessionDialog.close();
+    showNotice("Novo projeto solicitado em outra aba.");
+  });
+
+  async function finishProjectWindowLaunch(text) {
+    const pending = pendingProjectWindowLaunch;
+    if (!pending) return;
+    pendingProjectWindowLaunch = null;
+    try {
+      const accepted = await pending.sender.sendProject(text);
+      showNotice(
+        `Projeto aberto em nova aba: ${accepted.projectName ?? "Spatial Seed"}.`
+      );
+    } catch (error) {
+      showError(error);
+    } finally {
+      pending.sender.dispose();
+    }
+  }
+
+  $("project-open-window").addEventListener("click", async () => {
+    const plan = execute("viewer.project.open-window.prepare", {
+      href: browserWindow.location.href
+    });
+    if (!plan?.url) return;
+    const sender = projectLaunch.createSender(plan.launchId);
+    pendingProjectWindowLaunch = { plan, sender };
+    const openedWindow = browserWindow.open(plan.url, "_blank");
+    if (!openedWindow) {
+      sender.dispose();
+      pendingProjectWindowLaunch = null;
+      showNotice("O navegador bloqueou a nova aba.");
+      return;
+    }
+    openedWindow.opener = null;
+    viewerSessionDialog.close();
+
+    if (!projectWindowFiles.capabilities().nativeOpen) {
+      $("project-file-input-new-window").click();
+      return;
+    }
+    try {
+      const opened = await projectWindowFiles.open();
+      if (opened.opened) {
+        await finishProjectWindowLaunch(opened.text);
+      } else if (opened.fallbackRequired) {
+        $("project-file-input-new-window").click();
+      } else {
+        sender.cancel("file-selection-cancelled");
+        sender.dispose();
+        pendingProjectWindowLaunch = null;
+      }
+    } catch (error) {
+      sender.cancel(error?.message ?? "file-open-failed");
+      sender.dispose();
+      pendingProjectWindowLaunch = null;
+      showError(error);
+    }
+  });
+
+  $("project-file-input-new-window").addEventListener(
+    "change",
+    async event => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        pendingProjectWindowLaunch?.sender.cancel(
+          "file-selection-cancelled"
+        );
+        pendingProjectWindowLaunch?.sender.dispose();
+        pendingProjectWindowLaunch = null;
+        return;
+      }
+      try {
+        const opened = await projectWindowFiles.readFile(file);
+        await finishProjectWindowLaunch(opened.text);
+      } catch (error) {
+        pendingProjectWindowLaunch?.sender.cancel(
+          error?.message ?? "file-open-failed"
+        );
+        pendingProjectWindowLaunch?.sender.dispose();
+        pendingProjectWindowLaunch = null;
+        showError(error);
+      } finally {
+        event.target.value = "";
+      }
+    }
+  );
 
   $("project-open").addEventListener(
     "click",
@@ -508,7 +1038,7 @@ export function bindWebInterface({
       try {
         const opened = await projectFiles.open();
         if (opened.opened) {
-          loadProjectText(opened.text);
+          await loadProjectText(opened.text);
         } else if (opened.fallbackRequired) {
           showNotice("Usando seletor de arquivos compatível.");
           $("project-file-input").click();
@@ -530,7 +1060,7 @@ export function bindWebInterface({
       try {
         projectFiles.reset();
         const opened = await projectFiles.readFile(file);
-        loadProjectText(opened.text);
+        await loadProjectText(opened.text);
       } catch (error) {
         showError(error);
       } finally {
@@ -607,7 +1137,7 @@ export function bindWebInterface({
     }
   );
 
-  $("project-new").addEventListener("click", () => {
+  $("project-new").addEventListener("click", async () => {
     if (!confirm(
       "Criar um projeto vazio? Alterações não salvas serão descartadas."
     )) return;
@@ -639,7 +1169,7 @@ export function bindWebInterface({
     }
   });
 
-  function loadProjectText(text) {
+  async function loadProjectText(text) {
     const result = execute("project.open", { text });
     if (result?.loaded) {
       showNotice(
@@ -651,6 +1181,116 @@ export function bindWebInterface({
     }
     return result;
   }
+
+  function closeRecoveryDialog() {
+    if (typeof recoveryDialog.close === "function") {
+      recoveryDialog.close();
+    } else {
+      recoveryDialog.removeAttribute("open");
+    }
+  }
+
+  function finishRecoveryDecision(result) {
+    closeRecoveryDialog();
+    resolveRecoveryReady?.(result);
+    resolveRecoveryReady = null;
+  }
+
+  recoveryDialog.addEventListener("cancel", event => {
+    event.preventDefault();
+  });
+
+  $("recovery-continue").addEventListener("click", async () => {
+    try {
+      const result = await sandboxRecovery.continueRecovery();
+      showNotice(
+        `Rascunho recuperado: ${result.result?.commandCount ?? 0} comandos.`
+      );
+      finishRecoveryDecision(result);
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("recovery-export").addEventListener("click", async () => {
+    try {
+      await saveProjectPayload(sandboxRecovery.prepareExport());
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("recovery-discard").addEventListener("click", async () => {
+    if (!browserWindow.confirm(
+      "Descartar definitivamente este rascunho recuperável?"
+    )) return;
+    try {
+      const result = await sandboxRecovery.discardRecovery();
+      showNotice("Rascunho local descartado.");
+      finishRecoveryDecision(result);
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  const recoveryReady = (async () => {
+    if (!viewerCoordinator.isAuthority) {
+      const status = runtime.query("recovery.status");
+      resolveRecoveryReady?.(status);
+      resolveRecoveryReady = null;
+      return status;
+    }
+    const status = await sandboxRecovery.initialize();
+    if (status.mode === "draft") {
+      const pending = status.pending;
+      $("recovery-project-name").textContent = pending.projectName;
+      $("recovery-details").textContent =
+        `${pending.commandCount} comandos confirmados · ` +
+        `revisão ${pending.revision} · ` +
+        `última recuperação ${new Date(
+          pending.updatedAt
+        ).toLocaleString()}`;
+      if (typeof recoveryDialog.showModal === "function") {
+        recoveryDialog.showModal();
+      } else {
+        recoveryDialog.setAttribute("open", "");
+      }
+      return recoveryDecision;
+    }
+    if (status.mode === "restored-clean") {
+      showNotice("Sandbox local reaberto.");
+    } else if (status.mode === "unavailable") {
+      showNotice("Recuperação automática indisponível neste navegador.");
+    } else if (status.mode === "error") {
+      showNotice(
+        `A recuperação local falhou: ${status.lastError}`
+      );
+    }
+    resolveRecoveryReady?.(status);
+    resolveRecoveryReady = null;
+    return status;
+  })();
+  const flushRecovery = () => {
+    if (viewerCoordinator.isAuthority) {
+      void sandboxRecovery.flush();
+    }
+  };
+  const flushHiddenRecovery = () => {
+    if (documentRoot.visibilityState === "hidden") {
+      flushRecovery();
+    }
+  };
+  browserWindow.addEventListener("pagehide", flushRecovery);
+  const releaseViewerSession = event => {
+    if (event.persisted) return;
+    viewerDirectory.dispose();
+    viewerCoordinator.dispose();
+  };
+  browserWindow.addEventListener("pagehide", releaseViewerSession);
+  documentRoot.addEventListener(
+    "visibilitychange",
+    flushHiddenRecovery
+  );
 
   function loadProcedureLibraryText(text) {
     if (
@@ -950,6 +1590,14 @@ export function bindWebInterface({
   );
 
   $("confirm-proposal").addEventListener("click", () => {
+    try {
+      viewerCoordinator.requireAuthority(
+        "publicar uma proposta"
+      );
+    } catch (error) {
+      showError(error);
+      return;
+    }
     const proposal = sandbox.createProposal();
     const result = region.acceptProposal(proposal);
 
@@ -962,19 +1610,54 @@ export function bindWebInterface({
     }
   });
 
+  function renderViewerSessions(sessions) {
+    const root = $("viewer-session-list");
+    root.replaceChildren();
+    for (const session of sessions) {
+      const label = documentRoot.createElement("label");
+      label.className = "viewer-session-choice";
+      const input = documentRoot.createElement("input");
+      input.type = "radio";
+      input.name = "viewer-session";
+      input.value = session.sandboxId;
+      input.checked = Boolean(session.current);
+      const name = documentRoot.createElement("strong");
+      name.textContent =
+        `${session.projectName}${session.current ? " · atual" : ""}`;
+      const details = documentRoot.createElement("small");
+      const authority = session.authorityAvailable
+        ? "autoridade ativa"
+        : "assumindo autoridade";
+      details.textContent =
+        `${session.viewerCount} viewer(s) · ${session.objectCount} objeto(s) · ` +
+        `revisão ${session.revision} · ${authority} · ` +
+        session.sandboxId;
+      label.append(input, name, details);
+      root.append(label);
+    }
+    if (!root.querySelector("input:checked")) {
+      root.querySelector("input")?.click();
+    }
+  }
+
   uiRefresh.flushNow("initial");
+  refreshCameraObjects();
 
   const initialSelection = runtime.query("selection.snapshot");
   runtime.emit("selection.changed", initialSelection);
   runtime.emit("editor.changed", runtime.query("editor.snapshot"));
 
   return Object.freeze({
+    ready: recoveryReady,
     dispose() {
       clearInterval(developerTimer);
       clearTimeout(statusTimer);
       unsubscribeEditor();
       unsubscribeSelection();
       unsubscribeWorld();
+      unsubscribeViewer();
+      unsubscribeCameraObjects();
+      unsubscribeViewerInstances();
       unsubscribeInstall();
       disconnectUiDiagnostics();
       uiActions.dispose();
@@ -987,6 +1670,16 @@ export function bindWebInterface({
       );
       toolbarBinding.dispose();
       panelManager.dispose();
+      sandboxRecovery.dispose();
+      browserWindow.removeEventListener("pagehide", flushRecovery);
+      browserWindow.removeEventListener(
+        "pagehide",
+        releaseViewerSession
+      );
+      documentRoot.removeEventListener(
+        "visibilitychange",
+        flushHiddenRecovery
+      );
     }
   });
 }
