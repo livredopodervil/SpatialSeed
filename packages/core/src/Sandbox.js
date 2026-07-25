@@ -7,6 +7,15 @@ export class Sandbox {
   #commands = [];
   #revision = 0;
   #subscribers = new Set();
+  #performance = {
+    dispatches: 0,
+    lastReducerMs: 0,
+    maximumReducerMs: 0,
+    lastNotificationMs: 0,
+    maximumNotificationMs: 0,
+    lastDispatchMs: 0,
+    maximumDispatchMs: 0
+  };
 
   constructor(region, reducer) {
     this.region = region;
@@ -27,9 +36,12 @@ export class Sandbox {
   getBaseState() { return structuredClone(this.#baseState); }
 
   dispatch(command) {
+    const dispatchStartedAt = performanceNow();
     const before = this.#state;
+    const reducerStartedAt = performanceNow();
     const result = this.reducer(before, structuredClone(command));
     if (!result || result.state === before) return false;
+    const reducerMs = performanceNow() - reducerStartedAt;
 
     this.#undo.push({
       state: before,
@@ -39,7 +51,26 @@ export class Sandbox {
     this.#commands.push(structuredClone(command));
     this.#state = result.state;
     this.#revision += 1;
+    const notificationStartedAt = performanceNow();
     this.#notify(result.changes ?? []);
+    const notificationMs = performanceNow() - notificationStartedAt;
+    const dispatchMs = performanceNow() - dispatchStartedAt;
+    this.#performance.dispatches += 1;
+    this.#performance.lastReducerMs = reducerMs;
+    this.#performance.maximumReducerMs = Math.max(
+      this.#performance.maximumReducerMs,
+      reducerMs
+    );
+    this.#performance.lastNotificationMs = notificationMs;
+    this.#performance.maximumNotificationMs = Math.max(
+      this.#performance.maximumNotificationMs,
+      notificationMs
+    );
+    this.#performance.lastDispatchMs = dispatchMs;
+    this.#performance.maximumDispatchMs = Math.max(
+      this.#performance.maximumDispatchMs,
+      dispatchMs
+    );
     return true;
   }
 
@@ -211,7 +242,8 @@ export class Sandbox {
       commandCount: this.#commands.length,
       dirty: this.dirty,
       canUndo: this.canUndo,
-      canRedo: this.canRedo
+      canRedo: this.canRedo,
+      performance: Object.freeze({ ...this.#performance })
     });
   }
 
@@ -255,6 +287,12 @@ function validateState(value) {
     );
   }
   return state;
+}
+
+function performanceNow() {
+  return typeof globalThis.performance?.now === "function"
+    ? globalThis.performance.now()
+    : Date.now();
 }
 
 function validateCommands(value) {

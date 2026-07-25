@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260724-0029f",
-  "channel": "feature/0029-camera-objects"
+  "build": "20260725-0029f1",
+  "channel": "fix/0029f1-camera-interaction"
 }

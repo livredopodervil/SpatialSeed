@@ -12,7 +12,7 @@ import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=2026071
 import {
   normalizeCameraProjection,
   normalizeNavigationCamera
-} from "../../runtime-layers/src/index.js?build=20260724-0029c";
+} from "../../runtime-layers/src/index.js?build=20260725-0029f1";
 import {
   affectedHierarchyIds,
   applyProjectedWorldMatrix,
@@ -35,7 +35,7 @@ import {
 } from "./AnimationTransformOverlay.js?build=20260720-0028d";
 
 export class ThreeRegionRenderer {
-  static apiVersion = "renderer-three-navigation-camera-v1";
+  static apiVersion = "renderer-three-navigation-camera-v2";
   #meshes = new Map();
   #cameraVisuals = new Map();
   #selectionSnapshot = null;
@@ -56,6 +56,21 @@ export class ThreeRegionRenderer {
   #hierarchy = new HierarchyIndex([]);
   #frameListeners = new Set();
   #cameraListeners = new Set();
+  #transformPreviewListeners = new Set();
+  #sharedTransformPreviews = new Map();
+  #sharedTransformObjectIds = new Set();
+  #cameraVisualState = {
+    activeCameraId: null,
+    defaultCameraId: null,
+    helperPolicy: "selected",
+    showIcons: true,
+    showFrustums: true
+  };
+  #cameraDeletionDiagnostics = {
+    count: 0,
+    lastMs: 0,
+    maximumMs: 0
+  };
   #lastFrameTimestamp = null;
   #animationTargetIds = new Set();
   #animationPivotOverrides = new Map();
@@ -463,6 +478,78 @@ export class ThreeRegionRenderer {
     return () => this.#frameListeners.delete(listener);
   }
 
+  subscribeTransformPreview(listener) {
+    if (typeof listener !== "function") {
+      throw new TypeError("Listener de preview deve ser função.");
+    }
+    this.#transformPreviewListeners.add(listener);
+    return () => this.#transformPreviewListeners.delete(listener);
+  }
+
+  applySharedTransformPreview(session = {}) {
+    const key = previewSessionKey(session);
+    const transforms = normalizePreviewTransforms(session.transforms);
+    this.#sharedTransformPreviews.delete(key);
+    this.#sharedTransformPreviews.set(key, transforms);
+    this.#rebuildSharedTransformObjectIds();
+    this.#applySharedPreviewTransforms(transforms);
+    return Object.freeze({
+      previewId: String(session.previewId),
+      applied: transforms.length
+    });
+  }
+
+  clearSharedTransformPreview(session = {}) {
+    const key = previewSessionKey(session);
+    const previous = this.#sharedTransformPreviews.get(key) ?? [];
+    if (!this.#sharedTransformPreviews.delete(key)) return false;
+    this.#rebuildSharedTransformObjectIds();
+    this.#restoreSharedPreviewObjects(
+      previous.map(transform => transform.id)
+    );
+    return true;
+  }
+
+  setCameraVisualState(patch = {}) {
+    const nextPolicy = patch.helperPolicy ??
+      this.#cameraVisualState.helperPolicy;
+    if (!["none", "selected", "all"].includes(nextPolicy)) {
+      throw new RangeError(
+        `Política de auxiliares de câmera inválida: ${nextPolicy}.`
+      );
+    }
+    this.#cameraVisualState = {
+      ...this.#cameraVisualState,
+      ...patch,
+      activeCameraId:
+        patch.activeCameraId === undefined
+          ? this.#cameraVisualState.activeCameraId
+          : patch.activeCameraId,
+      defaultCameraId:
+        patch.defaultCameraId === undefined
+          ? this.#cameraVisualState.defaultCameraId
+          : patch.defaultCameraId,
+      helperPolicy: nextPolicy,
+      showIcons: patch.showIcons === undefined
+        ? this.#cameraVisualState.showIcons
+        : Boolean(patch.showIcons),
+      showFrustums: patch.showFrustums === undefined
+        ? this.#cameraVisualState.showFrustums
+        : Boolean(patch.showFrustums)
+    };
+    this.#updateCameraVisualAppearance();
+    return this.getCameraVisualState();
+  }
+
+  getCameraVisualState() {
+    return Object.freeze({
+      ...this.#cameraVisualState,
+      deletion: Object.freeze({
+        ...this.#cameraDeletionDiagnostics
+      })
+    });
+  }
+
   captureAnimationTargets(targetIds = [], {
     targetMode = "selection"
   } = {}) {
@@ -655,7 +742,11 @@ export class ThreeRegionRenderer {
     proxy.userData.size = object.size ? [...object.size] : [0,0,0];
     proxy.userData.canonicalWorldMatrix = [...worldMatrix];
 
-    if (!this.#session && !this.#animationTargetIds.has(object.id)) {
+    if (
+      !this.#session &&
+      !this.#animationTargetIds.has(object.id) &&
+      !this.#sharedTransformObjectIds.has(object.id)
+    ) {
       applyProjectedWorldMatrix(proxy,worldMatrix);
     }
 
@@ -703,9 +794,11 @@ export class ThreeRegionRenderer {
   }
 
   #removeObject(id) {
+    const startedAt = performance.now();
     const proxy = this.#meshes.get(id);
     if (!proxy) return false;
 
+    const cameraVisual = Boolean(this.#cameraVisuals.has(id));
     this.#removeCameraVisual(id, proxy);
     this.#removeFromBatch(id, proxy.userData.batchKey);
     this.#meshes.delete(id);
@@ -713,6 +806,15 @@ export class ThreeRegionRenderer {
     this.#animationTargetIds.delete(id);
     this.#animationPivotOverrides.delete(id);
     this.#incrementalDiagnostics.objectsDeleted += 1;
+    if (cameraVisual) {
+      const elapsed = performance.now() - startedAt;
+      this.#cameraDeletionDiagnostics.count += 1;
+      this.#cameraDeletionDiagnostics.lastMs = elapsed;
+      this.#cameraDeletionDiagnostics.maximumMs = Math.max(
+        this.#cameraDeletionDiagnostics.maximumMs,
+        elapsed
+      );
+    }
     return true;
   }
 
@@ -781,8 +883,8 @@ export class ThreeRegionRenderer {
       new THREE.Float32BufferAttribute(segments, 3)
     );
     proxy.userData.localBounds = {
-      min: [-halfWidth, -halfHeight, z],
-      max: [halfWidth, halfHeight, 0.53]
+      min: [-0.42, -0.28, -0.5],
+      max: [0.42, 0.28, 0.53]
     };
     proxy.userData.cameraProjection = {
       fov,
@@ -790,6 +892,7 @@ export class ThreeRegionRenderer {
       far: Number(object.camera?.far ?? 1000),
       focusDistance: Number(object.camera?.focusDistance ?? 10)
     };
+    this.#updateCameraVisualAppearance();
   }
 
   #removeCameraVisual(id, proxy = this.#meshes.get(id)) {
@@ -1074,6 +1177,7 @@ export class ThreeRegionRenderer {
 
     this.#session = {
       kind:"selection",
+      previewId: createPreviewId(),
       initialAnchor,
       objects,
       previewObjects
@@ -1086,6 +1190,7 @@ export class ThreeRegionRenderer {
       .filter(id => !this.#meshes.get(id)?.userData.logicalOnly)
       .length;
     diagnostics.lastError=null;
+    this.#emitTransformPreview("begin", this.#session);
   }
 
   #previewSession() {
@@ -1120,6 +1225,7 @@ export class ThreeRegionRenderer {
     this.#flushBatchBounds();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
+    this.#emitTransformPreview("update", this.#session);
     const elapsed=performance.now()-startedAt;
     const diagnostics=this.#transformLifecycleDiagnostics;
     diagnostics.previews += 1;
@@ -1175,10 +1281,15 @@ export class ThreeRegionRenderer {
       });
 
       if (!changed) this.#restorePreviewSession(session);
+      this.#emitTransformPreview(
+        changed ? "end" : "cancel",
+        session
+      );
       this.#transformLifecycleDiagnostics.commits += 1;
       this.#transformLifecycleDiagnostics.lastError=null;
     } catch (error) {
       this.#restorePreviewSession(session);
+      this.#emitTransformPreview("cancel", session);
       const diagnostics=this.#transformLifecycleDiagnostics;
       diagnostics.rollbacks += 1;
       diagnostics.lastError={
@@ -1206,6 +1317,83 @@ export class ThreeRegionRenderer {
     this.#flushBatchBounds();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
+  }
+
+  #emitTransformPreview(phase, session) {
+    if (
+      session?.kind !== "selection" ||
+      !session.previewId ||
+      !this.#transformPreviewListeners.size
+    ) {
+      return;
+    }
+    const payload = Object.freeze({
+      previewId: session.previewId,
+      phase,
+      transforms: Object.freeze(
+        [...session.previewObjects.keys()]
+          .map(id => {
+            const proxy = this.#meshes.get(id);
+            if (!proxy) return null;
+            proxy.updateMatrixWorld(true);
+            return Object.freeze({
+              id,
+              worldMatrix: Object.freeze(
+                proxy.matrixWorld.toArray()
+              )
+            });
+          })
+          .filter(Boolean)
+      )
+    });
+    for (const listener of [...this.#transformPreviewListeners]) {
+      try {
+        listener(payload);
+      } catch (error) {
+        console.error("Transform preview listener failed", error);
+      }
+    }
+  }
+
+  #applySharedPreviewTransforms(transforms) {
+    for (const transform of transforms) {
+      const proxy = this.#meshes.get(transform.id);
+      if (!proxy) continue;
+      applyProjectedWorldMatrix(proxy, transform.worldMatrix);
+      this.#updateBatchMatrix(transform.id, proxy);
+    }
+    this.#flushBatchBounds();
+    this.#rebuildAnchor();
+    this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
+  }
+
+  #restoreSharedPreviewObjects(objectIds) {
+    const unique = new Set(objectIds);
+    const nextTransforms = [];
+    for (const id of unique) {
+      let overlay = null;
+      for (const transforms of this.#sharedTransformPreviews.values()) {
+        const candidate = transforms.find(transform => transform.id === id);
+        if (candidate) overlay = candidate;
+      }
+      if (overlay) {
+        nextTransforms.push(overlay);
+        continue;
+      }
+      const proxy = this.#meshes.get(id);
+      const canonical = proxy?.userData.canonicalWorldMatrix;
+      if (!proxy || !canonical) continue;
+      nextTransforms.push({ id, worldMatrix: canonical });
+    }
+    this.#applySharedPreviewTransforms(nextTransforms);
+  }
+
+  #rebuildSharedTransformObjectIds() {
+    this.#sharedTransformObjectIds = new Set(
+      [...this.#sharedTransformPreviews.values()]
+        .flatMap(transforms => transforms.map(transform => transform.id))
+    );
   }
 
   #calculatePivot() {
@@ -1458,6 +1646,75 @@ export class ThreeRegionRenderer {
     this.#selectionOutlines.update(outlines);
     for(const id of this.#selectedVisualIds)if(!selected.has(id))this.#applyObjectInstanceColor(id);
     this.#selectedVisualIds=selected;
+    this.#updateCameraVisualAppearance();
+  }
+
+  #updateCameraVisualAppearance() {
+    const selected = new Set(
+      (this.#selectionSnapshot?.members ?? [])
+        .map(member => member.objectId)
+    );
+    const activeId = this.#cameraVisualState.activeCameraId;
+    const defaultId = this.#cameraVisualState.defaultCameraId;
+    const policy = this.#cameraVisualState.helperPolicy;
+
+    for (const [id, visual] of this.#cameraVisuals) {
+      const isSelected = selected.has(id);
+      const isActive = id === activeId;
+      const isDefault = id === defaultId;
+      const bodyColor = isSelected
+        ? 0x68f0a8
+        : isActive
+          ? 0xff6bd6
+          : isDefault
+            ? 0x72d6ff
+            : 0xffc857;
+      const lensColor = isSelected
+        ? 0xc6ffe1
+        : isActive
+          ? 0xffb5ec
+          : isDefault
+            ? 0xb8ecff
+            : 0xffa62b;
+      visual.body.material.color.setHex(bodyColor);
+      visual.lens.material.color.setHex(lensColor);
+      visual.lines.material.color.setHex(
+        isSelected ? 0x68f0a8 : isDefault ? 0x72d6ff : 0x58748d
+      );
+      visual.body.visible = this.#cameraVisualState.showIcons;
+      visual.lens.visible = this.#cameraVisualState.showIcons;
+      visual.lines.visible = Boolean(
+        this.#cameraVisualState.showFrustums &&
+        !isActive &&
+        (
+          policy === "all" ||
+          (policy === "selected" && isSelected)
+        )
+      );
+      visual.body.material.depthTest = !isSelected;
+      visual.lens.material.depthTest = !isSelected;
+      visual.body.renderOrder = isSelected ? 900 : 0;
+      visual.lens.renderOrder = isSelected ? 900 : 0;
+    }
+  }
+
+  #cameraScreenHitIds(clientX, clientY, rect, radius) {
+    const hits = [];
+    for (const [id] of this.#cameraVisuals) {
+      const proxy = this.#meshes.get(id);
+      if (!proxy) continue;
+      const projected = proxy
+        .getWorldPosition(new THREE.Vector3())
+        .project(this.camera);
+      if (projected.z < -1 || projected.z > 1) continue;
+      const x = rect.left + (projected.x + 1) * 0.5 * rect.width;
+      const y = rect.top + (1 - projected.y) * 0.5 * rect.height;
+      const distance = Math.hypot(clientX - x, clientY - y);
+      if (distance <= radius) hits.push({ id, distance });
+    }
+    return hits
+      .sort((left, right) => left.distance - right.distance)
+      .map(hit => hit.id);
   }
 
   getInputDiagnostics() {
@@ -1483,6 +1740,7 @@ export class ThreeRegionRenderer {
     }
 
     const tolerance = this.#tap.type === "touch" ? 28 : 8;
+    const pointerType = this.#tap.type;
     const distance = Math.hypot(event.clientX - this.#tap.x, event.clientY - this.#tap.y);
     const duration = performance.now() - this.#tap.time;
     this.#inputDiagnostics.lastDistance = Number(distance.toFixed(2));
@@ -1519,13 +1777,19 @@ export class ThreeRegionRenderer {
 
     const cameraHits = this.raycaster.intersectObjects(
       [...this.#cameraVisuals.values()].flatMap(
-        visual => [visual.body, visual.lens]
+        visual => [visual.body, visual.lens, visual.lines]
       ),
       false
     );
     const hitIds=[...new Set([
       ...hits.map(hit => this.#batchManager.objectFromHit(hit)),
-      ...cameraHits.map(hit => hit.object.userData.cameraObjectId)
+      ...cameraHits.map(hit => hit.object.userData.cameraObjectId),
+      ...this.#cameraScreenHitIds(
+        event.clientX,
+        event.clientY,
+        rect,
+        pointerType === "touch" ? 22 : 12
+      )
     ].filter(Boolean).map(id=>this.#hierarchy.has(id)?selectionUnitId(this.#hierarchy,id):id))];
     const objectId=this.#cycledHitId(hitIds,event.clientX,event.clientY);
     this.#inputDiagnostics.objectHits=hitIds.length;
@@ -1649,6 +1913,48 @@ getResourceDiagnostics() {
     this.orbit.update();
     this.renderer.render(this.scene, this.camera);
   };
+}
+
+function previewSessionKey(session = {}) {
+  const source = String(session.source ?? "").trim();
+  const previewId = String(session.previewId ?? "").trim();
+  if (!source || !previewId) {
+    throw new TypeError(
+      "Preview compartilhado exige origem e identificador."
+    );
+  }
+  return `${source}:${previewId}`;
+}
+
+function normalizePreviewTransforms(transforms = []) {
+  if (!Array.isArray(transforms)) {
+    throw new TypeError("Preview compartilhado exige transformações.");
+  }
+  return transforms.map(entry => {
+    const id = String(entry?.id ?? entry?.objectId ?? "").trim();
+    const worldMatrix = entry?.worldMatrix;
+    if (
+      !id ||
+      !Array.isArray(worldMatrix) ||
+      worldMatrix.length !== 16 ||
+      !worldMatrix.every(Number.isFinite)
+    ) {
+      throw new TypeError("Transformação de preview inválida.");
+    }
+    return Object.freeze({
+      id,
+      worldMatrix: Object.freeze(worldMatrix.map(Number))
+    });
+  });
+}
+
+function createPreviewId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `preview-${Date.now().toString(36)}-${
+    Math.random().toString(36).slice(2)
+  }`;
 }
 
 

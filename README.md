@@ -28,6 +28,8 @@ O resultado atual combina:
   independentes;
 - projetos independentes criados ou abertos explicitamente em novas abas;
 - objetos câmera persistentes, hierárquicos e ativáveis por viewer;
+- preview de transformações entre viewers, inclusive para operar uma câmera
+  enquanto outra aba fornece a saída;
 - animações efêmeras sincronizadas por definição e relógio absoluto entre esses
   viewers;
 - testes, diagnósticos, auditoria de recursos e benchmarks executáveis no próprio aplicativo.
@@ -124,7 +126,7 @@ Um servidor HTTP é necessário porque módulos ES, import maps e service worker
 | Editar propriedades literais ou procedurais, inclusive abrindo grupos | **Inspector** |
 | Reproduzir presets ou compor faixas diferentes por objeto | **Animação** |
 | Posicionar, orientar, orbitar, enquadrar e configurar o recorte | **Câmera** |
-| Criar, ativar, capturar e escolher objetos câmera | **Câmera → Câmeras do projeto** |
+| Criar, ativar, selecionar, capturar e escolher objetos câmera | **Câmera → Câmeras do projeto** |
 | Conectar viewers ou abrir projetos independentes | **Projetos / viewers** |
 | Executar laboratórios paramétricos que geram planos revisáveis | **Explorar** |
 | Ver árvore regional, diagnóstico, recursos e console | **Painéis** |
@@ -199,7 +201,12 @@ declarar uma câmera padrão opcional.
 
 Ativar um objeto projeta sua pose mundial e seus parâmetros de perspectiva na
 vista local. Navegar manualmente volta à câmera livre sem modificar o objeto.
-Use `camera objects` e `help camera` no console.
+Ao mover a câmera pelo gizmo, outros viewers que a estejam usando acompanham o
+gesto por preview efêmero; somente o resultado final entra no undo. O painel
+permite selecionar o objeto diretamente, distinguir câmera selecionada, ativa e
+padrão e escolher se os frustums aparecem em todas, somente nas selecionadas ou
+em nenhuma. Use `camera objects`, `camera diagnostics` e `help camera` no
+console.
 
 ### Viewers locais
 

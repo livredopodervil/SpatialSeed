@@ -1,6 +1,6 @@
 # Visão geral do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029f`.
+> Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`.
 > O build exato nunca deve ser copiado para este texto: sua fonte autoritativa
 > é [`apps/web/build-info.json`](../../apps/web/build-info.json).
 
@@ -116,6 +116,8 @@ Esse desenho procura tornar o sistema:
   handshake de entrada antes da recuperação;
 - objetos câmera persistentes e hierárquicos, separados da câmera de navegação
   local de cada viewer;
+- preview efêmero de transformações compartilhado entre viewers, preservando
+  um único commit editorial ao término;
 - sessão de animação compartilhada entre viewers por descritor, sequência e
   relógio comum, sem tráfego de quadros;
 - catálogos de procedimentos em JSON legível;

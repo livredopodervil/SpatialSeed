@@ -1,6 +1,6 @@
 # Objetos câmera persistentes
 
-> Contrato técnico implementado no marco `0029f`.
+> Contrato técnico implementado em `0029f` e estabilizado em `0029f1`.
 
 ## Fronteira
 
@@ -59,18 +59,30 @@ Locais ao viewer:
 - `viewer.camera.object.deactivate`.
 
 A consulta `camera.objects.list` informa objetos, câmera ativa local e câmera
-padrão. No console, use `camera objects`, `camera create`, `camera activate`,
-`camera free`, `camera capture`, `camera default` e
+padrão. `camera.objects.diagnostics` separa custo do serviço, remoção visual e
+tráfego de preview. No console, use `camera objects`, `camera diagnostics`,
+`camera helpers`, `camera create`, `camera activate`, `camera free`,
+`camera capture`, `camera default` e
 `camera object-projection`.
 
 ## Renderer e animação
 
 O renderer projeta corpo, lente e frustum selecionáveis, mas esses helpers não
-são geometria autoritativa nem assets do documento. Objetos câmera ficam fora
-dos lotes renderizáveis e da animação efêmera de objetos do `0029f`.
+são geometria autoritativa nem assets do documento. A câmera possui alvo de
+toque mínimo em espaço de tela e também pode ser selecionada pelo painel. Corpo
+e lente distinguem visualmente os estados selecionada, ativa e padrão. Frustums
+podem ficar ocultos, aparecer apenas na seleção ou aparecer em todas as câmeras;
+o frustum da câmera ativa no viewer permanece oculto.
 
-O `0029g` poderá adaptar o runtime temporal para câmera de navegação e objetos
-câmera sem tornar a projeção Three.js uma fonte de verdade.
+Durante um gesto de gizmo, o `0029f1` distribui matrizes mundiais efêmeras a até
+30 Hz. Um viewer que olha pela câmera transformada acompanha o movimento sem
+alterar documento, undo ou recuperação. Soltar o gizmo produz um único comando
+persistente; cancelamento, rejeição, fechamento da aba ou timeout restaura o
+estado confirmado.
+
+Esse transporte não substitui o protocolo de animação: animações distribuem
+definição e época comum; gestos manuais não possuem função temporal
+reproduzível e por isso distribuem somente amostras transitórias.
 
 ## Persistência e compatibilidade
 
@@ -81,6 +93,8 @@ câmera padrão.
 
 ## Testes
 
-`runtime test viewer` cobre criação, ativação local, câmera padrão, undo e pose
-mundial hierárquica. `runtime test project-files` cobre roundtrip do schema 3 e
-rejeição de referência padrão inválida.
+`runtime test viewer` cobre criação, ativação local, câmera padrão, undo, pose
+mundial hierárquica e aplicação do preview à câmera ativa. `runtime test
+viewer-coordination` cobre criação transacional em réplica, rejeição, limitação
+de amostras e restauração. `runtime test project-files` cobre roundtrip do
+schema 3 e rejeição de referência padrão inválida.

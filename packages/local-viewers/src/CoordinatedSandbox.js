@@ -1,5 +1,5 @@
 export class CoordinatedSandbox {
-  static apiVersion = "coordinated-sandbox-v1";
+  static apiVersion = "coordinated-sandbox-v2";
 
   constructor({ sandbox, coordinator } = {}) {
     if (!sandbox?.dispatch || !sandbox?.subscribe) {
@@ -38,6 +38,10 @@ export class CoordinatedSandbox {
     return this.sandbox.previewCommandSequence(baseState, commands);
   }
   subscribe(listener) { return this.sandbox.subscribe(listener); }
+  coordinationStatus() { return this.coordinator.status(); }
+  subscribeCoordination(listener) {
+    return this.coordinator.subscribe(listener);
+  }
 
   dispatch(command) {
     return this.coordinator.dispatch(command);

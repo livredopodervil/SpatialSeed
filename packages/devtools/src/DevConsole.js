@@ -715,6 +715,8 @@ export class DevConsole {
         "camera frame [margem]",
         "camera projection near far [fov]",
         "camera objects",
+        "camera diagnostics",
+        "camera helpers selected|all|none",
         "camera create [nome]",
         "camera activate id",
         "camera free",
@@ -1022,6 +1024,21 @@ export class DevConsole {
     if (action === "objects") {
       this.#expectMaximum(tokens, 0, "camera objects");
       return this.queries.execute("camera.objects.list");
+    }
+    if (action === "diagnostics") {
+      this.#expectMaximum(tokens, 0, "camera diagnostics");
+      return this.queries.execute("camera.objects.diagnostics");
+    }
+    if (action === "helpers") {
+      this.#expectExact(tokens, 1, "camera helpers selected|all|none");
+      if (!["selected", "all", "none"].includes(tokens[0])) {
+        throw new Error(
+          "Auxiliares devem ser selected, all ou none."
+        );
+      }
+      return this.commands.execute("viewer.camera.helpers.set", {
+        helperPolicy: tokens[0]
+      });
     }
     if (action === "create") {
       return this.commands.execute("camera.object.create", {

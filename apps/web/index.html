@@ -177,6 +177,7 @@
   <div id="selection-summary">0 selecionados</div>
   <div id="selection-content">∅</div>
   <div id="pivot-content">Pivô: mediana</div>
+  <div id="active-camera-indicator">Vista: navegação livre</div>
   <div id="build-content">build carregando…</div>
 </aside>
 
@@ -292,6 +293,9 @@
         <button id="camera-object-activate" type="button">
           Ativar neste viewer
         </button>
+        <button id="camera-object-select-button" type="button">
+          Selecionar objeto câmera
+        </button>
         <button id="camera-object-capture" type="button">
           Atualizar pela vista
         </button>
@@ -305,6 +309,14 @@
           Navegação livre
         </button>
       </div>
+      <label>
+        <span>Frustums auxiliares</span>
+        <select id="camera-helper-policy">
+          <option value="selected">Somente selecionados</option>
+          <option value="all">Todos</option>
+          <option value="none">Nenhum</option>
+        </select>
+      </label>
       <output id="camera-object-summary"></output>
     </fieldset>
   </form>

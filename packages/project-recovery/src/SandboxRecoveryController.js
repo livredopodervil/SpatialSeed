@@ -4,7 +4,7 @@ import {
 } from "./RecoveryRecord.js";
 
 export class SandboxRecoveryController {
-  static apiVersion = "sandbox-recovery-controller-v1";
+  static apiVersion = "sandbox-recovery-controller-v2";
 
   #pendingRecord = null;
   #sandboxUnsubscribe = null;
@@ -13,6 +13,15 @@ export class SandboxRecoveryController {
   #started = false;
   #suspended = false;
   #lastError = null;
+  #performance = {
+    flushes: 0,
+    lastBuildMs: 0,
+    maximumBuildMs: 0,
+    lastStoreMs: 0,
+    maximumStoreMs: 0,
+    lastFlushMs: 0,
+    maximumFlushMs: 0
+  };
 
   constructor({
     sandbox,
@@ -135,6 +144,8 @@ export class SandboxRecoveryController {
       return false;
     }
     this.#cancelTimer();
+    const flushStartedAt = performanceNow();
+    const buildStartedAt = performanceNow();
     const proposal = this.sandbox.createProposal();
     const record = createRecoveryRecord({
       sandboxId: this.sandboxId,
@@ -145,11 +156,23 @@ export class SandboxRecoveryController {
       dirty: this.sandbox.dirty,
       updatedAt: this.now().toISOString()
     });
+    const buildMs = performanceNow() - buildStartedAt;
+    const storeStartedAt = performanceNow();
     try {
       const saved = await this.store.save(record);
+      this.#recordFlushPerformance(
+        buildMs,
+        performanceNow() - storeStartedAt,
+        performanceNow() - flushStartedAt
+      );
       this.#lastError = null;
       return saved;
     } catch (error) {
+      this.#recordFlushPerformance(
+        buildMs,
+        performanceNow() - storeStartedAt,
+        performanceNow() - flushStartedAt
+      );
       this.#lastError = error;
       return false;
     }
@@ -174,6 +197,7 @@ export class SandboxRecoveryController {
           })
         : null,
       lastError: this.#lastError?.message ?? null,
+      performance: Object.freeze({ ...this.#performance }),
       ...extra
     });
   }
@@ -249,4 +273,29 @@ export class SandboxRecoveryController {
     }
     this.#timer = null;
   }
+
+  #recordFlushPerformance(buildMs, storeMs, flushMs) {
+    this.#performance.flushes += 1;
+    this.#performance.lastBuildMs = buildMs;
+    this.#performance.maximumBuildMs = Math.max(
+      this.#performance.maximumBuildMs,
+      buildMs
+    );
+    this.#performance.lastStoreMs = storeMs;
+    this.#performance.maximumStoreMs = Math.max(
+      this.#performance.maximumStoreMs,
+      storeMs
+    );
+    this.#performance.lastFlushMs = flushMs;
+    this.#performance.maximumFlushMs = Math.max(
+      this.#performance.maximumFlushMs,
+      flushMs
+    );
+  }
+}
+
+function performanceNow() {
+  return typeof globalThis.performance?.now === "function"
+    ? globalThis.performance.now()
+    : Date.now();
 }

@@ -6,7 +6,8 @@ button:disabled{opacity:.35}
 #toolbar{position:fixed;z-index:20;top:.45rem;left:.45rem;right:.45rem;display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;pointer-events:none}
 #toolbar>*{pointer-events:auto}#status{margin-left:auto;font-size:.72rem;opacity:.72}
 #selection-panel{position:fixed;z-index:15;left:.55rem;bottom:.55rem;width:min(350px,calc(100vw - 1.1rem));padding:.65rem;border:1px solid #ffffff22;border-radius:12px;background:#0b111be8;font-size:.76rem}
-#selection-content,#pivot-content,#build-content{margin-top:.35rem;opacity:.82;overflow-wrap:anywhere}
+#selection-content,#pivot-content,#active-camera-indicator,#build-content{margin-top:.35rem;opacity:.82;overflow-wrap:anywhere}
+#active-camera-indicator[data-camera-active="true"]{color:#ff9de4;font-weight:650}
 #build-content{font-family:monospace;font-size:.68rem;opacity:.55}
 #outline,#review-panel,#diagnostic-panel,#camera-panel{position:fixed;z-index:24;right:.55rem;top:4rem;width:min(430px,calc(100vw - 1.1rem));max-height:72vh;overflow:auto;border:1px solid #ffffff22;border-radius:14px;background:#0b111bf5}
 #outline>header,#review-panel>header,#diagnostic-panel>header,#camera-panel>header{display:flex;gap:.5rem;align-items:center;padding:.65rem;border-bottom:1px solid #ffffff18}

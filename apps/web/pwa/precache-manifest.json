@@ -85,6 +85,7 @@
     "packages/local-viewers/src/CoordinatedSandbox.js",
     "packages/local-viewers/src/LocalAnimationCoordinator.js",
     "packages/local-viewers/src/LocalProjectLaunch.js",
+    "packages/local-viewers/src/LocalTransformPreviewCoordinator.js",
     "packages/local-viewers/src/LocalViewerCoordinator.js",
     "packages/local-viewers/src/LocalViewerSessionDirectory.js",
     "packages/local-viewers/src/index.js",

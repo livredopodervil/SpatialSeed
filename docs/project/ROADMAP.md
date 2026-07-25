@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 durante o marco `0029`.
+> Documento vivo. Auditado em 25 de julho de 2026 durante o marco `0029`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -162,13 +162,39 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - transferência de arquivo transitória, sem persistir conteúdo no diretório de
   sessões.
 
-### 0029g — Procedimentos e animação de câmera
+### 0029f1 — Estabilização operacional de câmeras — implementado
+
+- criação em réplica ativada somente após confirmação autoritativa;
+- preview efêmero de gizmo entre viewers, limitado a 30 Hz;
+- atualização contínua do viewer que usa a câmera transformada;
+- seleção por painel, alvo móvel ampliado e estados visuais distintos;
+- política local de frustums e ocultação do auxiliar da câmera ativa;
+- diagnóstico separado de serviço, remoção visual e transporte temporário.
+
+### 0029g — Rigs, alvos e órbitas persistentes
+
+- `aimTarget` mundial, por objeto ou locator;
+- modos livre, olhar para, seguir e orbitar;
+- rig hierárquico com pivô, dolly e câmera;
+- offset e vetor vertical explícitos;
+- schema 4 retrocompatível.
+
+### 0029h — Animação de câmera e direção de cena
 
 - adaptadores de alvo para câmera de navegação e objeto câmera;
-- posição, orientação, órbita, campo visual e recorte animáveis;
+- posição, orientação, alvo, órbita, campo visual e recorte animáveis;
+- shots, cortes, cues e transições espaciais;
+- papéis locais de operador, preview e program;
 - restauração exata ao parar o overlay.
 
-### 0029h — Consolidação e livro 0.7
+### 0029i — Modo cena e controles configuráveis
+
+- teclas e ações arbitrárias sobre `UiActionRegistry`;
+- zonas invisíveis configuráveis para toque;
+- próximo/anterior shot, câmera direta e cues;
+- teste de captura de botões físicos quando o navegador os expuser.
+
+### 0029j — Consolidação e livro 0.7
 
 - migração progressiva das construções úteis para o laboratório declarativo;
 - HTMLs históricos reduzidos a wrappers ou evidência comparativa;

@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029f`.
+> Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -541,6 +541,26 @@ ações locais. Helpers de corpo e frustum pertencem ao renderer. O serializer
 escreve schema 3 e o leitor continua aceitando schemas 1 e 2. Animação de
 câmera permanece fora deste marco e deverá reutilizar o overlay temporal no
 `0029g`.
+
+## D-034 — Gestos compartilhados usam preview matricial limitado
+
+**Estado:** implementada localmente.
+
+Uma transformação interativa publica uma sessão efêmera com origem, identidade,
+sequência, revisão-base e matrizes mundiais amostradas a até 30 Hz. As demais
+abas aplicam essas matrizes somente ao renderer e, quando pertinente, à câmera
+ativa local. Soltar o gizmo continua produzindo um único comando persistente.
+
+**Motivação:** ao contrário de uma animação declarativa, um gesto humano não
+possui definição e época suficientes para ser recalculado localmente. Esperar o
+commit impede direção de câmera em tempo real; persistir cada amostra destrói a
+atomicidade do undo.
+
+**Consequências:** preview manual e animação usam canais distintos; nenhuma
+amostra entra no documento, histórico, arquivo ou recuperação. Cancelamento,
+rejeição, mudança editorial, despedida ou timeout restaura o estado confirmado.
+Taxa e diagnóstico pertencem ao transporte; a autoridade editorial continua
+exclusivamente na camada de comandos.
 
 ## Decisões superadas ou rejeitadas
 

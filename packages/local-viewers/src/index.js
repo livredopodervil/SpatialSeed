@@ -12,6 +12,9 @@ export {
   LocalAnimationCoordinator
 } from "./LocalAnimationCoordinator.js";
 export {
+  LocalTransformPreviewCoordinator
+} from "./LocalTransformPreviewCoordinator.js";
+export {
   LocalProjectLaunchReceiver,
   LocalProjectLaunchSender,
   createIndependentProjectUrl

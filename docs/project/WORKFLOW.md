@@ -1,6 +1,6 @@
 # Workflow verificável do SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029f`. Este é o processo canônico
+> Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`. Este é o processo canônico
 > para colaboração local, patches, testes, autoria e integração.
 
 ## Objetivos
@@ -286,6 +286,8 @@ aplicável:
   mostrar recuperação indevida;
 - criar, selecionar, transformar, ativar e salvar objetos câmera; usar câmeras
   ativas diferentes em viewers distintos e confirmar a câmera padrão ao reabrir;
+- mover um objeto câmera pelo gizmo e confirmar atualização contínua no viewer
+  que a usa, sem criar itens intermediários de undo;
 - iniciar, pausar, retomar e parar animação em abas diferentes, inclusive
   reativando uma aba suspensa;
 - console, planos e procedimentos.

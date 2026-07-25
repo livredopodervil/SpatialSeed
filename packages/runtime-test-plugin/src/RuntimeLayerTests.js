@@ -20,12 +20,12 @@ import {
   EditorSession,
   SimulationClock,
   SimulationBridge
-} from "../../runtime-layers/src/index.js?build=20260724-0029c";
+} from "../../runtime-layers/src/index.js?build=20260725-0029f1";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260724-0029d";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260725-0029f1";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -101,17 +101,18 @@ import {
   SandboxRecoveryController,
   createRecoveryRecord,
   validateRecoveryRecord
-} from "../../project-recovery/src/index.js?build=20260724-0029e2";
+} from "../../project-recovery/src/index.js?build=20260725-0029f1";
 import {
   CoordinatedSandbox,
   LocalProjectLaunchReceiver,
   LocalProjectLaunchSender,
   LocalAnimationCoordinator,
+  LocalTransformPreviewCoordinator,
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl,
   createSharedViewerUrl
-} from "../../local-viewers/src/index.js?build=20260724-0029f";
+} from "../../local-viewers/src/index.js?build=20260725-0029f1";
 import {
   boxRegionReducer
 } from "../../region-box/src/reducer.js?build=20260724-0029f";
@@ -133,7 +134,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260724-0029f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260724-0029f";
+} from "../../devtools/src/DevConsole.js?build=20260725-0029f1";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -2171,6 +2172,58 @@ export function createRuntimeLayerTests() {
         );
         service.dispose();
         controller.dispose();
+      },
+
+      "câmera ativa acompanha preview mundial sem editar documento"() {
+        const region = new Region(
+          { id: "camera-preview-region", type: "box-region" },
+          {
+            schemaVersion: 1,
+            objects: [{
+              id: "camera-preview-active",
+              kind: "camera",
+              position: [1, 2, 3],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              camera: {
+                projection: "perspective",
+                fov: 55,
+                near: 0.1,
+                far: 1000,
+                focusDistance: 10
+              }
+            }]
+          }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const service = new CameraObjectService({
+          sandbox,
+          viewer,
+          controller
+        });
+        service.activate("camera-preview-active");
+        const revision = sandbox.revision;
+
+        assertEqual(service.applyTransformPreview([{
+          id: "camera-preview-active",
+          worldMatrix: translationMatrix([8, 9, 10])
+        }]), true);
+        assertVectorNear(controller.snapshot().position, [8, 9, 10]);
+        assertEqual(sandbox.revision, revision);
+        assertEqual(
+          viewer.snapshot().activeCameraId,
+          "camera-preview-active"
+        );
+        service.clearTransformPreview();
+        assertVectorNear(controller.snapshot().position, [1, 2, 3]);
+        assertEqual(sandbox.revision, revision);
+        service.dispose();
+        controller.dispose();
       }
     },
 
@@ -2368,6 +2421,233 @@ export function createRuntimeLayerTests() {
           pair.replica.coordinator.status().lastOutcome.status,
           "accepted"
         );
+        pair.dispose();
+      },
+
+      async "câmera criada na réplica ativa somente após snapshot aceito"() {
+        const pair = await createLocalViewerPair();
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          viewerId: "camera-pending-replica",
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({
+          viewer,
+          surface
+        });
+        const service = new CameraObjectService({
+          sandbox: pair.replica.coordinated,
+          viewer,
+          controller,
+          createId: () => "camera-pending-shared"
+        });
+
+        const result = service.create({
+          name: "Câmera pendente",
+          activate: true
+        });
+        assertEqual(result.changed, true);
+        assertEqual(result.activationPending, true);
+        assertEqual(viewer.snapshot().activeCameraId, null);
+        await settleLocalViewers(20);
+
+        assertEqual(
+          viewer.snapshot().activeCameraId,
+          "camera-pending-shared"
+        );
+        assertEqual(service.list().pendingActivationId, null);
+        assertEqual(
+          service.diagnostics().pendingActivationsResolved,
+          1
+        );
+        service.dispose();
+        controller.dispose();
+        pair.dispose();
+      },
+
+      async "ativação pendente é limpa quando autoridade rejeita criação"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        const surface = createCameraSurfaceFixture();
+        const viewer = new ViewerState({
+          viewerId: "camera-pending-rejected",
+          camera: navigationCameraFixture()
+        });
+        const controller = new ViewerCameraController({
+          viewer,
+          surface
+        });
+        const service = new CameraObjectService({
+          sandbox: pair.replica.coordinated,
+          viewer,
+          controller,
+          createId: () => "camera-pending-rejected"
+        });
+        network.pause("sync");
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "authority-before-camera",
+          position: [0, 0, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers();
+
+        const result = service.create({ activate: true });
+        assertEqual(result.activationPending, true);
+        await settleLocalViewers(20);
+
+        assertEqual(service.list().pendingActivationId, null);
+        assertEqual(viewer.snapshot().activeCameraId, null);
+        assertEqual(
+          service.diagnostics().pendingActivationsRejected,
+          1
+        );
+        assertEqual(
+          pair.replica.coordinator.status().lastOutcome.status,
+          "rejected-stale"
+        );
+        service.dispose();
+        controller.dispose();
+        pair.dispose();
+      },
+
+      async "preview de transformação converge sem alterar revisão"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        let now = 0;
+        const authorityAdapter = createTransformPreviewAdapter();
+        const replicaAdapter = createTransformPreviewAdapter();
+        const authority = new LocalTransformPreviewCoordinator({
+          sandbox: pair.authority.sandbox,
+          sandboxId: pair.authority.coordinator.sandboxId,
+          viewerId: pair.authority.coordinator.viewerId,
+          adapter: authorityAdapter,
+          channelFactory: network.channelFactory,
+          now: () => now,
+          setTimeoutFn: null
+        });
+        const replica = new LocalTransformPreviewCoordinator({
+          sandbox: pair.replica.sandbox,
+          sandboxId: pair.replica.coordinator.sandboxId,
+          viewerId: pair.replica.coordinator.viewerId,
+          adapter: replicaAdapter,
+          channelFactory: network.channelFactory,
+          now: () => now,
+          setTimeoutFn: null
+        });
+        authority.start();
+        replica.start();
+        const revision = pair.authority.sandbox.revision;
+        const moved = translationMatrix([4, 5, 6]);
+
+        authority.begin({
+          previewId: "preview-shared-transform",
+          transforms: [{
+            id: "camera-preview",
+            worldMatrix: identityMatrix()
+          }]
+        });
+        now += 40;
+        authority.update({
+          previewId: "preview-shared-transform",
+          transforms: [{
+            id: "camera-preview",
+            worldMatrix: moved
+          }]
+        });
+        await settleLocalViewers();
+
+        assertEqual(pair.authority.sandbox.revision, revision);
+        assertDeepEqual(
+          replicaAdapter.applied.at(-1).transforms[0].worldMatrix,
+          moved
+        );
+        assertEqual(replica.status().remotePreviewCount, 1);
+        authority.end({
+          previewId: "preview-shared-transform",
+          transforms: [{
+            id: "camera-preview",
+            worldMatrix: moved
+          }],
+          committed: false
+        });
+        await settleLocalViewers();
+        assertEqual(replica.status().remotePreviewCount, 0);
+        assertEqual(replicaAdapter.cleared.length, 1);
+        replica.dispose();
+        authority.dispose();
+        pair.dispose();
+      },
+
+      async "preview limita amostras e libera overlay após commit"() {
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        let now = 0;
+        const authorityAdapter = createTransformPreviewAdapter();
+        const replicaAdapter = createTransformPreviewAdapter();
+        const authority = new LocalTransformPreviewCoordinator({
+          sandbox: pair.authority.sandbox,
+          sandboxId: pair.authority.coordinator.sandboxId,
+          viewerId: pair.authority.coordinator.viewerId,
+          adapter: authorityAdapter,
+          channelFactory: network.channelFactory,
+          now: () => now,
+          setTimeoutFn: null,
+          maximumHz: 30
+        });
+        const replica = new LocalTransformPreviewCoordinator({
+          sandbox: pair.replica.sandbox,
+          sandboxId: pair.replica.coordinator.sandboxId,
+          viewerId: pair.replica.coordinator.viewerId,
+          adapter: replicaAdapter,
+          channelFactory: network.channelFactory,
+          now: () => now,
+          setTimeoutFn: null
+        });
+        authority.start();
+        replica.start();
+        authority.begin({
+          previewId: "preview-throttled",
+          transforms: [{
+            id: "preview-throttled-object",
+            worldMatrix: identityMatrix()
+          }]
+        });
+        for (let index = 1; index <= 5; index += 1) {
+          now += 5;
+          authority.update({
+            previewId: "preview-throttled",
+            transforms: [{
+              id: "preview-throttled-object",
+              worldMatrix: translationMatrix([index, 0, 0])
+            }]
+          });
+        }
+        authority.end({
+          previewId: "preview-throttled",
+          transforms: [{
+            id: "preview-throttled-object",
+            worldMatrix: translationMatrix([5, 0, 0])
+          }],
+          committed: true
+        });
+        await settleLocalViewers();
+
+        assert(
+          authority.status().diagnostics.updatesThrottled >= 4
+        );
+        assertEqual(replica.status().remotePreviewCount, 1);
+        pair.authority.coordinated.dispatch({
+          type: "object.create",
+          id: "preview-commit-proof",
+          position: [0, 0, 0],
+          size: [1, 1, 1]
+        });
+        await settleLocalViewers(20);
+        assertEqual(replica.status().remotePreviewCount, 0);
+        assert(replicaAdapter.cleared.length >= 1);
+        replica.dispose();
+        authority.dispose();
         pair.dispose();
       },
 
@@ -10420,6 +10700,23 @@ function createLocalAnimationAdapter() {
           droppedSteps: 0
         })
       });
+    }
+  };
+}
+
+function createTransformPreviewAdapter() {
+  const applied = [];
+  const cleared = [];
+  return {
+    applied,
+    cleared,
+    apply(session) {
+      applied.push(structuredClone(session));
+      return true;
+    },
+    clear(session) {
+      cleared.push(structuredClone(session));
+      return true;
     }
   };
 }

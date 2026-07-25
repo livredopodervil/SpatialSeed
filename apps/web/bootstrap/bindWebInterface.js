@@ -463,6 +463,12 @@ export function bindWebInterface({
       $("duplicate-selection").disabled = empty;
       $("delete-selection").disabled = empty;
       $("inspector").disabled = empty;
+      if (
+        !$("camera-panel").hidden &&
+        !$("camera-panel").contains(documentRoot.activeElement)
+      ) {
+        refreshCameraObjects();
+      }
       uiRefresh.request("selection.changed");
     }
   );
@@ -569,6 +575,9 @@ export function bindWebInterface({
     $("camera-object-select").value || null;
   const refreshCameraObjects = () => {
     const snapshot = runtime.query("camera.objects.list");
+    const selection = runtime.query("selection.snapshot");
+    const selectedObjectId =
+      selection.activeMember?.objectId ?? null;
     const select = $("camera-object-select");
     const previous = select.value;
     select.replaceChildren();
@@ -577,6 +586,7 @@ export function bindWebInterface({
       option.value = camera.id;
       option.textContent = [
         camera.name,
+        camera.id === selectedObjectId ? "selecionada" : null,
         camera.active ? "ativa" : null,
         camera.default ? "padrão" : null
       ].filter(Boolean).join(" · ");
@@ -598,6 +608,7 @@ export function bindWebInterface({
       : "Nenhuma câmera persistente.";
     for (const id of [
       "camera-object-activate",
+      "camera-object-select-button",
       "camera-object-capture",
       "camera-object-default"
     ]) {
@@ -607,6 +618,16 @@ export function bindWebInterface({
       !snapshot.defaultCameraId;
     $("camera-object-deactivate").disabled =
       !snapshot.activeCameraId;
+    const helperState = runtime.query("viewer.camera.helpers");
+    $("camera-helper-policy").value = helperState.helperPolicy;
+    const active = snapshot.cameras.find(
+      camera => camera.id === snapshot.activeCameraId
+    );
+    $("active-camera-indicator").textContent = active
+      ? `Vista: ${active.name} · ${active.id}`
+      : "Vista: navegação livre";
+    $("active-camera-indicator").dataset.cameraActive =
+      active ? "true" : "false";
     return snapshot;
   };
 
@@ -689,7 +710,9 @@ export function bindWebInterface({
     if (!result?.changed) return;
     refreshCameraPanel();
     $("camera-object-select").value = result.id;
-    showNotice("Câmera persistente criada e ativada.");
+    showNotice(result.activationPending
+      ? "Câmera enviada à autoridade; ativação aguardando confirmação."
+      : "Câmera persistente criada e ativada.");
   });
 
   $("camera-object-activate").addEventListener("click", () => {
@@ -698,6 +721,14 @@ export function bindWebInterface({
     execute("viewer.camera.object.activate", { id });
     refreshCameraPanel();
     showNotice("Câmera ativada somente neste viewer.");
+  });
+
+  $("camera-object-select-button").addEventListener("click", () => {
+    const id = selectedCameraObjectId();
+    if (!id) return;
+    execute("selection.select-object", { id });
+    refreshCameraObjects();
+    showNotice("Objeto câmera selecionado no editor.");
   });
 
   $("camera-object-capture").addEventListener("click", () => {
@@ -729,6 +760,13 @@ export function bindWebInterface({
     showNotice("Navegação livre neste viewer.");
   });
 
+  $("camera-helper-policy").addEventListener("change", event => {
+    execute("viewer.camera.helpers.set", {
+      helperPolicy: event.currentTarget.value
+    });
+    refreshCameraObjects();
+  });
+
   const unsubscribeViewer = runtime.subscribe(
     "viewer.changed",
     () => {
@@ -739,6 +777,27 @@ export function bindWebInterface({
         return;
       }
       refreshCameraPanel();
+    }
+  );
+  const unsubscribeCameraObjects = runtime.subscribe(
+    "camera.objects.changed",
+    () => {
+      if (
+        !$("camera-panel").hidden &&
+        !$("camera-panel").contains(documentRoot.activeElement)
+      ) {
+        refreshCameraObjects();
+        return;
+      }
+      const snapshot = runtime.query("camera.objects.list");
+      const active = snapshot.cameras.find(
+        camera => camera.id === snapshot.activeCameraId
+      );
+      $("active-camera-indicator").textContent = active
+        ? `Vista: ${active.name} · ${active.id}`
+        : "Vista: navegação livre";
+      $("active-camera-indicator").dataset.cameraActive =
+        active ? "true" : "false";
     }
   );
   const unsubscribeViewerInstances = runtime.subscribe(
@@ -1582,6 +1641,7 @@ export function bindWebInterface({
   }
 
   uiRefresh.flushNow("initial");
+  refreshCameraObjects();
 
   const initialSelection = runtime.query("selection.snapshot");
   runtime.emit("selection.changed", initialSelection);
@@ -1596,6 +1656,7 @@ export function bindWebInterface({
       unsubscribeSelection();
       unsubscribeWorld();
       unsubscribeViewer();
+      unsubscribeCameraObjects();
       unsubscribeViewerInstances();
       unsubscribeInstall();
       disconnectUiDiagnostics();

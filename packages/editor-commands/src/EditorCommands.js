@@ -35,6 +35,25 @@ export function createEditorCommands({
       editor.selection.clear();
       return editor.selection.snapshot();
     })
+    .register("selection.select-object", ({
+      id,
+      regionId = "region-main"
+    } = {}) => {
+      const objectId = String(id ?? "").trim();
+      const exists = selectionOperations.sandbox
+        .getSnapshot()
+        .objects
+        .some(object => object.id === objectId);
+      if (!exists) {
+        throw new Error(`Objeto inexistente para seleção: ${objectId}.`);
+      }
+      editor.selection.replace({
+        kind: "object",
+        regionId: String(regionId),
+        objectId
+      });
+      return editor.selection.snapshot();
+    })
     .register("history.undo", () => ({
       changed: selectionOperations.sandbox.undo()
     }))

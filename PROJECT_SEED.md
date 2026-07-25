@@ -26,7 +26,7 @@ Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
 
 Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 
-## Estado funcional até 0029f
+## Estado funcional até 0029f1
 
 - portal HTML na raiz e catálogo canônico de experimentos;
 - protótipos históricos offline, com seleção móvel, recorte configurável e
@@ -54,6 +54,10 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   transferência transitória do arquivo e handshake antes da recuperação;
 - objetos câmera persistentes e hierárquicos, câmera ativa local por viewer e
   câmera padrão opcional do documento;
+- criação transacional de câmeras em réplicas, seleção ampliada e frustums
+  configuráveis;
+- preview efêmero de gizmos compartilhado a até 30 Hz, inclusive atualizando
+  viewers que usam uma câmera transformada;
 - sessões efêmeras de animação compartilhadas por descritor, sequência e época
   absoluta, com cálculo de quadros local em cada viewer;
 - runtime Worker/SES, sessões, planos e procedimentos;
@@ -93,6 +97,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
     persistentes e só a ativação deles pertence ao viewer.
 25. Um viewer que entra numa sessão existente aguarda o primeiro snapshot antes
     de disputar autoridade ou iniciar recuperação.
+26. Previews de gestos manuais podem transmitir matrizes temporárias limitadas;
+    somente o comando final entra no documento, histórico e recuperação.
 
 ## Fluxo
 
@@ -122,8 +128,9 @@ animate status
 
 Continuar o ciclo 0029 em incrementos independentes:
 
-1. animação procedural de câmera;
-2. consolidação do ciclo 0029.
+1. rigs, alvos e órbitas persistentes de câmera;
+2. animação procedural e direção de cena;
+3. consolidação do ciclo 0029.
 
 Referência: `docs/project/ROADMAP.md`.
 

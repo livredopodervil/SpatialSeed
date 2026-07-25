@@ -2,7 +2,7 @@ const MESSAGE_FORMAT = "spatial-seed-local-viewer";
 const MESSAGE_VERSION = 1;
 
 export class LocalViewerCoordinator {
-  static apiVersion = "local-viewer-coordinator-v1";
+  static apiVersion = "local-viewer-coordinator-v2";
 
   #listeners = new Set();
   #peers = new Map();
@@ -24,6 +24,14 @@ export class LocalViewerCoordinator {
   #initialSyncResolve = null;
   #receivedInitialSnapshot = false;
   #sawAuthority = false;
+  #performance = {
+    snapshotsCaptured: 0,
+    lastCaptureMs: 0,
+    maximumCaptureMs: 0,
+    snapshotsApplied: 0,
+    lastApplyMs: 0,
+    maximumApplyMs: 0
+  };
 
   constructor({
     sandbox,
@@ -260,7 +268,8 @@ export class LocalViewerCoordinator {
         ? structuredClone(this.#lastOutcome)
         : null,
       lastError: this.#lastError?.message ?? null,
-      initialSynchronized: this.#receivedInitialSnapshot
+      initialSynchronized: this.#receivedInitialSnapshot,
+      performance: Object.freeze({ ...this.#performance })
     });
   }
 
@@ -691,14 +700,24 @@ export class LocalViewerCoordinator {
   }
 
   #captureSnapshot(sandboxId = this.sandboxId) {
+    const startedAt = performanceNow();
     const snapshot = this.#snapshotAdapter.capture({
       sandboxId
     });
     this.sharedRevision = this.sandbox.revision;
-    return structuredClone(snapshot);
+    const cloned = structuredClone(snapshot);
+    const elapsed = performanceNow() - startedAt;
+    this.#performance.snapshotsCaptured += 1;
+    this.#performance.lastCaptureMs = elapsed;
+    this.#performance.maximumCaptureMs = Math.max(
+      this.#performance.maximumCaptureMs,
+      elapsed
+    );
+    return cloned;
   }
 
   #applySnapshot(snapshot) {
+    const startedAt = performanceNow();
     const revision = Number(snapshot?.revision);
     if (!Number.isInteger(revision) || revision < 0) {
       throw new TypeError(
@@ -713,6 +732,13 @@ export class LocalViewerCoordinator {
       this.#initialSyncResolve?.(true);
       this.#initialSyncResolve = null;
     }
+    const elapsed = performanceNow() - startedAt;
+    this.#performance.snapshotsApplied += 1;
+    this.#performance.lastApplyMs = elapsed;
+    this.#performance.maximumApplyMs = Math.max(
+      this.#performance.maximumApplyMs,
+      elapsed
+    );
     return true;
   }
 
@@ -857,4 +883,10 @@ function historySnapshot(sandbox) {
     canUndo: Boolean(sandbox.canUndo),
     canRedo: Boolean(sandbox.canRedo)
   });
+}
+
+function performanceNow() {
+  return typeof globalThis.performance?.now === "function"
+    ? globalThis.performance.now()
+    : Date.now();
 }

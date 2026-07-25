@@ -1,7 +1,7 @@
 # Coordenação de viewers locais
 
 > Contrato técnico implementado nos marcos `0029e`, `0029e1`, `0029e2` e
-> `0029f`.
+> `0029f` e `0029f1`.
 
 ## Fronteira
 
@@ -79,6 +79,24 @@ intenção obsoleta recebe `rejected-stale` e a sessão vigente. Qualquer comand
 editorial encerra o overlay em todos os viewers antes de propagar o novo
 snapshot.
 
+## Preview efêmero de transformação
+
+`LocalTransformPreviewCoordinator` transporta amostras de um gesto de gizmo em
+canal próprio. Ele publica início, matrizes mundiais temporárias limitadas a
+30 Hz e término ou cancelamento. A matriz atualiza somente a projeção; não
+avança revisão, não entra no histórico e não é gravada na recuperação.
+
+Ao soltar, o editor envia um único comando canônico pela coordenação normal. O
+overlay permanece apenas até o snapshot confirmado ou um timeout curto. Se a
+intenção for rejeitada, a aba fechar ou o gesto for cancelado, cada viewer
+restaura sua projeção canônica. Quando o alvo é um objeto câmera ativo em outro
+viewer, esse viewer também aplica a pose temporária à própria vista.
+
+Isso não contradiz a sessão temporal: animações são funções reproduzíveis e
+continuam compartilhando definição e época sem mensagens por quadro. Um gesto
+humano não pode ser recalculado por relógio absoluto; suas amostras são
+transitórias, limitadas e nunca persistentes.
+
 ## Projetos independentes, recuperação e arquivos
 
 Somente a aba autoritativa grava a recuperação IndexedDB e pode abrir, criar ou
@@ -112,6 +130,8 @@ recebe o conteúdo do arquivo.
 - suíte `runtime test viewer-coordination`;
 - evento `animation.shared.changed`;
 - suíte `runtime test viewer-animation`.
+- query `camera.objects.diagnostics`;
+- suíte de preview em `runtime test viewer-coordination`.
 
 ## Roteiro manual
 
@@ -119,7 +139,8 @@ recebe o conteúdo do arquivo.
    recuperação não aparece;
 2. mantenha as duas abas lado a lado ou alterne entre elas;
 3. mova a câmera e selecione objetos diferentes em cada viewer;
-4. crie ou transforme um objeto numa aba e confirme a atualização na outra;
+4. transforme um objeto câmera numa aba e confirme a atualização contínua no
+   viewer que olha por ela;
 5. execute `viewers status` nas duas abas;
 6. faça duas edições rápidas na réplica e confirme que ambas chegam em ordem;
 7. inicie uma animação numa aba e pause, retome e pare pela outra;

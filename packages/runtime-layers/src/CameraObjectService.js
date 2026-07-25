@@ -2,6 +2,7 @@ import {
   HierarchyIndex
 } from "../../scene-hierarchy/src/index.js";
 import {
+  decomposeTransform,
   invertAffineMatrix
 } from "../../math-affine/src/index.js";
 import {
@@ -11,15 +12,29 @@ import {
 const CAMERA_KIND = "camera";
 
 export class CameraObjectService {
-  static apiVersion = "camera-object-service-v1";
+  static apiVersion = "camera-object-service-v2";
 
   #listeners = new Set();
   #unsubscribeSandbox = () => {};
   #unsubscribeViewer = () => {};
+  #unsubscribeCoordination = () => {};
   #applyingObjectCamera = false;
   #lastState = null;
   #lastViewerCamera = null;
   #allowDefaultAdoption = true;
+  #pendingActivationId = null;
+  #previewingActiveCamera = false;
+  #diagnostics = {
+    creationsRequested: 0,
+    pendingActivations: 0,
+    pendingActivationsResolved: 0,
+    pendingActivationsRejected: 0,
+    activePreviewFrames: 0,
+    activePreviewRestores: 0,
+    cameraRemovalEvents: 0,
+    lastSandboxChangeMs: 0,
+    maximumSandboxChangeMs: 0
+  };
 
   constructor({
     sandbox,
@@ -56,6 +71,11 @@ export class CameraObjectService {
     this.#unsubscribeSandbox = sandbox.subscribe(
       (state, changes) => this.#sandboxChanged(state, changes)
     );
+    if (typeof sandbox.subscribeCoordination === "function") {
+      this.#unsubscribeCoordination = sandbox.subscribeCoordination(
+        snapshot => this.#coordinationChanged(snapshot)
+      );
+    }
     this.#adoptDefaultIfInactive();
   }
 
@@ -68,26 +88,46 @@ export class CameraObjectService {
   } = {}) {
     const normalizedId = requiredText(id, "Identificador de câmera");
     const projection = normalizeCameraObject(camera);
-    const changed = this.sandbox.dispatch({
-      type: "camera.create",
-      id: normalizedId,
-      name: name ?? `Câmera ${this.list().cameras.length + 1}`,
-      position: [...projection.position],
-      rotation: [...projection.quaternion],
-      camera: {
-        projection: "perspective",
-        fov: projection.fov,
-        near: projection.near,
-        far: projection.far,
-        focusDistance: projection.focusDistance
-      },
-      makeDefault: Boolean(makeDefault)
-    });
+    this.#diagnostics.creationsRequested += 1;
+    if (activate) {
+      this.#pendingActivationId = normalizedId;
+      this.#diagnostics.pendingActivations += 1;
+    }
+    let changed;
+    try {
+      changed = this.sandbox.dispatch({
+        type: "camera.create",
+        id: normalizedId,
+        name: name ?? `Câmera ${this.list().cameras.length + 1}`,
+        position: [...projection.position],
+        rotation: [...projection.quaternion],
+        camera: {
+          projection: "perspective",
+          fov: projection.fov,
+          near: projection.near,
+          far: projection.far,
+          focusDistance: projection.focusDistance
+        },
+        makeDefault: Boolean(makeDefault)
+      });
+    } catch (error) {
+      if (this.#pendingActivationId === normalizedId) {
+        this.#pendingActivationId = null;
+        this.#diagnostics.pendingActivationsRejected += 1;
+      }
+      throw error;
+    }
 
-    if (changed && activate) this.activate(normalizedId);
+    if (!changed && this.#pendingActivationId === normalizedId) {
+      this.#pendingActivationId = null;
+      this.#diagnostics.pendingActivationsRejected += 1;
+    } else if (changed && activate) {
+      this.#resolvePendingActivation();
+    }
     return Object.freeze({
       changed,
       id: normalizedId,
+      activationPending: this.#pendingActivationId === normalizedId,
       activeCameraId: this.viewer.snapshot().activeCameraId ?? null,
       defaultCameraId:
         this.sandbox.getSnapshot().defaultCameraId ?? null
@@ -228,6 +268,7 @@ export class CameraObjectService {
     return Object.freeze({
       apiVersion: CameraObjectService.apiVersion,
       activeCameraId,
+      pendingActivationId: this.#pendingActivationId,
       defaultCameraId,
       cameras: Object.freeze(cameras)
     });
@@ -242,9 +283,66 @@ export class CameraObjectService {
   dispose() {
     this.#unsubscribeSandbox();
     this.#unsubscribeViewer();
+    this.#unsubscribeCoordination();
     this.#unsubscribeSandbox = () => {};
     this.#unsubscribeViewer = () => {};
+    this.#unsubscribeCoordination = () => {};
     this.#listeners.clear();
+  }
+
+  diagnostics() {
+    return Object.freeze({
+      ...this.#diagnostics,
+      pendingActivationId: this.#pendingActivationId,
+      previewingActiveCamera: this.#previewingActiveCamera
+    });
+  }
+
+  applyTransformPreview(transforms = []) {
+    const activeId = this.viewer.snapshot().activeCameraId ?? null;
+    if (!activeId) return false;
+    const transform = transforms.find(entry =>
+      String(entry?.id ?? entry?.objectId ?? "") === activeId
+    );
+    if (!transform?.worldMatrix) return false;
+    const node = this.sandbox.getSnapshot().objects.find(
+      object => object.id === activeId && object.kind === CAMERA_KIND
+    );
+    if (!node) return false;
+    const decomposed = decomposeTransform(transform.worldMatrix);
+    const camera = normalizeNavigationCamera({
+      position: decomposed.position,
+      quaternion: decomposed.rotation,
+      focusDistance: node.camera?.focusDistance,
+      fov: node.camera?.fov,
+      near: node.camera?.near,
+      far: node.camera?.far,
+      aspect: this.controller.snapshot().aspect
+    });
+    this.#applyingObjectCamera = true;
+    this.#previewingActiveCamera = true;
+    try {
+      this.controller.execute("viewer.camera.restore", { camera });
+    } finally {
+      this.#applyingObjectCamera = false;
+    }
+    this.#diagnostics.activePreviewFrames += 1;
+    return true;
+  }
+
+  clearTransformPreview() {
+    if (!this.#previewingActiveCamera) return false;
+    this.#previewingActiveCamera = false;
+    const activeId = this.viewer.snapshot().activeCameraId ?? null;
+    if (activeId) {
+      const exists = this.sandbox.getSnapshot().objects.some(
+        object => object.id === activeId && object.kind === CAMERA_KIND
+      );
+      if (exists) this.activate(activeId);
+    }
+    this.#diagnostics.activePreviewRestores += 1;
+    this.#notify();
+    return true;
   }
 
   #cameraNode(id) {
@@ -259,7 +357,18 @@ export class CameraObjectService {
   }
 
   #sandboxChanged(state, changes = []) {
+    const startedAt = performanceNow();
+    const previousState = this.#lastState;
     this.#lastState = state;
+    if (changes.some(change => change?.type === "object-deleted")) {
+      this.#diagnostics.cameraRemovalEvents += changes.filter(change =>
+        change?.type === "object-deleted" &&
+        previousState?.objects?.some(object =>
+          object.id === change.objectId && object.kind === CAMERA_KIND
+        )
+      ).length;
+    }
+    this.#resolvePendingActivation();
     if (changes.some(change =>
       [
         "initial",
@@ -288,6 +397,7 @@ export class CameraObjectService {
       }
       this.#adoptDefaultIfInactive();
       this.#notify();
+      this.#recordSandboxChangeDuration(startedAt);
       return;
     }
 
@@ -309,6 +419,44 @@ export class CameraObjectService {
     );
     if (affectsActive) this.activate(activeId);
     else this.#notify();
+    this.#recordSandboxChangeDuration(startedAt);
+  }
+
+  #coordinationChanged(snapshot = {}) {
+    if (!this.#pendingActivationId) return;
+    if (this.#resolvePendingActivation()) return;
+    const outcome = snapshot.lastOutcome;
+    if (
+      Number(snapshot.pendingIntents ?? 0) === 0 &&
+      outcome &&
+      outcome.status !== "queued"
+    ) {
+      this.#pendingActivationId = null;
+      this.#diagnostics.pendingActivationsRejected += 1;
+      this.#notify();
+    }
+  }
+
+  #resolvePendingActivation() {
+    const id = this.#pendingActivationId;
+    if (!id) return false;
+    const exists = this.sandbox.getSnapshot().objects.some(
+      object => object.id === id && object.kind === CAMERA_KIND
+    );
+    if (!exists) return false;
+    this.#pendingActivationId = null;
+    this.#diagnostics.pendingActivationsResolved += 1;
+    this.activate(id);
+    return true;
+  }
+
+  #recordSandboxChangeDuration(startedAt) {
+    const elapsed = performanceNow() - startedAt;
+    this.#diagnostics.lastSandboxChangeMs = elapsed;
+    this.#diagnostics.maximumSandboxChangeMs = Math.max(
+      this.#diagnostics.maximumSandboxChangeMs,
+      elapsed
+    );
   }
 
   #viewerChanged(snapshot) {
@@ -468,4 +616,10 @@ function requiredText(value, label) {
 
 function sameValue(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function performanceNow() {
+  return typeof globalThis.performance?.now === "function"
+    ? globalThis.performance.now()
+    : Date.now();
 }

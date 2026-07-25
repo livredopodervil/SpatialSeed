@@ -1,6 +1,6 @@
 import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-0020b-a";
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260724-0029d";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260725-0029f1";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
 import {
@@ -8,20 +8,20 @@ import {
   CameraObjectService,
   ViewerCameraController,
   ViewerState,
-} from "../../../packages/runtime-layers/src/index.js?build=20260724-0029f";
+} from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260724-0029f";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260724-0029f";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260725-0029f1";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260724-0029f";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260725-0029f1";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260718-0027h";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260724-0029e";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260725-0029f1";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029f";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260724-0029f";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260725-0029f1";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260724-0029f";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -81,18 +81,19 @@ import {
   createRecoveryRecord,
   IndexedDbRecoveryStore,
   SandboxRecoveryController
-} from "../../../packages/project-recovery/src/index.js?build=20260724-0029e2";
+} from "../../../packages/project-recovery/src/index.js?build=20260725-0029f1";
 import {
   CoordinatedSandbox,
   LocalProjectLaunchReceiver,
   LocalProjectLaunchSender,
   LocalAnimationCoordinator,
+  LocalTransformPreviewCoordinator,
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260724-0029f";
+} from "../../../packages/local-viewers/src/index.js?build=20260725-0029f1";
 
-const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v1";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v2";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({
@@ -325,6 +326,39 @@ export async function createWebRuntime({
     viewer,
     controller: cameraController
   });
+  renderer.setCameraVisualState({
+    activeCameraId: cameraObjects.list().activeCameraId,
+    defaultCameraId: cameraObjects.list().defaultCameraId
+  });
+  const transformPreviews = new LocalTransformPreviewCoordinator({
+    sandbox: baseSandbox,
+    sandboxId: viewerCoordinator.sandboxId,
+    viewerId: viewer.viewerId,
+    adapter: {
+      apply: session => {
+        renderer.applySharedTransformPreview(session);
+        cameraObjects.applyTransformPreview(session.transforms);
+      },
+      clear: session => {
+        renderer.clearSharedTransformPreview(session);
+        cameraObjects.clearTransformPreview();
+      }
+    }
+  });
+  transformPreviews.start();
+  const unsubscribeTransformPreviewSurface =
+    renderer.subscribeTransformPreview(preview => {
+      if (preview.phase === "begin") {
+        transformPreviews.begin(preview);
+      } else if (preview.phase === "update") {
+        transformPreviews.update(preview);
+      } else {
+        transformPreviews.end({
+          ...preview,
+          committed: preview.phase === "end"
+        });
+      }
+    });
   const selectionOperations = new SelectionOperations({
     editor,
     sandbox,
@@ -420,6 +454,11 @@ export async function createWebRuntime({
     .register(
       "viewer.camera.object.deactivate",
       () => cameraObjects.deactivate(),
+      { category: "viewer", mutates: false }
+    )
+    .register(
+      "viewer.camera.helpers.set",
+      args => renderer.setCameraVisualState(args),
       { category: "viewer", mutates: false }
     )
     .register(
@@ -729,6 +768,17 @@ export async function createWebRuntime({
     .register("camera.objects.list", () =>
       cameraObjects.list()
     )
+    .register("camera.objects.diagnostics", () => ({
+      service: cameraObjects.diagnostics(),
+      visual: renderer.getCameraVisualState(),
+      transformPreview: transformPreviews.status(),
+      sandbox: sandbox.getHistoryDiagnostics().performance,
+      coordination: viewerCoordinator.status().performance,
+      recovery: recoveryStatus().performance ?? null
+    }))
+    .register("viewer.camera.helpers", () =>
+      renderer.getCameraVisualState()
+    )
     .register("viewer.instances.status", () =>
       viewerCoordinator.status()
     )
@@ -852,6 +902,7 @@ export async function createWebRuntime({
       recovery: recoveryStatus(),
       viewers: viewerCoordinator.status(),
       viewerSessions: viewerDirectory.status(),
+      transformPreview: transformPreviews.status(),
       renderer: renderer.renderer?.info?.render ?? null,
       appearance: appearanceRuntime.stats(),
       incremental: renderer.getIncrementalDiagnostics(),
@@ -893,6 +944,8 @@ export async function createWebRuntime({
         LocalProjectLaunchSender.apiVersion,
       coordinatedSandboxApiVersion: CoordinatedSandbox.apiVersion,
       cameraObjectApiVersion: CameraObjectService.apiVersion,
+      transformPreviewApiVersion:
+        LocalTransformPreviewCoordinator.apiVersion,
       multipleLocalViewers: true,
       activeProjectSelection: true,
       independentLocalProjects: true,
@@ -902,6 +955,8 @@ export async function createWebRuntime({
       persistentCameraObjects: true,
       localActiveCamera: true,
       documentDefaultCamera: true,
+      sharedTransformPreview: true,
+      sharedTransformPreviewMaximumHz: 30,
       cameraProjection: true,
       cameraPose: true,
       cameraOrbit: true,
@@ -961,10 +1016,22 @@ export async function createWebRuntime({
   const unsubscribeViewer = viewer.subscribe(
     snapshot => runtime.emit("viewer.changed", snapshot)
   );
+  const unsubscribeCameraObjects = cameraObjects.subscribe(
+    snapshot => {
+      renderer.setCameraVisualState({
+        activeCameraId: snapshot.activeCameraId,
+        defaultCameraId: snapshot.defaultCameraId
+      });
+      runtime.emit("camera.objects.changed", snapshot);
+    }
+  );
   const unsubscribeViewerInstances = viewerCoordinator.subscribe(
     snapshot => {
       if (sharedAnimations.sandboxId !== snapshot.sandboxId) {
         sharedAnimations.switchSandbox(snapshot.sandboxId);
+      }
+      if (transformPreviews.sandboxId !== snapshot.sandboxId) {
+        transformPreviews.switchSandbox(snapshot.sandboxId);
       }
       viewerDirectory.announce();
       runtime.emit("viewer.instances.changed", snapshot);
@@ -980,10 +1047,13 @@ export async function createWebRuntime({
   runtime
     .onDispose(() => viewerCoordinator.dispose())
     .onDispose(() => viewerDirectory.dispose())
+    .onDispose(() => transformPreviews.dispose())
+    .onDispose(unsubscribeTransformPreviewSurface)
     .onDispose(unsubscribeProjectDirectory)
     .onDispose(unsubscribeSharedAnimations)
     .onDispose(unsubscribeViewerSessions)
     .onDispose(unsubscribeViewerInstances)
+    .onDispose(unsubscribeCameraObjects)
     .onDispose(unsubscribeViewer)
     .onDispose(unsubscribeEditor)
     .onDispose(unsubscribeSelection)
@@ -1025,6 +1095,7 @@ export async function createWebRuntime({
       animationRuntime,
       animationCommands,
       sharedAnimations,
+      transformPreviews,
       sandboxRecovery,
       projectLaunch: Object.freeze({
         createSender: launchId =>

@@ -1,6 +1,6 @@
 # Instruções para assistentes no projeto SpatialSeed
 
-> Documento vivo. Auditado em 24 de julho de 2026 até o marco `0029f`. Estas instruções resumem o
+> Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`. Estas instruções resumem o
 > contrato de colaboração; o processo operacional completo está em
 > [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -80,6 +80,8 @@ busca manual no terminal.
     atual pertence ao viewer.
 24. Um viewer que entra numa sessão existente aguarda o snapshot inicial antes
     de disputar autoridade ou consultar recuperação.
+25. Previews de gestos manuais podem distribuir matrizes temporárias com taxa
+    limitada; o gesto concluído continua gerando um único comando persistente.
 
 Se uma solicitação contradisser esses princípios, explique o conflito e proponha
 uma implementação compatível antes de escrever código.
