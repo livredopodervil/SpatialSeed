@@ -221,9 +221,15 @@ export class MeshEditPanel {
         { mode: button.dataset.meshMode }
       ));
     }
-    this.#click("edit.context.frame.set", () => ({ mode: "world" }));
-    this.#click("edit.context.frame.set", () => ({ mode: "local" }));
-    this.#click("edit.context.frame.set", () => ({ mode: "viewer" }));
+    this.#click("mesh-frame-world", "edit.context.frame.set", () => ({
+      mode: "world"
+    }));
+    this.#click("mesh-frame-local", "edit.context.frame.set", () => ({
+      mode: "local"
+    }));
+    this.#click("mesh-frame-viewer", "edit.context.frame.set", () => ({
+      mode: "viewer"
+    }));
     for (const button of this.root.querySelectorAll("[data-mesh-constraint]")) {
       button.addEventListener("click", () => this.#execute(
         "mesh.constraint.set",

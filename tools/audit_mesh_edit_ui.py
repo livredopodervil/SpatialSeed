@@ -71,7 +71,10 @@ for needle in [
     '"mesh.selection.apply"',
     '"mesh.deform.settings.set"',
     'spatialseed.mesh.panel.sections.v1',
-    "activateSelection()"
+    "activateSelection()",
+    'this.#click("mesh-frame-world", "edit.context.frame.set"',
+    'this.#click("mesh-frame-local", "edit.context.frame.set"',
+    'this.#click("mesh-frame-viewer", "edit.context.frame.set"'
 ]:
     require("packages/mesh-edit-panel/src/MeshEditPanel.js", needle)
 
