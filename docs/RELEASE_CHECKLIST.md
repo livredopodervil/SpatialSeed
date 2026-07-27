@@ -215,7 +215,7 @@ A lista correta é a retornada por `runtime test help`.
 
 ### 9.3 Geometria, aparência e instancing
 
-- [ ] criar box, sphere, cylinder, plane e polygon;
+- [ ] abrir `create help` e criar ao menos uma família simples, uma planar e uma baseada em JSON;
 - [ ] testar plane canônico, normal/tangente e três pontos;
 - [ ] superfícies abertas mostram frente e verso;
 - [ ] pivô/bounds permanecem estáveis;

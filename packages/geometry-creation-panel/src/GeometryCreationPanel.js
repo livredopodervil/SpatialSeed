@@ -38,7 +38,7 @@ export class GeometryCreationPanel {
         this.#parameterField(parameter)
       )
     );
-    const planar = ["plane", "polygon"].includes(description.type);
+    const planar = description.placement === "planar";
     const originY = this.form.elements.namedItem("origin-y");
     if (originY) originY.value = planar ? "0.02" : "1";
     this.form.elements.namedItem("plane").value = planar ? "xz" : "native";
@@ -116,7 +116,7 @@ export class GeometryCreationPanel {
     const editor = document.createElement("span");
     editor.className = "geometry-field-editor";
 
-    if (parameter.type === "vector3") {
+    if (["vector3", "integer-vector3"].includes(parameter.type)) {
       editor.classList.add("geometry-vector");
       parameter.default.forEach((value, index) => {
         editor.append(this.#numberInput(parameter, value, index));
@@ -127,6 +127,27 @@ export class GeometryCreationPanel {
       input.name = `parameter-${parameter.id}`;
       input.checked = Boolean(parameter.default);
       editor.append(input);
+    } else if (parameter.type === "enum") {
+      const select = document.createElement("select");
+      select.name = `parameter-${parameter.id}`;
+      for (const value of parameter.options ?? []) {
+        const option = document.createElement("option");
+        option.value = String(value);
+        option.textContent = String(value);
+        option.selected = value === parameter.default;
+        select.append(option);
+      }
+      editor.append(select);
+    } else if (parameter.type === "json") {
+      const textarea = document.createElement("textarea");
+      textarea.name = `parameter-${parameter.id}`;
+      textarea.rows = Math.min(
+        8,
+        Math.max(3, Math.ceil(JSON.stringify(parameter.default).length / 48))
+      );
+      textarea.value = JSON.stringify(parameter.default);
+      textarea.spellcheck = false;
+      editor.append(textarea);
     } else {
       editor.append(this.#numberInput(parameter, parameter.default));
     }
@@ -142,20 +163,36 @@ export class GeometryCreationPanel {
       ? `parameter-${parameter.id}`
       : `parameter-${parameter.id}-${component}`;
     input.value = String(value);
-    input.step = parameter.type === "integer" ? "1" : "any";
+    input.step = ["integer", "integer-vector3"].includes(parameter.type)
+      ? "1"
+      : "any";
     if (parameter.minimum != null) input.min = String(parameter.minimum);
+    if (parameter.maximum != null) input.max = String(parameter.maximum);
     return input;
   }
 
   #readParameter(parameter) {
-    if (parameter.type === "vector3") {
-      return parameter.default.map((_, index) => finite(
-        this.form.elements.namedItem(`parameter-${parameter.id}-${index}`).value,
-        parameter.label
-      ));
+    if (["vector3", "integer-vector3"].includes(parameter.type)) {
+      return parameter.default.map((_, index) => {
+        const value = finite(
+          this.form.elements.namedItem(`parameter-${parameter.id}-${index}`).value,
+          parameter.label
+        );
+        return parameter.type === "integer-vector3"
+          ? integer(value, parameter.label)
+          : value;
+      });
     }
     const input = this.form.elements.namedItem(`parameter-${parameter.id}`);
     if (parameter.type === "boolean") return input.checked;
+    if (parameter.type === "enum") return input.value;
+    if (parameter.type === "json") {
+      try {
+        return JSON.parse(input.value);
+      } catch (error) {
+        throw new TypeError(`${parameter.label}: JSON inválido.`, { cause: error });
+      }
+    }
     const value = finite(input.value, parameter.label);
     return parameter.type === "integer" ? integer(value, parameter.label) : value;
   }

@@ -506,7 +506,7 @@ input[data-scrubbable="true"]{
   gap:.5rem;
   align-items:center;
 }
-.geometry-field input,.geometry-field select,
+.geometry-field input,.geometry-field select,.geometry-field textarea,
 .geometry-vector input{
   width:100%;
   min-width:0;
@@ -517,6 +517,7 @@ input[data-scrubbable="true"]{
   color:#edf4ff;
 }
 .geometry-field-editor{min-width:0}
+.geometry-field textarea{resize:vertical;font-family:ui-monospace,monospace;line-height:1.35}
 .geometry-vector{
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));

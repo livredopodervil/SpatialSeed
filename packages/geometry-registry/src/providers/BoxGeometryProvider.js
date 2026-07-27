@@ -1,52 +1,50 @@
 import * as THREE from "three";
+import { vector } from "./ProviderTools.js";
 
 export const BoxGeometryProvider = Object.freeze({
   type: "box",
   topology: "closed-solid",
   label: "Caixa",
   parameters: Object.freeze([
-    Object.freeze({id:"size",label:"Dimensões",type:"vector3",default:[1,1,1],minimum:0.001})
+    Object.freeze({
+      id: "size",
+      label: "Dimensões",
+      type: "vector3",
+      default: [1, 1, 1],
+      minimum: 0.001
+    }),
+    Object.freeze({
+      id: "segments",
+      label: "Segmentos XYZ",
+      type: "integer-vector3",
+      default: [1, 1, 1],
+      minimum: 1
+    })
   ]),
 
   normalize(input = {}) {
     return Object.freeze({
       type: "box",
-      size: vector(
-        input.size,
-        3,
-        [1, 1, 1],
-        { positive: true }
-      )
+      size: vector(input.size, 3, [1, 1, 1], {
+        name: "size",
+        positiveValues: true
+      }),
+      segments: vector(input.segments, 3, [1, 1, 1], {
+        name: "segments",
+        integerValues: true,
+        minimum: 1
+      })
     });
   },
 
   key(descriptor) {
-    return descriptor.size.join(",");
+    return [...descriptor.size, ...descriptor.segments].join(",");
   },
 
   create(descriptor) {
-    return new THREE.BoxGeometry(...descriptor.size);
+    return new THREE.BoxGeometry(
+      ...descriptor.size,
+      ...descriptor.segments
+    );
   }
 });
-
-function vector(values, length, fallback, { positive = false } = {}) {
-  const source = Array.isArray(values) ? values : fallback;
-
-  if (source.length !== length) {
-    throw new TypeError(`Vetor deve conter ${length} valores.`);
-  }
-
-  return source.map(value => {
-    const number = Number(value);
-
-    if (!Number.isFinite(number)) {
-      throw new TypeError(`Valor numérico inválido: ${value}.`);
-    }
-
-    if (positive && number <= 0) {
-      throw new RangeError(`Valor deve ser positivo: ${value}.`);
-    }
-
-    return number;
-  });
-}

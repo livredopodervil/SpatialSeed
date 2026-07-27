@@ -84,7 +84,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260718-0027h";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260726-0031a";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -124,7 +124,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260716-0024g";
+} from "../../geometry-registry/src/index.js?build=20260726-0031a";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -134,7 +134,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260724-0029f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260725-0029f1";
+} from "../../devtools/src/DevConsole.js?build=20260726-0031a";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -8032,7 +8032,7 @@ assets: {
         const text = JSON.stringify(result.result);
 
         assertEqual(result.ok, true);
-        for (const type of ["box", "sphere", "cylinder", "plane", "polygon"]) {
+        for (const type of createDefaultGeometryRegistry().list()) {
           assert(text.includes(type));
         }
       },
@@ -8067,18 +8067,34 @@ assets: {
         const console = createGeometryConsole(calls);
 
         for (const source of [
+          "create box size 1 2 3 origin 0 1 0",
           "create sphere radius 2",
           "create cylinder radius 1 height 3",
           "create plane size 4 5 plane yz",
           "create polygon sides 8 radius 2",
-          "create box size 1 2 3 origin 0 1 0"
+          "create capsule radius 1 height 2",
+          "create circle radius 2 segments 20",
+          "create cone radius 1 height 3",
+          "create dodecahedron radius 2 detail 0",
+          "create icosahedron radius 2 detail 0",
+          "create octahedron radius 2 detail 0",
+          "create ring innerRadius 1 outerRadius 2",
+          "create tetrahedron radius 2 detail 0",
+          "create torus radius 3 tube 0.5",
+          "create torus-knot radius 2 tube 0.3 p 2 q 3",
+          "create lathe points '[[0,-1],[1,-1],[1,1],[0,1]]'",
+          "create tube points '[[-2,0,0],[0,1,0],[2,0,0]]'",
+          "create shape contour '[[-1,-1],[1,-1],[1,1],[-1,1]]'",
+          "create extrude contour '[[-1,-1],[1,-1],[1,1],[-1,1]]' depth 2",
+          "create polyhedron vertices '[[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]]' indices '[2,1,0,0,3,2,1,3,0,2,3,1]'",
+          "create buffer positions '[[-1,0,0],[1,0,0],[0,1,0]]' indices '[0,1,2]'"
         ]) {
           assertEqual(console.execute(source)[0].ok, true);
         }
 
         assertDeepEqual(
           calls.map(call => call.args.geometry.type),
-          ["sphere", "cylinder", "plane", "polygon", "box"]
+          createDefaultGeometryRegistry().list()
         );
       },
 
@@ -8224,12 +8240,36 @@ assets: {
         const descriptions=createDefaultGeometryRegistry().describe();
         assertDeepEqual(
           descriptions.map(description => description.type),
-          ["box","sphere","cylinder","plane","polygon"]
+          [
+            "box","sphere","cylinder","plane","polygon",
+            "capsule","circle","cone","dodecahedron","icosahedron",
+            "octahedron","ring","tetrahedron","torus","torus-knot",
+            "lathe","tube","shape","extrude","polyhedron","buffer"
+          ]
         );
         assertEqual(
           descriptions.find(description => description.type === "sphere")
             .parameters.some(parameter => parameter.id === "radius"),
           true
+        );
+        assertEqual(
+          descriptions.find(description => description.type === "tube")
+            .parameters.some(parameter => parameter.type === "enum"),
+          true
+        );
+        assertEqual(
+          descriptions.find(description => description.type === "shape")
+            .parameters.some(parameter => parameter.type === "json"),
+          true
+        );
+        assertEqual(
+          descriptions.find(description => description.type === "circle")
+            .placement,
+          "planar"
+        );
+        assertEqual(
+          createDefaultGeometryRegistry().label("torus"),
+          "Toro"
         );
       },
       "registro normaliza caixa legada"() {
@@ -8243,7 +8283,8 @@ assets: {
 
         assertDeepEqual(descriptor, {
           type: "box",
-          size: [2, 3, 4]
+          size: [2, 3, 4],
+          segments: [1, 1, 1]
         });
       },
 
@@ -8269,13 +8310,7 @@ assets: {
       "providers criam BufferGeometry"() {
         const registry = createDefaultGeometryRegistry();
 
-        for (const descriptor of [
-          { type: "box", size: [1, 2, 3] },
-          { type: "sphere", radius: 1 },
-          { type: "cylinder", radius: 1, height: 2 },
-          { type: "plane", width: 2, height: 3 },
-          { type: "polygon", sides: 7, radius: 2 }
-        ]) {
+        for (const descriptor of geometryProviderSamples()) {
           const geometry = registry.create(descriptor);
           assert(geometry?.isBufferGeometry === true);
           geometry.dispose();
@@ -8285,14 +8320,20 @@ assets: {
       "topologia distingue sólidos de superfícies abertas"() {
         const registry = createDefaultGeometryRegistry();
 
-        for (const type of ["box", "sphere", "cylinder"]) {
+        for (const type of [
+          "box","sphere","cylinder","capsule","cone","dodecahedron",
+          "icosahedron","octahedron","tetrahedron","torus","torus-knot",
+          "extrude","polyhedron"
+        ]) {
           assertDeepEqual(registry.renderProfile({ type }), {
             topology: "closed-solid",
             side: "front"
           });
         }
 
-        for (const type of ["plane", "polygon"]) {
+        for (const type of [
+          "plane","polygon","circle","ring","lathe","tube","shape","buffer"
+        ]) {
           assertDeepEqual(registry.renderProfile({ type }), {
             topology: "open-surface",
             side: "double"
@@ -8324,7 +8365,11 @@ assets: {
           { type: "cylinder", height: 0 },
           { type: "plane", width: 0 },
           { type: "polygon", sides: 2 },
-          { type: "polygon", radius: 0 }
+          { type: "polygon", radius: 0 },
+          { type: "ring", innerRadius: 2, outerRadius: 1 },
+          { type: "tube", points: [[0,0,0],[1,0,0]] },
+          { type: "buffer", positions: [[0,0,0],[1,0,0],[0,1,0]], indices: [0,1,3] },
+          { type: "buffer", positions: [[0,0,0],[1,0,0],[0,1,0],[1,1,0]], indices: [] }
         ]) {
           let rejected = false;
 
@@ -9515,6 +9560,35 @@ function createPropertyConsole(fixture) {
   });
 }
 
+function geometryProviderSamples() {
+  const contour = [[-1,-1],[1,-1],[1,1],[-1,1]];
+  const tetraVertices = [[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]];
+  const tetraIndices = [2,1,0,0,3,2,1,3,0,2,3,1];
+  return [
+    { type: "box", size: [1,2,3], segments: [1,1,1] },
+    { type: "sphere", radius: 1 },
+    { type: "cylinder", radius: 1, height: 2 },
+    { type: "plane", width: 2, height: 3 },
+    { type: "polygon", sides: 7, radius: 2 },
+    { type: "capsule", radius: 1, height: 2 },
+    { type: "circle", radius: 1, segments: 12 },
+    { type: "cone", radius: 1, height: 2 },
+    { type: "dodecahedron", radius: 1 },
+    { type: "icosahedron", radius: 1 },
+    { type: "octahedron", radius: 1 },
+    { type: "ring", innerRadius: 0.5, outerRadius: 1 },
+    { type: "tetrahedron", radius: 1 },
+    { type: "torus", radius: 1, tube: 0.25 },
+    { type: "torus-knot", radius: 1, tube: 0.2 },
+    { type: "lathe", points: [[0,-1],[1,-1],[1,1],[0,1]] },
+    { type: "tube", points: [[-2,0,0],[0,1,0],[2,0,0]] },
+    { type: "shape", contour },
+    { type: "extrude", contour, depth: 1 },
+    { type: "polyhedron", vertices: tetraVertices, indices: tetraIndices },
+    { type: "buffer", positions: [[-1,0,0],[1,0,0],[0,1,0]], indices: [0,1,2] }
+  ];
+}
+
 function createGeometryConsole(calls) {
   return new DevConsole({
     editor: { selection: new Selection() },
@@ -9522,6 +9596,7 @@ function createGeometryConsole(calls) {
     region: {},
     renderer: {},
     getDiagnostics: () => ({}),
+    geometryRegistry: createDefaultGeometryRegistry(),
     commands: {
       describe: () => [],
       execute(id, args) {

@@ -70,7 +70,7 @@ export class SelectionOperations {
       : resolvePlacementFrame(placement);
     const id = crypto.randomUUID();
     const index = this.sandbox.getSnapshot().objects.length + 1;
-    const label = geometryLabel(descriptor.type);
+    const label = this.geometryRegistry.label(descriptor.type);
     const changed = this.sandbox.dispatch({
       type: "object.create",
       id,
@@ -113,7 +113,7 @@ export class SelectionOperations {
     const seedRotation = [...(frame?.rotation ?? rotation)];
     const id = crypto.randomUUID();
     const index = this.sandbox.getSnapshot().objects.length + 1;
-    const baseName = name || `${geometryLabel(descriptor.type)} ${index}`;
+    const baseName = name || `${this.geometryRegistry.label(descriptor.type)} ${index}`;
     const seedTransform = {
       id,
       position: seedPosition,
@@ -936,15 +936,6 @@ function copyName(name, copyIndex) {
   return `${base} #${copyIndex + 1}`;
 }
 
-function geometryLabel(type) {
-  return ({
-    box: "Caixa",
-    sphere: "Esfera",
-    cylinder: "Cilindro",
-    plane: "Plano",
-    polygon: "Polígono"
-  })[type] ?? "Objeto";
-}
 
 function snapshotTransform(object) {
   return {

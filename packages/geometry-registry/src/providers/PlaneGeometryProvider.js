@@ -3,6 +3,7 @@ import * as THREE from "three";
 export const PlaneGeometryProvider = Object.freeze({
   type: "plane",
   topology: "open-surface",
+  placement: "planar",
   label: "Plano",
   parameters: Object.freeze([
     Object.freeze({id:"width",label:"Largura",type:"number",default:2,minimum:0.001}),

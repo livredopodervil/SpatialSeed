@@ -148,8 +148,20 @@ create plane [size largura altura] [segments x y] [opções]
 create polygon [n|sides n] [radius r] [angle graus] [opções]
 ```
 
-Famílias efetivas vêm do `GeometryRegistry`; a sintaxe editorial atual cobre as
-cinco famílias padrão.
+Famílias efetivas vêm do `GeometryRegistry`. O console consulta o registro e
+aceita qualquer família instalada usando os identificadores e parâmetros
+publicados por `help create`. O build 0031a inclui `box`, `sphere`, `cylinder`,
+`plane`, `polygon`, `capsule`, `circle`, `cone`, `dodecahedron`, `icosahedron`,
+`octahedron`, `ring`, `tetrahedron`, `torus`, `torus-knot`, `lathe`, `tube`,
+`shape`, `extrude`, `polyhedron` e `buffer`.
+
+Parâmetros `json` devem ser passados como um token JSON sem espaços ou entre
+aspas simples, por exemplo:
+
+```text
+create lathe points '[[0,-1],[1,-1],[1,1],[0,1]]' segments 32
+create torus radius 3 tube 0.6 radialSegments 16 tubularSegments 64
+```
 
 ### 4.2 Opções comuns
 
@@ -460,8 +472,8 @@ Parâmetros de geometria podem ficar diretamente em `options` ou dentro de
 e `color`.
 
 `placement` usa o mesmo contrato de `origin`, `plane`, `normal`, `tangent` e
-`points`. A lista atual autorizada contém `box`, `sphere`, `cylinder`, `plane` e
-`polygon`, mas deve ser consultada em `spatial.geometries`.
+`points`. A lista autorizada é derivada do registro e deve ser consultada em
+`spatial.geometries`; ela não é duplicada pelo runtime procedural.
 
 ### 9.2 Planos
 

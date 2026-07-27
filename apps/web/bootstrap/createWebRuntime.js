@@ -12,16 +12,16 @@ import {
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260724-0029f";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260725-0029f1";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260725-0029f1";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260726-0031a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
-import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260716-0024i";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260718-0027h";
+import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260726-0031a";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260726-0031a";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260725-0029f1";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029f";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260725-0029f1";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260726-0031a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260724-0029f";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -31,7 +31,7 @@ import {
 } from "../../../packages/property-registry/src/index.js?build=20260724-0029f";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260716-0024g";
+} from "../../../packages/geometry-registry/src/index.js?build=20260726-0031a";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -48,7 +48,7 @@ import {
   SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
-} from "../../../packages/script-runtime/src/index.js?build=20260724-0029c";
+} from "../../../packages/script-runtime/src/index.js?build=20260726-0031a";
 import {
   BrowserProcedureCatalogStore
 } from "../procedures/BrowserProcedureCatalogStore.js?build=20260716-0026i";
@@ -844,6 +844,7 @@ export async function createWebRuntime({
       execute: (id, args) => runtime.execute(id, args),
       describe: () => runtime.capabilities().commands
     },
+    geometryRegistry,
     queries: {
       execute: (id, args) => runtime.query(id, args)
     },

@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260725-0029f1",
-  "channel": "fix/0029f1-camera-interaction"
+  "build": "20260726-0031a",
+  "channel": "feature/0031-three-geometry-catalog"
 }

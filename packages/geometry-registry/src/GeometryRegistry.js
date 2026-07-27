@@ -19,6 +19,11 @@ export class GeometryRegistry {
     return this;
   }
 
+  label(type) {
+    const provider = this.provider(type);
+    return provider.label ?? provider.type;
+  }
+
   has(type) {
     return this.#providers.has(
       String(type).trim().toLowerCase()
@@ -98,6 +103,7 @@ export class GeometryRegistry {
       type: provider.type,
       label: provider.label ?? provider.type,
       topology: provider.topology ?? "closed-solid",
+      placement: provider.placement ?? "native",
       parameters: Object.freeze(
         structuredClone(provider.parameters ?? [])
           .map(parameter => Object.freeze(parameter))
@@ -121,6 +127,15 @@ function validateProvider(provider) {
   ) {
     throw new TypeError(
       `Topologia geométrica inválida: ${provider.topology}.`
+    );
+  }
+
+  if (
+    provider.placement !== undefined &&
+    !["native", "planar"].includes(provider.placement)
+  ) {
+    throw new TypeError(
+      `Posicionamento geométrico inválido: ${provider.placement}.`
     );
   }
 

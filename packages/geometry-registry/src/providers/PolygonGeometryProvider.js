@@ -3,6 +3,7 @@ import * as THREE from "three";
 export const PolygonGeometryProvider = Object.freeze({
   type: "polygon",
   topology: "open-surface",
+  placement: "planar",
   label: "Polígono regular",
   parameters: Object.freeze([
     Object.freeze({id:"sides",label:"Lados",type:"integer",default:6,minimum:3}),

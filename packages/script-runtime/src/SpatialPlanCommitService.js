@@ -97,7 +97,7 @@ export class SpatialPlanCommitService {
       );
       const color = normalizeHexColor(args.color ?? "#6699cc");
       const name = args.name === undefined
-        ? `${geometryLabel(geometry.type)} ${
+        ? `${this.geometryRegistry.label(geometry.type)} ${
             this.sandbox.getSnapshot().objects.length + index + 1
           }`
         : nonEmptyString(args.name, "name");
@@ -270,15 +270,6 @@ function internColors(runtime, objects) {
   return appearances;
 }
 
-function geometryLabel(type) {
-  return ({
-    box: "Caixa",
-    sphere: "Esfera",
-    cylinder: "Cilindro",
-    plane: "Plano",
-    polygon: "Polígono"
-  })[type] ?? String(type);
-}
 
 function objectValue(value, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {

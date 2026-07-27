@@ -159,14 +159,15 @@ Os painéis são móveis e redimensionáveis. Sua disposição, o layout da barr
 
 ### Geometrias e aparência
 
-- caixa, esfera, cilindro/cone, plano e polígono regular;
+- 21 famílias geométricas declarativas, cobrindo todas as geometrias de malha do núcleo Three.js r185 compatíveis com o renderer atual;
 - criação em planos `XY`, `XZ` e `YZ`, por normal/tangente ou por três pontos;
-- descritores paramétricos fornecidos pelo `GeometryRegistry`;
+- descritores paramétricos fornecidos pelo `GeometryRegistry`, incluindo toro, nó toroidal, cápsula, poliedros, revolução, tubo, forma, extrusão e malha `BufferGeometry`;
 - cor hexadecimal arbitrária, opacidade e transparência;
 - textura com repetição, deslocamento, rotação e modo de wrapping;
 - cor por instância sem separar desnecessariamente o lote de renderização;
 - superfícies abertas renderizadas pelos dois lados;
 - recursos de geometria, material e textura compartilhados e contados por referência.
+- catálogo técnico: [`docs/THREE_GEOMETRY_CATALOG_0031A.md`](docs/THREE_GEOMETRY_CATALOG_0031A.md).
 
 ### Interface configurável e atalhos
 

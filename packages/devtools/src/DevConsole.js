@@ -13,6 +13,7 @@ export class DevConsole {
     getDiagnostics,
     onOutput,
     commands,
+    geometryRegistry = null,
     queries = null,
     programs = null,
     procedures = null,
@@ -25,6 +26,7 @@ export class DevConsole {
     this.getDiagnostics = getDiagnostics;
     this.onOutput = onOutput;
     this.commands = commands;
+    this.geometryRegistry = geometryRegistry;
     this.queries = queries;
     this.programs = programs;
     this.procedures = procedures;
@@ -665,7 +667,7 @@ export class DevConsole {
         "plan status|commit|discard|help",
         "help create",
         "create help",
-        "create box|sphere|cylinder|plane|polygon ...",
+        "create tipo ... (consulte create help)",
         "position x y z",
         "move dx dy dz",
         "rotate xDeg yDeg zDeg",
@@ -1234,17 +1236,23 @@ export class DevConsole {
       });
     }
 
-    const supported = ["box", "sphere", "cylinder", "plane", "polygon"];
+    const supported = this.geometryRegistry?.list() ??
+      ["box", "sphere", "cylinder", "plane", "polygon"];
     if (!supported.includes(type)) {
       throw new Error(
         `Geometria desconhecida: ${type ?? "(vazia)"}. Use create help.`
       );
     }
 
-    const geometry = defaultGeometry(type);
+    const description = this.#geometryDescription(type);
+    const geometry = description
+      ? defaultGeometryFromDescription(description)
+      : defaultGeometry(type);
+    const planar = description?.placement === "planar" ||
+      ["plane", "polygon"].includes(type);
     const placement = {
-      origin: [0, type === "plane" || type === "polygon" ? 0.02 : 1, 0],
-      plane: type === "plane" || type === "polygon" ? "xz" : "xy",
+      origin: [0, planar ? 0.02 : 1, 0],
+      plane: planar ? "xz" : "xy",
       normal: null,
       tangent: null,
       points: null
@@ -1281,7 +1289,10 @@ export class DevConsole {
         placement.tangent = this.#takeNumbers(tokens, 3, "tangent tx ty tz");
         continue;
       }
-      if (option === "points") {
+      if (
+        option === "points" &&
+        !this.#geometryParameter(type, "points")
+      ) {
         const values = this.#takeNumbers(
           tokens,
           9,
@@ -1396,12 +1407,83 @@ export class DevConsole {
       return;
     }
 
+    const parameter = this.#geometryParameter(type, option);
+    if (parameter) {
+      geometry[parameter.id] = this.#readGeometryParameter(parameter, tokens);
+      return;
+    }
+
     throw new Error(`Opção inválida para ${type}: ${option}. Use create help.`);
+  }
+
+  #geometryDescription(type) {
+    return this.geometryRegistry?.describe().find(description =>
+      description.type === type
+    ) ?? null;
+  }
+
+  #geometryParameter(type, option) {
+    const normalized = String(option).toLowerCase();
+    return this.#geometryDescription(type)?.parameters.find(parameter =>
+      String(parameter.id).toLowerCase() === normalized
+    ) ?? null;
+  }
+
+  #readGeometryParameter(parameter, tokens) {
+    if (["vector3", "integer-vector3"].includes(parameter.type)) {
+      if (tokens.length < 3) {
+        throw new Error(`Uso: ${parameter.id} x y z`);
+      }
+      return Array.from({ length: 3 }, () => {
+        const value = this.#number(tokens.shift());
+        if (parameter.type === "integer-vector3" && !Number.isInteger(value)) {
+          throw new Error(`${parameter.id} deve conter inteiros.`);
+        }
+        return value;
+      });
+    }
+
+    const raw = tokens.shift();
+    if (raw === undefined) {
+      throw new Error(`Valor ausente para ${parameter.id}.`);
+    }
+
+    if (parameter.type === "boolean") {
+      const value = String(raw).toLowerCase();
+      if (["true", "1", "yes", "sim"].includes(value)) return true;
+      if (["false", "0", "no", "nao", "não"].includes(value)) return false;
+      throw new Error(`${parameter.id} deve ser true ou false.`);
+    }
+
+    if (parameter.type === "enum") {
+      return String(raw);
+    }
+
+    if (parameter.type === "json") {
+      try {
+        return JSON.parse(raw);
+      } catch (error) {
+        throw new Error(`${parameter.id}: JSON inválido.`, { cause: error });
+      }
+    }
+
+    const value = this.#number(raw);
+    if (parameter.type === "integer" && !Number.isInteger(value)) {
+      throw new Error(`${parameter.id} deve ser inteiro.`);
+    }
+    return value;
   }
 
   #createHelp() {
     return {
+      families: this.geometryRegistry?.describe().map(description => ({
+        type: description.type,
+        label: description.label,
+        parameters: description.parameters.map(parameter => parameter.id)
+      })) ?? ["box", "sphere", "cylinder", "plane", "polygon"],
       usage: [
+        "create tipo [parametro valor ...] [referencial] [color #rrggbb]",
+        "parâmetros JSON devem ser um token JSON ou estar entre aspas simples",
         "create box [x y z]",
         "create box size sx sy sz [origin x y z] [color #rrggbb]",
         "create sphere [radius r] [segments largura altura] [origin x y z] [color #rrggbb]",
@@ -1421,6 +1503,8 @@ export class DevConsole {
         "create plane size 6 4 points 0 0 0 6 0 0 0 3 2",
         "create sphere radius 1.5 segments 32 20 origin 0 2 0",
         "create cylinder top 0 bottom 1.5 height 4 segments 32 origin 3 2 0",
+        "create torus radius 3 tube 0.6 radialSegments 16 tubularSegments 64",
+        "create lathe points '[[0,-1],[1,-1],[1,1],[0,1]]' segments 32",
         "create box size 1 1 1 count 20 move 2 0 0 rotate 0 5 0"
       ]
     };
@@ -2043,6 +2127,20 @@ export class DevConsole {
       throw new Error(`Argumentos inesperados. Uso: ${usage}.`);
     }
   }
+}
+
+function defaultGeometryFromDescription(description) {
+  return {
+    type: description.type,
+    ...Object.fromEntries(
+      description.parameters.map(parameter => [
+        parameter.id,
+        parameter.default === undefined
+          ? null
+          : structuredClone(parameter.default)
+      ])
+    )
+  };
 }
 
 function defaultGeometry(type) {
