@@ -6,6 +6,35 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def audit_toolbar_controls() -> None:
+    import json
+
+    configuration = json.loads(
+        (ROOT / "apps/web/config/ui.default.json").read_text(encoding="utf-8")
+    )
+    toolbar = configuration.get("toolbar", {})
+    controls = [
+        *toolbar.get("primary", []),
+        *(
+            item
+            for menu in toolbar.get("menus", [])
+            for item in menu.get("items", [])
+        ),
+        *toolbar.get("hidden", []),
+    ]
+    seen = set()
+    duplicates = []
+    for control in controls:
+        if control in seen and control not in duplicates:
+            duplicates.append(control)
+        seen.add(control)
+    if duplicates:
+        raise SystemExit(
+            "Controles duplicados na configuração da barra: "
+            + ", ".join(duplicates)
+        )
+
+
 def require(path: str, needle: str) -> None:
     text = (ROOT / path).read_text(encoding="utf-8")
     if needle not in text:
@@ -108,5 +137,7 @@ if expected_match.group(1) != actual_match.group(1):
         f"bootstrap espera {expected_match.group(1)}, "
         f"renderer declara {actual_match.group(1)}."
     )
+
+audit_toolbar_controls()
 
 print("Auditoria da UI topológica de edição de malha aprovada.")

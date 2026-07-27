@@ -185,12 +185,12 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260727-0036b";
+} from "../../mesh-editor-core/src/index.js?build=20260727-0036c";
 import {
   EditContextController,
   axesFromConstraint,
   constraintFromAxes
-} from "../../edit-context/src/index.js?build=20260727-0036b";
+} from "../../edit-context/src/index.js?build=20260727-0036c";
 import {
   formatBuildLabel,
   normalizeBuildInfo

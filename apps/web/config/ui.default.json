@@ -17,7 +17,6 @@
         "id": "edit",
         "label": "Editar",
         "items": [
-          "mesh-editor",
           "multi-select",
           "area-selection",
           "pivot-policy",

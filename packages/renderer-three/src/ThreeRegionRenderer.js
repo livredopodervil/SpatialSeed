@@ -49,18 +49,18 @@ import {
   projectWorldDeltaToConstraint,
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid
-} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0036b";
+} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0036c";
 import {
   buildMeshTopology
-} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0036b";
+} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0036c";
 import {
   createMeshInfluenceField,
   normalizeMeshDeformationSettings,
   transformLocalPositionsWithInfluenceInto
-} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260727-0036b";
+} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260727-0036c";
 import {
   normalizeMeshComponentMode
-} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260727-0036b";
+} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260727-0036c";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-navigation-camera-v4";
