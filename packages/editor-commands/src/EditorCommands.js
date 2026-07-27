@@ -11,6 +11,7 @@ export function createEditorCommands({
   meshEditor = null,
   editContext = null,
   pathTools = null,
+  pathSketch = null,
   canMutateProject = () => true
 }) {
   const commands = new CommandRegistry();
@@ -196,6 +197,9 @@ export function createEditorCommands({
     })
     .register("gizmo.inspect", () =>
       renderer.getTransformDiagnostics()
+    )
+    .register("viewer.transform.settings.set", patch =>
+      renderer.setTransformConfig(patch)
     );
 
   if (editContext) {
@@ -255,7 +259,29 @@ export function createEditorCommands({
         pathTools.arraySelection(args), {
           category: "path-tools",
           mutates: true
+        })
+      .register("path.from-mesh-selection.create", args =>
+        pathTools.createPathFromMeshSelection(args), {
+          category: "path-tools",
+          mutates: true
+        })
+      .register("path.bezier.convert", args =>
+        pathTools.convertSelectedPathToBezier(args), {
+          category: "path-tools",
+          mutates: true
         });
+  }
+
+  if (pathSketch) {
+    commands
+      .register("path.sketch.begin", args => pathSketch.begin(args), {
+        category: "path-sketch",
+        mutates: false
+      })
+      .register("path.sketch.cancel", () => pathSketch.cancel(), {
+        category: "path-sketch",
+        mutates: false
+      });
   }
 
   if (meshEditor) {

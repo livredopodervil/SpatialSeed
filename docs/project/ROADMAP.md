@@ -229,13 +229,24 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - comandos comuns ao painel e console;
 - referências snapshot, sem dependência procedural implícita.
 
+### 0037b — Workspace adaptativo e curvas editáveis — implementado
+
+- remoção do painel separado de transformação e do menu residual Mais;
+- seções visíveis conforme objeto/malha, ferramenta e componente ativo;
+- HUD destacável configurável em colunas × linhas;
+- contenção de painéis e menus dentro da viewport;
+- desenho livre de caminhos em plano travado, viewer ou plano mundial;
+- polilinha, Catmull–Rom e Bézier cúbica ajustada;
+- edição de âncoras e controles Bézier sem perder o descritor de caminho;
+- criação de caminho a partir de seleção de vértices, arestas ou faces.
+
 ### Próximas extensões geométricas
 
 - sanitização configurável com relatório de degenerações, contornos,
   não-manifold e auto-interseções;
 - booleanos robustos em Worker e limpeza posterior;
 - referências vinculadas por grafo de modificadores;
-- objetos 2D, polylines e curvas Bézier de primeira classe;
+- objetos 2D e curvas com atributos por ponto de primeira classe;
 - loft, perfis com furos e variação procedural ao longo do caminho.
 
 ### Próxima extensão do editor topológico

@@ -46,14 +46,25 @@ export class SpatialReferenceResolver {
     );
     return Object.freeze(state.objects
       .filter(object => !["group", "camera"].includes(object.kind))
-      .map(object => Object.freeze({
-        id: object.id,
-        name: object.name ?? object.id,
-        kind: object.kind,
-        selected: selected.has(object.id),
-        pathExtractions: Object.freeze(this.#pathExtractions(object)),
-        profileExtractions: Object.freeze(this.#profileExtractions(object))
-      })));
+      .map(object => {
+        let geometryType = null;
+        let curveType = null;
+        try {
+          const descriptor = this.geometryRegistry.describeLegacyObject(object);
+          geometryType = descriptor.type;
+          curveType = descriptor.curveType ?? null;
+        } catch {}
+        return Object.freeze({
+          id: object.id,
+          name: object.name ?? object.id,
+          kind: object.kind,
+          geometryType,
+          curveType,
+          selected: selected.has(object.id),
+          pathExtractions: Object.freeze(this.#pathExtractions(object)),
+          profileExtractions: Object.freeze(this.#profileExtractions(object))
+        });
+      }));
   }
 
   resolvePath(reference = {}) {

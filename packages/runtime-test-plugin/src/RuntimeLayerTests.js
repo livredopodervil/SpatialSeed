@@ -185,7 +185,7 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260727-0036d";
+} from "../../mesh-editor-core/src/index.js?build=20260727-0037b";
 import {
   EditContextController,
   axesFromConstraint,
@@ -197,7 +197,7 @@ import {
   createSweepGeometryDescriptor,
   orderEdgeChain,
   rotationMinimizingFrames
-} from "../../spatial-references/src/index.js?build=20260727-0037a";
+} from "../../spatial-references/src/index.js?build=20260727-0037b";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -425,6 +425,87 @@ export function createRuntimeLayerTests() {
         assertEqual(path.closed, false);
       },
 
+      "provider cria polilinhas e Bézier cúbicas como BufferGeometry"() {
+        const registry = createDefaultGeometryRegistry();
+        for (const descriptor of [
+          {
+            type: "tube",
+            points: [[0,0,0], [1,1,0], [2,0,0]],
+            tubularSegments: 12,
+            radius: 0.1,
+            radialSegments: 5,
+            closed: false,
+            curveType: "polyline",
+            tension: 0.5
+          },
+          {
+            type: "tube",
+            points: [[0,0,0], [1,1,0], [2,1,0], [3,0,0]],
+            tubularSegments: 12,
+            radius: 0.1,
+            radialSegments: 5,
+            closed: false,
+            curveType: "bezier",
+            tension: 0.5
+          }
+        ]) {
+          const normalized = registry.normalize(descriptor);
+          const geometry = registry.create(normalized);
+          assertEqual(geometry.isBufferGeometry, true);
+          assertEqual(geometry.getAttribute("position").count > 0, true);
+          geometry.dispose();
+        }
+      },
+
+      "edição dos controles preserva o objeto caminho e sua interpolação"() {
+        const region = new Region(
+          { id: "path-control-region", name: "Path controls", type: "box-region" },
+          { objects: [{
+            id: "bezier-path",
+            kind: "tube",
+            name: "Bézier",
+            position: [0,0,0],
+            rotation: [0,0,0,1],
+            scale: [1,1,1],
+            geometry: {
+              type: "tube",
+              points: [[0,0,0], [1,1,0], [2,1,0], [3,0,0]],
+              tubularSegments: 16,
+              radius: 0.1,
+              radialSegments: 6,
+              closed: false,
+              curveType: "bezier",
+              tension: 0.5
+            }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "path-control-region",
+          objectId: "bezier-path"
+        });
+        const renderer = createMeshEditorRendererStub();
+        const controller = new MeshEditController({
+          sandbox, editor, renderer,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        controller.enter({ selectAll: true });
+        assertEqual(controller.status().pathControlMode, true);
+        const reference = controller.selectedPathReference();
+        assertEqual(reference.points.length, 4);
+        controller.translate([1, 0, 0]);
+        const result = controller.commit();
+        const object = sandbox.getSnapshot().objects[0];
+        assertEqual(result.vertexCount, 4);
+        assertEqual(object.kind, "tube");
+        assertEqual(object.geometry.type, "tube");
+        assertEqual(object.geometry.curveType, "bezier");
+        assertVectorNear(object.geometry.points[0], [1,0,0]);
+        controller.dispose();
+      },
+
       "lista de referências não oferece sólidos fechados como caminho"() {
         const region = new Region(
           { id: "reference-list-region", name: "References", type: "box-region" },
@@ -490,6 +571,21 @@ export function createRuntimeLayerTests() {
           references.get("declared-profile").profileExtractions.includes("contour"),
           true
         );
+      },
+
+      "serviço ajusta amostras livres para controles Bézier editáveis"() {
+        const fixture = createPathToolFixture();
+        const created = fixture.service.createPath({
+          points: [[0,0,0], [1,1,0], [2,0,0]],
+          curveType: "bezier",
+          tubularSegments: 12
+        });
+        const object = fixture.sandbox.getSnapshot().objects.find(
+          candidate => candidate.id === created.id
+        );
+        assertEqual(object.geometry.curveType, "bezier");
+        assertEqual(object.geometry.points.length, 7);
+        assertEqual((object.geometry.points.length - 1) % 3, 0);
       },
 
       "serviço cria tubo, varredura e distribuição como comandos atômicos"() {
@@ -10701,6 +10797,24 @@ function geometryProviderSamples() {
     { type: "polyhedron", vertices: tetraVertices, indices: tetraIndices },
     { type: "buffer", positions: [[-1,0,0],[1,0,0],[0,1,0]], indices: [0,1,2] }
   ];
+}
+
+function createMeshEditorRendererStub() {
+  return {
+    beginMeshEdit() {},
+    endMeshEdit() {},
+    updateMeshEditGeometry() {},
+    updateMeshEditSelection() {},
+    updateMeshEditOptions() {},
+    updateMeshEditInfluence() {},
+    updateMeshEditDisplay() {},
+    setMeshEditFrame() {},
+    setMeshEditConstraint() {},
+    updateMeshEditSnap() {},
+    setTransformMode() {},
+    readNavigationCamera() { return { quaternion: [0,0,0,1] }; },
+    meshEditStatus() { return {}; }
+  };
 }
 
 function createPathToolFixture() {

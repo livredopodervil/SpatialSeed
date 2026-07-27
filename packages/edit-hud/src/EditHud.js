@@ -4,6 +4,8 @@ const DEFAULT_PREFERENCES = Object.freeze({
   orientation: "horizontal",
   size: "normal",
   opacity: 0.96,
+  columns: 4,
+  rows: 2,
   left: 12,
   top: 96,
   groups: {
@@ -84,9 +86,14 @@ export class EditHud {
     this.#element("edit-hud-redo").disabled = !state.canRedo;
     this.#element("edit-hud-apply").disabled = !state.meshActive || state.stale;
     this.#element("edit-hud-cancel").disabled = !state.meshActive;
+    for (const groupName of ["history", "session"]) {
+      const group = this.root.querySelector(`[data-edit-hud-group="${groupName}"]`);
+      if (group) group.dataset.contextHidden = state.meshActive ? "false" : "true";
+    }
     this.#element("edit-hud-object").disabled = state.meshActive;
     this.#element("edit-hud-proportional").disabled = !state.meshActive;
     this.#element("edit-hud-status").textContent = describeState(state);
+    this.#applyPreferences();
   }
 
   #bind() {
@@ -168,6 +175,8 @@ export class EditHud {
     this.#element("edit-hud-orientation").value = this.#preferences.orientation;
     this.#element("edit-hud-size").value = this.#preferences.size;
     this.#element("edit-hud-opacity").value = String(this.#preferences.opacity);
+    this.#element("edit-hud-columns").value = String(this.#preferences.columns);
+    this.#element("edit-hud-rows").value = String(this.#preferences.rows);
     for (const checkbox of this.root.querySelectorAll("[data-edit-hud-group-toggle]")) {
       const group = checkbox.dataset.editHudGroupToggle;
       checkbox.checked = this.#preferences.groups[group] !== false;
@@ -178,13 +187,20 @@ export class EditHud {
       });
     }
     for (const id of [
-      "edit-hud-dock", "edit-hud-orientation", "edit-hud-size", "edit-hud-opacity"
+      "edit-hud-dock", "edit-hud-orientation", "edit-hud-size",
+      "edit-hud-opacity", "edit-hud-columns", "edit-hud-rows"
     ]) {
       this.#element(id).addEventListener("change", () => {
         this.#preferences.dock = this.#element("edit-hud-dock").value;
         this.#preferences.orientation = this.#element("edit-hud-orientation").value;
         this.#preferences.size = this.#element("edit-hud-size").value;
         this.#preferences.opacity = Number(this.#element("edit-hud-opacity").value);
+        this.#preferences.columns = integerBetween(
+          this.#element("edit-hud-columns").value, 1, 12, 4
+        );
+        this.#preferences.rows = integerBetween(
+          this.#element("edit-hud-rows").value, 1, 8, 2
+        );
         this.#savePreferences();
         this.#applyPreferences();
       });
@@ -204,6 +220,7 @@ export class EditHud {
     globalThis[method]("pointermove", this.#onPointerMove);
     globalThis[method]("pointerup", this.#onPointerUp);
     globalThis[method]("pointercancel", this.#onPointerUp);
+    globalThis[method]("resize", this.#onResize);
   }
 
   #onPointerDown = event => {
@@ -223,8 +240,16 @@ export class EditHud {
     if (!this.#drag || event.pointerId !== this.#drag.pointerId) return;
     const width = this.root.offsetWidth;
     const height = this.root.offsetHeight;
-    const left = clamp(event.clientX - this.#drag.offsetX, 0, innerWidth - width);
-    const top = clamp(event.clientY - this.#drag.offsetY, 0, innerHeight - height);
+    const left = clamp(
+      event.clientX - this.#drag.offsetX,
+      0,
+      Math.max(0, innerWidth - width)
+    );
+    const top = clamp(
+      event.clientY - this.#drag.offsetY,
+      0,
+      Math.max(0, innerHeight - height)
+    );
     this.#preferences.left = left;
     this.#preferences.top = top;
     this.root.style.left = `${left}px`;
@@ -235,7 +260,12 @@ export class EditHud {
   #onPointerUp = event => {
     if (!this.#drag || event.pointerId !== this.#drag.pointerId) return;
     this.#drag = null;
+    this.#fitToViewport();
     this.#savePreferences();
+  };
+
+  #onResize = () => {
+    this.#fitToViewport();
   };
 
   #applyPreferences() {
@@ -244,6 +274,8 @@ export class EditHud {
     this.root.dataset.orientation = p.orientation;
     this.root.dataset.size = p.size;
     this.root.style.setProperty("--edit-hud-opacity", String(p.opacity));
+    this.root.style.setProperty("--edit-hud-columns", String(p.columns));
+    this.root.style.setProperty("--edit-hud-rows", String(p.rows));
     if (p.dock === "floating") {
       this.root.style.left = `${p.left}px`;
       this.root.style.top = `${p.top}px`;
@@ -258,12 +290,32 @@ export class EditHud {
       this.root.style.bottom = p.dock === "bottom" ? "0" : "auto";
     }
     for (const group of this.root.querySelectorAll("[data-edit-hud-group]")) {
-      group.hidden = p.groups[group.dataset.editHudGroup] === false;
+      group.hidden = p.groups[group.dataset.editHudGroup] === false ||
+        group.dataset.contextHidden === "true";
+    }
+    for (const checkbox of this.root.querySelectorAll("[data-edit-hud-group-toggle]")) {
+      checkbox.checked = p.groups[checkbox.dataset.editHudGroupToggle] !== false;
     }
     this.#element("edit-hud-dock").value = p.dock;
     this.#element("edit-hud-orientation").value = p.orientation;
     this.#element("edit-hud-size").value = p.size;
     this.#element("edit-hud-opacity").value = String(p.opacity);
+    this.#element("edit-hud-columns").value = String(p.columns);
+    this.#element("edit-hud-rows").value = String(p.rows);
+    requestAnimationFrame(() => this.#fitToViewport());
+  }
+
+  #fitToViewport() {
+    if (this.#preferences.dock !== "floating") return;
+    const rect = this.root.getBoundingClientRect();
+    const maxLeft = Math.max(0, globalThis.innerWidth - Math.min(rect.width, globalThis.innerWidth));
+    const maxTop = Math.max(0, globalThis.innerHeight - Math.min(rect.height, globalThis.innerHeight));
+    const left = clamp(Number.isFinite(rect.left) ? rect.left : this.#preferences.left, 0, maxLeft);
+    const top = clamp(Number.isFinite(rect.top) ? rect.top : this.#preferences.top, 0, maxTop);
+    this.#preferences.left = left;
+    this.#preferences.top = top;
+    this.root.style.left = `${left}px`;
+    this.root.style.top = `${top}px`;
   }
 
   #loadPreferences() {
@@ -272,6 +324,8 @@ export class EditHud {
       this.#preferences = {
         ...structuredClone(DEFAULT_PREFERENCES),
         ...stored,
+        columns: integerBetween(stored.columns, 1, 12, DEFAULT_PREFERENCES.columns),
+        rows: integerBetween(stored.rows, 1, 8, DEFAULT_PREFERENCES.rows),
         groups: {
           ...DEFAULT_PREFERENCES.groups,
           ...(stored.groups ?? {})
@@ -332,4 +386,10 @@ function describeState(state) {
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
+}
+
+function integerBetween(value, minimum, maximum, fallback) {
+  const number = Number(value);
+  if (!Number.isInteger(number)) return fallback;
+  return clamp(number, minimum, maximum);
 }

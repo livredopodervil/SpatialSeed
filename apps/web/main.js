@@ -14,7 +14,6 @@ export async function startApplication(
   const application = await runtimeModule.createWebRuntime({
     canvas: $("world"),
     outlineRoot: $("outline-content"),
-    transformToolsRoot: $("transform-tools-panel"),
     geometryCreationRoot: $("geometry-create-panel"),
     experimentPanelRoot: $("experiment-panel"),
     animationPanelRoot: $("animation-panel"),

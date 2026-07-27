@@ -1,7 +1,14 @@
 export class MeshEditPanel {
-  static apiVersion = "mesh-edit-panel-v5";
+  static apiVersion = "mesh-edit-panel-v6";
 
-  constructor({ root, query, execute, subscribe, subscribeContext = null }) {
+  constructor({
+    root,
+    query,
+    execute,
+    subscribe,
+    subscribeContext = null,
+    subscribeSketch = null
+  }) {
     if (!root) throw new TypeError("MeshEditPanel exige root.");
     this.root = root;
     this.query = query;
@@ -9,6 +16,7 @@ export class MeshEditPanel {
     this.latest = null;
     this.unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
     this.unsubscribeContext = subscribeContext?.(() => this.refresh()) ?? null;
+    this.unsubscribeSketch = subscribeSketch?.(() => this.refresh()) ?? null;
     this.onKeyDown = event => this.#handleShortcut(event);
     document.addEventListener("keydown", this.onKeyDown, true);
     this.#bind();
@@ -20,9 +28,12 @@ export class MeshEditPanel {
     const state = snapshot ?? this.query("mesh.edit.status");
     const context = this.query("edit.context.status");
     const references = this.query("path.references.list") ?? [];
+    const sketch = this.query("path.sketch.status");
+    const transform = this.query("viewer.transform.settings");
     this.latest = state;
     this.latestContext = context;
     this.latestReferences = references;
+    this.latestSketch = sketch;
     const active = Boolean(state.active);
     this.#refreshReferenceSelects(references);
     this.root.dataset.active = active ? "true" : "false";
@@ -46,8 +57,10 @@ export class MeshEditPanel {
     this.#element("edit-workspace-multi").checked = Boolean(context.multiSelect);
     this.#element("edit-workspace-object").disabled = active;
     for (const id of [
-      "edit-workspace-duplicate", "edit-workspace-group",
-      "edit-workspace-ungroup", "edit-workspace-pivot"
+      "edit-workspace-duplicate", "edit-workspace-repeat",
+      "edit-workspace-group", "edit-workspace-ungroup",
+      "edit-workspace-pivot", "edit-workspace-undo-global",
+      "edit-workspace-redo-global"
     ]) {
       this.#element(id).disabled = active;
     }
@@ -69,9 +82,12 @@ export class MeshEditPanel {
     for (const id of this.#activeControlIds()) {
       this.#element(id).disabled = !active;
     }
-    for (const id of this.#pathControlIds()) {
-      this.#element(id).disabled = active;
+    for (const id of this.#objectPathControlIds()) {
+      this.#element(id).disabled = active || Boolean(sketch.active);
     }
+    this.#element("path-from-selection-create").disabled = !active;
+    this.#element("path-sketch-begin").disabled = active || Boolean(sketch.active);
+    this.#element("path-sketch-cancel").disabled = !sketch.active;
     this.#element("mesh-enter").disabled = active || !state.canEnter;
     this.#element("mesh-commit").disabled = !active || Boolean(state.stale);
     this.#element("mesh-undo").disabled = !active || !state.canUndo;
@@ -145,6 +161,21 @@ export class MeshEditPanel {
         deformation.variables ?? {}
       );
     }
+    this.#refreshTransformSettings(transform);
+    this.#text(
+      "path-sketch-status",
+      sketch.active
+        ? `Desenho ativo: ${sketch.pointCount} pontos; arraste sobre o viewer e solte para criar. Esc cancela.`
+        : sketch.error
+          ? sketch.error
+          : "Desenho inativo."
+    );
+    const selectedReference = references.find(reference => reference.selected);
+    const selectedPath = selectedReference?.geometryType === "tube";
+    this.#element("path-convert-bezier").disabled =
+      active || !selectedPath || selectedReference?.curveType === "bezier";
+    this.#element("path-edit-controls").disabled = active || !selectedPath;
+    this.#applyAdaptiveVisibility(state, context);
   }
 
   activateSelection() {
@@ -164,6 +195,7 @@ export class MeshEditPanel {
   dispose() {
     this.unsubscribe?.();
     this.unsubscribeContext?.();
+    this.unsubscribeSketch?.();
     document.removeEventListener("keydown", this.onKeyDown, true);
   }
 
@@ -193,7 +225,11 @@ export class MeshEditPanel {
       this.#execute("selection.multi.toggle")
     );
     this.#click("edit-workspace-duplicate", "selection.duplicate");
+    this.#click("edit-workspace-repeat", "selection.repeat");
     this.#click("edit-workspace-delete", "selection.delete");
+    this.#click("edit-workspace-clear", "selection.clear");
+    this.#click("edit-workspace-undo-global", "history.undo");
+    this.#click("edit-workspace-redo-global", "history.redo");
     this.#click("edit-workspace-group", "selection.group");
     this.#click("edit-workspace-ungroup", "selection.ungroup");
     this.#click("edit-workspace-pivot", "pivot.edit.toggle");
@@ -204,6 +240,30 @@ export class MeshEditPanel {
       source: this.#element("edit-point-source").value
     }));
     this.#click("edit-navigation-clear", "edit.navigation.locks.clear");
+
+    this.#click("path-sketch-begin", "path.sketch.begin", () => ({
+      planeSource: this.#element("path-sketch-plane").value,
+      spacingPixels: this.#integer("path-sketch-spacing"),
+      simplify: this.#number("path-sketch-simplify"),
+      smoothIterations: this.#integer("path-sketch-smoothing"),
+      radius: this.#number("path-sketch-radius"),
+      curveType: this.#element("path-sketch-curve").value
+    }));
+    this.#click("path-sketch-cancel", "path.sketch.cancel");
+    this.#click("path-from-selection-create", "path.from-mesh-selection.create", () => ({
+      curveType: this.#element("path-from-selection-curve").value,
+      radius: this.#number("path-from-selection-radius")
+    }));
+    this.#click("path-convert-bezier", "path.bezier.convert", () => ({
+      tension: 0.5
+    }));
+    this.#element("path-edit-controls").addEventListener("click", () => {
+      const result = this.#execute("edit.context.subject.set", {
+        level: "vertex",
+        selectAll: true
+      });
+      if (result) this.#execute("edit.context.tool.set", { mode: "translate" });
+    });
 
     this.#element("path-reference-object").addEventListener("change", () =>
       this.#refreshExtractionSelects()
@@ -250,6 +310,18 @@ export class MeshEditPanel {
         this.#text("mesh-edit-error", error.message);
       }
     });
+
+    this.#element("tt-apply").addEventListener("click", () =>
+      this.#applyTransformSettings()
+    );
+    for (const id of [
+      "tt-grid-lock", "tt-show-x", "tt-show-y", "tt-show-z",
+      "tt-show-vertices", "tt-vertex-size"
+    ]) {
+      this.#element(id).addEventListener("change", () =>
+        this.#applyTransformSettings()
+      );
+    }
 
     this.#click("mesh-enter", "mesh.edit.enter");
     this.#click("mesh-commit", "mesh.edit.commit");
@@ -432,21 +504,23 @@ export class MeshEditPanel {
   }
 
   #bindSectionConfiguration() {
-    const storageKey = "spatialseed.mesh.panel.sections.v1";
+    const storageKey = "spatialseed.edit.workspace.sections.v2";
     let stored = {};
     try { stored = JSON.parse(localStorage.getItem(storageKey) ?? "{}"); }
     catch { stored = {}; }
+    this.#element("mesh-panel-adaptive").checked = stored.adaptive !== false;
     const apply = () => {
-      const state = {};
       for (const checkbox of this.root.querySelectorAll("[data-mesh-section-toggle]")) {
         const section = checkbox.dataset.meshSectionToggle;
         if (stored[section] !== undefined) checkbox.checked = Boolean(stored[section]);
-        state[section] = checkbox.checked;
         for (const element of this.root.querySelectorAll(`[data-mesh-section="${section}"]`)) {
-          element.hidden = !checkbox.checked;
+          element.dataset.userVisible = checkbox.checked ? "true" : "false";
         }
       }
-      return state;
+      this.#applyAdaptiveVisibility(
+        this.latest ?? this.query("mesh.edit.status"),
+        this.latestContext ?? this.query("edit.context.status")
+      );
     };
     apply();
     for (const checkbox of this.root.querySelectorAll("[data-mesh-section-toggle]")) {
@@ -455,10 +529,16 @@ export class MeshEditPanel {
         for (const item of this.root.querySelectorAll("[data-mesh-section-toggle]")) {
           stored[item.dataset.meshSectionToggle] = item.checked;
         }
+        stored.adaptive = this.#element("mesh-panel-adaptive").checked;
         localStorage.setItem(storageKey, JSON.stringify(stored));
         apply();
       });
     }
+    this.#element("mesh-panel-adaptive").addEventListener("change", () => {
+      stored.adaptive = this.#element("mesh-panel-adaptive").checked;
+      localStorage.setItem(storageKey, JSON.stringify(stored));
+      apply();
+    });
   }
 
   #refreshReferenceSelects(references) {
@@ -543,7 +623,7 @@ export class MeshEditPanel {
     };
   }
 
-  #pathControlIds() {
+  #objectPathControlIds() {
     return [
       "path-reference-object", "path-reference-extraction",
       "path-profile-object", "path-profile-extraction",
@@ -552,8 +632,92 @@ export class MeshEditPanel {
       "path-segments", "path-radial-segments", "path-create-tube",
       "path-sweep-twist", "path-sweep-scale-start",
       "path-sweep-scale-end", "path-create-sweep",
-      "path-array-count", "path-create-array", "path-inspect-reference"
+      "path-array-count", "path-create-array", "path-inspect-reference",
+      "path-convert-bezier", "path-edit-controls"
     ];
+  }
+
+  #refreshTransformSettings(config = {}) {
+    this.#value("tt-size", config.size ?? 1.25);
+    this.#value("tt-translate-snap", config.translationSnap ?? 0);
+    this.#value("tt-rotate-snap", config.rotationSnapDeg ?? 0);
+    this.#value("tt-scale-snap", config.scaleSnap ?? 0);
+    this.#element("tt-grid-lock").checked = Boolean(config.gridLock);
+    this.#element("tt-show-x").checked = config.showX !== false;
+    this.#element("tt-show-y").checked = config.showY !== false;
+    this.#element("tt-show-z").checked = config.showZ !== false;
+    this.#element("tt-show-vertices").checked = Boolean(config.showVertices);
+    this.#value("tt-vertex-size", config.vertexSize ?? 5);
+    this.#element("tt-diagnostics").value = JSON.stringify(
+      this.query("viewer.transform.diagnostics"),
+      null,
+      2
+    );
+  }
+
+  #applyTransformSettings() {
+    return this.#execute("viewer.transform.settings.set", {
+      size: this.#number("tt-size"),
+      translationSnap: this.#optionalPositive("tt-translate-snap"),
+      rotationSnapDeg: this.#optionalPositive("tt-rotate-snap"),
+      scaleSnap: this.#optionalPositive("tt-scale-snap"),
+      gridLock: this.#element("tt-grid-lock").checked,
+      showX: this.#element("tt-show-x").checked,
+      showY: this.#element("tt-show-y").checked,
+      showZ: this.#element("tt-show-z").checked,
+      showVertices: this.#element("tt-show-vertices").checked,
+      vertexSize: this.#number("tt-vertex-size")
+    });
+  }
+
+  #applyAdaptiveVisibility(state, context) {
+    const mesh = Boolean(state?.active);
+    const adaptive = this.#element("mesh-panel-adaptive").checked;
+    const tool = context?.tool ?? "select";
+    const transforming = ["translate", "rotate", "scale"].includes(tool);
+    for (const element of this.root.querySelectorAll("[data-mesh-section]")) {
+      const userVisible = element.dataset.userVisible !== "false";
+      const requirement = element.dataset.editContext ?? "any";
+      const contextVisible = requirement === "any" ||
+        (requirement === "mesh" && mesh) ||
+        (requirement === "object" && !mesh);
+      const section = element.dataset.meshSection;
+      const adaptiveVisible = !adaptive || ({
+        session: true,
+        context: true,
+        selection: mesh,
+        topology: mesh && !transforming,
+        paths: mesh ? tool === "select" : !transforming,
+        gizmo: transforming,
+        transform: transforming,
+        snap: transforming || tool === "select",
+        influence: mesh && transforming,
+        diagnostics: true
+      }[section] ?? true);
+      element.hidden = !(userVisible && contextVisible && adaptiveVisible);
+    }
+    for (const group of this.root.querySelectorAll("[data-path-context]")) {
+      group.hidden = group.dataset.pathContext === "mesh" ? !mesh : mesh;
+    }
+    const mode = state?.componentMode ?? "vertex";
+    for (const control of this.root.querySelectorAll("[data-component-modes]")) {
+      control.hidden = !control.dataset.componentModes.split(/\s+/).includes(mode);
+    }
+    if (state?.pathControlMode) {
+      this.#element("mesh-mode-face").hidden = true;
+      for (const section of this.root.querySelectorAll('[data-mesh-section="topology"]')) {
+        section.hidden = true;
+      }
+    } else {
+      this.#element("mesh-mode-face").hidden = false;
+    }
+    this.root.dataset.contextTool = context?.tool ?? "select";
+    this.root.dataset.componentMode = mode;
+  }
+
+  #optionalPositive(id) {
+    const value = this.#number(id);
+    return value > 0 ? value : null;
   }
 
   #displayArguments() {
@@ -649,6 +813,8 @@ export class MeshEditPanel {
       "mesh-deform-frequency", "mesh-deform-x", "mesh-deform-y",
       "mesh-deform-z", "mesh-deform-falloff-expression",
       "mesh-deform-variables", "mesh-deform-apply",
+      "path-from-selection-curve", "path-from-selection-radius",
+      "path-from-selection-create",
       ...[...this.root.querySelectorAll("[data-mesh-constraint]")]
         .map(button => button.id)
     ];

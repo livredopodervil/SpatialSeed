@@ -77,7 +77,7 @@ O botão **Editar** abre um workspace único para seleção, transformação e e
 
 ## Objetos como caminhos e perfis
 
-A seção **Caminhos** do workspace **Editar** aceita objetos como referências geométricas. Um tubo pode fornecer sua linha central; superfícies abertas podem fornecer contornos ou arestas soltas; formas e extrusões podem fornecer perfis planares. As mesmas referências alimentam criação de tubo, varredura de perfil e distribuição hierárquica ao longo do caminho. O frame da varredura usa transporte paralelo para reduzir torções artificiais. Nesta versão, as referências são snapshots independentes, não modificadores vinculados. Consulte [Referências espaciais e ferramentas por caminho — build 0037a](docs/PATH_REFERENCES_0037A.md).
+A seção **Caminhos** do workspace **Editar** aceita objetos como referências geométricas. Um tubo pode fornecer sua linha central; superfícies abertas podem fornecer contornos ou arestas soltas; formas e extrusões podem fornecer perfis planares. As mesmas referências alimentam criação de tubo, varredura de perfil e distribuição hierárquica ao longo do caminho. O frame da varredura usa transporte paralelo para reduzir torções artificiais. Nesta versão, as referências são snapshots independentes, não modificadores vinculados. O build 0037b acrescenta desenho livre no plano do viewer, ajuste Bézier, criação de caminhos a partir de vértices/arestas/faces e um workspace adaptativo com HUD em grade. Consulte [Referências espaciais e ferramentas por caminho — build 0037a](docs/PATH_REFERENCES_0037A.md) e [Workspace adaptativo e curvas editáveis — build 0037b](docs/EDIT_WORKSPACE_0037B.md).
 
 ## Execução local
 

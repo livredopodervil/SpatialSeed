@@ -16,6 +16,7 @@ export class PathToolService {
     selectionOperations,
     sandbox,
     editor,
+    meshEditor = null,
     requireObjectMode = () => {}
   }) {
     if (!resolver?.resolvePath || !resolver?.resolveProfile) {
@@ -28,6 +29,7 @@ export class PathToolService {
     this.selectionOperations = selectionOperations;
     this.sandbox = sandbox;
     this.editor = editor;
+    this.meshEditor = meshEditor;
     this.requireObjectMode = requireObjectMode;
   }
 
@@ -41,6 +43,131 @@ export class PathToolService {
     if (normalized === "profile") return this.resolver.resolveProfile(reference);
     if (normalized === "point") return this.resolver.resolvePoint(reference);
     throw new RangeError(`Tipo de referência desconhecido: ${kind}.`);
+  }
+
+  createPath({
+    points,
+    name = "Caminho",
+    radius = 0.08,
+    tubularSegments = 96,
+    radialSegments = 6,
+    closed = false,
+    curveType = "centripetal",
+    tension = 0.5,
+    color = "#70c8ff",
+    preserveSelection = false
+  } = {}) {
+    const normalizedCurveType = String(curveType ?? "centripetal").toLowerCase();
+    let sourcePoints = ensureTubePoints(points);
+    if (normalizedCurveType === "bezier" && (sourcePoints.length - 1) % 3 !== 0) {
+      sourcePoints = catmullRomToBezierControls(
+        sourcePoints,
+        finite(tension, "tension")
+      );
+    }
+    const localized = localizedPoints(sourcePoints);
+    const previousSelection = preserveSelection
+      ? this.editor.selection.snapshot()
+      : null;
+    const result = this.selectionOperations.createGeometry({
+      name,
+      position: localized.origin,
+      geometry: {
+        type: "tube",
+        points: localized.points,
+        tubularSegments: integerAtLeast(tubularSegments, 2, "tubularSegments"),
+        radius: positive(radius, "radius"),
+        radialSegments: integerAtLeast(radialSegments, 3, "radialSegments"),
+        closed: Boolean(closed),
+        curveType: normalizedCurveType,
+        tension: finite(tension, "tension")
+      },
+      color
+    });
+    if (previousSelection) restoreSelection(this.editor.selection, previousSelection);
+    return Object.freeze({
+      ...result,
+      tool: "path-create",
+      pointCount: localized.points.length,
+      curveType: normalizedCurveType,
+      closed: Boolean(closed)
+    });
+  }
+
+  createPathFromMeshSelection({
+    name = null,
+    radius = 0.08,
+    tubularSegments = 96,
+    radialSegments = 6,
+    curveType = "centripetal",
+    tension = 0.5,
+    color = "#70c8ff"
+  } = {}) {
+    if (!this.meshEditor?.active || !this.meshEditor.selectedPathReference) {
+      throw new Error("Entre na edição de malha e selecione componentes para criar o caminho.");
+    }
+    const reference = this.meshEditor.selectedPathReference();
+    const result = this.createPath({
+      points: reference.points,
+      name: name || `Caminho — ${reference.objectName}`,
+      radius,
+      tubularSegments,
+      radialSegments,
+      closed: reference.closed,
+      curveType,
+      tension,
+      color,
+      preserveSelection: true
+    });
+    return Object.freeze({
+      ...result,
+      reference: summary(reference),
+      ordering: reference.ordering
+    });
+  }
+
+  convertSelectedPathToBezier({ tension = 0.5 } = {}) {
+    this.#assertCanMutate("converter um caminho para Bézier");
+    const selection = this.editor.selection.snapshot();
+    if (selection.members.length !== 1) {
+      throw new Error("Selecione exatamente um caminho para converter em Bézier.");
+    }
+    const objectId = selection.members[0].objectId;
+    const state = this.sandbox.getSnapshot();
+    const object = state.objects.find(candidate => candidate.id === objectId);
+    if (!object) throw new Error("O caminho selecionado não existe.");
+    const descriptor = this.resolver.geometryRegistry.describeLegacyObject(object);
+    if (descriptor.type !== "tube" || !Array.isArray(descriptor.points)) {
+      throw new Error("O objeto selecionado não possui uma linha central editável.");
+    }
+    if (descriptor.closed) {
+      throw new Error("Converta primeiro o caminho fechado em caminho aberto.");
+    }
+    if (descriptor.curveType === "bezier") {
+      return Object.freeze({ changed: false, objectId, curveType: "bezier" });
+    }
+    const points = catmullRomToBezierControls(
+      descriptor.points,
+      finite(tension, "tension")
+    );
+    const geometry = this.resolver.geometryRegistry.normalize({
+      ...descriptor,
+      points,
+      curveType: "bezier",
+      closed: false
+    });
+    const changed = this.sandbox.dispatch({
+      type: "object.geometry.replace",
+      id: objectId,
+      geometry,
+      source: "path-convert-bezier"
+    });
+    return Object.freeze({
+      changed,
+      objectId,
+      curveType: "bezier",
+      controlPointCount: points.length
+    });
   }
 
   createTube({
@@ -283,6 +410,34 @@ function integerAtLeast(value, minimum, name) {
     throw new RangeError(`${name} deve ser inteiro maior ou igual a ${minimum}.`);
   }
   return number;
+}
+
+function restoreSelection(selection, snapshot) {
+  if (!snapshot?.members?.length) {
+    selection.clear();
+    return;
+  }
+  selection.replaceMany(snapshot.members.map(member => ({ ...member })));
+}
+
+function catmullRomToBezierControls(points, tension = 0.5) {
+  const source = points.map(point => new THREE.Vector3().fromArray(point));
+  if (source.length < 2) throw new Error("O caminho exige ao menos dois pontos.");
+  const controls = [source[0].toArray()];
+  for (let index = 0; index < source.length - 1; index += 1) {
+    const p0 = source[Math.max(0, index - 1)];
+    const p1 = source[index];
+    const p2 = source[index + 1];
+    const p3 = source[Math.min(source.length - 1, index + 2)];
+    const tangent1 = p2.clone().sub(p0).multiplyScalar(tension / 3);
+    const tangent2 = p3.clone().sub(p1).multiplyScalar(tension / 3);
+    controls.push(
+      p1.clone().add(tangent1).toArray(),
+      p2.clone().sub(tangent2).toArray(),
+      p2.toArray()
+    );
+  }
+  return controls;
 }
 
 function ensureTubePoints(points) {

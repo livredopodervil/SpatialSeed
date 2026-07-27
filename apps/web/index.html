@@ -140,7 +140,6 @@
     Projetos / viewers
   </button>
   <button id="inspector">Inspector</button>
-  <button id="transform-tools">Transformação</button>
   <button id="mesh-editor">Editar</button>
   <button id="geometry-create">Criar</button>
   <button id="experiment-lab" title="Explorar construções paramétricas">
@@ -187,6 +186,8 @@
         <label>Orientação <select id="edit-hud-orientation"><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>
         <label>Tamanho <select id="edit-hud-size"><option value="compact">Compacto</option><option value="normal">Normal</option><option value="large">Ampliado</option></select></label>
         <label>Opacidade <input id="edit-hud-opacity" type="range" min="0.45" max="1" step="0.05" value="0.96"></label>
+        <label>Colunas <input id="edit-hud-columns" type="number" min="1" max="12" step="1" value="4"></label>
+        <label>Linhas <input id="edit-hud-rows" type="number" min="1" max="8" step="1" value="2"></label>
       </div>
       <div class="edit-hud-config-groups">
         <label><input type="checkbox" data-edit-hud-group-toggle="subject" checked> Contexto</label>
@@ -501,52 +502,9 @@
     </details>
   </form>
 </section>
-<section id="transform-tools-panel" hidden>
-  <header>
-    <strong>Ferramentas de transformação</strong>
-    <button id="close-transform-tools">×</button>
-  </header>
-
-  <div class="tt-content">
-    <fieldset>
-      <legend>Gizmo</legend>
-      <label>Tamanho <input id="tt-size" type="number" min="0.2" step="0.1"></label>
-      <div class="tt-checks">
-        <label><input id="tt-show-x" type="checkbox"> X</label>
-        <label><input id="tt-show-y" type="checkbox"> Y</label>
-        <label><input id="tt-show-z" type="checkbox"> Z</label>
-      </div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Snapping</legend>
-      <label>Translação <input id="tt-translate-snap" type="number" min="0" step="0.1"></label>
-      <label>Rotação ° <input id="tt-rotate-snap" type="number" min="0" step="1"></label>
-      <label>Escala <input id="tt-scale-snap" type="number" min="0" step="0.05"></label>
-      <p class="tt-uniform-scale-hint">
-        Escala uniforme XYZ: arraste o cubo branco no centro do gizmo.
-      </p>
-      <label><input id="tt-grid-lock" type="checkbox"> Bloquear posição na grade</label>
-    </fieldset>
-
-    <fieldset>
-      <legend>Visualização</legend>
-      <label><input id="tt-show-vertices" type="checkbox"> Mostrar vértices</label>
-      <label>Tamanho dos vértices <input id="tt-vertex-size" type="number" min="1" max="24" step="1"></label>
-    </fieldset>
-
-    <div class="actions">
-      <button id="tt-apply" type="button">Aplicar</button>
-      <button id="tt-refresh" type="button">Atualizar diagnóstico</button>
-    </div>
-
-    <textarea id="tt-diagnostics" class="component-text" readonly></textarea>
-  </div>
-</section>
-
 <section id="mesh-edit-panel" hidden>
   <header>
-    <strong>Edição: selecionar, transformar e malha</strong>
+    <strong>Editar</strong>
     <button id="close-mesh-edit" type="button">×</button>
   </header>
   <div class="mesh-edit-content">
@@ -566,12 +524,14 @@
 
     <details class="mesh-panel-config">
       <summary>Configurar painel</summary>
+      <label><input id="mesh-panel-adaptive" type="checkbox" checked> Mostrar somente ferramentas relevantes ao contexto atual</label>
       <div class="mesh-checkbox-grid">
         <label><input type="checkbox" data-mesh-section-toggle="context" checked> Contexto</label>
         <label><input type="checkbox" data-mesh-section-toggle="session" checked> Sessão</label>
         <label><input type="checkbox" data-mesh-section-toggle="selection" checked> Seleção</label>
         <label><input type="checkbox" data-mesh-section-toggle="topology" checked> Topologia</label>
         <label><input type="checkbox" data-mesh-section-toggle="paths" checked> Caminhos</label>
+        <label><input type="checkbox" data-mesh-section-toggle="gizmo" checked> Gizmo</label>
         <label><input type="checkbox" data-mesh-section-toggle="transform" checked> Transformação</label>
         <label><input type="checkbox" data-mesh-section-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-mesh-section-toggle="influence" checked> Influência</label>
@@ -606,14 +566,18 @@
       </div>
       <div class="mesh-operation-grid">
         <button id="edit-workspace-duplicate" type="button">Duplicar</button>
+        <button id="edit-workspace-repeat" type="button">Repetir</button>
         <button id="edit-workspace-delete" type="button">Excluir</button>
+        <button id="edit-workspace-clear" type="button">Limpar seleção</button>
         <button id="edit-workspace-group" type="button">Agrupar</button>
         <button id="edit-workspace-ungroup" type="button">Desagrupar</button>
         <button id="edit-workspace-pivot" type="button">Editar pivô</button>
+        <button id="edit-workspace-undo-global" type="button">Desfazer projeto</button>
+        <button id="edit-workspace-redo-global" type="button">Refazer projeto</button>
       </div>
     </fieldset>
 
-    <fieldset data-mesh-section="selection">
+    <fieldset data-mesh-section="selection" data-edit-context="mesh">
       <legend>Componentes e seleção</legend>
       <div class="mesh-mode-grid">
         <button id="mesh-mode-vertex" type="button" data-mesh-mode="vertex">Vértices</button>
@@ -643,7 +607,7 @@
       </div>
     </fieldset>
 
-    <fieldset data-mesh-section="topology">
+    <fieldset data-mesh-section="topology" data-edit-context="mesh">
       <legend>Operações topológicas</legend>
       <div class="mesh-checkbox-grid">
         <label><input id="mesh-topology-manifold" type="checkbox" checked> Bloquear não manifold</label>
@@ -659,68 +623,122 @@
         <button id="mesh-create-vertex" type="button">Criar</button>
       </div>
       <div class="mesh-operation-grid">
-        <button id="mesh-create-edge" type="button">Criar aresta</button>
-        <button id="mesh-create-face" type="button">Criar face</button>
-        <button id="mesh-duplicate-component" type="button">Duplicar</button>
-        <button id="mesh-delete-component" type="button">Excluir</button>
-        <button id="mesh-fill" type="button">Preencher</button>
+        <button id="mesh-create-edge" type="button" data-component-modes="vertex">Criar aresta</button>
+        <button id="mesh-create-face" type="button" data-component-modes="vertex edge">Criar face</button>
+        <button id="mesh-duplicate-component" type="button" data-component-modes="vertex edge face">Duplicar</button>
+        <button id="mesh-delete-component" type="button" data-component-modes="vertex edge face">Excluir</button>
+        <button id="mesh-fill" type="button" data-component-modes="vertex edge">Preencher</button>
         <button id="mesh-recalculate-normals" type="button">Recalcular normais</button>
       </div>
       <div class="mesh-form-grid">
         <label><span>Extrusão</span><input id="mesh-extrude-distance" type="number" value="1" step="0.1"></label>
-        <button id="mesh-extrude" type="button">Extrudar</button>
+        <button id="mesh-extrude" type="button" data-component-modes="vertex edge face">Extrudar</button>
         <label><span>Inset</span><input id="mesh-inset-amount" type="number" value="0.2" min="0.001" max="0.999" step="0.05"></label>
-        <button id="mesh-inset" type="button">Inset</button>
+        <button id="mesh-inset" type="button" data-component-modes="face">Inset</button>
         <label><span>Divisão da aresta</span><input id="mesh-split-parameter" type="number" value="0.5" min="0.001" max="0.999" step="0.05"></label>
-        <button id="mesh-split" type="button">Dividir</button>
+        <button id="mesh-split" type="button" data-component-modes="edge">Dividir</button>
       </div>
       <div class="mesh-operation-grid">
-        <button id="mesh-subdivide" type="button">Subdividir</button>
-        <button id="mesh-collapse" type="button">Colapsar aresta</button>
-        <button id="mesh-flip-edge" type="button">Inverter diagonal</button>
-        <button id="mesh-weld-vertices" type="button">Soldar vértices</button>
-        <button id="mesh-flip-normal" type="button">Inverter normal</button>
-        <button id="mesh-bridge" type="button">Ponte de contornos</button>
+        <button id="mesh-subdivide" type="button" data-component-modes="face">Subdividir</button>
+        <button id="mesh-collapse" type="button" data-component-modes="edge">Colapsar aresta</button>
+        <button id="mesh-flip-edge" type="button" data-component-modes="edge">Inverter diagonal</button>
+        <button id="mesh-weld-vertices" type="button" data-component-modes="vertex">Soldar vértices</button>
+        <button id="mesh-flip-normal" type="button" data-component-modes="face">Inverter normal</button>
+        <button id="mesh-bridge" type="button" data-component-modes="edge">Ponte de contornos</button>
         <button id="mesh-cleanup" type="button">Limpar malha</button>
       </div>
     </fieldset>
 
     <fieldset data-mesh-section="paths">
-      <legend>Objetos como caminhos, perfis e conjuntos de pontos</legend>
-      <p class="mesh-section-note">
-        As referências são resolvidas como snapshot no momento da operação. O objeto
-        original permanece independente do tubo, varredura ou distribuição criada.
-      </p>
+      <legend>Caminhos e curvas</legend>
+      <div class="path-context-group" data-path-context="object">
+        <p class="mesh-section-note">
+          Desenhe no plano travado ou no plano atual do viewer. O traço é simplificado,
+          suavizado e criado como um caminho editável.
+        </p>
+        <div class="mesh-form-grid">
+          <label><span>Plano do desenho</span><select id="path-sketch-plane"><option value="locked-or-viewer">Plano travado ou viewer</option><option value="viewer">Viewer atual</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+          <label><span>Curva</span><select id="path-sketch-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
+          <label><span>Espaçamento px</span><input id="path-sketch-spacing" type="number" min="1" max="64" value="6" step="1"></label>
+          <label><span>Suavização</span><input id="path-sketch-smoothing" type="number" min="0" max="4" value="1" step="1"></label>
+          <label><span>Simplificação relativa</span><input id="path-sketch-simplify" type="number" min="0" max="0.2" value="0.004" step="0.001"></label>
+          <label><span>Raio visual</span><input id="path-sketch-radius" type="number" min="0.001" value="0.08" step="0.01"></label>
+        </div>
+        <div class="actions">
+          <button id="path-sketch-begin" type="button">✎ Desenhar spline à mão livre</button>
+          <button id="path-sketch-cancel" type="button">Cancelar desenho</button>
+        </div>
+        <small id="path-sketch-status">Desenho inativo.</small>
+      </div>
+
+      <div class="path-context-group" data-path-context="mesh">
+        <p class="mesh-section-note">
+          Cria um novo objeto-caminho a partir dos vértices, da cadeia de arestas ou
+          do contorno das faces selecionadas, sem encerrar a edição atual.
+        </p>
+        <div class="mesh-form-grid">
+          <label><span>Interpolação</span><select id="path-from-selection-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
+          <label><span>Raio visual</span><input id="path-from-selection-radius" type="number" min="0.001" value="0.08" step="0.01"></label>
+          <button id="path-from-selection-create" type="button">Criar caminho da seleção</button>
+        </div>
+      </div>
+
+      <div class="path-context-group" data-path-context="object">
+        <div class="mesh-form-grid">
+          <label><span>Objeto de caminho</span><select id="path-reference-object"></select></label>
+          <label><span>Extração</span><select id="path-reference-extraction"><option value="auto">Automática</option><option value="centerline">Linha central declarada</option><option value="boundary">Maior contorno</option><option value="loose-edges">Arestas soltas</option></select></label>
+          <label><span>Objeto de perfil</span><select id="path-profile-object"></select></label>
+          <label><span>Extração do perfil</span><select id="path-profile-extraction"><option value="auto">Automática</option><option value="contour">Contorno declarado</option><option value="boundary">Maior contorno planar</option></select></label>
+        </div>
+        <div class="mesh-checkbox-grid">
+          <label><input id="path-closed" type="checkbox"> Caminho fechado</label>
+          <label><input id="path-caps" type="checkbox" checked> Tampar varredura aberta</label>
+          <label><input id="path-array-align" type="checkbox" checked> Orientar cópias pela tangente</label>
+          <label><input id="path-array-include-reference" type="checkbox"> Incluir objeto-caminho</label>
+        </div>
+        <div class="mesh-form-grid">
+          <label><span>Raio do tubo</span><input id="path-tube-radius" type="number" min="0.001" value="0.25" step="0.05"></label>
+          <label><span>Segmentos do caminho</span><input id="path-segments" type="number" min="2" value="64" step="1"></label>
+          <label><span>Segmentos radiais</span><input id="path-radial-segments" type="number" min="3" value="8" step="1"></label>
+          <button id="path-create-tube" type="button">Criar tubo pelo objeto</button>
+        </div>
+        <div class="mesh-form-grid">
+          <label><span>Torção total °</span><input id="path-sweep-twist" type="number" value="0" step="1"></label>
+          <label><span>Escala inicial</span><input id="path-sweep-scale-start" type="number" value="1" step="0.1"></label>
+          <label><span>Escala final</span><input id="path-sweep-scale-end" type="number" value="1" step="0.1"></label>
+          <button id="path-create-sweep" type="button">Extrudar perfil pelo caminho</button>
+        </div>
+        <div class="mesh-form-grid">
+          <label><span>Quantidade de cópias</span><input id="path-array-count" type="number" min="1" max="10000" value="8" step="1"></label>
+          <button id="path-create-array" type="button">Distribuir seleção no caminho</button>
+          <button id="path-inspect-reference" type="button">Inspecionar referência</button>
+        </div>
+        <div class="actions">
+          <button id="path-convert-bezier" type="button">Converter caminho selecionado em Bézier</button>
+          <button id="path-edit-controls" type="button">Editar pontos e alças</button>
+        </div>
+        <small id="path-reference-status">Escolha um objeto de caminho.</small>
+      </div>
+    </fieldset>
+
+    <fieldset data-mesh-section="gizmo">
+      <legend>Gizmo e precisão</legend>
       <div class="mesh-form-grid">
-        <label><span>Objeto de caminho</span><select id="path-reference-object"></select></label>
-        <label><span>Extração</span><select id="path-reference-extraction"><option value="auto">Automática</option><option value="centerline">Linha central declarada</option><option value="boundary">Maior contorno</option><option value="loose-edges">Arestas soltas</option></select></label>
-        <label><span>Objeto de perfil</span><select id="path-profile-object"></select></label>
-        <label><span>Extração do perfil</span><select id="path-profile-extraction"><option value="auto">Automática</option><option value="contour">Contorno declarado</option><option value="boundary">Maior contorno planar</option></select></label>
+        <label><span>Tamanho do gizmo</span><input id="tt-size" type="number" min="0.2" step="0.1"></label>
+        <label><span>Snap de translação</span><input id="tt-translate-snap" type="number" min="0" step="0.1"></label>
+        <label><span>Snap de rotação °</span><input id="tt-rotate-snap" type="number" min="0" step="1"></label>
+        <label><span>Snap de escala</span><input id="tt-scale-snap" type="number" min="0" step="0.05"></label>
+        <label><span>Tamanho dos vértices</span><input id="tt-vertex-size" type="number" min="1" max="24" step="1"></label>
       </div>
       <div class="mesh-checkbox-grid">
-        <label><input id="path-closed" type="checkbox"> Caminho fechado</label>
-        <label><input id="path-caps" type="checkbox" checked> Tampar varredura aberta</label>
-        <label><input id="path-array-align" type="checkbox" checked> Orientar cópias pela tangente</label>
-        <label><input id="path-array-include-reference" type="checkbox"> Incluir objeto-caminho na distribuição</label>
+        <label><input id="tt-show-x" type="checkbox"> Mostrar X</label>
+        <label><input id="tt-show-y" type="checkbox"> Mostrar Y</label>
+        <label><input id="tt-show-z" type="checkbox"> Mostrar Z</label>
+        <label><input id="tt-grid-lock" type="checkbox"> Trava de grade</label>
+        <label><input id="tt-show-vertices" type="checkbox"> Vértices da seleção de objeto</label>
       </div>
-      <div class="mesh-form-grid">
-        <label><span>Raio do tubo</span><input id="path-tube-radius" type="number" min="0.001" value="0.25" step="0.05"></label>
-        <label><span>Segmentos do caminho</span><input id="path-segments" type="number" min="2" value="64" step="1"></label>
-        <label><span>Segmentos radiais</span><input id="path-radial-segments" type="number" min="3" value="8" step="1"></label>
-        <button id="path-create-tube" type="button">Criar tubo pelo objeto</button>
-      </div>
-      <div class="mesh-form-grid">
-        <label><span>Torção total °</span><input id="path-sweep-twist" type="number" value="0" step="1"></label>
-        <label><span>Escala inicial</span><input id="path-sweep-scale-start" type="number" value="1" step="0.1"></label>
-        <label><span>Escala final</span><input id="path-sweep-scale-end" type="number" value="1" step="0.1"></label>
-        <button id="path-create-sweep" type="button">Extrudar perfil pelo caminho</button>
-      </div>
-      <div class="mesh-form-grid">
-        <label><span>Quantidade de cópias</span><input id="path-array-count" type="number" min="1" max="10000" value="8" step="1"></label>
-        <button id="path-create-array" type="button">Distribuir seleção no caminho</button>
-        <button id="path-inspect-reference" type="button">Inspecionar referência</button>
-      </div>
-      <small id="path-reference-status">Escolha um objeto de caminho.</small>
+      <button id="tt-apply" type="button">Aplicar precisão</button>
+      <details><summary>Diagnóstico do gizmo</summary><textarea id="tt-diagnostics" class="component-text" readonly></textarea></details>
     </fieldset>
 
     <fieldset data-mesh-section="transform">
@@ -766,7 +784,7 @@
       <small id="mesh-snap-diagnostic">Sem alvo de snap.</small>
     </fieldset>
 
-    <fieldset data-mesh-section="influence">
+    <fieldset data-mesh-section="influence" data-edit-context="mesh">
       <legend>Influência proporcional e transformação procedural</legend>
       <label><input id="mesh-deform-live" type="checkbox" checked> Aplicar falloff ao gizmo em tempo real</label>
       <div class="mesh-form-grid">
@@ -970,6 +988,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0037a"></script>
+<script type="module" src="./boot.js?build=20260727-0037b"></script>
 </body>
 </html>

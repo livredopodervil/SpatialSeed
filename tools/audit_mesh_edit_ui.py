@@ -34,6 +34,24 @@ def audit_toolbar_controls() -> None:
             + ", ".join(duplicates)
         )
 
+    html = (ROOT / "apps/web/index.html").read_text(encoding="utf-8")
+    toolbar_match = re.search(
+        r'<header id="toolbar"[^>]*>(.*?)</header>',
+        html,
+        flags=re.S
+    )
+    if not toolbar_match:
+        raise SystemExit("Barra principal não encontrada no HTML.")
+    toolbar_ids = set(re.findall(
+        r'<(?:button|select)\b[^>]*\bid="([^"]+)"',
+        toolbar_match.group(1)
+    ))
+    unconfigured = sorted(toolbar_ids - set(controls))
+    if unconfigured:
+        raise SystemExit(
+            "Controles cairiam no menu Mais: " + ", ".join(unconfigured)
+        )
+
 
 def require(path: str, needle: str) -> None:
     text = (ROOT / path).read_text(encoding="utf-8")
@@ -66,17 +84,22 @@ for needle in [
     'id="path-profile-object"',
     'id="path-create-tube"',
     'id="path-create-sweep"',
-    'id="path-create-array"'
+    'id="path-create-array"',
+    'id="path-sketch-begin"',
+    'id="path-from-selection-create"',
+    'id="path-convert-bezier"',
+    'id="edit-hud-columns"',
+    'id="edit-hud-rows"'
 ]:
     require("apps/web/index.html", needle)
 
 for needle in [
-    'static apiVersion = "mesh-edit-panel-v5"',
+    'static apiVersion = "mesh-edit-panel-v6"',
     '"mesh.topology.apply"',
     '"mesh.component.mode.set"',
     '"mesh.selection.apply"',
     '"mesh.deform.settings.set"',
-    'spatialseed.mesh.panel.sections.v1',
+    'spatialseed.edit.workspace.sections.v2',
     "activateSelection()",
     'this.#click("mesh-frame-world", "edit.context.frame.set"',
     'this.#click("mesh-frame-local", "edit.context.frame.set"',

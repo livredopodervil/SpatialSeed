@@ -16,3 +16,4 @@ export {
   stripRepeatedEndpoint,
   transformPoints
 } from "./ReferenceGeometry.js";
+export { PathSketchController } from "./PathSketchController.js";
