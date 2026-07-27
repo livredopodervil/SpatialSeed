@@ -51,10 +51,10 @@ import {
   transformLocalPositions,
   transformLocalPositionsInto,
   translatePivotToWorld
-} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0034d";
+} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0034e";
 import {
   buildMeshTopology
-} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0034d";
+} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0034e";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-navigation-camera-v4";
