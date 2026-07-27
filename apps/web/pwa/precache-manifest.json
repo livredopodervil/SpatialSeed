@@ -107,6 +107,7 @@
     "packages/mesh-editor-core/src/MeshEditController.js",
     "packages/mesh-editor-core/src/MeshEditMath.js",
     "packages/mesh-editor-core/src/MeshTopology.js",
+    "packages/mesh-editor-core/src/MeshTopologyOperations.js",
     "packages/mesh-editor-core/src/index.js",
     "packages/object-inspector/src/ObjectInspector.js",
     "packages/plugin-api/src/ModuleRegistry.js",

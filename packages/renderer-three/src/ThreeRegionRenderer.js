@@ -48,15 +48,18 @@ import {
   projectWorldDeltaToConstraint,
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid
-} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0034g";
+} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0035a";
 import {
   buildMeshTopology
-} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0034g";
+} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0035a";
 import {
   createMeshInfluenceField,
   normalizeMeshDeformationSettings,
   transformLocalPositionsWithInfluenceInto
-} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260727-0034g";
+} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260727-0035a";
+import {
+  normalizeMeshComponentMode
+} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260727-0035a";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-navigation-camera-v4";
@@ -389,10 +392,14 @@ export class ThreeRegionRenderer {
     geometry,
     objectWorldMatrix,
     selectedIndices = [],
+    componentMode = "vertex",
+    selectedComponents = selectedIndices,
     frameMode = "local",
     frameQuaternion = [0, 0, 0, 1],
     options = {},
     onVertexPick = null,
+    onComponentPick = null,
+    onTransformStart = null,
     onTransformPreview = null,
     onTransformCommit = null
   } = {}) {
@@ -465,6 +472,38 @@ export class ThreeRegionRenderer {
     markers.renderOrder = 1200;
     markers.frustumCulled = false;
 
+    const edgeOverlay = new THREE.LineSegments(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+        depthWrite: false
+      })
+    );
+    edgeOverlay.name = `mesh-edit-edges:${id}`;
+    edgeOverlay.renderOrder = 1190;
+    edgeOverlay.frustumCulled = false;
+
+    const faceOverlay = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      new THREE.MeshBasicMaterial({
+        color: 0xffb347,
+        transparent: true,
+        opacity: 0.28,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2
+      })
+    );
+    faceOverlay.name = `mesh-edit-faces:${id}`;
+    faceOverlay.renderOrder = 1185;
+    faceOverlay.frustumCulled = false;
+
     const snapMarkerGeometry = new THREE.BufferGeometry();
     snapMarkerGeometry.setAttribute(
       "position",
@@ -503,7 +542,7 @@ export class ThreeRegionRenderer {
     snapLine.visible = false;
     snapLine.renderOrder = 1299;
 
-    group.add(mesh, wire, markers, snapMarker, snapLine);
+    group.add(mesh, wire, faceOverlay, edgeOverlay, markers, snapMarker, snapLine);
     this.scene.add(group);
     this.#batchManager.update(id, new THREE.Matrix4().makeScale(0, 0, 0));
     this.#flushBatchBounds();
@@ -516,6 +555,11 @@ export class ThreeRegionRenderer {
       mesh,
       wire,
       markers,
+      edgeOverlay,
+      faceOverlay,
+      componentMode: normalizeMeshComponentMode(componentMode),
+      selectedComponents: new Set(selectedComponents.map(Number)),
+      activeComponent: selectedComponents.at(-1) ?? null,
       selectedIndices: new Set(selectedIndices),
       activeVertex: selectedIndices.at(-1) ?? null,
       frameMode,
@@ -530,14 +574,22 @@ export class ThreeRegionRenderer {
       snapLine,
       lastSnapCandidate: null,
       options: { occlusion },
+      display: normalizeMeshDisplaySettings(options.display),
       onVertexPick:
         typeof onVertexPick === "function" ? onVertexPick : null,
+      onComponentPick:
+        typeof onComponentPick === "function" ? onComponentPick : null,
+      onTransformStart:
+        typeof onTransformStart === "function" ? onTransformStart : null,
       onTransformPreview:
         typeof onTransformPreview === "function" ? onTransformPreview : null,
       onTransformCommit:
         typeof onTransformCommit === "function" ? onTransformCommit : null
     };
     this.#updateMeshEditMarkerGeometry();
+    this.#updateMeshEditEdgeGeometry();
+    this.#updateMeshEditFaceOverlay();
+    this.#applyMeshEditDisplay();
     this.#refreshMeshEditInfluence();
     this.#configureTransformForEditor();
     this.#rebuildAnchor();
@@ -549,21 +601,26 @@ export class ThreeRegionRenderer {
   updateMeshEditGeometry(geometry) {
     const edit = this.#requireMeshEdit();
     const descriptor = this.#geometryRegistry.normalize(geometry);
-    if (descriptor.positions.length !== edit.descriptor.positions.length) {
-      throw new Error(
-        "A prévia de edição não pode alterar a quantidade de vértices."
-      );
-    }
+    const nextGeometry = this.#geometryRegistry.create(descriptor);
+    const previousGeometry = edit.mesh.geometry;
+    edit.mesh.geometry = nextGeometry;
+    edit.wire.geometry = nextGeometry;
+    if (previousGeometry !== nextGeometry) previousGeometry.dispose?.();
     edit.descriptor = descriptor;
     edit.topology = buildMeshTopology(descriptor);
     edit.lastSnapCandidate = null;
-    const attribute = edit.mesh.geometry.getAttribute("position");
-    descriptor.positions.forEach((point, index) => {
-      attribute.setXYZ(index, point[0], point[1], point[2]);
-    });
-    attribute.needsUpdate = true;
+    edit.selectedIndices = new Set(
+      [...edit.selectedIndices].filter(index => index < descriptor.positions.length)
+    );
+    edit.selectedComponents = new Set(
+      [...edit.selectedComponents].filter(index =>
+        index < meshComponentCount(edit.topology, edit.componentMode)
+      )
+    );
     this.#finalizeMeshEditGeometry();
     this.#updateMeshEditMarkerGeometry();
+    this.#updateMeshEditEdgeGeometry();
+    this.#updateMeshEditFaceOverlay();
     this.#refreshMeshEditInfluence();
     this.#rebuildAnchor();
     return this.getMeshEditStatus();
@@ -572,11 +629,47 @@ export class ThreeRegionRenderer {
   updateMeshEditSelection(selectedIndices = [], {
     activeVertex = null
   } = {}) {
+    return this.updateMeshEditComponentSelection({
+      mode: "vertex",
+      selectedComponents: selectedIndices,
+      activeComponent: activeVertex,
+      selectedVertices: selectedIndices,
+      activeVertex
+    });
+  }
+
+  updateMeshEditComponentSelection({
+    mode = "vertex",
+    selectedComponents = [],
+    activeComponent = null,
+    selectedVertices = [],
+    activeVertex = null
+  } = {}) {
     const edit = this.#requireMeshEdit();
-    edit.selectedIndices = new Set(selectedIndices.map(Number));
+    edit.componentMode = normalizeMeshComponentMode(mode);
+    edit.selectedComponents = new Set(selectedComponents.map(Number));
+    edit.activeComponent = activeComponent === null ? null : Number(activeComponent);
+    edit.selectedIndices = new Set(selectedVertices.map(Number));
     edit.activeVertex = activeVertex === null ? null : Number(activeVertex);
     this.#refreshMeshEditInfluence();
+    this.#updateMeshEditEdgeGeometry();
+    this.#updateMeshEditFaceOverlay();
     this.#rebuildAnchor();
+    return this.getMeshEditStatus();
+  }
+
+  setMeshEditComponentMode(mode) {
+    const edit = this.#requireMeshEdit();
+    edit.componentMode = normalizeMeshComponentMode(mode);
+    this.#updateMeshEditEdgeGeometry();
+    this.#updateMeshEditFaceOverlay();
+    return this.getMeshEditStatus();
+  }
+
+  updateMeshEditDisplay(patch = {}) {
+    const edit = this.#requireMeshEdit();
+    edit.display = normalizeMeshDisplaySettings({ ...edit.display, ...patch });
+    this.#applyMeshEditDisplay();
     return this.getMeshEditStatus();
   }
 
@@ -588,10 +681,9 @@ export class ThreeRegionRenderer {
         ? {}
         : { occlusion: Boolean(patch.occlusion) })
     };
-    // A opção de oclusão limita apenas o picking. Os marcadores ficam
-    // sempre visíveis para que a entrada no modo de edição seja inequívoca.
-    edit.markers.material.depthTest = false;
-    edit.markers.material.needsUpdate = true;
+    // A oclusão limita o picking; a exibição através da superfície é
+    // controlada independentemente pela opção visual xray.
+    this.#applyMeshEditDisplay();
     return this.getMeshEditStatus();
   }
 
@@ -679,6 +771,10 @@ export class ThreeRegionRenderer {
     edit.wire.material.dispose?.();
     edit.markers.geometry.dispose?.();
     edit.markers.material.dispose?.();
+    edit.edgeOverlay.geometry.dispose?.();
+    edit.edgeOverlay.material.dispose?.();
+    edit.faceOverlay.geometry.dispose?.();
+    edit.faceOverlay.material.dispose?.();
     edit.snapMarker.geometry.dispose?.();
     edit.snapMarker.material.dispose?.();
     edit.snapLine.geometry.dispose?.();
@@ -703,8 +799,14 @@ export class ThreeRegionRenderer {
       active: true,
       objectId: edit.objectId,
       vertexCount: edit.descriptor.positions.length,
+      edgeCount: edit.topology.edgeCount,
+      faceCount: edit.topology.faceCount,
+      componentMode: edit.componentMode,
+      selectedComponentCount: edit.selectedComponents.size,
       selectedCount: edit.selectedIndices.size,
+      activeComponent: edit.activeComponent,
       activeVertex: edit.activeVertex,
+      display: Object.freeze({ ...edit.display }),
       frameMode: edit.frameMode,
       frameQuaternion: Object.freeze([...edit.frameQuaternion]),
       constraint: edit.constraint,
@@ -870,32 +972,46 @@ export class ThreeRegionRenderer {
 
   selectScreenRect(rectangle, operation = this.#selectionOperation) {
     if (this.#meshEdit) {
+      const edit = this.#meshEdit;
       const rect = this.canvas.getBoundingClientRect();
-      this.#meshEdit.group.updateMatrixWorld(true);
+      edit.group.updateMatrixWorld(true);
       const indices = [];
-      for (
-        let index = 0;
-        index < this.#meshEdit.descriptor.positions.length;
-        index += 1
-      ) {
+      const inside = point => {
         const projected = new THREE.Vector3()
-          .fromArray(this.#meshEdit.descriptor.positions[index])
-          .applyMatrix4(this.#meshEdit.group.matrixWorld)
+          .fromArray(point)
+          .applyMatrix4(edit.group.matrixWorld)
           .project(this.camera);
-        if (projected.z < -1 || projected.z > 1) continue;
+        if (projected.z < -1 || projected.z > 1) return false;
         const x = (projected.x + 1) * 0.5 * rect.width;
         const y = (1 - projected.y) * 0.5 * rect.height;
-        if (
-          x >= rectangle.left && x <= rectangle.right &&
-          y >= rectangle.top && y <= rectangle.bottom
-        ) indices.push(index);
+        return x >= rectangle.left && x <= rectangle.right &&
+          y >= rectangle.top && y <= rectangle.bottom;
+      };
+      if (edit.componentMode === "vertex") {
+        edit.descriptor.positions.forEach((point, index) => {
+          if (inside(point)) indices.push(index);
+        });
+      } else if (edit.componentMode === "edge") {
+        edit.topology.edges.forEach(edge => {
+          const midpoint = edit.descriptor.positions[edge.a].map((value, axis) =>
+            (value + edit.descriptor.positions[edge.b][axis]) * 0.5
+          );
+          if (inside(midpoint)) indices.push(edge.index);
+        });
+      } else {
+        edit.topology.faces.forEach(face => {
+          if (inside(face.centroid)) indices.push(face.index);
+        });
       }
-      this.#meshEdit.onVertexPick?.({ indices, operation });
+      edit.onComponentPick?.({ mode: edit.componentMode, indices, operation });
+      if (!edit.onComponentPick && edit.componentMode === "vertex") {
+        edit.onVertexPick?.({ indices, operation });
+      }
       return {
         operation,
         selected: indices.length,
-        component: "vertex",
-        objectId: this.#meshEdit.objectId
+        component: edit.componentMode,
+        objectId: edit.objectId
       };
     }
     const r = this.canvas.getBoundingClientRect(), byId = new Map();
@@ -1822,6 +1938,7 @@ export class ThreeRegionRenderer {
 
     if (this.#meshEdit) {
       if (!this.#meshEdit.selectedIndices.size) return;
+      this.#meshEdit.onTransformStart?.();
       this.transformAnchor.updateMatrixWorld(true);
       this.#session = {
         kind: "mesh",
@@ -2950,7 +3067,11 @@ export class ThreeRegionRenderer {
     try {
       topology = buildMeshTopology({
         positions,
-        indices: geometry.index ? Array.from(geometry.index.array) : []
+        indices: geometry.index
+          ? Array.from(geometry.index.array)
+          : attribute.count % 3 === 0
+            ? Array.from({ length: attribute.count }, (_, index) => index)
+            : []
       });
     } catch {
       // Alguns assets auxiliares podem ter atributos de posição que não
@@ -3063,6 +3184,8 @@ export class ThreeRegionRenderer {
     meshAttribute.needsUpdate = true;
     if (markerAttribute) markerAttribute.needsUpdate = true;
     else this.#updateMeshEditMarkerGeometry();
+    this.#updateMeshEditEdgeGeometry();
+    this.#updateMeshEditFaceOverlay();
     if (finalize) this.#finalizeMeshEditGeometry();
   }
 
@@ -3125,6 +3248,135 @@ export class ThreeRegionRenderer {
       this.#transformConfig.vertexSize
     );
     edit.markers.material.needsUpdate = true;
+  }
+
+  #applyMeshEditDisplay() {
+    const edit = this.#meshEdit;
+    if (!edit) return;
+    edit.markers.visible = Boolean(edit.display.vertices);
+    edit.edgeOverlay.visible = Boolean(edit.display.edges);
+    edit.faceOverlay.visible = Boolean(edit.display.faces) &&
+      edit.selectedComponents.size > 0 && edit.componentMode === "face";
+    const depthTest = !edit.display.xray;
+    edit.markers.material.depthTest = depthTest;
+    edit.edgeOverlay.material.depthTest = depthTest;
+    edit.faceOverlay.material.depthTest = depthTest;
+    edit.markers.material.needsUpdate = true;
+    edit.edgeOverlay.material.needsUpdate = true;
+    edit.faceOverlay.material.needsUpdate = true;
+  }
+
+  #updateMeshEditEdgeGeometry() {
+    const edit = this.#meshEdit;
+    if (!edit) return;
+    const count = edit.topology.edges.length;
+    const positions = new Float32Array(count * 6);
+    const colors = new Float32Array(count * 6);
+    const normal = new THREE.Color(0x4d789c);
+    const loose = new THREE.Color(0x78d6a9);
+    const selected = new THREE.Color(0xffb347);
+    const active = new THREE.Color(0xffffff);
+    edit.topology.edges.forEach((edge, index) => {
+      const a = edit.descriptor.positions[edge.a];
+      const b = edit.descriptor.positions[edge.b];
+      positions.set([...a, ...b], index * 6);
+      let color = edge.loose ? loose : normal;
+      if (edit.componentMode === "edge" && edit.selectedComponents.has(edge.index)) {
+        color = edge.index === edit.activeComponent ? active : selected;
+      }
+      colors.set([color.r, color.g, color.b, color.r, color.g, color.b], index * 6);
+    });
+    edit.edgeOverlay.geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(positions, 3)
+    );
+    edit.edgeOverlay.geometry.setAttribute(
+      "color",
+      new THREE.BufferAttribute(colors, 3)
+    );
+    edit.edgeOverlay.geometry.computeBoundingSphere();
+    this.#applyMeshEditDisplay();
+  }
+
+  #updateMeshEditFaceOverlay() {
+    const edit = this.#meshEdit;
+    if (!edit) return;
+    const positions = [];
+    if (edit.componentMode === "face") {
+      for (const faceIndex of edit.selectedComponents) {
+        const face = edit.topology.triangles[faceIndex];
+        if (!face) continue;
+        for (const vertex of face) positions.push(...edit.descriptor.positions[vertex]);
+      }
+    }
+    const count = positions.length / 3;
+    let attribute = edit.faceOverlay.geometry.getAttribute("position");
+    if (!attribute || attribute.count !== count) {
+      edit.faceOverlay.geometry.dispose?.();
+      const geometry = new THREE.BufferGeometry();
+      attribute = new THREE.Float32BufferAttribute(positions, 3);
+      geometry.setAttribute("position", attribute);
+      edit.faceOverlay.geometry = geometry;
+    } else {
+      attribute.array.set(positions);
+      attribute.needsUpdate = true;
+    }
+    if (count) {
+      edit.faceOverlay.geometry.computeVertexNormals();
+      edit.faceOverlay.geometry.computeBoundingSphere();
+    }
+    this.#applyMeshEditDisplay();
+  }
+
+  #pickMeshEditComponent(event, rect, pointerType) {
+    const edit = this.#requireMeshEdit();
+    if (edit.componentMode === "edge") {
+      return this.#pickMeshEditEdge(event, rect, pointerType);
+    }
+    if (edit.componentMode === "face") {
+      const hit = this.raycaster.intersectObject(edit.mesh, false)[0];
+      return Number.isInteger(hit?.faceIndex) ? hit.faceIndex : null;
+    }
+    return this.#pickMeshEditVertex(event, rect, pointerType);
+  }
+
+  #pickMeshEditEdge(event, rect, pointerType) {
+    const edit = this.#requireMeshEdit();
+    const radius = pointerType === "touch" ? 24 : 12;
+    edit.group.updateMatrixWorld(true);
+    const cameraPosition = this.camera.getWorldPosition(new THREE.Vector3());
+    const candidates = [];
+    const worldA = new THREE.Vector3();
+    const worldB = new THREE.Vector3();
+    const screenA = new THREE.Vector3();
+    const screenB = new THREE.Vector3();
+    for (const edge of edit.topology.edges) {
+      worldA.fromArray(edit.descriptor.positions[edge.a]).applyMatrix4(edit.group.matrixWorld);
+      worldB.fromArray(edit.descriptor.positions[edge.b]).applyMatrix4(edit.group.matrixWorld);
+      screenA.copy(worldA).project(this.camera);
+      screenB.copy(worldB).project(this.camera);
+      if ((screenA.z < -1 || screenA.z > 1) && (screenB.z < -1 || screenB.z > 1)) continue;
+      const ax = rect.left + (screenA.x + 1) * 0.5 * rect.width;
+      const ay = rect.top + (1 - screenA.y) * 0.5 * rect.height;
+      const bx = rect.left + (screenB.x + 1) * 0.5 * rect.width;
+      const by = rect.top + (1 - screenB.y) * 0.5 * rect.height;
+      const distance = pointSegmentDistance2D(
+        event.clientX, event.clientY, ax, ay, bx, by
+      );
+      if (distance > radius) continue;
+      candidates.push({
+        index: edge.index,
+        distance,
+        cameraDistance: Math.min(
+          worldA.distanceTo(cameraPosition),
+          worldB.distanceTo(cameraPosition)
+        )
+      });
+    }
+    candidates.sort((left, right) =>
+      left.distance - right.distance || left.cameraDistance - right.cameraDistance
+    );
+    return candidates[0]?.index ?? null;
   }
 
   #pickMeshEditVertex(event, rect, pointerType) {
@@ -3336,12 +3588,20 @@ export class ThreeRegionRenderer {
       const operation = this.editorState.multiSelect
         ? "toggle"
         : this.#selectionOperation;
-      const index = this.#pickMeshEditVertex(event, rect, pointerType);
-      this.#meshEdit.onVertexPick?.({ index, operation });
-      this.#inputDiagnostics.selectionAction = `vertex:${operation}`;
+      const index = this.#pickMeshEditComponent(event, rect, pointerType);
+      this.#meshEdit.onComponentPick?.({
+        mode: this.#meshEdit.componentMode,
+        index,
+        operation
+      });
+      if (!this.#meshEdit.onComponentPick && this.#meshEdit.componentMode === "vertex") {
+        this.#meshEdit.onVertexPick?.({ index, operation });
+      }
+      this.#inputDiagnostics.selectionAction =
+        `${this.#meshEdit.componentMode}:${operation}`;
       this.#inputDiagnostics.lastObjectId = this.#meshEdit.objectId;
       this.#inputDiagnostics.discardedReason = index === null
-        ? "nenhum-vertice"
+        ? `nenhum-${this.#meshEdit.componentMode}`
         : null;
       return;
     }
@@ -3648,4 +3908,33 @@ function safeColorRatio(desired, base) {
   }
 
   return desired / base;
+}
+
+function normalizeMeshDisplaySettings(value = {}) {
+  return {
+    vertices: value.vertices === undefined ? true : Boolean(value.vertices),
+    edges: value.edges === undefined ? true : Boolean(value.edges),
+    faces: value.faces === undefined ? true : Boolean(value.faces),
+    xray: value.xray === undefined ? true : Boolean(value.xray)
+  };
+}
+
+function meshComponentCount(topology, mode) {
+  if (mode === "edge") return topology.edgeCount;
+  if (mode === "face") return topology.faceCount;
+  return topology.vertexCount;
+}
+
+function pointSegmentDistance2D(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lengthSquared = dx * dx + dy * dy;
+  const parameter = lengthSquared <= 1e-12
+    ? 0
+    : THREE.MathUtils.clamp(
+        ((px - ax) * dx + (py - ay) * dy) / lengthSquared,
+        0,
+        1
+      );
+  return Math.hypot(px - (ax + dx * parameter), py - (ay + dy * parameter));
 }

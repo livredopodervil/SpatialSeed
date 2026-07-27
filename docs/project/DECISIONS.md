@@ -562,6 +562,30 @@ rejeição, mudança editorial, despedida ou timeout restaura o estado confirmad
 Taxa e diagnóstico pertencem ao transporte; a autoridade editorial continua
 exclusivamente na camada de comandos.
 
+
+## D-035 — Edição topológica usa meia-aresta transitória e commit por descritor
+
+**Estado:** implementada no núcleo 0035a.
+
+A sessão de edição reconstrói, a partir da `BufferGeometry`, um complexo
+triangular transitório com meias-arestas, pares opostos, adjacências, contornos
+e arestas soltas. Operações de vértices, arestas e faces são funções puras que
+recebem um descritor e produzem outro descritor validado. Three.js permanece
+responsável apenas por projeção, picking e preview.
+
+**Motivação:** editar diretamente uma `BufferGeometry` cacheada ou um
+`InstancedMesh` poderia alterar instâncias compartilhadas e contornar comandos,
+histórico e validação. A topologia explícita fornece as relações locais exigidas
+por extrusão, divisão, colapso, ponte, seleção conectada e futuras operações de
+DCC sem transformar o renderer em autoridade.
+
+**Consequências:** a sessão possui undo/redo próprio com descritor e seleção
+completos; o sandbox recebe no máximo um `object.geometry.replace` no commit;
+malhas não manifold podem ser bloqueadas; faces persistem trianguladas; arestas
+soltas são metadados do descritor. UVs por canto, n-gons persistentes, bevel,
+knife e assets compartilhados continuam extensões posteriores sobre o mesmo
+contrato.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

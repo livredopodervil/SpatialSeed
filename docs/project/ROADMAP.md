@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 25 de julho de 2026 durante o marco `0029`.
+> Documento vivo. Auditado em 27 de julho de 2026 durante o marco `0035`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -200,6 +200,27 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - HTMLs históricos reduzidos a wrappers ou evidência comparativa;
 - reescrita majoritária do livro a partir do estado estabilizado do 0029.
 
+### 0031–0035 — Geometrias, renderização física e edição topológica — implementado
+
+- catálogo das geometrias de malha disponíveis no Three.js vendorizado;
+- sombras, ambiente, materiais físicos e configuração local por viewer;
+- sessão isolada de edição com frames mundo, objeto e viewer;
+- snap adaptativo, restrições de eixo/plano e falloff procedural em tempo real;
+- seleção exclusiva de vértices, arestas e faces da malha ativa;
+- representação transitória por meia-arestas, adjacências e ciclos de contorno;
+- criação, exclusão, duplicação, extrusão, inset, divisão, subdivisão, colapso,
+  inversão de diagonal, ponte de contornos, soldagem e orientação de faces;
+- histórico interno completo e commit editorial atômico;
+- painel flutuante único, redimensionável e configurável por checkboxes.
+
+### Próxima extensão do editor topológico
+
+- UVs e normais por canto, materiais por face e grupos de suavização;
+- bevel, knife, loop/ring cut e bridge entre contornos desiguais;
+- assets de malha compartilhados com copy-on-write e persistência compacta;
+- aceleração BVH para picking e operações sobre malhas extensas;
+- reparo orientado de auto-interseções e remalhamento.
+
 ## Marco geométrico seguinte — 2D, polylines e curvas
 
 ### Escopo
@@ -218,28 +239,12 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 O usuário deve conseguir construir e editar trajetórias 2D/3D reproduzíveis,
 usar curvas em procedimentos e preparar a base para perfis, extrusões e meshes.
 
-## Marco posterior — edição de mesh
+## Editor topológico de mesh — núcleo entregue em 0035a
 
-### Preparação
-
-Antes de oferecer ferramentas visuais, definir:
-
-- identidade estável de vértices, arestas e faces;
-- topologia e orientação;
-- seleção de subelementos;
-- copy-on-write para geometrias compartilhadas;
-- comandos atômicos e undo;
-- validação de degenerações e não-manifold;
-- projeção e picking sem tornar Three.js autoritativo.
-
-### Entrega incremental
-
-1. inspeção somente leitura da mesh;
-2. seleção de vértices;
-3. deslocamento e transformação de seleção;
-4. inserção e remoção controlada;
-5. operações de face e extrusão;
-6. importação/exportação e reparo.
+O núcleo previsto neste marco foi entregue com seleção de subelementos, preview
+local, comandos atômicos, undo interno, validação manifold e operações
+primitivas. As extensões de DCC e persistência de assets compartilhados estão
+listadas na próxima extensão do editor topológico.
 
 ## Persistência compacta e recuperação local
 
@@ -328,7 +333,7 @@ Estas atividades não precisam esperar um marco próprio.
 
 ## Itens deliberadamente adiados
 
-- edição de mesh antes de consolidar curvas e subelementos;
+- bevel, knife e remalhamento antes de consolidar o modelo topológico e seus testes;
 - otimização prematura do formato sem especificação de migração;
 - servidor colaborativo antes de definir deltas e autoridade;
 - novos botões que não tenham comando equivalente;

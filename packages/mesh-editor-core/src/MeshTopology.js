@@ -1,60 +1,10 @@
 import * as THREE from "three";
+import { topologyOf } from "./MeshTopologyOperations.js";
 
 const EPSILON = 1e-12;
 
-export function buildMeshTopology({ positions, indices = [] } = {}) {
-  const points = normalizePositions(positions);
-  const triangles = normalizeTriangles(points.length, indices);
-  const edgesByKey = new Map();
-  const vertexNeighbors = points.map(() => new Set());
-  const vertexFaces = points.map(() => []);
-  const faces = triangles.map((vertices, index) => {
-    const [a, b, c] = vertices;
-    vertexFaces[a].push(index);
-    vertexFaces[b].push(index);
-    vertexFaces[c].push(index);
-    registerEdge(a, b, index, edgesByKey, vertexNeighbors);
-    registerEdge(b, c, index, edgesByKey, vertexNeighbors);
-    registerEdge(c, a, index, edgesByKey, vertexNeighbors);
-    const pa = new THREE.Vector3().fromArray(points[a]);
-    const pb = new THREE.Vector3().fromArray(points[b]);
-    const pc = new THREE.Vector3().fromArray(points[c]);
-    const normal = pb.clone().sub(pa).cross(pc.clone().sub(pa));
-    const area2 = normal.length();
-    if (area2 > EPSILON) normal.multiplyScalar(1 / area2);
-    else normal.set(0, 0, 0);
-    const centroid = pa.add(pb).add(pc).multiplyScalar(1 / 3);
-    return Object.freeze({
-      index,
-      vertices: Object.freeze([...vertices]),
-      normal: Object.freeze(normal.toArray()),
-      centroid: Object.freeze(centroid.toArray()),
-      area: area2 * 0.5
-    });
-  });
-  const edges = [...edgesByKey.values()]
-    .sort((left, right) => left.a - right.a || left.b - right.b)
-    .map((edge, index) => Object.freeze({
-      index,
-      a: edge.a,
-      b: edge.b,
-      faces: Object.freeze([...edge.faces].sort((x, y) => x - y))
-    }));
-  return Object.freeze({
-    vertexCount: points.length,
-    faceCount: faces.length,
-    edgeCount: edges.length,
-    positions: Object.freeze(points.map(point => Object.freeze([...point]))),
-    triangles: Object.freeze(triangles.map(face => Object.freeze([...face]))),
-    faces: Object.freeze(faces),
-    edges: Object.freeze(edges),
-    vertexNeighbors: Object.freeze(
-      vertexNeighbors.map(neighbors => Object.freeze([...neighbors].sort((a, b) => a - b)))
-    ),
-    vertexFaces: Object.freeze(
-      vertexFaces.map(faceIndices => Object.freeze([...faceIndices].sort((a, b) => a - b)))
-    )
-  });
+export function buildMeshTopology(descriptor = {}) {
+  return topologyOf(descriptor);
 }
 
 export function geodesicVertexDistances({

@@ -29,3 +29,12 @@ export {
   transformLocalPositionsInto,
   translatePivotToWorld
 } from "./MeshEditMath.js";
+
+export {
+  MESH_COMPONENT_MODES,
+  applyMeshTopologyOperation,
+  componentVertices,
+  meshSelectionOperation,
+  normalizeMeshComponentMode,
+  topologyOf
+} from "./MeshTopologyOperations.js";

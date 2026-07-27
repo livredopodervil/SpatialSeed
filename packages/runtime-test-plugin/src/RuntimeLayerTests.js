@@ -122,7 +122,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260725-0029f1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260727-0034g";
+} from "../../region-box/src/reducer.js?build=20260727-0035a";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -141,7 +141,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260724-0029f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260727-0034g";
+} from "../../devtools/src/DevConsole.js?build=20260727-0035a";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -168,6 +168,7 @@ import {
 } from "../../renderer-three/src/SelectionOutlineBatch.js?build=20260718-0027g";
 import {
   MeshEditController,
+  applyMeshTopologyOperation,
   affineDeltaWorld,
   applyMeshDeformation,
   buildMeshTopology,
@@ -182,8 +183,9 @@ import {
   snapWorldPointToFrameGrid,
   transformLocalPositions,
   transformLocalPositionsInto,
-  transformLocalPositionsWithInfluenceInto
-} from "../../mesh-editor-core/src/index.js?build=20260727-0034g";
+  transformLocalPositionsWithInfluenceInto,
+  topologyOf
+} from "../../mesh-editor-core/src/index.js?build=20260727-0035a";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -725,6 +727,185 @@ export function createRuntimeLayerTests() {
         assertEqual(status.canEnter, false);
         assert(status.reason.includes("animação"));
         assertThrowsMessage(() => controller.enter(), "animação");
+      }
+    },
+    "mesh-topology": {
+      "meia-aresta reconstrói adjacência e manifold fechado"() {
+        const descriptor = cubeBufferDescriptor();
+        const topology = topologyOf(descriptor);
+        assertEqual(topology.vertexCount, 8);
+        assertEqual(topology.edgeCount, 18);
+        assertEqual(topology.faceCount, 12);
+        assertEqual(topology.halfEdges.length, 36);
+        assertEqual(topology.boundaryEdges.length, 0);
+        assertEqual(topology.nonManifoldEdges.length, 0);
+        assert(topology.halfEdges.every(edge => edge.twin !== null));
+      },
+
+      "tensor de covariância cria e triangula face inclinada"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [[0,0,0], [2,0,2], [2,2,4], [0,2,2]],
+          indices: [], normals: [], uvs: [], edges: []
+        };
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology: topologyOf(descriptor),
+          componentMode: "vertex",
+          selectedIndices: [0, 1, 2, 3],
+          operation: "create-face",
+          options: { manifoldOnly: true }
+        });
+        assertEqual(result.diagnostics.faceCount, 2);
+        assertEqual(result.diagnostics.boundaryEdgeCount, 4);
+        assertEqual(result.selection.mode, "face");
+        assertEqual(result.selection.indices.length, 2);
+      },
+
+      "extrusão de face mantém malha fechada e manifold"() {
+        const descriptor = cubeBufferDescriptor();
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology: topologyOf(descriptor),
+          componentMode: "face",
+          selectedIndices: [0],
+          operation: "extrude",
+          options: { distance: 1, manifoldOnly: true }
+        });
+        assertEqual(result.diagnostics.vertexCount, 11);
+        assertEqual(result.diagnostics.faceCount, 18);
+        assertEqual(result.diagnostics.boundaryEdgeCount, 0);
+        assertEqual(result.diagnostics.nonManifoldEdgeCount, 0);
+      },
+
+      "divisão e colapso de aresta preservam índices válidos"() {
+        const descriptor = cubeBufferDescriptor();
+        const topology = topologyOf(descriptor);
+        const split = applyMeshTopologyOperation({
+          descriptor,
+          topology,
+          componentMode: "edge",
+          selectedIndices: [0],
+          operation: "split",
+          options: { parameter: 0.5, manifoldOnly: true }
+        });
+        assertEqual(split.diagnostics.vertexCount, 9);
+        assertEqual(split.diagnostics.nonManifoldEdgeCount, 0);
+        const collapse = applyMeshTopologyOperation({
+          descriptor: split.descriptor,
+          topology: split.topology,
+          componentMode: "edge",
+          selectedIndices: split.selection.indices.slice(0, 1),
+          operation: "collapse",
+          options: { manifoldOnly: true, preserveBoundary: false }
+        });
+        assertEqual(collapse.diagnostics.nonManifoldEdgeCount, 0);
+        assert(collapse.descriptor.indices.every(index =>
+          index >= 0 && index < collapse.descriptor.positions.length
+        ));
+      },
+
+      "ponte une dois contornos completos"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [
+            [-1,-1,0], [1,-1,0], [1,1,0], [-1,1,0],
+            [-1,-1,2], [-1,1,2], [1,1,2], [1,-1,2]
+          ],
+          indices: [0,1,2, 0,2,3, 4,5,6, 4,6,7],
+          normals: [], uvs: [], edges: []
+        };
+        const topology = topologyOf(descriptor);
+        const selectedEdges = topology.edges
+          .filter(edge => edge.faces.length === 1)
+          .map(edge => edge.index);
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology,
+          componentMode: "edge",
+          selectedIndices: selectedEdges,
+          operation: "bridge",
+          options: { manifoldOnly: true }
+        });
+        assertEqual(result.diagnostics.boundaryEdgeCount, 0);
+        assertEqual(result.diagnostics.nonManifoldEdgeCount, 0);
+        assertEqual(result.diagnostics.faceCount, 12);
+      },
+
+      "normal de face é invertida trocando a orientação"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2], normals: [], uvs: [], edges: []
+        };
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology: topologyOf(descriptor),
+          componentMode: "face",
+          selectedIndices: [0],
+          operation: "flip-normal"
+        });
+        assertDeepEqual(result.descriptor.indices, [0,2,1]);
+      },
+
+      "limpeza remove vértices sem uso"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0], [99,99,99]],
+          indices: [0,1,2], normals: [], uvs: [], edges: []
+        };
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology: topologyOf(descriptor),
+          componentMode: "vertex",
+          selectedIndices: [],
+          operation: "cleanup",
+          options: { removeUnused: true }
+        });
+        assertEqual(result.diagnostics.vertexCount, 3);
+      },
+
+      "undo interno restaura operação topológica completa"() {
+        const region = new Region(
+          { id: "mesh-topology-region", name: "Mesh", type: "box-region" },
+          { objects: [{
+            id: "mesh-topology-box",
+            kind: "box",
+            name: "Caixa",
+            position: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1],
+            geometry: { type: "box", size: [1, 1, 1] },
+            material: { color: "#ffffff" }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object", regionId: "mesh-topology-region", objectId: "mesh-topology-box"
+        });
+        const renderer = {
+          beginMeshEdit(args) { this.onComponentPick = args.onComponentPick; },
+          endMeshEdit() {}, updateMeshEditGeometry() {},
+          updateMeshEditSelection() {}, updateMeshEditComponentSelection() {},
+          updateMeshEditOptions() {}, updateMeshEditDisplay() {},
+          setMeshEditFrame() {}, setMeshEditComponentMode() {}, setTransformMode() {},
+          readNavigationCamera() { return { quaternion: [0, 0, 0, 1] }; }
+        };
+        const controller = new MeshEditController({
+          sandbox, editor, renderer,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        controller.enter();
+        controller.setComponentMode("face");
+        renderer.onComponentPick({ mode: "face", index: 0, operation: "replace" });
+        const before = controller.status().vertexCount;
+        controller.applyTopology({ operation: "extrude", options: { distance: 0.5 } });
+        const after = controller.status().vertexCount;
+        assert(after > before);
+        controller.undo();
+        assertEqual(controller.status().vertexCount, before);
+        controller.redo();
+        assertEqual(controller.status().vertexCount, after);
+        controller.cancel();
       }
     },
     "runtime-api": {
@@ -8967,7 +9148,8 @@ assets: {
           { type: "ring", innerRadius: 2, outerRadius: 1 },
           { type: "tube", points: [[0,0,0],[1,0,0]] },
           { type: "buffer", positions: [[0,0,0],[1,0,0],[0,1,0]], indices: [0,1,3] },
-          { type: "buffer", positions: [[0,0,0],[1,0,0],[0,1,0],[1,1,0]], indices: [] }
+          { type: "buffer", positions: [[0,0,0],[1,0,0]], indices: [0,1] },
+          { type: "buffer", positions: [[0,0,0]], indices: [], edges: [[0,2]] }
         ]) {
           let rejected = false;
 
@@ -11442,6 +11624,28 @@ function attachRealLocalAnimation(viewer, {
       animation.dispose();
       runtime.dispose();
     }
+  };
+}
+
+
+function cubeBufferDescriptor() {
+  return {
+    type: "buffer",
+    positions: [
+      [-1,-1,-1], [1,-1,-1], [1,1,-1], [-1,1,-1],
+      [-1,-1,1], [1,-1,1], [1,1,1], [-1,1,1]
+    ],
+    indices: [
+      0,2,1, 0,3,2,
+      4,5,6, 4,6,7,
+      0,1,5, 0,5,4,
+      3,7,6, 3,6,2,
+      0,4,7, 0,7,3,
+      1,2,6, 1,6,5
+    ],
+    normals: [],
+    uvs: [],
+    edges: []
   };
 }
 

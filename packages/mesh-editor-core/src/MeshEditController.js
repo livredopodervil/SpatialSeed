@@ -9,6 +9,12 @@ import {
 } from "./MeshDeformation.js";
 import { buildMeshTopology } from "./MeshTopology.js";
 import {
+  applyMeshTopologyOperation,
+  componentVertices,
+  meshSelectionOperation,
+  normalizeMeshComponentMode
+} from "./MeshTopologyOperations.js";
+import {
   affineDeltaWorld,
   assertInvertibleWorldMatrix,
   cameraFrameQuaternion,
@@ -22,7 +28,7 @@ import {
 } from "./MeshEditMath.js";
 
 export class MeshEditController {
-  static apiVersion = "mesh-edit-controller-v2";
+  static apiVersion = "mesh-edit-controller-v3";
   #session = null;
   #listeners = new Set();
   #unsubscribeSandbox = null;
@@ -113,6 +119,17 @@ export class MeshEditController {
       initialBufferKey: this.geometryRegistry.key(descriptor),
       descriptor,
       objectWorldMatrix: [...objectWorldMatrix],
+      componentMode: "vertex",
+      componentSelections: {
+        vertex: new Set(selectedIndices),
+        edge: new Set(),
+        face: new Set()
+      },
+      activeComponents: {
+        vertex: selectedIndices.at(-1) ?? null,
+        edge: null,
+        face: null
+      },
       selectedIndices: new Set(selectedIndices),
       activeVertex: selectedIndices.at(-1) ?? null,
       pivotWorld: selectedVertexPivotWorld({
@@ -136,6 +153,18 @@ export class MeshEditController {
       deformation: normalizeMeshDeformationSettings(
         DEFAULT_MESH_DEFORMATION_SETTINGS
       ),
+      topologyOptions: {
+        manifoldOnly: true,
+        removeUnused: true,
+        autoNormals: true,
+        preserveBoundary: true
+      },
+      display: {
+        vertices: true,
+        edges: true,
+        faces: true,
+        xray: true
+      },
       history: { entries: [], index: -1, limit: 100 },
       lastOperation: "Inicial",
       frameMode: "local",
@@ -153,15 +182,20 @@ export class MeshEditController {
         geometry: descriptor,
         objectWorldMatrix,
         selectedIndices,
+        componentMode: "vertex",
+        selectedComponents: selectedIndices,
         frameMode: "local",
         frameQuaternion: localFrame,
         options: {
           occlusion: true,
           constraint: "free",
           snap: this.#session.snap,
-          deformation: this.#session.deformation
+          deformation: this.#session.deformation,
+          display: this.#session.display
         },
-        onVertexPick: payload => this.#handleVertexPick(payload),
+        onVertexPick: payload => this.#handleComponentPick({ mode: "vertex", ...payload }),
+        onComponentPick: payload => this.#handleComponentPick(payload),
+        onTransformStart: () => this.#recordHistory("Antes do gizmo"),
         onTransformPreview: positions => this.#acceptPreview(positions),
         onTransformCommit: positions => this.#acceptTransform(positions)
       });
@@ -198,7 +232,7 @@ export class MeshEditController {
     const geometry = this.geometryRegistry.normalize({
       ...session.descriptor,
       type: "buffer",
-      normals: []
+      normals: session.topologyOptions.autoNormals ? [] : session.descriptor.normals
     });
     const changed = this.sandbox.dispatch({
       type: "object.geometry.replace",
@@ -226,32 +260,85 @@ export class MeshEditController {
   }
 
   clearSelection() {
-    const session = this.#requireSession();
-    session.selectedIndices.clear();
-    session.activeVertex = null;
-    this.#syncSelection();
-    return this.status();
+    return this.selectComponents("none");
   }
 
   selectAll() {
+    return this.selectComponents("all");
+  }
+
+  invertSelection() {
+    return this.selectComponents("invert");
+  }
+
+  setComponentMode(mode) {
     const session = this.#requireSession();
-    session.selectedIndices = new Set(
-      session.descriptor.positions.map((_, index) => index)
-    );
-    session.activeVertex = session.descriptor.positions.length - 1;
+    session.componentMode = normalizeMeshComponentMode(mode);
     this.#syncSelection();
     return this.status();
   }
 
-  invertSelection() {
+  selectComponents(operation, options = {}) {
     const session = this.#requireSession();
-    const next = new Set();
-    session.descriptor.positions.forEach((_, index) => {
-      if (!session.selectedIndices.has(index)) next.add(index);
+    const selected = session.componentSelections[session.componentMode];
+    const result = meshSelectionOperation({
+      topology: session.topology,
+      mode: session.componentMode,
+      selectedIndices: selected,
+      activeIndex: session.activeComponents[session.componentMode],
+      operation,
+      options
     });
-    session.selectedIndices = next;
-    session.activeVertex = [...next].at(-1) ?? null;
+    session.componentSelections[session.componentMode] = new Set(result.indices);
+    session.activeComponents[session.componentMode] = result.activeIndex;
     this.#syncSelection();
+    return this.status();
+  }
+
+  applyTopology({ operation, options = {} } = {}) {
+    const session = this.#requireSession();
+    const selected = session.componentSelections[session.componentMode];
+    const result = applyMeshTopologyOperation({
+      descriptor: session.descriptor,
+      topology: session.topology,
+      componentMode: session.componentMode,
+      selectedIndices: selected,
+      activeIndex: session.activeComponents[session.componentMode],
+      operation,
+      options: { ...session.topologyOptions, ...options }
+    });
+    this.#recordHistory(`Antes de ${result.label}`);
+    session.descriptor = result.descriptor;
+    session.topology = result.topology;
+    session.componentMode = result.selection.mode;
+    session.componentSelections = { vertex: new Set(), edge: new Set(), face: new Set() };
+    session.activeComponents = { vertex: null, edge: null, face: null };
+    session.componentSelections[result.selection.mode] = new Set(result.selection.indices);
+    session.activeComponents[result.selection.mode] = result.selection.activeIndex;
+    this.#markGeometryChanged(session, { topology: result.topology });
+    this.renderer.updateMeshEditGeometry(session.descriptor);
+    this.#syncSelection({ notify: false });
+    this.#recordHistory(result.label);
+    this.#notify();
+    return Object.freeze({ ...this.status(), diagnostics: result.diagnostics });
+  }
+
+  setTopologyOptions(patch = {}) {
+    const session = this.#requireSession();
+    for (const key of ["manifoldOnly", "removeUnused", "autoNormals", "preserveBoundary"]) {
+      if (patch[key] !== undefined) session.topologyOptions[key] = Boolean(patch[key]);
+    }
+    this.#notify();
+    return this.status();
+  }
+
+  setDisplayOptions(patch = {}) {
+    const session = this.#requireSession();
+    for (const key of ["vertices", "edges", "faces", "xray"]) {
+      if (patch[key] !== undefined) session.display[key] = Boolean(patch[key]);
+    }
+    this.renderer.updateMeshEditDisplay?.(session.display);
+    this.#notify();
     return this.status();
   }
 
@@ -259,12 +346,14 @@ export class MeshEditController {
     const session = this.#requireSession();
     if (weldCoincident !== undefined) {
       session.weldCoincident = Boolean(weldCoincident);
-      if (session.weldCoincident) {
+      if (session.weldCoincident && session.componentMode === "vertex") {
         this.#refreshGroups(session);
-        session.selectedIndices = new Set(expandCoincidentSelection(
-          session.selectedIndices,
+        const expanded = expandCoincidentSelection(
+          session.componentSelections.vertex,
           session.groups
-        ));
+        );
+        session.componentSelections.vertex = new Set(expanded);
+        session.activeComponents.vertex = expanded.at(-1) ?? null;
       }
     }
     if (occlusion !== undefined) session.occlusion = Boolean(occlusion);
@@ -367,6 +456,7 @@ export class MeshEditController {
       constraint: session.constraint,
       ...args
     });
+    this.#recordHistory(`Antes de procedural ${args.operation ?? "move"}`);
     session.descriptor = Object.freeze({
       ...session.descriptor,
       positions: result.positions.map(point => [...point])
@@ -441,6 +531,7 @@ export class MeshEditController {
 
   setPivotPosition(position) {
     const session = this.#requireTransformableSelection();
+    this.#recordHistory("Antes de posicionar pivô");
     session.descriptor = Object.freeze({
       ...session.descriptor,
       positions: translatePivotToWorld({
@@ -458,6 +549,7 @@ export class MeshEditController {
   }
 
   applyAffine({ operations = [] } = {}) {
+    if (operations.length) this.#recordHistory("Antes da transformação afim");
     for (const operation of operations) {
       this.#applyAffine(operation.type, operation.value, {
         notify: false,
@@ -492,6 +584,8 @@ export class MeshEditController {
         constraint: "free",
         snap: null,
         deformation: null,
+        topologyOptions: null,
+        display: null,
         canUndo: false,
         canRedo: false,
         canEnter: availability.ok,
@@ -506,12 +600,17 @@ export class MeshEditController {
       objectId: session.objectId,
       objectName: session.objectName,
       sourceType: session.sourceType,
-      componentMode: "vertex",
+      componentMode: session.componentMode,
       vertexCount: session.descriptor.positions.length,
       uniqueVertexCount: session.groups.groups.length,
       edgeCount: session.topology.edgeCount,
       faceCount: session.topology.faceCount,
-      selectedCount: session.selectedIndices.size,
+      boundaryEdgeCount: session.topology.boundaryEdges?.length ?? 0,
+      looseEdgeCount: session.topology.looseEdges?.length ?? 0,
+      nonManifoldEdgeCount: session.topology.nonManifoldEdges?.length ?? 0,
+      selectedCount: session.componentSelections[session.componentMode].size,
+      selectedVertexCount: session.selectedIndices.size,
+      activeComponent: session.activeComponents[session.componentMode],
       activeVertex: session.activeVertex,
       frameMode: session.frameMode,
       viewerPlaneLocked: session.frameMode === "viewer",
@@ -523,6 +622,8 @@ export class MeshEditController {
         variables: Object.freeze({ ...session.deformation.variables }),
         elastic: Object.freeze({ ...session.deformation.elastic })
       }),
+      topologyOptions: Object.freeze({ ...session.topologyOptions }),
+      display: Object.freeze({ ...session.display }),
       affectedCount: rendererStatus.affectedCount ??
         session.selectedIndices.size,
       snapCandidate: rendererStatus.snapCandidate ?? null,
@@ -585,6 +686,7 @@ export class MeshEditController {
       frameQuaternion: session.frameQuaternion,
       ...session.deformation
     });
+    if (recordHistory) this.#recordHistory(`Antes de ${type} afim`);
     const positions = session.descriptor.positions.map(point => [...point]);
     transformLocalPositionsWithInfluenceInto({
       sourcePositions: session.descriptor.positions,
@@ -608,32 +710,41 @@ export class MeshEditController {
     return this.status();
   }
 
-  #handleVertexPick({ index = null, indices = null, operation = "replace" }) {
+  #handleComponentPick({
+    mode = null,
+    index = null,
+    indices = null,
+    operation = "replace"
+  }) {
     const session = this.#requireSession();
-    const picked = Array.isArray(indices)
-      ? indices
+    const componentMode = normalizeMeshComponentMode(mode ?? session.componentMode);
+    if (componentMode !== session.componentMode) session.componentMode = componentMode;
+    let picked = Array.isArray(indices)
+      ? indices.map(Number)
       : index === null || index === undefined
         ? []
-        : [index];
+        : [Number(index)];
+    if (componentMode === "vertex" && session.weldCoincident) {
+      picked = expandCoincidentSelection(picked, session.groups);
+    }
+    const next = new Set(session.componentSelections[componentMode]);
     if (!picked.length) {
-      if (operation === "replace") return this.clearSelection();
-      return this.status();
+      if (operation === "replace") next.clear();
+    } else {
+      if (operation === "replace") next.clear();
+      for (const candidate of picked) {
+        if (operation === "remove") next.delete(candidate);
+        else if (operation === "toggle") {
+          if (next.has(candidate)) next.delete(candidate);
+          else next.add(candidate);
+        } else next.add(candidate);
+      }
     }
-    const candidates = session.weldCoincident
-      ? expandCoincidentSelection(picked, session.groups)
-      : picked;
-    const next = new Set(session.selectedIndices);
-    if (operation === "replace") next.clear();
-    for (const candidate of candidates) {
-      if (operation === "remove") next.delete(candidate);
-      else if (operation === "toggle") {
-        if (next.has(candidate)) next.delete(candidate);
-        else next.add(candidate);
-      } else next.add(candidate);
-    }
-    session.selectedIndices = next;
+    session.componentSelections[componentMode] = next;
     const active = picked.at(-1);
-    session.activeVertex = next.has(active) ? active : [...next].at(-1) ?? null;
+    session.activeComponents[componentMode] = next.has(active)
+      ? active
+      : [...next].at(-1) ?? null;
     this.#syncSelection();
     return this.status();
   }
@@ -717,18 +828,70 @@ export class MeshEditController {
     });
   }
 
-  #syncSelection() {
+  #syncSelection({ notify = true } = {}) {
     const session = this.#requireSession();
+    const selectedComponents = session.componentSelections[session.componentMode];
+    let selectedVertices = componentVertices(
+      session.topology,
+      session.componentMode,
+      selectedComponents
+    );
+    if (session.weldCoincident && session.componentMode === "vertex") {
+      selectedVertices = expandCoincidentSelection(selectedVertices, session.groups);
+      session.componentSelections.vertex = new Set(selectedVertices);
+    }
+    session.selectedIndices = new Set(selectedVertices);
+    session.activeVertex = session.componentMode === "vertex"
+      ? session.activeComponents.vertex
+      : selectedVertices.at(-1) ?? null;
     this.#refreshPivot(session);
-    this.renderer.updateMeshEditSelection([...session.selectedIndices], {
-      activeVertex: session.activeVertex
-    });
-    this.#notify();
+    if (this.renderer.updateMeshEditComponentSelection) {
+      this.renderer.updateMeshEditComponentSelection({
+        mode: session.componentMode,
+        selectedComponents: [...session.componentSelections[session.componentMode]],
+        activeComponent: session.activeComponents[session.componentMode],
+        selectedVertices,
+        activeVertex: session.activeVertex
+      });
+    } else {
+      this.renderer.updateMeshEditSelection(selectedVertices, {
+        activeVertex: session.activeVertex
+      });
+    }
+    if (notify) this.#notify();
   }
 
-  #markGeometryChanged(session) {
+  #markGeometryChanged(session, { topology = null } = {}) {
     this.#refreshGroups(session);
-    session.topology = buildMeshTopology(session.descriptor);
+    session.topology = topology ?? buildMeshTopology(session.descriptor);
+    const counts = {
+      vertex: session.topology.vertexCount,
+      edge: session.topology.edgeCount,
+      face: session.topology.faceCount
+    };
+    for (const mode of ["vertex", "edge", "face"]) {
+      session.componentSelections[mode] = new Set(
+        [...session.componentSelections[mode]].filter(index =>
+          Number.isInteger(index) && index >= 0 && index < counts[mode]
+        )
+      );
+      if (!session.componentSelections[mode].has(session.activeComponents[mode])) {
+        session.activeComponents[mode] = [...session.componentSelections[mode]].at(-1) ?? null;
+      }
+    }
+    let selectedVertices = componentVertices(
+      session.topology,
+      session.componentMode,
+      session.componentSelections[session.componentMode]
+    );
+    if (session.weldCoincident && session.componentMode === "vertex") {
+      selectedVertices = expandCoincidentSelection(selectedVertices, session.groups);
+      session.componentSelections.vertex = new Set(selectedVertices);
+    }
+    session.selectedIndices = new Set(selectedVertices);
+    session.activeVertex = session.componentMode === "vertex"
+      ? session.activeComponents.vertex
+      : selectedVertices.at(-1) ?? null;
     this.#refreshPivot(session);
     session.dirty = this.geometryRegistry.key(session.descriptor) !==
       session.initialBufferKey;
@@ -739,12 +902,19 @@ export class MeshEditController {
     const entry = {
       label: String(label ?? "Operação"),
       key: this.geometryRegistry.key(session.descriptor),
-      positions: session.descriptor.positions.map(point => [...point]),
-      selectedIndices: [...session.selectedIndices],
-      activeVertex: session.activeVertex
+      descriptor: structuredClone(session.descriptor),
+      componentMode: session.componentMode,
+      componentSelections: Object.fromEntries(
+        Object.entries(session.componentSelections).map(([mode, values]) => [mode, [...values]])
+      ),
+      activeComponents: { ...session.activeComponents }
     };
     const current = session.history.entries[session.history.index];
-    if (!force && current?.key === entry.key) return false;
+    const selectionKey = JSON.stringify([
+      entry.componentMode, entry.componentSelections, entry.activeComponents
+    ]);
+    entry.selectionKey = selectionKey;
+    if (!force && current?.key === entry.key && current?.selectionKey === selectionKey) return false;
     session.history.entries.splice(session.history.index + 1);
     session.history.entries.push(entry);
     if (session.history.entries.length > session.history.limit) {
@@ -757,18 +927,22 @@ export class MeshEditController {
 
   #restoreHistoryEntry(entry) {
     const session = this.#requireSession();
-    session.descriptor = Object.freeze({
-      ...session.descriptor,
-      positions: entry.positions.map(point => [...point])
-    });
-    session.selectedIndices = new Set(entry.selectedIndices);
-    session.activeVertex = entry.activeVertex;
+    session.descriptor = this.geometryRegistry.normalize(entry.descriptor);
+    session.componentMode = normalizeMeshComponentMode(entry.componentMode);
+    session.componentSelections = {
+      vertex: new Set(entry.componentSelections.vertex ?? []),
+      edge: new Set(entry.componentSelections.edge ?? []),
+      face: new Set(entry.componentSelections.face ?? [])
+    };
+    session.activeComponents = {
+      vertex: entry.activeComponents.vertex ?? null,
+      edge: entry.activeComponents.edge ?? null,
+      face: entry.activeComponents.face ?? null
+    };
     session.lastOperation = entry.label;
     this.#markGeometryChanged(session);
     this.renderer.updateMeshEditGeometry(session.descriptor);
-    this.renderer.updateMeshEditSelection([...session.selectedIndices], {
-      activeVertex: session.activeVertex
-    });
+    this.#syncSelection({ notify: false });
     this.#notify();
   }
 
@@ -826,8 +1000,11 @@ function geometryToBufferDescriptor(geometry) {
   return {
     type: "buffer",
     positions,
-    indices: geometry.index ? Array.from(geometry.index.array) : [],
+    indices: geometry.index
+      ? Array.from(geometry.index.array)
+      : Array.from({ length: position.count }, (_, index) => index),
     normals,
-    uvs
+    uvs,
+    edges: []
   };
 }

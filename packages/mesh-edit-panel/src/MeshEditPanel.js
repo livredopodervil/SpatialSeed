@@ -1,5 +1,5 @@
 export class MeshEditPanel {
-  static apiVersion = "mesh-edit-panel-v2";
+  static apiVersion = "mesh-edit-panel-v4";
 
   constructor({ root, query, execute, subscribe }) {
     if (!root) throw new TypeError("MeshEditPanel exige root.");
@@ -11,6 +11,7 @@ export class MeshEditPanel {
     this.onKeyDown = event => this.#handleShortcut(event);
     document.addEventListener("keydown", this.onKeyDown, true);
     this.#bind();
+    this.#bindSectionConfiguration();
     this.refresh();
   }
 
@@ -19,11 +20,18 @@ export class MeshEditPanel {
     this.latest = state;
     const active = Boolean(state.active);
     this.root.dataset.active = active ? "true" : "false";
+    const modeLabels = { vertex: "vértices", edge: "arestas", face: "faces" };
     this.#text("mesh-edit-status", active
-      ? `${state.objectName} — ${state.selectedCount}/${state.vertexCount} vértices`
+      ? `${state.objectName} — ${state.selectedCount}/${
+          state.componentMode === "vertex"
+            ? state.vertexCount
+            : state.componentMode === "edge"
+              ? state.edgeCount
+              : state.faceCount
+        } ${modeLabels[state.componentMode]}`
       : state.reason ?? "Selecione exatamente um objeto para editar.");
     this.#text("mesh-edit-details", active
-      ? `Fonte: ${state.sourceType}; únicos: ${state.uniqueVertexCount}; arestas: ${state.edgeCount}; faces: ${state.faceCount}; frame: ${state.frameMode}; restrição: ${state.constraint}; influência: ${state.affectedCount ?? state.selectedCount} vértices; histórico interno: ${state.undoDepth}/${state.redoDepth}; ${state.dirty ? "modificada" : "sem alterações"}${state.stale ? "; mundo alterado externamente — cancele" : ""}.`
+      ? `Fonte: ${state.sourceType}; vértices: ${state.vertexCount}; únicos: ${state.uniqueVertexCount}; arestas: ${state.edgeCount}; faces: ${state.faceCount}; contorno: ${state.boundaryEdgeCount ?? 0}; soltas: ${state.looseEdgeCount ?? 0}; não manifold: ${state.nonManifoldEdgeCount ?? 0}; frame: ${state.frameMode}; restrição: ${state.constraint}; influência: ${state.affectedCount ?? state.selectedVertexCount} vértices; histórico interno: ${state.undoDepth}/${state.redoDepth}; ${state.dirty ? "modificada" : "sem alterações"}${state.stale ? "; mundo alterado externamente — cancele" : ""}.`
       : "A malha é isolada no viewer e só se torna BufferGeometry persistente quando uma alteração é aplicada.");
 
     for (const id of this.#activeControlIds()) {
@@ -50,6 +58,22 @@ export class MeshEditPanel {
         ? "true"
         : "false";
     }
+
+    for (const button of this.root.querySelectorAll("[data-mesh-mode]")) {
+      button.dataset.active = button.dataset.meshMode === state.componentMode
+        ? "true"
+        : "false";
+    }
+    const display = state.display ?? {};
+    this.#element("mesh-show-vertices").checked = display.vertices ?? true;
+    this.#element("mesh-show-edges").checked = display.edges ?? true;
+    this.#element("mesh-show-faces").checked = display.faces ?? true;
+    this.#element("mesh-xray").checked = display.xray ?? true;
+    const topologyOptions = state.topologyOptions ?? {};
+    this.#element("mesh-topology-manifold").checked = topologyOptions.manifoldOnly ?? true;
+    this.#element("mesh-topology-cleanup").checked = topologyOptions.removeUnused ?? true;
+    this.#element("mesh-topology-auto-normals").checked = topologyOptions.autoNormals ?? true;
+    this.#element("mesh-topology-boundary").checked = topologyOptions.preserveBoundary ?? true;
 
     this.#element("mesh-weld").checked = state.weldCoincident ?? true;
     this.#element("mesh-occlusion").checked = state.occlusion ?? true;
@@ -113,9 +137,23 @@ export class MeshEditPanel {
     this.#click("mesh-cancel", "mesh.edit.cancel");
     this.#click("mesh-undo", "mesh.edit.undo");
     this.#click("mesh-redo", "mesh.edit.redo");
-    this.#click("mesh-select-all", "mesh.vertices.select-all");
-    this.#click("mesh-select-none", "mesh.vertices.clear");
-    this.#click("mesh-select-invert", "mesh.vertices.invert");
+    this.#click("mesh-select-all", "mesh.selection.apply", () => ({ operation: "all" }));
+    this.#click("mesh-select-none", "mesh.selection.apply", () => ({ operation: "none" }));
+    this.#click("mesh-select-invert", "mesh.selection.apply", () => ({ operation: "invert" }));
+    this.#click("mesh-select-grow", "mesh.selection.apply", () => ({ operation: "grow" }));
+    this.#click("mesh-select-shrink", "mesh.selection.apply", () => ({ operation: "shrink" }));
+    this.#click("mesh-select-linked", "mesh.selection.apply", () => ({ operation: "linked" }));
+    this.#click("mesh-select-boundary", "mesh.selection.apply", () => ({ operation: "boundary" }));
+    this.#click("mesh-select-by-normal", "mesh.selection.apply", () => ({
+      operation: "by-normal",
+      options: { angleDegrees: this.#number("mesh-select-normal-angle") }
+    }));
+    for (const button of this.root.querySelectorAll("[data-mesh-mode]")) {
+      button.addEventListener("click", () => this.#execute(
+        "mesh.component.mode.set",
+        { mode: button.dataset.meshMode }
+      ));
+    }
     this.#click("mesh-frame-world", "mesh.frame.set", () => ({ mode: "world" }));
     this.#click("mesh-frame-local", "mesh.frame.set", () => ({ mode: "local" }));
     this.#click("mesh-frame-viewer", "mesh.frame.viewer.toggle");
@@ -137,6 +175,40 @@ export class MeshEditPanel {
     this.#click("mesh-deform-apply", "mesh.deform.apply", () =>
       this.#deformationArguments()
     );
+
+    this.#click("mesh-create-vertex", "mesh.topology.apply", () => ({
+      operation: "create-vertex",
+      options: { position: this.#numericVector("mesh-create") }
+    }));
+    for (const [id, operation] of [
+      ["mesh-create-edge", "create-edge"],
+      ["mesh-create-face", "create-face"],
+      ["mesh-duplicate-component", "duplicate"],
+      ["mesh-delete-component", "delete"],
+      ["mesh-fill", "fill"],
+      ["mesh-subdivide", "subdivide"],
+      ["mesh-collapse", "collapse"],
+      ["mesh-flip-edge", "flip-edge"],
+      ["mesh-weld-vertices", "weld"],
+      ["mesh-flip-normal", "flip-normal"],
+      ["mesh-bridge", "bridge"],
+      ["mesh-cleanup", "cleanup"],
+      ["mesh-recalculate-normals", "recalculate-normals"]
+    ]) {
+      this.#click(id, "mesh.topology.apply", () => ({ operation }));
+    }
+    this.#click("mesh-extrude", "mesh.topology.apply", () => ({
+      operation: "extrude",
+      options: { distance: this.#number("mesh-extrude-distance") }
+    }));
+    this.#click("mesh-inset", "mesh.topology.apply", () => ({
+      operation: "inset",
+      options: { amount: this.#number("mesh-inset-amount") }
+    }));
+    this.#click("mesh-split", "mesh.topology.apply", () => ({
+      operation: "split",
+      options: { parameter: this.#number("mesh-split-parameter") }
+    }));
     this.#element("mesh-deform-operation").addEventListener("change", () => {
       const presets = {
         move: ["2*w", "0", "0"],
@@ -171,6 +243,24 @@ export class MeshEditPanel {
       ));
     }
     for (const id of [
+      "mesh-show-vertices", "mesh-show-edges", "mesh-show-faces", "mesh-xray"
+    ]) {
+      this.#element(id).addEventListener("change", () => this.#execute(
+        "mesh.display.set",
+        this.#displayArguments()
+      ));
+    }
+    for (const id of [
+      "mesh-topology-manifold", "mesh-topology-cleanup",
+      "mesh-topology-auto-normals", "mesh-topology-boundary"
+    ]) {
+      this.#element(id).addEventListener("change", () => this.#execute(
+        "mesh.topology.options.set",
+        this.#topologyOptionsArguments()
+      ));
+    }
+
+    for (const id of [
       "mesh-snap-enabled", "mesh-snap-mode", "mesh-snap-scope",
       "mesh-snap-anchor", "mesh-snap-tolerance", "mesh-snap-self"
     ]) {
@@ -185,6 +275,13 @@ export class MeshEditPanel {
     if (!this.latest?.active) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target?.tagName)) return;
     const key = String(event.key).toLowerCase();
+    if (["1", "2", "3"].includes(key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      this.#execute("mesh.component.mode.set", {
+        mode: ({ "1": "vertex", "2": "edge", "3": "face" })[key]
+      });
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && key === "z") {
       event.preventDefault();
       this.#execute(event.shiftKey ? "mesh.edit.redo" : "mesh.edit.undo");
@@ -207,6 +304,54 @@ export class MeshEditPanel {
       event.preventDefault();
       this.#execute("mesh.constraint.set", { mode: "free" });
     }
+  }
+
+  #bindSectionConfiguration() {
+    const storageKey = "spatialseed.mesh.panel.sections.v1";
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem(storageKey) ?? "{}"); }
+    catch { stored = {}; }
+    const apply = () => {
+      const state = {};
+      for (const checkbox of this.root.querySelectorAll("[data-mesh-section-toggle]")) {
+        const section = checkbox.dataset.meshSectionToggle;
+        if (stored[section] !== undefined) checkbox.checked = Boolean(stored[section]);
+        state[section] = checkbox.checked;
+        for (const element of this.root.querySelectorAll(`[data-mesh-section="${section}"]`)) {
+          element.hidden = !checkbox.checked;
+        }
+      }
+      return state;
+    };
+    apply();
+    for (const checkbox of this.root.querySelectorAll("[data-mesh-section-toggle]")) {
+      checkbox.addEventListener("change", () => {
+        stored = {};
+        for (const item of this.root.querySelectorAll("[data-mesh-section-toggle]")) {
+          stored[item.dataset.meshSectionToggle] = item.checked;
+        }
+        localStorage.setItem(storageKey, JSON.stringify(stored));
+        apply();
+      });
+    }
+  }
+
+  #displayArguments() {
+    return {
+      vertices: this.#element("mesh-show-vertices").checked,
+      edges: this.#element("mesh-show-edges").checked,
+      faces: this.#element("mesh-show-faces").checked,
+      xray: this.#element("mesh-xray").checked
+    };
+  }
+
+  #topologyOptionsArguments() {
+    return {
+      manifoldOnly: this.#element("mesh-topology-manifold").checked,
+      removeUnused: this.#element("mesh-topology-cleanup").checked,
+      autoNormals: this.#element("mesh-topology-auto-normals").checked,
+      preserveBoundary: this.#element("mesh-topology-boundary").checked
+    };
   }
 
   #snapArguments() {
@@ -260,6 +405,20 @@ export class MeshEditPanel {
     return [
       "mesh-commit", "mesh-cancel", "mesh-undo", "mesh-redo",
       "mesh-select-all", "mesh-select-none", "mesh-select-invert",
+      "mesh-select-grow", "mesh-select-shrink", "mesh-select-linked",
+      "mesh-select-boundary", "mesh-select-by-normal",
+      "mesh-select-normal-angle",
+      "mesh-mode-vertex", "mesh-mode-edge", "mesh-mode-face",
+      "mesh-show-vertices", "mesh-show-edges", "mesh-show-faces", "mesh-xray",
+      "mesh-topology-manifold", "mesh-topology-cleanup",
+      "mesh-topology-auto-normals", "mesh-topology-boundary",
+      "mesh-create-x", "mesh-create-y", "mesh-create-z", "mesh-create-vertex",
+      "mesh-create-edge", "mesh-create-face", "mesh-duplicate-component",
+      "mesh-delete-component", "mesh-fill", "mesh-recalculate-normals",
+      "mesh-extrude-distance", "mesh-extrude", "mesh-inset-amount",
+      "mesh-inset", "mesh-split-parameter", "mesh-split",
+      "mesh-subdivide", "mesh-collapse", "mesh-flip-edge",
+      "mesh-weld-vertices", "mesh-flip-normal", "mesh-bridge", "mesh-cleanup",
       "mesh-frame-world", "mesh-frame-local", "mesh-frame-viewer",
       "mesh-affine-move", "mesh-affine-rotate", "mesh-affine-scale",
       "mesh-weld", "mesh-occlusion", "mesh-snap-enabled",

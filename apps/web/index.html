@@ -472,32 +472,116 @@
 
 <section id="mesh-edit-panel" hidden>
   <header>
-    <strong>Edição adaptativa de malha</strong>
+    <strong>Editor topológico de malha</strong>
     <button id="close-mesh-edit" type="button">×</button>
   </header>
   <div class="mesh-edit-content">
-    <p id="mesh-edit-status"></p>
-    <small id="mesh-edit-details"></small>
-    <div class="actions">
-      <button id="mesh-enter" type="button">Editar seleção</button>
-      <button id="mesh-commit" type="button">Aplicar</button>
-      <button id="mesh-cancel" type="button">Cancelar</button>
-    </div>
-    <div class="actions mesh-history-actions">
-      <button id="mesh-undo" type="button">↶ Desfazer interno</button>
-      <button id="mesh-redo" type="button">↷ Refazer interno</button>
-    </div>
-    <fieldset>
-      <legend>Referencial</legend>
+    <section data-mesh-section="session">
+      <p id="mesh-edit-status"></p>
+      <small id="mesh-edit-details"></small>
+      <div class="actions">
+        <button id="mesh-enter" type="button">Editar seleção</button>
+        <button id="mesh-commit" type="button">Aplicar</button>
+        <button id="mesh-cancel" type="button">Cancelar</button>
+      </div>
+      <div class="actions mesh-history-actions">
+        <button id="mesh-undo" type="button">↶ Desfazer interno</button>
+        <button id="mesh-redo" type="button">↷ Refazer interno</button>
+      </div>
+    </section>
+
+    <details class="mesh-panel-config">
+      <summary>Configurar painel</summary>
+      <div class="mesh-checkbox-grid">
+        <label><input type="checkbox" data-mesh-section-toggle="session" checked> Sessão</label>
+        <label><input type="checkbox" data-mesh-section-toggle="selection" checked> Seleção</label>
+        <label><input type="checkbox" data-mesh-section-toggle="topology" checked> Topologia</label>
+        <label><input type="checkbox" data-mesh-section-toggle="transform" checked> Transformação</label>
+        <label><input type="checkbox" data-mesh-section-toggle="snap" checked> Snap</label>
+        <label><input type="checkbox" data-mesh-section-toggle="influence" checked> Influência</label>
+        <label><input type="checkbox" data-mesh-section-toggle="diagnostics" checked> Diagnóstico</label>
+      </div>
+    </details>
+
+    <fieldset data-mesh-section="selection">
+      <legend>Componentes e seleção</legend>
+      <div class="mesh-mode-grid">
+        <button id="mesh-mode-vertex" type="button" data-mesh-mode="vertex">Vértices</button>
+        <button id="mesh-mode-edge" type="button" data-mesh-mode="edge">Arestas</button>
+        <button id="mesh-mode-face" type="button" data-mesh-mode="face">Faces</button>
+      </div>
+      <div class="actions">
+        <button id="mesh-select-all" type="button">Todos</button>
+        <button id="mesh-select-none" type="button">Nenhum</button>
+        <button id="mesh-select-invert" type="button">Inverter</button>
+        <button id="mesh-select-grow" type="button">Expandir</button>
+        <button id="mesh-select-shrink" type="button">Contrair</button>
+        <button id="mesh-select-linked" type="button">Conectados</button>
+        <button id="mesh-select-boundary" type="button">Contorno</button>
+      </div>
+      <div class="mesh-form-grid">
+        <label><span>Ângulo normal °</span><input id="mesh-select-normal-angle" type="number" min="0" max="180" value="15" step="1"></label>
+        <button id="mesh-select-by-normal" type="button">Selecionar por normal</button>
+      </div>
+      <div class="mesh-checkbox-grid">
+        <label><input id="mesh-show-vertices" type="checkbox" checked> Mostrar vértices</label>
+        <label><input id="mesh-show-edges" type="checkbox" checked> Mostrar arestas</label>
+        <label><input id="mesh-show-faces" type="checkbox" checked> Destacar faces</label>
+        <label><input id="mesh-xray" type="checkbox" checked> Componentes através da superfície</label>
+        <label><input id="mesh-weld" type="checkbox" checked> Vértices coincidentes juntos</label>
+        <label><input id="mesh-occlusion" type="checkbox" checked> Seleção respeita oclusão</label>
+      </div>
+    </fieldset>
+
+    <fieldset data-mesh-section="topology">
+      <legend>Operações topológicas</legend>
+      <div class="mesh-checkbox-grid">
+        <label><input id="mesh-topology-manifold" type="checkbox" checked> Bloquear não manifold</label>
+        <label><input id="mesh-topology-cleanup" type="checkbox" checked> Remover vértices sem uso</label>
+        <label><input id="mesh-topology-auto-normals" type="checkbox" checked> Recalcular normais</label>
+        <label><input id="mesh-topology-boundary" type="checkbox" checked> Preservar contornos</label>
+      </div>
+      <div class="mesh-vector-row">
+        <span>Novo vértice</span>
+        <input id="mesh-create-x" type="number" value="0" step="0.1">
+        <input id="mesh-create-y" type="number" value="0" step="0.1">
+        <input id="mesh-create-z" type="number" value="0" step="0.1">
+        <button id="mesh-create-vertex" type="button">Criar</button>
+      </div>
+      <div class="mesh-operation-grid">
+        <button id="mesh-create-edge" type="button">Criar aresta</button>
+        <button id="mesh-create-face" type="button">Criar face</button>
+        <button id="mesh-duplicate-component" type="button">Duplicar</button>
+        <button id="mesh-delete-component" type="button">Excluir</button>
+        <button id="mesh-fill" type="button">Preencher</button>
+        <button id="mesh-recalculate-normals" type="button">Recalcular normais</button>
+      </div>
+      <div class="mesh-form-grid">
+        <label><span>Extrusão</span><input id="mesh-extrude-distance" type="number" value="1" step="0.1"></label>
+        <button id="mesh-extrude" type="button">Extrudar</button>
+        <label><span>Inset</span><input id="mesh-inset-amount" type="number" value="0.2" min="0.001" max="0.999" step="0.05"></label>
+        <button id="mesh-inset" type="button">Inset</button>
+        <label><span>Divisão da aresta</span><input id="mesh-split-parameter" type="number" value="0.5" min="0.001" max="0.999" step="0.05"></label>
+        <button id="mesh-split" type="button">Dividir</button>
+      </div>
+      <div class="mesh-operation-grid">
+        <button id="mesh-subdivide" type="button">Subdividir</button>
+        <button id="mesh-collapse" type="button">Colapsar aresta</button>
+        <button id="mesh-flip-edge" type="button">Inverter diagonal</button>
+        <button id="mesh-weld-vertices" type="button">Soldar vértices</button>
+        <button id="mesh-flip-normal" type="button">Inverter normal</button>
+        <button id="mesh-bridge" type="button">Ponte de contornos</button>
+        <button id="mesh-cleanup" type="button">Limpar malha</button>
+      </div>
+    </fieldset>
+
+    <fieldset data-mesh-section="transform">
+      <legend>Referencial, restrição e transformação</legend>
       <div class="actions mesh-frame-actions">
         <button id="mesh-frame-world" type="button">Mundo</button>
         <button id="mesh-frame-local" type="button">Objeto</button>
         <button id="mesh-frame-viewer" type="button">Travar plano do viewer</button>
       </div>
-      <p>No frame travado, X acompanha a direita da tela, Y o alto e Z a normal dirigida ao observador.</p>
-    </fieldset>
-    <fieldset>
-      <legend>Graus de liberdade</legend>
       <div class="mesh-constraint-grid">
         <button id="mesh-constraint-free" type="button" data-mesh-constraint="free">Livre</button>
         <button id="mesh-constraint-x" type="button" data-mesh-constraint="x">X</button>
@@ -507,39 +591,29 @@
         <button id="mesh-constraint-xz" type="button" data-mesh-constraint="xz">XZ</button>
         <button id="mesh-constraint-yz" type="button" data-mesh-constraint="yz">YZ</button>
       </div>
-      <small>As mesmas restrições são aplicadas ao gizmo, aos comandos afins e às deformações procedurais.</small>
-    </fieldset>
-    <fieldset>
-      <legend>Vértices</legend>
-      <div class="actions">
-        <button id="mesh-select-all" type="button">Todos</button>
-        <button id="mesh-select-none" type="button">Nenhum</button>
-        <button id="mesh-select-invert" type="button">Inverter</button>
-      </div>
-      <label><input id="mesh-weld" type="checkbox" checked> Mover vértices coincidentes juntos</label>
-      <label><input id="mesh-occlusion" type="checkbox" checked> Impedir seleção de vértices ocluídos</label>
-    </fieldset>
-    <fieldset>
-      <legend>Snap adaptativo</legend>
-      <label><input id="mesh-snap-enabled" type="checkbox"> Ativar snap</label>
-      <div class="mesh-form-grid">
-        <label><span>Modo</span><select id="mesh-snap-mode"><option value="auto">Auto</option><option value="vertex">Vértice</option><option value="edge">Aresta</option><option value="face">Face</option></select></label>
-        <label><span>Escopo</span><select id="mesh-snap-scope"><option value="active">Malha ativa</option><option value="scene">Cena visível</option></select></label>
-        <label><span>Âncora</span><select id="mesh-snap-anchor"><option value="active">Vértice ativo</option><option value="pivot">Pivô</option><option value="nearest">Selecionado mais próximo</option></select></label>
-        <label><span>Tolerância px</span><input id="mesh-snap-tolerance" type="number" min="2" max="80" value="18" step="1"></label>
-      </div>
-      <label><input id="mesh-snap-self" type="checkbox"> Permitir autosnap ao usar a cena</label>
-      <small id="mesh-snap-diagnostic">Sem alvo de snap.</small>
-    </fieldset>
-    <fieldset>
-      <legend>Comandos afins rígidos</legend>
       <div class="mesh-vector-row"><span>Mover</span><input id="mesh-move-x" type="number" value="0" step="0.1"><input id="mesh-move-y" type="number" value="0" step="0.1"><input id="mesh-move-z" type="number" value="0" step="0.1"><button id="mesh-affine-move" type="button">Aplicar</button></div>
       <div class="mesh-vector-row"><span>Girar °</span><input id="mesh-rotate-x" type="number" value="0" step="1"><input id="mesh-rotate-y" type="number" value="0" step="1"><input id="mesh-rotate-z" type="number" value="0" step="1"><button id="mesh-affine-rotate" type="button">Aplicar</button></div>
       <div class="mesh-vector-row"><span>Escalar</span><input id="mesh-scale-x" type="number" value="1" step="0.1"><input id="mesh-scale-y" type="number" value="1" step="0.1"><input id="mesh-scale-z" type="number" value="1" step="0.1"><button id="mesh-affine-scale" type="button">Aplicar</button></div>
     </fieldset>
-    <fieldset>
+
+    <fieldset data-mesh-section="snap">
+      <legend>Snap adaptativo</legend>
+      <div class="mesh-checkbox-grid">
+        <label><input id="mesh-snap-enabled" type="checkbox"> Ativar snap</label>
+        <label><input id="mesh-snap-self" type="checkbox"> Autosnap</label>
+      </div>
+      <div class="mesh-form-grid">
+        <label><span>Modo</span><select id="mesh-snap-mode"><option value="auto">Auto</option><option value="vertex">Vértice</option><option value="edge">Aresta</option><option value="face">Face</option></select></label>
+        <label><span>Escopo</span><select id="mesh-snap-scope"><option value="active">Malha ativa</option><option value="scene">Cena visível</option></select></label>
+        <label><span>Âncora</span><select id="mesh-snap-anchor"><option value="active">Componente ativo</option><option value="pivot">Pivô</option><option value="nearest">Mais próximo</option></select></label>
+        <label><span>Tolerância px</span><input id="mesh-snap-tolerance" type="number" min="2" max="80" value="18" step="1"></label>
+      </div>
+      <small id="mesh-snap-diagnostic">Sem alvo de snap.</small>
+    </fieldset>
+
+    <fieldset data-mesh-section="influence">
       <legend>Influência proporcional e transformação procedural</legend>
-      <label><input id="mesh-deform-live" type="checkbox" checked> Aplicar o falloff ao gizmo em tempo real</label>
+      <label><input id="mesh-deform-live" type="checkbox" checked> Aplicar falloff ao gizmo em tempo real</label>
       <div class="mesh-form-grid">
         <label><span>Operação</span><select id="mesh-deform-operation"><option value="move">Mover</option><option value="rotate">Girar</option><option value="scale">Escalar</option></select></label>
         <label><span>Raio</span><input id="mesh-deform-radius" type="number" value="5" min="0" step="0.1"></label>
@@ -553,9 +627,12 @@
       <label class="mesh-wide-label"><span>Falloff personalizado</span><input id="mesh-deform-falloff-expression" type="text" value="1-smoothstep(0,1,q)" spellcheck="false"></label>
       <label class="mesh-wide-label"><span>Variáveis JSON</span><textarea id="mesh-deform-variables" rows="2" spellcheck="false">{"amount":2}</textarea></label>
       <button id="mesh-deform-apply" type="button">Aplicar deformação</button>
-      <small>Durante o arrasto, os vértices selecionados têm peso 1 e os conectados recebem o peso w do falloff. A prévia é recalculada desde o início do arrasto em cada quadro. Variáveis: i, count, u, lx/ly/lz, wx/wy/wz, fx/fy/fz, nx/ny/nz, px/py/pz, r, q, w, pi, tau, e, phi e variáveis JSON.</small>
     </fieldset>
-    <p id="mesh-edit-error" role="alert"></p>
+
+    <section data-mesh-section="diagnostics">
+      <small>A topologia é reconstruída como complexo triangular com meia-arestas, contornos e adjacências após cada operação. Faces criadas por mais de três vértices são projetadas no plano de melhor ajuste obtido pelo tensor de covariância e trianguladas por ear clipping.</small>
+      <p id="mesh-edit-error" role="alert"></p>
+    </section>
   </div>
 </section>
 
@@ -738,6 +815,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0034g"></script>
+<script type="module" src="./boot.js?build=20260727-0035a"></script>
 </body>
 </html>

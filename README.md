@@ -73,7 +73,7 @@ O menu **Painéis → Render** controla iluminação, sombras, reflexos ambienta
 
 ## Edição de malha
 
-O menu **Editar → Editar malha** abre uma sessão local na qual somente os vértices do objeto ativo são selecionáveis. Gizmo, comandos afins e deformações procedurais compartilham frames, travas de eixo/plano, snap adaptativo em vértice/aresta/face e um histórico interno independente. O falloff proporcional pode atuar durante o arrasto do gizmo, atualizando em tempo real os vértices conectados a partir do estado inicial da interação. O commit substitui a geometria em uma única entrada de undo editorial. Consulte [Edição adaptativa de malha — build 0034d](docs/MESH_EDITING_0034.md) e [Gizmo proporcional em tempo real — build 0034g](docs/MESH_EDITING_0034G.md).
+O menu **Editar → Editar malha** abre uma sessão local na qual vértices, arestas e faces do objeto ativo são os únicos componentes selecionáveis. Gizmo, comandos afins e deformações procedurais compartilham frames, travas de eixo/plano, snap adaptativo e um histórico interno independente. O falloff proporcional atua durante o arrasto do gizmo em tempo real. O mesmo painel flutuante configurável reúne criação, exclusão, duplicação, extrusão, inset, preenchimento, divisão, subdivisão, colapso, ponte de contornos, soldagem e orientação de faces. O commit substitui a geometria em uma única entrada de undo editorial. Consulte [Edição adaptativa de malha — build 0034d](docs/MESH_EDITING_0034.md), [Gizmo proporcional em tempo real — build 0034g](docs/MESH_EDITING_0034G.md) e [Edição topológica unificada — build 0035a](docs/MESH_TOPOLOGY_0035A.md).
 
 ## Execução local
 
@@ -492,7 +492,7 @@ flowchart TD
 | `packages/region-box` | reducer puro e modelo de estado da região atual |
 | `packages/scene-hierarchy` | grupos, parentesco, transforms locais e ciclo de subárvores |
 | `packages/geometry-registry` | famílias paramétricas e providers de geometria |
-| `packages/mesh-editor-core` | sessão, topologia, restrições, snapping, deformação procedural e histórico interno da edição de vértices |
+| `packages/mesh-editor-core` | sessão, meia-aresta transitória, operações de vértices/arestas/faces, restrições, snapping, deformação procedural e histórico interno |
 | `packages/mesh-edit-panel` | painel declarativo da sessão de malha |
 | `packages/property-registry` | propriedades tipadas, inspeção e edição atômica em lote |
 | `packages/script-runtime` | Workers, SES, sessões, planos espaciais/de câmera e procedimentos |
@@ -553,6 +553,7 @@ runtime test spatial-plan-commit
 runtime test property-contract
 runtime test geometry-creation
 runtime test mesh-edit-math
+runtime test mesh-topology
 runtime test file-interop
 runtime test project-recovery
 runtime test experiment-contract
@@ -643,7 +644,7 @@ As decisões de workflow estão documentadas em [`docs/project/WORKFLOW.md`](doc
 
 SpatialSeed ainda não é um modelador DCC completo nem um motor de jogo pronto para produção. Permanecem fora do escopo implementado:
 
-- edição direta de vértices, arestas, faces e meshes arbitrárias;
+- operações topológicas avançadas de DCC, como bevel, knife, loop cut, remalhamento e UVs por canto;
 - curvas Bézier, polylines e um sistema geométrico 2D completo;
 - persistência de clips, keyframes e animações no documento;
 - eventos, colisões e interatividade programável contínua;
@@ -659,7 +660,7 @@ Esses limites são mantidos explícitos para evitar que uma demonstração seja 
 1. consolidar origens individuais, grupos e customização interna da interface;
 2. decidir persistência de clips/keyframes e modelo de eventos;
 3. geometria 2D, polylines e curvas Bézier;
-4. edição de vértices e meshes;
+4. ampliar o editor topológico com bevel, knife, loops, UVs e assets de malha compartilhados;
 5. persistência compacta, múltiplos viewers, formatos 3D e colaboração regional.
 
 Os registros de planejamento e prioridades anteriores permanecem em [`docs/project/ROADMAP.md`](docs/project/ROADMAP.md).

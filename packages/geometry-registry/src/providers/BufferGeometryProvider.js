@@ -22,12 +22,13 @@ export const BufferGeometryProvider = Object.freeze({
     Object.freeze({id:"positions",label:"Posições [[x,y,z],...]",type:"json",default:DEFAULT_POSITIONS}),
     Object.freeze({id:"indices",label:"Índices [a,b,c,...]",type:"json",default:DEFAULT_INDICES}),
     Object.freeze({id:"normals",label:"Normais [[x,y,z],...] ou []",type:"json",default:[]}),
-    Object.freeze({id:"uvs",label:"UVs [[u,v],...] ou []",type:"json",default:[]})
+    Object.freeze({id:"uvs",label:"UVs [[u,v],...] ou []",type:"json",default:[]}),
+    Object.freeze({id:"edges",label:"Arestas soltas [[a,b],...]",type:"json",default:[]})
   ]),
 
   normalize(input = {}) {
     const positions = points3(input.positions, "positions", {
-      minimum: 3,
+      minimum: 0,
       fallback: DEFAULT_POSITIONS
     });
     const indices = integerArray(input.indices, "indices", {
@@ -37,12 +38,8 @@ export const BufferGeometryProvider = Object.freeze({
     });
     const normals = optionalPoints3(input.normals, "normals");
     const uvs = optionalPoints2(input.uvs, "uvs");
+    const edges = normalizeEdges(input.edges, positions.length);
 
-    if (!indices.length && positions.length % 3 !== 0) {
-      throw new RangeError(
-        "positions sem indices deve ter quantidade múltipla de 3."
-      );
-    }
     if (normals.length && normals.length !== positions.length) {
       throw new RangeError("normals deve ter a mesma quantidade de positions.");
     }
@@ -62,7 +59,8 @@ export const BufferGeometryProvider = Object.freeze({
       positions,
       indices,
       normals,
-      uvs
+      uvs,
+      edges
     });
   },
 
@@ -92,3 +90,27 @@ export const BufferGeometryProvider = Object.freeze({
     return geometry;
   }
 });
+
+function normalizeEdges(value, vertexCount) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) throw new TypeError("edges deve formar uma lista.");
+  const unique = new Map();
+  value.forEach((edge, index) => {
+    if (!Array.isArray(edge) || edge.length !== 2) {
+      throw new TypeError(`edges[${index}] deve conter dois índices.`);
+    }
+    const [a, b] = edge.map(Number);
+    for (const vertex of [a, b]) {
+      if (!Number.isInteger(vertex) || vertex < 0 || vertex >= vertexCount) {
+        throw new RangeError(`Índice inválido em edges[${index}]: ${vertex}.`);
+      }
+    }
+    if (a === b) return;
+    const left = Math.min(a, b);
+    const right = Math.max(a, b);
+    unique.set(`${left}:${right}`, [left, right]);
+  });
+  return [...unique.values()].sort((left, right) =>
+    left[0] - right[0] || left[1] - right[1]
+  );
+}

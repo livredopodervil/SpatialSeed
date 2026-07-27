@@ -128,7 +128,9 @@ export function createEditorCommands({
         : selectionOperations.scaleBy(factors)
     )
     .register("selection.duplicate", () => {
-      requireObjectMode("duplicar objetos");
+      if (meshEditor?.active) {
+        return meshEditor.applyTopology({ operation: "duplicate" });
+      }
       return selectionOperations.duplicate();
     })
     .register("selection.group", (args = {}) => {
@@ -157,7 +159,9 @@ export function createEditorCommands({
       return selectionOperations.repeat();
     })
     .register("selection.delete", () => {
-      requireObjectMode("excluir objetos");
+      if (meshEditor?.active) {
+        return meshEditor.applyTopology({ operation: "delete" });
+      }
       return selectionOperations.deleteSelection();
     })
     .register("pivot.policy", ({ policy }) => {
@@ -220,6 +224,14 @@ export function createEditorCommands({
       .register("mesh.vertices.select-all", () => meshEditor.selectAll())
       .register("mesh.vertices.clear", () => meshEditor.clearSelection())
       .register("mesh.vertices.invert", () => meshEditor.invertSelection())
+      .register("mesh.component.mode.set", ({ mode }) =>
+        meshEditor.setComponentMode(mode))
+      .register("mesh.selection.apply", ({ operation, options }) =>
+        meshEditor.selectComponents(operation, options))
+      .register("mesh.topology.apply", args => meshEditor.applyTopology(args))
+      .register("mesh.topology.options.set", args =>
+        meshEditor.setTopologyOptions(args))
+      .register("mesh.display.set", args => meshEditor.setDisplayOptions(args))
       .register("mesh.frame.set", ({ mode }) => meshEditor.setFrame(mode))
       .register("mesh.frame.viewer.toggle", () => meshEditor.toggleViewerFrame())
       .register("mesh.constraint.set", ({ mode }) => meshEditor.setConstraint(mode))

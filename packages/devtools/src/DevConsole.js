@@ -699,7 +699,14 @@ export class DevConsole {
         "pivot relative dx dy dz",
         "vertices on|off",
         "mesh enter|status|apply|cancel|help",
-        "mesh select all|none|invert",
+        "mesh mode vertex|edge|face",
+        "mesh select all|none|invert|grow|shrink|linked|boundary|normal [ângulo]",
+        "mesh topology create-vertex position=x,y,z",
+        "mesh topology create-edge",
+        "mesh topology create-face",
+        "mesh topology extrude distance=1",
+        "mesh topology inset amount=0.2",
+        "mesh topology subdivide|split|collapse|flip-edge|flip-normal|bridge|weld|delete|duplicate|fill|cleanup|recalculate-normals",
         "mesh frame world|local|viewer",
         "mesh constraint free|x|y|z|xy|xz|yz",
         "mesh snap on|off",
@@ -1730,15 +1737,71 @@ export class DevConsole {
       this.#expectMaximum(tokens, 0, `mesh ${action}`);
       return this.commands.execute(`mesh.edit.${action}`);
     }
-    if (action === "select") {
-      this.#expectExact(tokens, 1, "mesh select all|none|invert");
+    if (action === "mode") {
+      this.#expectExact(tokens, 1, "mesh mode vertex|edge|face");
       const mode = String(tokens[0]).toLowerCase();
-      if (mode === "all") return this.commands.execute("mesh.vertices.select-all");
-      if (["none", "clear"].includes(mode)) {
-        return this.commands.execute("mesh.vertices.clear");
+      if (!["vertex", "edge", "face"].includes(mode)) {
+        throw new Error("Uso: mesh mode vertex|edge|face");
       }
-      if (mode === "invert") return this.commands.execute("mesh.vertices.invert");
-      throw new Error("Uso: mesh select all|none|invert");
+      return this.commands.execute("mesh.component.mode.set", { mode });
+    }
+    if (action === "select") {
+      if (!tokens.length || tokens.length > 2) {
+        throw new Error("Uso: mesh select all|none|invert|grow|shrink|linked|boundary|normal [ângulo]");
+      }
+      const raw = String(tokens.shift()).toLowerCase();
+      const aliases = { clear: "none", normal: "by-normal" };
+      const operation = aliases[raw] ?? raw;
+      const allowed = ["all", "none", "invert", "grow", "shrink", "linked", "boundary", "by-normal"];
+      if (!allowed.includes(operation)) {
+        throw new Error("Uso: mesh select all|none|invert|grow|shrink|linked|boundary|normal [ângulo]");
+      }
+      const options = operation === "by-normal"
+        ? { angleDegrees: tokens.length ? this.#number(tokens[0]) : 15 }
+        : {};
+      return this.commands.execute("mesh.selection.apply", { operation, options });
+    }
+    if (action === "topology" || [
+      "create-vertex", "create-edge", "create-face", "fill", "duplicate",
+      "delete", "extrude", "inset", "subdivide", "split", "collapse",
+      "flip-edge", "flip-normal", "bridge", "weld", "cleanup", "recalculate-normals"
+    ].includes(action)) {
+      const operation = action === "topology"
+        ? String(tokens.shift() ?? "").toLowerCase()
+        : action;
+      if (!operation) {
+        throw new Error("Uso: mesh topology operação [opção=valor]");
+      }
+      const options = {};
+      for (const token of tokens) {
+        const separator = token.indexOf("=");
+        if (separator < 1) {
+          if (operation === "extrude" && options.distance === undefined) {
+            options.distance = this.#number(token);
+            continue;
+          }
+          throw new Error(`Opção topológica inválida: ${token}.`);
+        }
+        const name = token.slice(0, separator);
+        const raw = token.slice(separator + 1);
+        if (["distance", "amount", "parameter"].includes(name)) {
+          options[name] = this.#number(raw);
+        } else if (["position", "offset", "vector"].includes(name)) {
+          const values = raw.split(",").map(value => this.#number(value));
+          if (values.length !== 3) throw new Error(`${name} exige x,y,z.`);
+          options[name] = values;
+        } else if (["target"].includes(name)) {
+          options[name] = raw;
+        } else if (["reverse", "preserveOrder", "manifoldOnly", "removeUnused"].includes(name)) {
+          if (!["on", "off", "true", "false"].includes(raw)) {
+            throw new Error(`${name} exige on|off.`);
+          }
+          options[name] = ["on", "true"].includes(raw);
+        } else {
+          throw new Error(`Opção topológica desconhecida: ${name}.`);
+        }
+      }
+      return this.commands.execute("mesh.topology.apply", { operation, options });
     }
     if (action === "frame") {
       this.#expectExact(tokens, 1, "mesh frame world|local|viewer");
@@ -1885,7 +1948,7 @@ export class DevConsole {
       return this.commands.execute("mesh.deform.apply", args);
     }
 
-    throw new Error("Uso: mesh enter|status|apply|cancel|undo|redo|select|frame|constraint|snap|influence|weld|occlusion|affine|deform|help");
+    throw new Error("Uso: mesh enter|status|apply|cancel|undo|redo|mode|select|topology|frame|constraint|snap|influence|weld|occlusion|affine|deform|help");
   }
 
   #meshHelp() {
@@ -1893,7 +1956,14 @@ export class DevConsole {
       usage: [
         "mesh enter",
         "mesh status",
-        "mesh select all|none|invert",
+        "mesh mode vertex|edge|face",
+        "mesh select all|none|invert|grow|shrink|linked|boundary|normal [ângulo]",
+        "mesh topology create-vertex position=x,y,z",
+        "mesh topology create-edge",
+        "mesh topology create-face",
+        "mesh topology extrude distance=1",
+        "mesh topology inset amount=0.2",
+        "mesh topology subdivide|split|collapse|flip-edge|flip-normal|bridge|weld|delete|duplicate|fill|cleanup|recalculate-normals",
         "mesh frame world|local|viewer",
         "mesh constraint free|x|y|z|xy|xz|yz",
         "mesh snap on|off",

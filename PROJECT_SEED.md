@@ -65,6 +65,11 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 - ações e atalhos configuráveis sobre os mesmos comandos;
 - runtime de animação efêmero, presets, faixas por objeto e cor animada;
 - testes, diagnósticos, recursos e benchmarks consultáveis no aplicativo.
+- catálogo ampliado de geometrias Three.js e providers declarativos;
+- configuração local de sombras, ambiente, reflexos e materiais físicos;
+- edição isolada de malha com vértices, arestas e faces, meia-arestas
+  transitórias, snap adaptativo, falloff em tempo real e undo interno;
+- operações topológicas primitivas e painel flutuante único configurável.
 
 ## Invariantes
 
@@ -126,13 +131,14 @@ animate status
 
 ## Próxima prioridade
 
-Continuar o ciclo 0029 em incrementos independentes:
+Validar visualmente o editor topológico 0035a em mobile e avançar em incrementos independentes:
 
-1. rigs, alvos e órbitas persistentes de câmera;
-2. animação procedural e direção de cena;
-3. consolidação do ciclo 0029.
+1. UVs/normais por canto, materiais por face e grupos de suavização;
+2. bevel, knife, loop/ring cut e bridge entre contornos desiguais;
+3. assets de malha compartilhados com copy-on-write e persistência compacta;
+4. retomar rigs, alvos e direção de cena sem misturar estado do viewer e documento.
 
-Referência: `docs/project/ROADMAP.md`.
+Referência: `docs/project/ROADMAP.md` e `docs/MESH_TOPOLOGY_0035A.md`.
 
 ## Protocolo para nova LLM
 
