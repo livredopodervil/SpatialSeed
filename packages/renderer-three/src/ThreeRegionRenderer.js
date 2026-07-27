@@ -429,10 +429,10 @@ export class ThreeRegionRenderer {
     const markers = new THREE.Points(
       markerGeometry,
       new THREE.PointsMaterial({
-        size: Math.max(5, this.#transformConfig.vertexSize),
+        size: Math.max(8, this.#transformConfig.vertexSize),
         sizeAttenuation: false,
         vertexColors: true,
-        depthTest: occlusion,
+        depthTest: false,
         depthWrite: false
       })
     );
@@ -512,7 +512,9 @@ export class ThreeRegionRenderer {
         ? {}
         : { occlusion: Boolean(patch.occlusion) })
     };
-    edit.markers.material.depthTest = edit.options.occlusion;
+    // A opção de oclusão limita apenas o picking. Os marcadores ficam
+    // sempre visíveis para que a entrada no modo de edição seja inequívoca.
+    edit.markers.material.depthTest = false;
     edit.markers.material.needsUpdate = true;
     return this.getMeshEditStatus();
   }
@@ -2366,7 +2368,7 @@ export class ThreeRegionRenderer {
     }
     attribute.needsUpdate = true;
     edit.markers.material.size = Math.max(
-      5,
+      8,
       this.#transformConfig.vertexSize
     );
     edit.markers.material.needsUpdate = true;

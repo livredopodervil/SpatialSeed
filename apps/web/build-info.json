@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260727-0033a",
-  "channel": "feature/0033-mesh-editor"
+  "build": "20260727-0033b",
+  "channel": "feature/0033b-mesh-ui-fix"
 }

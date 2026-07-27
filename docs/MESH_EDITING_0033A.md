@@ -185,3 +185,8 @@ apps/web/bootstrap/bindWebInterface.js
 6. Ative a seleção por área e confirme que somente vértices da malha ativa entram na seleção.
 7. Pressione **Cancelar** e confirme restauração integral. Repita, pressione **Aplicar** e confirme uma única entrada de desfazer.
 8. Com uma animação ativa sobre o objeto, confirme que a entrada na edição é recusada até a animação terminar.
+
+
+## Correção 0033b — entrada visual e painel móvel
+
+O comando **Editar → Editar malha** agora abre o painel e inicia imediatamente a edição quando existe exatamente um objeto editável selecionado. O painel possui posicionamento fixo próprio, adaptação para telas móveis e apresenta **Travar plano do viewer** próximo ao topo. Os marcadores de vértices permanecem visíveis através da superfície; a opção de oclusão afeta apenas a possibilidade de selecionar um vértice encoberto. A sessão inicia no gizmo de translação para deixar o modo ativo perceptível.

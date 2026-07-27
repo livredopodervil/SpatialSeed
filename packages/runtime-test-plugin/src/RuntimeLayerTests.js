@@ -122,7 +122,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260725-0029f1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260727-0033a";
+} from "../../region-box/src/reducer.js?build=20260727-0033b";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -141,7 +141,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260724-0029f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260727-0033a";
+} from "../../devtools/src/DevConsole.js?build=20260727-0033b";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -176,7 +176,7 @@ import {
   snapWorldPointToFrameGrid,
   transformLocalPositions,
   transformLocalPositionsInto
-} from "../../mesh-editor-core/src/index.js?build=20260727-0033a";
+} from "../../mesh-editor-core/src/index.js?build=20260727-0033b";
 import {
   formatBuildLabel,
   normalizeBuildInfo

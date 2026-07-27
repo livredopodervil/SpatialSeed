@@ -885,11 +885,50 @@ html[data-toolbar-layout="vertical"] #selection-panel{
   }
 }
 
+#mesh-edit-panel {
+  position: fixed;
+  z-index: 31;
+  top: var(--ss-toolbar-clearance, 4rem);
+  right: .55rem;
+  width: min(460px, calc(100vw - 1.1rem));
+  height: min(720px, calc(100dvh - var(--ss-toolbar-clearance, 4rem) - .55rem));
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid #ffffff22;
+  border-radius: 14px;
+  background: #08101af7;
+}
+
+#mesh-edit-panel:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+}
+
+#mesh-edit-panel > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .65rem;
+  border-bottom: 1px solid #ffffff18;
+  background: #08101af7;
+}
+
+#mesh-edit-panel > header strong {
+  flex: 1;
+}
+
 #mesh-edit-panel .mesh-edit-content {
   display: grid;
+  flex: 1 1 auto;
+  align-content: start;
   gap: 10px;
+  min-height: 0;
   padding: 12px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 #mesh-edit-panel fieldset {
@@ -926,10 +965,25 @@ html[data-toolbar-layout="vertical"] #selection-panel{
   color: #ff8f8f;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 700px) {
+  #mesh-edit-panel {
+    top: auto;
+    right: .3rem;
+    bottom: .3rem;
+    left: .3rem;
+    width: auto;
+    height: min(78dvh, 720px);
+    max-height: calc(100dvh - .6rem);
+  }
+
+  #mesh-frame-viewer {
+    flex: 1 1 100%;
+  }
+
   .mesh-vector-row {
     grid-template-columns: 1fr repeat(3, minmax(48px, .7fr));
   }
+
   .mesh-vector-row button {
     grid-column: 1 / -1;
   }

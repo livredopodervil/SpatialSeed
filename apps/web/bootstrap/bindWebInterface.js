@@ -1401,7 +1401,7 @@ export function bindWebInterface({
 
   $("mesh-editor").addEventListener("click", () => {
     panelManager.show("#mesh-edit-panel");
-    meshEditPanel.refresh();
+    meshEditPanel.activateSelection();
   });
 
   $("close-mesh-edit").addEventListener(

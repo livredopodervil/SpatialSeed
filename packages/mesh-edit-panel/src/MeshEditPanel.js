@@ -43,6 +43,20 @@ export class MeshEditPanel {
     this.#element("mesh-occlusion").checked = state.occlusion ?? true;
   }
 
+  activateSelection() {
+    const state = this.query("mesh.edit.status");
+    this.refresh(state);
+    if (state.active || !state.canEnter) return state;
+    try {
+      const result = this.execute("mesh.edit.enter", { selectAll: true });
+      this.#text("mesh-edit-error", "");
+      return result;
+    } catch (error) {
+      this.#text("mesh-edit-error", error.message);
+      return this.query("mesh.edit.status");
+    }
+  }
+
   dispose() { this.unsubscribe?.(); }
 
   #bind() {

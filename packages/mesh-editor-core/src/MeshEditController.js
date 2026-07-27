@@ -139,7 +139,10 @@ export class MeshEditController {
       this.#session = null;
       throw error;
     }
-    this.renderer.setTransformMode("select");
+    // A sessão começa com todos os vértices selecionados; mostrar o gizmo
+    // de translação torna a mudança de modo imediatamente visível. O clique
+    // nos marcadores continua selecionando vértices mesmo neste modo.
+    this.renderer.setTransformMode("translate");
     this.#notify();
     return this.status();
   }
