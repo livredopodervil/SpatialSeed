@@ -122,7 +122,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260725-0029f1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260727-0034e";
+} from "../../region-box/src/reducer.js?build=20260727-0034g";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -141,7 +141,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260724-0029f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260727-0034e";
+} from "../../devtools/src/DevConsole.js?build=20260727-0034g";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -171,6 +171,7 @@ import {
   affineDeltaWorld,
   applyMeshDeformation,
   buildMeshTopology,
+  createMeshInfluenceField,
   coincidentVertexGroups,
   constrainAffineValue,
   constrainWorldDeltaMatrix,
@@ -180,8 +181,9 @@ import {
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid,
   transformLocalPositions,
-  transformLocalPositionsInto
-} from "../../mesh-editor-core/src/index.js?build=20260727-0034e";
+  transformLocalPositionsInto,
+  transformLocalPositionsWithInfluenceInto
+} from "../../mesh-editor-core/src/index.js?build=20260727-0034g";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -435,6 +437,65 @@ export function createRuntimeLayerTests() {
         assertVectorNear(result.positions[1], [2, 0, 0]);
         assertVectorNear(result.positions[2], [2, 0, 0]);
         assertDeepEqual(result.affectedIndices, [0, 1, 2]);
+      },
+
+      "campo proporcional geodésico move vértices conectados em tempo real"() {
+        const descriptor = {
+          positions: [[0, 0, 0], [1, 0, 0], [2, 0, 0], [8, 0, 0]],
+          indices: [0, 1, 2],
+          normals: [],
+          uvs: []
+        };
+        const field = createMeshInfluenceField({
+          descriptor,
+          selectedIndices: [0],
+          objectWorldMatrix: new THREE.Matrix4().toArray(),
+          radius: 2,
+          metric: "geodesic",
+          falloff: "linear"
+        });
+        assertDeepEqual(field.affectedIndices, [0, 1, 2]);
+        assertNear(field.weights[0], 1);
+        assertNear(field.weights[1], 0.5);
+        assertNear(field.weights[2], 0);
+        const target = descriptor.positions.map(point => [...point]);
+        transformLocalPositionsWithInfluenceInto({
+          sourcePositions: descriptor.positions,
+          targetPositions: target,
+          affectedIndices: field.affectedIndices,
+          weights: field.weights,
+          objectWorldMatrix: new THREE.Matrix4().toArray(),
+          deltaWorldMatrix: new THREE.Matrix4()
+            .makeTranslation(4, 0, 0)
+            .toArray(),
+          type: "translate",
+          pivotWorld: field.pivotWorld
+        });
+        assertVectorNear(target[0], [4, 0, 0]);
+        assertVectorNear(target[1], [3, 0, 0]);
+        assertVectorNear(target[2], [2, 0, 0]);
+        assertVectorNear(target[3], [8, 0, 0]);
+      },
+
+      "rotação ponderada usa arco proporcional em vez de interpolar matriz"() {
+        const source = [[1, 0, 0], [1, 0, 0]];
+        const target = source.map(point => [...point]);
+        transformLocalPositionsWithInfluenceInto({
+          sourcePositions: source,
+          targetPositions: target,
+          affectedIndices: [0, 1],
+          weights: [1, 0.5],
+          objectWorldMatrix: new THREE.Matrix4().toArray(),
+          deltaWorldMatrix: affineDeltaWorld({
+            type: "rotate",
+            value: [0, 0, 90],
+            pivotWorld: [0, 0, 0]
+          }),
+          type: "rotate",
+          pivotWorld: [0, 0, 0]
+        });
+        assertVectorNear(target[0], [0, 1, 0]);
+        assertVectorNear(target[1], [Math.SQRT1_2, Math.SQRT1_2, 0]);
       },
 
       "histórico interno desfaz e refaz sem tocar no sandbox"() {

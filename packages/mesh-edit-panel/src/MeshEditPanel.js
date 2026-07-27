@@ -23,7 +23,7 @@ export class MeshEditPanel {
       ? `${state.objectName} — ${state.selectedCount}/${state.vertexCount} vértices`
       : state.reason ?? "Selecione exatamente um objeto para editar.");
     this.#text("mesh-edit-details", active
-      ? `Fonte: ${state.sourceType}; únicos: ${state.uniqueVertexCount}; arestas: ${state.edgeCount}; faces: ${state.faceCount}; frame: ${state.frameMode}; restrição: ${state.constraint}; histórico interno: ${state.undoDepth}/${state.redoDepth}; ${state.dirty ? "modificada" : "sem alterações"}${state.stale ? "; mundo alterado externamente — cancele" : ""}.`
+      ? `Fonte: ${state.sourceType}; únicos: ${state.uniqueVertexCount}; arestas: ${state.edgeCount}; faces: ${state.faceCount}; frame: ${state.frameMode}; restrição: ${state.constraint}; influência: ${state.affectedCount ?? state.selectedCount} vértices; histórico interno: ${state.undoDepth}/${state.redoDepth}; ${state.dirty ? "modificada" : "sem alterações"}${state.stale ? "; mundo alterado externamente — cancele" : ""}.`
       : "A malha é isolada no viewer e só se torna BufferGeometry persistente quando uma alteração é aplicada.");
 
     for (const id of this.#activeControlIds()) {
@@ -63,6 +63,29 @@ export class MeshEditPanel {
     this.#text("mesh-snap-diagnostic", state.snapCandidate
       ? `Alvo: ${state.snapCandidate.type}; objeto: ${state.snapCandidate.objectId}; score: ${Number(state.snapCandidate.score).toFixed(3)}.`
       : "Sem alvo de snap.");
+    const deformation = state.deformation ?? {};
+    this.#element("mesh-deform-live").checked = deformation.enabled ?? true;
+    this.#value("mesh-deform-radius", deformation.radius ?? 5);
+    this.#value("mesh-deform-metric", deformation.metric ?? "geodesic");
+    this.#value("mesh-deform-axis", deformation.axis ?? "x");
+    this.#value("mesh-deform-falloff", deformation.falloff ?? "smooth");
+    this.#value(
+      "mesh-deform-damping",
+      deformation.elastic?.damping ?? 2.5
+    );
+    this.#value(
+      "mesh-deform-frequency",
+      deformation.elastic?.frequency ?? 3
+    );
+    this.#value(
+      "mesh-deform-falloff-expression",
+      deformation.falloffExpression ?? "1-smoothstep(0,1,q)"
+    );
+    if (state.active) {
+      this.#element("mesh-deform-variables").value = JSON.stringify(
+        deformation.variables ?? {}
+      );
+    }
   }
 
   activateSelection() {
@@ -126,6 +149,18 @@ export class MeshEditPanel {
       });
     });
 
+    for (const id of [
+      "mesh-deform-live", "mesh-deform-radius", "mesh-deform-metric",
+      "mesh-deform-axis", "mesh-deform-falloff", "mesh-deform-damping",
+      "mesh-deform-frequency", "mesh-deform-falloff-expression",
+      "mesh-deform-variables"
+    ]) {
+      this.#element(id).addEventListener("change", () => this.#execute(
+        "mesh.deform.settings.set",
+        this.#deformationSettingsArguments()
+      ));
+    }
+
     for (const id of ["mesh-weld", "mesh-occlusion"]) {
       this.#element(id).addEventListener("change", () => this.#execute(
         "mesh.options.set",
@@ -185,7 +220,7 @@ export class MeshEditPanel {
     };
   }
 
-  #deformationArguments() {
+  #deformationSettingsArguments() {
     let variables = {};
     const source = this.#element("mesh-deform-variables").value.trim();
     if (source) {
@@ -195,10 +230,7 @@ export class MeshEditPanel {
       }
     }
     return {
-      operation: this.#element("mesh-deform-operation").value,
-      expressions: ["x", "y", "z"].map(axis =>
-        this.#element(`mesh-deform-${axis}`).value.trim() || "0"
-      ),
+      enabled: this.#element("mesh-deform-live").checked,
       radius: this.#number("mesh-deform-radius"),
       metric: this.#element("mesh-deform-metric").value,
       axis: this.#element("mesh-deform-axis").value,
@@ -213,6 +245,17 @@ export class MeshEditPanel {
     };
   }
 
+  #deformationArguments() {
+    return {
+      operation: this.#element("mesh-deform-operation").value,
+      expressions: ["x", "y", "z"].map(axis =>
+        this.#element(`mesh-deform-${axis}`).value.trim() || "0"
+      ),
+      ...this.#deformationSettingsArguments(),
+      enabled: true
+    };
+  }
+
   #activeControlIds() {
     return [
       "mesh-commit", "mesh-cancel", "mesh-undo", "mesh-redo",
@@ -221,7 +264,8 @@ export class MeshEditPanel {
       "mesh-affine-move", "mesh-affine-rotate", "mesh-affine-scale",
       "mesh-weld", "mesh-occlusion", "mesh-snap-enabled",
       "mesh-snap-mode", "mesh-snap-scope", "mesh-snap-anchor",
-      "mesh-snap-tolerance", "mesh-snap-self", "mesh-deform-operation",
+      "mesh-snap-tolerance", "mesh-snap-self", "mesh-deform-live",
+      "mesh-deform-operation",
       "mesh-deform-radius", "mesh-deform-metric", "mesh-deform-axis",
       "mesh-deform-falloff", "mesh-deform-damping",
       "mesh-deform-frequency", "mesh-deform-x", "mesh-deform-y",

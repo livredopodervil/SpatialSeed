@@ -47,14 +47,16 @@ import {
   constrainWorldDeltaMatrix,
   projectWorldDeltaToConstraint,
   selectedVertexPivotWorld,
-  snapWorldPointToFrameGrid,
-  transformLocalPositions,
-  transformLocalPositionsInto,
-  translatePivotToWorld
-} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0034e";
+  snapWorldPointToFrameGrid
+} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0034g";
 import {
   buildMeshTopology
-} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0034e";
+} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0034g";
+import {
+  createMeshInfluenceField,
+  normalizeMeshDeformationSettings,
+  transformLocalPositionsWithInfluenceInto
+} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260727-0034g";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-navigation-camera-v4";
@@ -447,6 +449,7 @@ export class ThreeRegionRenderer {
     const occlusion = options.occlusion !== false;
     const constraint = String(options.constraint ?? "free");
     const snap = normalizeMeshSnapSettings(options.snap);
+    const deformation = normalizeMeshDeformationSettings(options.deformation);
     const markerGeometry = new THREE.BufferGeometry();
     const markers = new THREE.Points(
       markerGeometry,
@@ -519,7 +522,9 @@ export class ThreeRegionRenderer {
       frameQuaternion: [...frameQuaternion],
       constraint,
       snap,
+      deformation,
       topology: buildMeshTopology(descriptor),
+      influenceField: null,
       influence: new Map(),
       snapMarker,
       snapLine,
@@ -533,6 +538,7 @@ export class ThreeRegionRenderer {
         typeof onTransformCommit === "function" ? onTransformCommit : null
     };
     this.#updateMeshEditMarkerGeometry();
+    this.#refreshMeshEditInfluence();
     this.#configureTransformForEditor();
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
@@ -558,6 +564,7 @@ export class ThreeRegionRenderer {
     attribute.needsUpdate = true;
     this.#finalizeMeshEditGeometry();
     this.#updateMeshEditMarkerGeometry();
+    this.#refreshMeshEditInfluence();
     this.#rebuildAnchor();
     return this.getMeshEditStatus();
   }
@@ -568,7 +575,7 @@ export class ThreeRegionRenderer {
     const edit = this.#requireMeshEdit();
     edit.selectedIndices = new Set(selectedIndices.map(Number));
     edit.activeVertex = activeVertex === null ? null : Number(activeVertex);
-    this.#updateMeshEditMarkerColors();
+    this.#refreshMeshEditInfluence();
     this.#rebuildAnchor();
     return this.getMeshEditStatus();
   }
@@ -592,6 +599,7 @@ export class ThreeRegionRenderer {
     const edit = this.#requireMeshEdit();
     edit.constraint = String(mode ?? "free").toLowerCase();
     edit.lastSnapCandidate = null;
+    this.#refreshMeshEditInfluence();
     this.#configureTransformForEditor();
     return this.getMeshEditStatus();
   }
@@ -601,6 +609,36 @@ export class ThreeRegionRenderer {
     edit.snap = normalizeMeshSnapSettings({ ...edit.snap, ...patch });
     edit.lastSnapCandidate = null;
     if (!edit.snap.enabled) this.#clearMeshSnapOverlay();
+    return this.getMeshEditStatus();
+  }
+
+  updateMeshEditDeformation(patch = {}) {
+    const edit = this.#requireMeshEdit();
+    if (this.transform.dragging || this.#session?.kind === "mesh") {
+      throw new Error(
+        "Finalize o arrasto antes de alterar a influência proporcional."
+      );
+    }
+    const next = normalizeMeshDeformationSettings({
+      ...edit.deformation,
+      ...patch,
+      variables: patch.variables === undefined
+        ? edit.deformation.variables
+        : patch.variables,
+      elastic: {
+        ...edit.deformation.elastic,
+        ...(patch.elastic ?? {})
+      }
+    });
+    const previous = edit.deformation;
+    edit.deformation = next;
+    try {
+      this.#refreshMeshEditInfluence();
+    } catch (error) {
+      edit.deformation = previous;
+      this.#refreshMeshEditInfluence();
+      throw error;
+    }
     return this.getMeshEditStatus();
   }
 
@@ -624,6 +662,7 @@ export class ThreeRegionRenderer {
       throw new TypeError("O referencial de malha exige um quaternion.");
     }
     edit.frameQuaternion = [...quaternion];
+    this.#refreshMeshEditInfluence();
     this.#configureTransformForEditor();
     this.#rebuildAnchor();
     return this.getMeshEditStatus();
@@ -670,6 +709,13 @@ export class ThreeRegionRenderer {
       frameQuaternion: Object.freeze([...edit.frameQuaternion]),
       constraint: edit.constraint,
       snap: Object.freeze({ ...edit.snap }),
+      deformation: Object.freeze({
+        ...edit.deformation,
+        variables: Object.freeze({ ...edit.deformation.variables }),
+        elastic: Object.freeze({ ...edit.deformation.elastic })
+      }),
+      affectedCount: edit.influenceField?.affectedIndices.length ??
+        edit.selectedIndices.size,
       snapCandidate: edit.lastSnapCandidate
         ? Object.freeze({
             type: edit.lastSnapCandidate.type,
@@ -1790,7 +1836,8 @@ export class ThreeRegionRenderer {
         ),
         workingPositions: this.#meshEdit.descriptor.positions.map(
           point => [...point]
-        )
+        ),
+        influenceField: this.#snapshotMeshInfluenceField()
       };
       this.#transformLifecycleDiagnostics.sessionsStarted += 1;
       return;
@@ -1880,24 +1927,29 @@ export class ThreeRegionRenderer {
         frameQuaternion: this.#meshEdit.frameQuaternion,
         constraint: this.#meshEdit.constraint
       });
-      let positions = transformLocalPositionsInto({
+      const influenceField = this.#session.influenceField;
+      let positions = transformLocalPositionsWithInfluenceInto({
         sourcePositions: this.#session.initialPositions,
         targetPositions: this.#session.workingPositions,
-        selectedIndices: this.#meshEdit.selectedIndices,
+        affectedIndices: influenceField.affectedIndices,
+        weights: influenceField.weights,
         objectWorldMatrix: this.#meshEdit.objectWorldMatrix,
-        deltaWorldMatrix: constrainedDelta
+        deltaWorldMatrix: constrainedDelta,
+        type: this.#session.mode,
+        pivotWorld: influenceField.pivotWorld,
+        frameQuaternion: this.#meshEdit.frameQuaternion
       });
       if (
         this.#session.mode === "translate" &&
         this.#meshEdit.snap.enabled
       ) {
-        positions = this.#applyMeshSnap(positions);
+        positions = this.#applyMeshSnap(positions, influenceField);
       } else {
         this.#clearMeshSnapOverlay();
       }
       this.#setMeshEditPositions(positions, {
         finalize: false,
-        changedIndices: this.#meshEdit.selectedIndices
+        changedIndices: influenceField.affectedIndices
       });
       this.#meshEdit.onTransformPreview?.();
       const elapsed = performance.now() - startedAt;
@@ -1970,20 +2022,32 @@ export class ThreeRegionRenderer {
               frameQuaternion: this.#meshEdit.frameQuaternion,
               step: this.#transformConfig.translationSnap
             });
-            positions = translatePivotToWorld({
-              positions,
-              selectedIndices: this.#meshEdit.selectedIndices,
+            const correction = new THREE.Vector3()
+              .fromArray(targetWorld)
+              .sub(new THREE.Vector3().fromArray(pivotWorld));
+            const field = session.influenceField;
+            positions = transformLocalPositionsWithInfluenceInto({
+              sourcePositions: positions,
+              targetPositions: positions,
+              affectedIndices: field.affectedIndices,
+              weights: field.weights,
               objectWorldMatrix: this.#meshEdit.objectWorldMatrix,
-              targetWorld
+              deltaWorldMatrix: new THREE.Matrix4()
+                .makeTranslation(correction.x, correction.y, correction.z)
+                .toArray(),
+              type: "translate",
+              pivotWorld: field.pivotWorld,
+              frameQuaternion: this.#meshEdit.frameQuaternion
             });
             this.#setMeshEditPositions(positions, {
               finalize: false,
-              changedIndices: this.#meshEdit.selectedIndices
+              changedIndices: field.affectedIndices
             });
           }
         }
         this.#finalizeMeshEditGeometry();
         this.#meshEdit.onTransformCommit?.(positions);
+        this.#refreshMeshEditInfluence();
         this.#transformLifecycleDiagnostics.commits += 1;
         this.transformAnchor.quaternion.fromArray(
           this.#meshEdit.frameQuaternion
@@ -2424,7 +2488,7 @@ export class ThreeRegionRenderer {
     return material;
   }
 
-  #applyMeshSnap(positions) {
+  #applyMeshSnap(positions, influenceField = null) {
     const edit = this.#requireMeshEdit();
     const pointer = this.#lastPointer;
     if (!pointer || !edit.snap.enabled) {
@@ -2478,13 +2542,19 @@ export class ThreeRegionRenderer {
       this.#clearMeshSnapOverlay();
       return positions;
     }
-    const snapped = transformLocalPositions({
-      positions,
-      selectedIndices: edit.selectedIndices,
+    const field = influenceField ?? this.#snapshotMeshInfluenceField();
+    const snapped = transformLocalPositionsWithInfluenceInto({
+      sourcePositions: positions,
+      targetPositions: positions,
+      affectedIndices: field.affectedIndices,
+      weights: field.weights,
       objectWorldMatrix: edit.objectWorldMatrix,
       deltaWorldMatrix: new THREE.Matrix4()
         .makeTranslation(...projected.deltaWorld)
-        .toArray()
+        .toArray(),
+      type: "translate",
+      pivotWorld: field.pivotWorld,
+      frameQuaternion: edit.frameQuaternion
     });
     edit.lastSnapCandidate = {
       ...candidate,
@@ -2921,6 +2991,47 @@ export class ThreeRegionRenderer {
     if (!edit) return;
     edit.snapMarker.visible = false;
     edit.snapLine.visible = false;
+  }
+
+  #refreshMeshEditInfluence() {
+    const edit = this.#requireMeshEdit();
+    if (!edit.selectedIndices.size) {
+      edit.influenceField = null;
+      edit.influence = new Map();
+      this.#updateMeshEditMarkerColors();
+      return null;
+    }
+    const field = createMeshInfluenceField({
+      descriptor: edit.descriptor,
+      selectedIndices: edit.selectedIndices,
+      objectWorldMatrix: edit.objectWorldMatrix,
+      frameQuaternion: edit.frameQuaternion,
+      ...edit.deformation
+    });
+    edit.influenceField = field;
+    edit.influence = new Map();
+    field.affectedIndices.forEach((index, ordinal) => {
+      edit.influence.set(index, field.weights[ordinal]);
+    });
+    this.#updateMeshEditMarkerColors();
+    return field;
+  }
+
+  #snapshotMeshInfluenceField() {
+    const edit = this.#requireMeshEdit();
+    const field = edit.influenceField ?? this.#refreshMeshEditInfluence();
+    if (!field) {
+      throw new Error("Selecione ao menos um vértice para transformar.");
+    }
+    return Object.freeze({
+      affectedIndices: Object.freeze([...field.affectedIndices]),
+      weights: Object.freeze([...field.weights]),
+      pivotWorld: Object.freeze([...field.pivotWorld]),
+      metric: field.metric,
+      falloff: field.falloff,
+      radius: field.radius,
+      enabled: field.enabled
+    });
   }
 
   #requireMeshEdit() {

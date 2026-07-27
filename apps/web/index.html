@@ -538,11 +538,12 @@
       <div class="mesh-vector-row"><span>Escalar</span><input id="mesh-scale-x" type="number" value="1" step="0.1"><input id="mesh-scale-y" type="number" value="1" step="0.1"><input id="mesh-scale-z" type="number" value="1" step="0.1"><button id="mesh-affine-scale" type="button">Aplicar</button></div>
     </fieldset>
     <fieldset>
-      <legend>Transformação procedural parametrizada</legend>
+      <legend>Influência proporcional e transformação procedural</legend>
+      <label><input id="mesh-deform-live" type="checkbox" checked> Aplicar o falloff ao gizmo em tempo real</label>
       <div class="mesh-form-grid">
         <label><span>Operação</span><select id="mesh-deform-operation"><option value="move">Mover</option><option value="rotate">Girar</option><option value="scale">Escalar</option></select></label>
         <label><span>Raio</span><input id="mesh-deform-radius" type="number" value="5" min="0" step="0.1"></label>
-        <label><span>Métrica</span><select id="mesh-deform-metric"><option value="euclidean">Euclidiana</option><option value="geodesic">Geodésica</option><option value="viewer">Plano do viewer</option><option value="axis">Eixo</option></select></label>
+        <label><span>Métrica</span><select id="mesh-deform-metric"><option value="euclidean">Euclidiana</option><option value="geodesic" selected>Geodésica</option><option value="viewer">Plano do viewer</option><option value="axis">Eixo</option></select></label>
         <label><span>Eixo métrico</span><select id="mesh-deform-axis"><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
         <label><span>Falloff</span><select id="mesh-deform-falloff"><option value="linear">Linear</option><option value="smooth" selected>Suave</option><option value="smoother">Suavíssimo</option><option value="gaussian">Gaussiano</option><option value="elastic">Elástico</option><option value="custom">Expressão</option></select></label>
         <label><span>Amortecimento</span><input id="mesh-deform-damping" type="number" value="2.5" step="0.1"></label>
@@ -552,7 +553,7 @@
       <label class="mesh-wide-label"><span>Falloff personalizado</span><input id="mesh-deform-falloff-expression" type="text" value="1-smoothstep(0,1,q)" spellcheck="false"></label>
       <label class="mesh-wide-label"><span>Variáveis JSON</span><textarea id="mesh-deform-variables" rows="2" spellcheck="false">{"amount":2}</textarea></label>
       <button id="mesh-deform-apply" type="button">Aplicar deformação</button>
-      <small>Variáveis: i, count, u, lx/ly/lz, wx/wy/wz, fx/fy/fz, nx/ny/nz, px/py/pz, r, q, w, pi, tau, e, phi e variáveis JSON.</small>
+      <small>Durante o arrasto, os vértices selecionados têm peso 1 e os conectados recebem o peso w do falloff. A prévia é recalculada desde o início do arrasto em cada quadro. Variáveis: i, count, u, lx/ly/lz, wx/wy/wz, fx/fy/fz, nx/ny/nz, px/py/pz, r, q, w, pi, tau, e, phi e variáveis JSON.</small>
     </fieldset>
     <p id="mesh-edit-error" role="alert"></p>
   </div>
@@ -737,6 +738,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0034f"></script>
+<script type="module" src="./boot.js?build=20260727-0034g"></script>
 </body>
 </html>

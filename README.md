@@ -73,7 +73,7 @@ O menu **Painéis → Render** controla iluminação, sombras, reflexos ambienta
 
 ## Edição de malha
 
-O menu **Editar → Editar malha** abre uma sessão local na qual somente os vértices do objeto ativo são selecionáveis. Gizmo, comandos afins e deformações procedurais compartilham frames, travas de eixo/plano, snap adaptativo em vértice/aresta/face e um histórico interno independente. O commit substitui a geometria em uma única entrada de undo editorial. Consulte [Edição adaptativa de malha — build 0034d](docs/MESH_EDITING_0034.md).
+O menu **Editar → Editar malha** abre uma sessão local na qual somente os vértices do objeto ativo são selecionáveis. Gizmo, comandos afins e deformações procedurais compartilham frames, travas de eixo/plano, snap adaptativo em vértice/aresta/face e um histórico interno independente. O falloff proporcional pode atuar durante o arrasto do gizmo, atualizando em tempo real os vértices conectados a partir do estado inicial da interação. O commit substitui a geometria em uma única entrada de undo editorial. Consulte [Edição adaptativa de malha — build 0034d](docs/MESH_EDITING_0034.md) e [Gizmo proporcional em tempo real — build 0034g](docs/MESH_EDITING_0034G.md).
 
 ## Execução local
 

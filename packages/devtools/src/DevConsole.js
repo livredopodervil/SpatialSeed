@@ -707,6 +707,8 @@ export class DevConsole {
         "mesh snap scope active|scene",
         "mesh snap anchor active|pivot|nearest",
         "mesh snap tolerance px",
+        "mesh influence on|off",
+        "mesh influence set radius=5 metric=geodesic falloff=smooth axis=x",
         "mesh weld on|off",
         "mesh occlusion on|off",
         "mesh affine move|rotate|scale x y z",
@@ -1780,6 +1782,47 @@ export class DevConsole {
       }
       throw new Error("Uso: mesh snap on|off | mode auto|vertex|edge|face | scope active|scene | anchor active|pivot|nearest | tolerance px | self on|off");
     }
+    if (action === "influence") {
+      const mode = String(tokens.shift() ?? "status").toLowerCase();
+      if (mode === "status") {
+        this.#expectMaximum(tokens, 0, "mesh influence status");
+        return this.queries?.execute("mesh.edit.status")?.deformation ?? null;
+      }
+      if (["on", "off"].includes(mode)) {
+        this.#expectMaximum(tokens, 0, "mesh influence on|off");
+        return this.commands.execute("mesh.deform.settings.set", {
+          enabled: mode === "on"
+        });
+      }
+      if (mode !== "set") {
+        throw new Error(
+          "Uso: mesh influence on|off|status|set radius=n metric=... falloff=... axis=x damping=n frequency=n falloffExpr=... var.nome=n"
+        );
+      }
+      const args = { variables: {}, elastic: {} };
+      for (const token of tokens) {
+        const separator = token.indexOf("=");
+        if (separator < 1) {
+          throw new Error(`Opção de influência inválida: ${token}.`);
+        }
+        const name = token.slice(0, separator);
+        const raw = token.slice(separator + 1);
+        if (name === "radius") args.radius = this.#number(raw);
+        else if (name === "metric") args.metric = raw;
+        else if (name === "falloff") args.falloff = raw;
+        else if (name === "axis") args.axis = raw;
+        else if (name === "damping") args.elastic.damping = this.#number(raw);
+        else if (name === "frequency") args.elastic.frequency = this.#number(raw);
+        else if (name === "falloffExpr") args.falloffExpression = raw;
+        else if (name.startsWith("var.")) {
+          args.variables[name.slice(4)] = this.#number(raw);
+        } else throw new Error(`Opção de influência desconhecida: ${name}.`);
+      }
+      if (!Object.keys(args.variables).length) delete args.variables;
+      if (!Object.keys(args.elastic).length) delete args.elastic;
+      return this.commands.execute("mesh.deform.settings.set", args);
+    }
+
     if (["weld", "occlusion"].includes(action)) {
       this.#expectExact(tokens, 1, `mesh ${action} on|off`);
       const value = String(tokens[0]).toLowerCase();
@@ -1842,7 +1885,7 @@ export class DevConsole {
       return this.commands.execute("mesh.deform.apply", args);
     }
 
-    throw new Error("Uso: mesh enter|status|apply|cancel|undo|redo|select|frame|constraint|snap|weld|occlusion|affine|deform|help");
+    throw new Error("Uso: mesh enter|status|apply|cancel|undo|redo|select|frame|constraint|snap|influence|weld|occlusion|affine|deform|help");
   }
 
   #meshHelp() {
@@ -1858,6 +1901,8 @@ export class DevConsole {
         "mesh snap scope active|scene",
         "mesh snap anchor active|pivot|nearest",
         "mesh snap tolerance px",
+        "mesh influence on|off",
+        "mesh influence set radius=5 metric=geodesic falloff=smooth axis=x",
         "mesh weld on|off",
         "mesh occlusion on|off",
         "mesh affine move|rotate|scale x y z",
@@ -1873,6 +1918,7 @@ export class DevConsole {
         "O frame viewer é capturado e permanece travado até a troca de frame.",
         "No frame viewer, X aponta para a direita da tela, Y para cima e Z é normal ao plano da tela.",
         "As restrições são compartilhadas pelo gizmo, comandos afins e deformações.",
+        "Com a influência ativa, o gizmo e os comandos afins movem os vértices conectados em tempo real segundo o falloff.",
         "Snap em vértice, aresta e face pode usar a malha ativa ou a cena visível sem selecionar outros objetos.",
         "mesh undo e mesh redo operam no histórico interno; Aplicar produz uma única operação persistente."
       ],
@@ -1882,6 +1928,7 @@ export class DevConsole {
         "mesh constraint xy",
         "mesh snap on",
         "mesh snap mode auto",
+        "mesh influence set radius=5 metric=geodesic falloff=elastic damping=2.5 frequency=3",
         "move 2 0 0",
         "rotate 0 0 15",
         "scale 1.2 1 1",

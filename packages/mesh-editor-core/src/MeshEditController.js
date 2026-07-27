@@ -1,6 +1,12 @@
 import * as THREE from "three";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js";
-import { applyMeshDeformation } from "./MeshDeformation.js";
+import {
+  DEFAULT_MESH_DEFORMATION_SETTINGS,
+  applyMeshDeformation,
+  createMeshInfluenceField,
+  normalizeMeshDeformationSettings,
+  transformLocalPositionsWithInfluenceInto
+} from "./MeshDeformation.js";
 import { buildMeshTopology } from "./MeshTopology.js";
 import {
   affineDeltaWorld,
@@ -12,7 +18,6 @@ import {
   expandCoincidentSelection,
   normalizeMeshConstraint,
   selectedVertexPivotWorld,
-  transformLocalPositions,
   translatePivotToWorld
 } from "./MeshEditMath.js";
 
@@ -128,6 +133,9 @@ export class MeshEditController {
         tolerancePixels: 18,
         self: false
       },
+      deformation: normalizeMeshDeformationSettings(
+        DEFAULT_MESH_DEFORMATION_SETTINGS
+      ),
       history: { entries: [], index: -1, limit: 100 },
       lastOperation: "Inicial",
       frameMode: "local",
@@ -150,7 +158,8 @@ export class MeshEditController {
         options: {
           occlusion: true,
           constraint: "free",
-          snap: this.#session.snap
+          snap: this.#session.snap,
+          deformation: this.#session.deformation
         },
         onVertexPick: payload => this.#handleVertexPick(payload),
         onTransformPreview: positions => this.#acceptPreview(positions),
@@ -311,6 +320,25 @@ export class MeshEditController {
     return this.status();
   }
 
+  setDeformation(patch = {}) {
+    const session = this.#requireSession();
+    const next = normalizeMeshDeformationSettings({
+      ...session.deformation,
+      ...patch,
+      variables: patch.variables === undefined
+        ? session.deformation.variables
+        : patch.variables,
+      elastic: {
+        ...session.deformation.elastic,
+        ...(patch.elastic ?? {})
+      }
+    });
+    this.renderer.updateMeshEditDeformation?.(next);
+    session.deformation = next;
+    this.#notify();
+    return this.status();
+  }
+
   undo() {
     const session = this.#requireSession();
     if (session.history.index <= 0) return this.status();
@@ -463,6 +491,7 @@ export class MeshEditController {
         viewerPlaneLocked: false,
         constraint: "free",
         snap: null,
+        deformation: null,
         canUndo: false,
         canRedo: false,
         canEnter: availability.ok,
@@ -489,6 +518,13 @@ export class MeshEditController {
       frameQuaternion: Object.freeze([...session.frameQuaternion]),
       constraint: session.constraint,
       snap: Object.freeze({ ...session.snap }),
+      deformation: Object.freeze({
+        ...session.deformation,
+        variables: Object.freeze({ ...session.deformation.variables }),
+        elastic: Object.freeze({ ...session.deformation.elastic })
+      }),
+      affectedCount: rendererStatus.affectedCount ??
+        session.selectedIndices.size,
       snapCandidate: rendererStatus.snapCandidate ?? null,
       canUndo: session.history.index > 0,
       canRedo: session.history.index < session.history.entries.length - 1,
@@ -542,18 +578,31 @@ export class MeshEditController {
       pivotWorld,
       frameQuaternion: session.frameQuaternion
     });
+    const field = createMeshInfluenceField({
+      descriptor: session.descriptor,
+      selectedIndices: session.selectedIndices,
+      objectWorldMatrix: session.objectWorldMatrix,
+      frameQuaternion: session.frameQuaternion,
+      ...session.deformation
+    });
+    const positions = session.descriptor.positions.map(point => [...point]);
+    transformLocalPositionsWithInfluenceInto({
+      sourcePositions: session.descriptor.positions,
+      targetPositions: positions,
+      affectedIndices: field.affectedIndices,
+      weights: field.weights,
+      objectWorldMatrix: session.objectWorldMatrix,
+      deltaWorldMatrix,
+      type,
+      pivotWorld: field.pivotWorld,
+      frameQuaternion: session.frameQuaternion
+    });
     session.descriptor = Object.freeze({
       ...session.descriptor,
-      positions: transformLocalPositions({
-        positions: session.descriptor.positions,
-        selectedIndices: session.selectedIndices,
-        objectWorldMatrix: session.objectWorldMatrix,
-        deltaWorldMatrix
-      })
+      positions
     });
     this.#markGeometryChanged(session);
     this.renderer.updateMeshEditGeometry(session.descriptor);
-    this.renderer.updateMeshEditInfluence?.([], []);
     if (recordHistory) this.#recordHistory(`${type} afim`);
     if (notify) this.#notify();
     return this.status();
@@ -590,8 +639,10 @@ export class MeshEditController {
   }
 
   #acceptPreview() {
-    this.#requireSession().dirty = true;
-    this.#notify();
+    const session = this.#requireSession();
+    const changed = !session.dirty;
+    session.dirty = true;
+    if (changed) this.#notify();
   }
 
   #acceptTransform(positions) {
@@ -672,7 +723,6 @@ export class MeshEditController {
     this.renderer.updateMeshEditSelection([...session.selectedIndices], {
       activeVertex: session.activeVertex
     });
-    this.renderer.updateMeshEditInfluence?.([], []);
     this.#notify();
   }
 
@@ -719,7 +769,6 @@ export class MeshEditController {
     this.renderer.updateMeshEditSelection([...session.selectedIndices], {
       activeVertex: session.activeVertex
     });
-    this.renderer.updateMeshEditInfluence?.([], []);
     this.#notify();
   }
 

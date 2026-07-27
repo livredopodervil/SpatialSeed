@@ -1,6 +1,13 @@
 export { MeshEditController } from "./MeshEditController.js";
 export { buildMeshTopology, geodesicVertexDistances, closestPointOnSegment } from "./MeshTopology.js";
-export { applyMeshDeformation, evaluateMeshFalloff } from "./MeshDeformation.js";
+export {
+  DEFAULT_MESH_DEFORMATION_SETTINGS,
+  applyMeshDeformation,
+  createMeshInfluenceField,
+  evaluateMeshFalloff,
+  normalizeMeshDeformationSettings,
+  transformLocalPositionsWithInfluenceInto
+} from "./MeshDeformation.js";
 export {
   MESH_CONSTRAINTS,
   affineDeltaWorld,

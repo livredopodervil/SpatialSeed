@@ -19,6 +19,326 @@ const FALLOFFS = Object.freeze([
   "linear", "smooth", "smoother", "gaussian", "elastic", "custom"
 ]);
 
+export const DEFAULT_MESH_DEFORMATION_SETTINGS = Object.freeze({
+  enabled: true,
+  radius: 5,
+  metric: "geodesic",
+  axis: "x",
+  falloff: "smooth",
+  falloffExpression: "1-smoothstep(0,1,q)",
+  variables: Object.freeze({}),
+  elastic: Object.freeze({ damping: 2.5, frequency: 3 })
+});
+
+export function normalizeMeshDeformationSettings(value = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+  const metric = String(
+    source.metric ?? DEFAULT_MESH_DEFORMATION_SETTINGS.metric
+  ).toLowerCase();
+  if (!METRICS.includes(metric)) {
+    throw new RangeError(`Métrica de influência desconhecida: ${source.metric}.`);
+  }
+  const falloff = String(
+    source.falloff ?? DEFAULT_MESH_DEFORMATION_SETTINGS.falloff
+  ).toLowerCase();
+  if (!FALLOFFS.includes(falloff)) {
+    throw new RangeError(`Falloff desconhecido: ${source.falloff}.`);
+  }
+  const radius = Number(
+    source.radius ?? DEFAULT_MESH_DEFORMATION_SETTINGS.radius
+  );
+  if (!Number.isFinite(radius) || radius < 0) {
+    throw new RangeError("O raio de influência não pode ser negativo.");
+  }
+  const axis = String(
+    source.axis ?? DEFAULT_MESH_DEFORMATION_SETTINGS.axis
+  ).toLowerCase();
+  if (!["x", "y", "z"].includes(axis)) {
+    throw new RangeError(`Eixo de influência desconhecido: ${source.axis}.`);
+  }
+  const elasticSource = {
+    ...DEFAULT_MESH_DEFORMATION_SETTINGS.elastic,
+    ...(source.elastic ?? {})
+  };
+  const elastic = Object.freeze({
+    damping: finiteOr(elasticSource.damping, 2.5),
+    frequency: finiteOr(elasticSource.frequency, 3)
+  });
+  const variables = Object.freeze(normalizeVariables(source.variables));
+  const falloffExpression = String(
+    source.falloffExpression ??
+    DEFAULT_MESH_DEFORMATION_SETTINGS.falloffExpression
+  ).trim();
+  if (!falloffExpression) {
+    throw new Error("A expressão de falloff não pode ficar vazia.");
+  }
+  if (falloff === "custom") compileAffineExpression(falloffExpression);
+  return Object.freeze({
+    enabled: source.enabled === undefined
+      ? DEFAULT_MESH_DEFORMATION_SETTINGS.enabled
+      : Boolean(source.enabled),
+    radius,
+    metric,
+    axis,
+    falloff,
+    falloffExpression,
+    variables,
+    elastic
+  });
+}
+
+export function createMeshInfluenceField({
+  descriptor,
+  selectedIndices,
+  objectWorldMatrix,
+  frameQuaternion = [0, 0, 0, 1],
+  enabled = true,
+  radius = 0,
+  metric = "geodesic",
+  falloff = "smooth",
+  falloffExpression = "1-smoothstep(0,1,q)",
+  axis = "x",
+  variables = {},
+  elastic = {}
+} = {}) {
+  if (!descriptor?.positions) {
+    throw new TypeError("O campo de influência exige um descritor de malha.");
+  }
+  const settings = normalizeMeshDeformationSettings({
+    enabled,
+    radius,
+    metric,
+    falloff,
+    falloffExpression,
+    axis,
+    variables,
+    elastic
+  });
+  const selected = normalizeIndices(
+    selectedIndices,
+    descriptor.positions.length
+  );
+  if (!selected.length) throw new Error("Selecione ao menos um vértice.");
+  const worldMatrix = normalizeMatrix4(objectWorldMatrix);
+  const positions = descriptor.positions.map((point, index) =>
+    normalizeVector3(point, `positions[${index}]`).toArray()
+  );
+  const worldPoints = positions.map(point =>
+    new THREE.Vector3().fromArray(point).applyMatrix4(worldMatrix)
+  );
+  const selectedSet = new Set(selected);
+  const pivotWorld = selected.reduce(
+    (sum, index) => sum.add(worldPoints[index]),
+    new THREE.Vector3()
+  ).multiplyScalar(1 / selected.length);
+  const topology = buildMeshTopology({
+    positions,
+    indices: descriptor.indices ?? []
+  });
+  const distances = settings.enabled && settings.radius > EPSILON
+    ? influenceDistances({
+        metric: settings.metric,
+        positions,
+        worldPoints,
+        selected,
+        topology,
+        worldMatrix,
+        frameQuaternion,
+        pivotWorld: pivotWorld.toArray(),
+        radius: settings.radius,
+        axis: settings.axis
+      })
+    : new Float64Array(positions.length).fill(Infinity);
+  for (const index of selected) distances[index] = 0;
+  const affected = [];
+  for (let index = 0; index < positions.length; index += 1) {
+    if (selectedSet.has(index) || (
+      settings.enabled &&
+      settings.radius > EPSILON &&
+      distances[index] <= settings.radius
+    )) affected.push(index);
+  }
+  const compiledFalloff = settings.falloff === "custom"
+    ? compileAffineExpression(settings.falloffExpression)
+    : null;
+  const normalMatrix = new THREE.Matrix3().getNormalMatrix(worldMatrix);
+  const normals = Array.isArray(descriptor.normals) &&
+    descriptor.normals.length === positions.length
+      ? descriptor.normals
+      : null;
+  const weights = [];
+  const contexts = [];
+
+  affected.forEach((vertexIndex, order) => {
+    const worldPoint = worldPoints[vertexIndex];
+    const distance = selectedSet.has(vertexIndex) ? 0 : distances[vertexIndex];
+    const q = settings.radius <= EPSILON
+      ? (selectedSet.has(vertexIndex) ? 0 : Infinity)
+      : distance / settings.radius;
+    const framePoint = pointInFrame({
+      pointWorld: worldPoint.toArray(),
+      frameQuaternion,
+      originWorld: pivotWorld.toArray()
+    });
+    const context = {
+      ...settings.variables,
+      vi: vertexIndex,
+      gi: vertexIndex,
+      i: order + 1,
+      count: affected.length,
+      u: affected.length <= 1 ? 0 : order / (affected.length - 1),
+      lx: positions[vertexIndex][0],
+      ly: positions[vertexIndex][1],
+      lz: positions[vertexIndex][2],
+      wx: worldPoint.x,
+      wy: worldPoint.y,
+      wz: worldPoint.z,
+      fx: framePoint[0],
+      fy: framePoint[1],
+      fz: framePoint[2],
+      px: pivotWorld.x,
+      py: pivotWorld.y,
+      pz: pivotWorld.z,
+      r: distance,
+      q: Number.isFinite(q) ? q : 1,
+      radius: settings.radius,
+      selected: selectedSet.has(vertexIndex) ? 1 : 0,
+      damping: settings.elastic.damping,
+      frequency: settings.elastic.frequency
+    };
+    if (normals) {
+      const normal = new THREE.Vector3()
+        .fromArray(normals[vertexIndex])
+        .applyMatrix3(normalMatrix)
+        .normalize();
+      context.nx = normal.x;
+      context.ny = normal.y;
+      context.nz = normal.z;
+    } else {
+      context.nx = 0;
+      context.ny = 0;
+      context.nz = 0;
+    }
+    const weight = selectedSet.has(vertexIndex)
+      ? 1
+      : evaluateFalloff({
+          kind: settings.falloff,
+          q,
+          distance,
+          context,
+          compiled: compiledFalloff,
+          damping: settings.elastic.damping,
+          frequency: settings.elastic.frequency
+        });
+    context.w = weight;
+    weights.push(weight);
+    contexts.push(Object.freeze(context));
+  });
+
+  return Object.freeze({
+    affectedIndices: Object.freeze(affected),
+    selectedIndices: Object.freeze(selected),
+    weights: Object.freeze(weights),
+    distances,
+    contexts: Object.freeze(contexts),
+    pivotWorld: Object.freeze(pivotWorld.toArray()),
+    metric: settings.metric,
+    falloff: settings.falloff,
+    enabled: settings.enabled,
+    radius: settings.radius
+  });
+}
+
+export function transformLocalPositionsWithInfluenceInto({
+  sourcePositions,
+  targetPositions,
+  affectedIndices,
+  weights,
+  objectWorldMatrix,
+  deltaWorldMatrix,
+  type,
+  pivotWorld = [0, 0, 0],
+  frameQuaternion = [0, 0, 0, 1]
+} = {}) {
+  if (!Array.isArray(sourcePositions) || !Array.isArray(targetPositions) ||
+      sourcePositions.length !== targetPositions.length) {
+    throw new TypeError(
+      "As posições de origem e destino devem ter o mesmo comprimento."
+    );
+  }
+  const indices = normalizeIndices(affectedIndices, sourcePositions.length);
+  if (!Array.isArray(weights) || weights.length !== indices.length) {
+    throw new TypeError("Os pesos devem corresponder aos vértices afetados.");
+  }
+  if (!["translate", "rotate", "scale", "move"].includes(type)) {
+    throw new RangeError(`Transformação ponderada desconhecida: ${type}.`);
+  }
+  const normalizedType = type === "move" ? "translate" : type;
+  const world = normalizeMatrix4(objectWorldMatrix);
+  const inverseWorld = world.clone().invert();
+  const delta = normalizeMatrix4(deltaWorldMatrix);
+  const pivot = normalizeVector3(pivotWorld, "Pivô mundial");
+  const frame = new THREE.Quaternion().fromArray(frameQuaternion).normalize();
+  const frameInverse = frame.clone().invert();
+  const translation = new THREE.Vector3().setFromMatrixPosition(delta);
+  let localRotation = new THREE.Quaternion();
+  let localScale = new THREE.Vector3(1, 1, 1);
+
+  if (normalizedType !== "translate") {
+    const frameMatrix = new THREE.Matrix4().makeRotationFromQuaternion(frame);
+    const frameInverseMatrix = frameMatrix.clone().invert();
+    const localOperation = frameInverseMatrix
+      .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z))
+      .multiply(delta)
+      .multiply(new THREE.Matrix4().makeTranslation(pivot.x, pivot.y, pivot.z))
+      .multiply(frameMatrix);
+    localOperation.decompose(new THREE.Vector3(), localRotation, localScale);
+    localRotation.normalize();
+  }
+
+  const source = new THREE.Vector3();
+  const worldPoint = new THREE.Vector3();
+  const framePoint = new THREE.Vector3();
+  const result = new THREE.Vector3();
+  for (let order = 0; order < indices.length; order += 1) {
+    const index = indices[order];
+    const weight = Number(weights[order]);
+    if (!Number.isFinite(weight)) {
+      throw new TypeError(`Peso inválido para o vértice ${index}.`);
+    }
+    source.fromArray(sourcePositions[index]);
+    worldPoint.copy(source).applyMatrix4(world);
+
+    if (normalizedType === "translate") {
+      result.copy(worldPoint).addScaledVector(translation, weight);
+    } else {
+      framePoint.copy(worldPoint).sub(pivot).applyQuaternion(frameInverse);
+      if (normalizedType === "rotate") {
+        framePoint.applyQuaternion(weightedQuaternion(localRotation, weight));
+      } else {
+        framePoint.set(
+          framePoint.x * weightedScaleFactor(localScale.x, weight),
+          framePoint.y * weightedScaleFactor(localScale.y, weight),
+          framePoint.z * weightedScaleFactor(localScale.z, weight)
+        );
+      }
+      result.copy(framePoint).applyQuaternion(frame).add(pivot);
+    }
+    result.applyMatrix4(inverseWorld);
+    const target = targetPositions[index];
+    if (Array.isArray(target) && target.length === 3) {
+      target[0] = result.x;
+      target[1] = result.y;
+      target[2] = result.z;
+    } else {
+      targetPositions[index] = result.toArray();
+    }
+  }
+  return targetPositions;
+}
+
 export function applyMeshDeformation({
   descriptor,
   selectedIndices,
@@ -41,26 +361,23 @@ export function applyMeshDeformation({
   if (!["move", "rotate", "scale"].includes(operation)) {
     throw new RangeError(`Operação procedural desconhecida: ${operation}.`);
   }
-  const normalizedMetric = String(metric).toLowerCase();
-  if (!METRICS.includes(normalizedMetric)) {
-    throw new RangeError(`Métrica de influência desconhecida: ${metric}.`);
-  }
-  const normalizedFalloff = String(falloff).toLowerCase();
-  if (!FALLOFFS.includes(normalizedFalloff)) {
-    throw new RangeError(`Falloff desconhecido: ${falloff}.`);
-  }
-  const influenceRadius = Number(radius);
-  if (!Number.isFinite(influenceRadius) || influenceRadius < 0) {
-    throw new RangeError("O raio de influência não pode ser negativo.");
-  }
   if (!Array.isArray(expressions) || expressions.length !== 3) {
     throw new TypeError("expressions deve conter X, Y e Z.");
   }
-  const selected = normalizeIndices(
+  const field = createMeshInfluenceField({
+    descriptor,
     selectedIndices,
-    descriptor.positions.length
-  );
-  if (!selected.length) throw new Error("Selecione ao menos um vértice.");
+    objectWorldMatrix,
+    frameQuaternion,
+    enabled: true,
+    radius,
+    metric,
+    falloff,
+    falloffExpression,
+    axis,
+    variables,
+    elastic
+  });
   const worldMatrix = normalizeMatrix4(objectWorldMatrix);
   const inverseWorld = worldMatrix.clone().invert();
   const positions = descriptor.positions.map((point, index) =>
@@ -69,116 +386,17 @@ export function applyMeshDeformation({
   const worldPoints = positions.map(point =>
     new THREE.Vector3().fromArray(point).applyMatrix4(worldMatrix)
   );
-  const selectedSet = new Set(selected);
-  const pivotWorld = selected.reduce(
-    (sum, index) => sum.add(worldPoints[index]),
-    new THREE.Vector3()
-  ).multiplyScalar(1 / selected.length);
-  const topology = buildMeshTopology({
-    positions,
-    indices: descriptor.indices ?? []
-  });
-  const distances = influenceDistances({
-    metric: normalizedMetric,
-    positions,
-    worldPoints,
-    selected,
-    topology,
-    worldMatrix,
-    frameQuaternion,
-    pivotWorld: pivotWorld.toArray(),
-    radius: influenceRadius,
-    axis
-  });
-  const affected = [];
-  for (let index = 0; index < positions.length; index += 1) {
-    if (selectedSet.has(index) ||
-        (influenceRadius > 0 && distances[index] <= influenceRadius)) {
-      affected.push(index);
-    }
-  }
   const compiled = expressions.map(compileAffineExpression);
-  const compiledFalloff = normalizedFalloff === "custom"
-    ? compileAffineExpression(falloffExpression)
-    : null;
   const next = positions.map(point => [...point]);
-  const weightByIndex = new Map();
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(worldMatrix);
-  const normals = Array.isArray(descriptor.normals) &&
-    descriptor.normals.length === positions.length
-      ? descriptor.normals
-      : null;
-  const customVariables = normalizeVariables(variables);
-  const damping = finiteOr(elastic.damping, 2.5);
-  const frequency = finiteOr(elastic.frequency, 3);
 
-  affected.forEach((vertexIndex, order) => {
-    const worldPoint = worldPoints[vertexIndex];
-    const distance = selectedSet.has(vertexIndex) ? 0 : distances[vertexIndex];
-    const q = influenceRadius <= EPSILON
-      ? (selectedSet.has(vertexIndex) ? 0 : Infinity)
-      : distance / influenceRadius;
-    const baseContext = {
-      ...customVariables,
-      vi: vertexIndex,
-      gi: vertexIndex,
-      i: order + 1,
-      count: affected.length,
-      lx: positions[vertexIndex][0],
-      ly: positions[vertexIndex][1],
-      lz: positions[vertexIndex][2],
-      wx: worldPoint.x,
-      wy: worldPoint.y,
-      wz: worldPoint.z,
-      px: pivotWorld.x,
-      py: pivotWorld.y,
-      pz: pivotWorld.z,
-      r: distance,
-      q: Number.isFinite(q) ? q : 1,
-      radius: influenceRadius,
-      selected: selectedSet.has(vertexIndex) ? 1 : 0,
-      damping,
-      frequency
-    };
-    const framePoint = pointInFrame({
-      pointWorld: worldPoint.toArray(),
-      frameQuaternion,
-      originWorld: pivotWorld.toArray()
-    });
-    baseContext.fx = framePoint[0];
-    baseContext.fy = framePoint[1];
-    baseContext.fz = framePoint[2];
-    if (normals) {
-      const normal = new THREE.Vector3()
-        .fromArray(normals[vertexIndex])
-        .applyMatrix3(normalMatrix)
-        .normalize();
-      baseContext.nx = normal.x;
-      baseContext.ny = normal.y;
-      baseContext.nz = normal.z;
-    } else {
-      baseContext.nx = 0;
-      baseContext.ny = 0;
-      baseContext.nz = 0;
-    }
-    const weight = selectedSet.has(vertexIndex)
-      ? 1
-      : evaluateFalloff({
-          kind: normalizedFalloff,
-          q,
-          distance,
-          context: baseContext,
-          compiled: compiledFalloff,
-          damping,
-          frequency
-        });
-    baseContext.w = weight;
-    weightByIndex.set(vertexIndex, weight);
+  field.affectedIndices.forEach((vertexIndex, order) => {
+    const context = field.contexts[order];
+    const framePoint = [context.fx, context.fy, context.fz];
     const value = constrainAffineValue({
       type: operation,
       value: compiled.map(expression =>
         evaluateCompiledAffineExpression(expression, {
-          ...baseContext,
+          ...context,
           position: framePoint
         })
       ),
@@ -187,10 +405,10 @@ export function applyMeshDeformation({
     const delta = affineDeltaWorld({
       type: operation,
       value,
-      pivotWorld: pivotWorld.toArray(),
+      pivotWorld: field.pivotWorld,
       frameQuaternion
     });
-    next[vertexIndex] = worldPoint.clone()
+    next[vertexIndex] = worldPoints[vertexIndex].clone()
       .applyMatrix4(new THREE.Matrix4().fromArray(delta))
       .applyMatrix4(inverseWorld)
       .toArray();
@@ -198,13 +416,11 @@ export function applyMeshDeformation({
 
   return Object.freeze({
     positions: Object.freeze(next.map(point => Object.freeze(point))),
-    affectedIndices: Object.freeze(affected),
-    weights: Object.freeze(
-      affected.map(index => weightByIndex.get(index) ?? 0)
-    ),
-    pivotWorld: Object.freeze(pivotWorld.toArray()),
-    metric: normalizedMetric,
-    falloff: normalizedFalloff
+    affectedIndices: field.affectedIndices,
+    weights: field.weights,
+    pivotWorld: field.pivotWorld,
+    metric: field.metric,
+    falloff: field.falloff
   });
 }
 
@@ -305,6 +521,26 @@ function evaluateFalloff({
     });
   }
   throw new RangeError(`Falloff desconhecido: ${kind}.`);
+}
+
+function weightedQuaternion(quaternion, weight) {
+  const source = quaternion.clone().normalize();
+  if (source.w < 0) source.set(-source.x, -source.y, -source.z, -source.w);
+  const halfAngle = Math.acos(THREE.MathUtils.clamp(source.w, -1, 1));
+  const sine = Math.sin(halfAngle);
+  if (Math.abs(sine) <= EPSILON || Math.abs(weight) <= EPSILON) {
+    return new THREE.Quaternion();
+  }
+  const axis = new THREE.Vector3(source.x, source.y, source.z)
+    .multiplyScalar(1 / sine)
+    .normalize();
+  return new THREE.Quaternion().setFromAxisAngle(axis, 2 * halfAngle * weight);
+}
+
+function weightedScaleFactor(fullFactor, weight) {
+  const factor = 1 + weight * (fullFactor - 1);
+  if (Math.abs(factor) > 1e-6) return factor;
+  return factor < 0 ? -1e-6 : 1e-6;
 }
 
 function smoothstep(value) {

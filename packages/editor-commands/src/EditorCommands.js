@@ -224,6 +224,8 @@ export function createEditorCommands({
       .register("mesh.frame.viewer.toggle", () => meshEditor.toggleViewerFrame())
       .register("mesh.constraint.set", ({ mode }) => meshEditor.setConstraint(mode))
       .register("mesh.snap.set", args => meshEditor.setSnap(args))
+      .register("mesh.deform.settings.set", args =>
+        meshEditor.setDeformation(args))
       .register("mesh.options.set", args => meshEditor.setOptions(args))
       .register("mesh.affine.apply", args => meshEditor.applyAffine(args))
       .register("mesh.deform.apply", args => meshEditor.applyProcedural(args));
