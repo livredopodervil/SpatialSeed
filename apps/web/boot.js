@@ -9,11 +9,10 @@ const $=id => document.getElementById(id);
 const pwaInstallController=new PwaInstallController({windowRef:window});
 
 try {
-  const [buildInfo,uiConfiguration]=await Promise.all([
-    loadBuildInfo(),
-    loadUiConfiguration()
-  ]);
+  const buildInfo=await loadBuildInfo();
   exposeBuildInfo(buildInfo);
+  await ensureCurrentServiceWorker(buildInfo);
+  const uiConfiguration=await loadUiConfiguration();
   await loadStylesheet(buildInfo);
 
   const cacheKey=encodeURIComponent(buildInfo.build);
@@ -31,6 +30,83 @@ try {
   });
 } catch (error) {
   showFatalError(error);
+}
+
+async function ensureCurrentServiceWorker(buildInfo) {
+  const serviceWorkers=navigator.serviceWorker;
+  if (!serviceWorkers || !isTrustedOrigin()) return;
+
+  const controllerBuild=workerBuild(serviceWorkers.controller);
+  if (controllerBuild === buildInfo.build) return;
+
+  const workerUrl=new URL("./service-worker.js",import.meta.url);
+  workerUrl.searchParams.set("build",buildInfo.build);
+  const registration=await serviceWorkers.register(workerUrl,{
+    scope:new URL("./",import.meta.url).pathname
+  });
+  await registration.update().catch(() => {});
+
+  if (workerBuild(serviceWorkers.controller) === buildInfo.build) return;
+  const updated=await waitForControllerBuild(
+    serviceWorkers,
+    buildInfo.build,
+    5000
+  );
+  if (updated) {
+    location.reload();
+    await never();
+  }
+
+  if (controllerBuild && controllerBuild !== buildInfo.build) {
+    const resetUrl=new URL("../reset-spatialseed-cache.html",import.meta.url);
+    resetUrl.searchParams.set("return","./web/");
+    resetUrl.searchParams.set("build",buildInfo.build);
+    location.replace(resetUrl);
+    await never();
+  }
+}
+
+function waitForControllerBuild(serviceWorkers,expectedBuild,timeoutMs) {
+  if (workerBuild(serviceWorkers.controller) === expectedBuild) {
+    return Promise.resolve(true);
+  }
+  return new Promise(resolve => {
+    let settled=false;
+    const finish=value => {
+      if (settled) return;
+      settled=true;
+      clearTimeout(timer);
+      serviceWorkers.removeEventListener("controllerchange",onChange);
+      resolve(value);
+    };
+    const onChange=() => finish(
+      workerBuild(serviceWorkers.controller) === expectedBuild
+    );
+    const timer=setTimeout(() => finish(false),timeoutMs);
+    serviceWorkers.addEventListener("controllerchange",onChange);
+  });
+}
+
+function workerBuild(worker) {
+  const value=worker?.scriptURL;
+  if (!value) return null;
+  try {
+    return new URL(value,location.href).searchParams.get("build");
+  } catch {
+    return null;
+  }
+}
+
+function isTrustedOrigin() {
+  return window.isSecureContext || [
+    "localhost",
+    "127.0.0.1",
+    "[::1]"
+  ].includes(location.hostname);
+}
+
+function never() {
+  return new Promise(() => {});
 }
 
 function exposePwaState(buildInfo,state,formatLabel) {

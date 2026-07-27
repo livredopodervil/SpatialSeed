@@ -13,7 +13,10 @@ let activeCacheName = REQUESTED_BUILD
   : null;
 
 self.addEventListener("install", event => {
-  event.waitUntil(installApplication());
+  event.waitUntil((async () => {
+    await installApplication();
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", event => {
@@ -78,12 +81,18 @@ async function networkFirst(request) {
 
 async function cacheFirst(request) {
   const cache = await getActiveCache();
-  const cached = await cache.match(request, { ignoreSearch: true });
-  if (cached) return cached;
+  const exact = await cache.match(request);
+  if (exact) return exact;
 
-  const response = await fetch(request);
-  if (isCacheable(response)) await cache.put(request, response.clone());
-  return response;
+  try {
+    const response = await fetch(request);
+    if (isCacheable(response)) await cache.put(request, response.clone());
+    return response;
+  } catch (error) {
+    const offlineFallback = await cache.match(request, { ignoreSearch: true });
+    if (offlineFallback) return offlineFallback;
+    throw error;
+  }
 }
 
 async function fetchJson(path) {

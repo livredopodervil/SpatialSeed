@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>SpatialSeed — redefinir cache</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; color-scheme: dark; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #08101a; color: #e8f1ff; }
+    main { width: min(36rem, calc(100% - 2rem)); padding: 1.25rem; border: 1px solid #334155; border-radius: 1rem; background: #0f172a; }
+    h1 { margin-top: 0; font-size: 1.15rem; }
+    pre { white-space: pre-wrap; color: #b8d7ff; }
+    a { color: #8ec5ff; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Redefinindo o cache do SpatialSeed</h1>
+  <pre id="status">Iniciando…</pre>
+  <p><a id="continue" href="./web/" hidden>Voltar ao SpatialSeed</a></p>
+</main>
+<script type="module">
+const status = document.getElementById("status");
+const continueLink = document.getElementById("continue");
+const parameters = new URLSearchParams(location.search);
+const returnTarget = new URL(parameters.get("return") || "./web/", location.href);
+returnTarget.searchParams.set("cache-reset", Date.now().toString(36));
+continueLink.href = returnTarget.href;
+
+try {
+  const registrations = navigator.serviceWorker
+    ? await navigator.serviceWorker.getRegistrations()
+    : [];
+  const removedRegistrations = (await Promise.all(
+    registrations.map(registration => registration.unregister())
+  )).filter(Boolean).length;
+
+  const cacheNames = globalThis.caches ? await caches.keys() : [];
+  const spatialSeedCaches = cacheNames.filter(name =>
+    name.startsWith("spatialseed-static-")
+  );
+  await Promise.all(spatialSeedCaches.map(name => caches.delete(name)));
+
+  status.textContent = [
+    `Service workers removidos: ${removedRegistrations}`,
+    `Caches removidos: ${spatialSeedCaches.length}`,
+    "Reabrindo a aplicação pela rede…"
+  ].join("\n");
+  setTimeout(() => location.replace(returnTarget.href), 250);
+} catch (error) {
+  status.textContent = `Falha ao redefinir o cache:\n${error?.stack || error}`;
+  continueLink.hidden = false;
+}
+</script>
+</body>
+</html>
