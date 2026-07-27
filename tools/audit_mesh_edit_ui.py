@@ -205,6 +205,17 @@ if expected_match.group(1) != actual_match.group(1):
         f"renderer declara {actual_match.group(1)}."
     )
 
+selection_query = runtime_source.find('.register("selection.snapshot"')
+edit_hud_construction = runtime_source.find("new EditHud({")
+if selection_query < 0 or edit_hud_construction < 0:
+    raise SystemExit(
+        "Não foi possível auditar a query de seleção ou a construção do HUD."
+    )
+if selection_query > edit_hud_construction:
+    raise SystemExit(
+        "selection.snapshot deve ser registrada antes da construção do EditHud."
+    )
+
 audit_toolbar_controls()
 
 print("Auditoria da UI topológica de edição de malha aprovada.")

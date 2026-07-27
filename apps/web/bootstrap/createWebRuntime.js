@@ -829,8 +829,12 @@ export async function createWebRuntime({
     .onDispose(() => sharedAnimations.dispose())
     .onDispose(() => animationRuntime.dispose());
 
-  // O Inspector consulta estas propriedades durante sua construção.
+  // Painéis e HUDs podem consultar a seleção durante a própria construção.
+  // Registre estas queries fundamentais antes de instanciar qualquer UI.
   queries
+    .register("selection.snapshot", () =>
+      editor.selection.snapshot()
+    )
     .register("properties.describe", () =>
       propertyRegistry.describe()
     )
@@ -1013,9 +1017,6 @@ export async function createWebRuntime({
   queries
     .register("world.snapshot", () =>
       sandbox.getState()
-    )
-    .register("selection.snapshot", () =>
-      editor.selection.snapshot()
     )
     .register("editor.snapshot", () =>
       editor.snapshot()
