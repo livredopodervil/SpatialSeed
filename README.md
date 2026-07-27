@@ -73,7 +73,7 @@ O menu **Painéis → Render** controla iluminação, sombras, reflexos ambienta
 
 ## Edição de malha
 
-O menu **Editar → Editar malha** abre uma sessão local para selecionar e transformar somente os vértices do objeto ativo. Gizmo e comandos numéricos compartilham a mesma transformação afim em referenciais de mundo, objeto ou viewer congelado. O commit substitui a geometria em uma única entrada de undo. Consulte [Edição de malha por vértices — build 0033a](docs/MESH_EDITING_0033A.md).
+O menu **Editar → Editar malha** abre uma sessão local na qual somente os vértices do objeto ativo são selecionáveis. Gizmo, comandos afins e deformações procedurais compartilham frames, travas de eixo/plano, snap adaptativo em vértice/aresta/face e um histórico interno independente. O commit substitui a geometria em uma única entrada de undo editorial. Consulte [Edição adaptativa de malha — build 0034d](docs/MESH_EDITING_0034.md).
 
 ## Execução local
 
@@ -492,7 +492,7 @@ flowchart TD
 | `packages/region-box` | reducer puro e modelo de estado da região atual |
 | `packages/scene-hierarchy` | grupos, parentesco, transforms locais e ciclo de subárvores |
 | `packages/geometry-registry` | famílias paramétricas e providers de geometria |
-| `packages/mesh-editor-core` | sessão, seleção e matemática afim da edição de vértices |
+| `packages/mesh-editor-core` | sessão, topologia, restrições, snapping, deformação procedural e histórico interno da edição de vértices |
 | `packages/mesh-edit-panel` | painel declarativo da sessão de malha |
 | `packages/property-registry` | propriedades tipadas, inspeção e edição atômica em lote |
 | `packages/script-runtime` | Workers, SES, sessões, planos espaciais/de câmera e procedimentos |

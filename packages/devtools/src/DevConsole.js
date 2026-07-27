@@ -3,7 +3,7 @@ import {
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 export class DevConsole {
-  static apiVersion = "dev-console-v6";
+  static apiVersion = "dev-console-v7";
 
   constructor({
     editor,
@@ -701,6 +701,12 @@ export class DevConsole {
         "mesh enter|status|apply|cancel|help",
         "mesh select all|none|invert",
         "mesh frame world|local|viewer",
+        "mesh constraint free|x|y|z|xy|xz|yz",
+        "mesh snap on|off",
+        "mesh snap mode auto|vertex|edge|face",
+        "mesh snap scope active|scene",
+        "mesh snap anchor active|pivot|nearest",
+        "mesh snap tolerance px",
         "mesh weld on|off",
         "mesh occlusion on|off",
         "mesh affine move|rotate|scale x y z",
@@ -1718,6 +1724,10 @@ export class DevConsole {
       this.#expectMaximum(tokens, 0, "mesh cancel");
       return this.commands.execute("mesh.edit.cancel");
     }
+    if (["undo", "redo"].includes(action)) {
+      this.#expectMaximum(tokens, 0, `mesh ${action}`);
+      return this.commands.execute(`mesh.edit.${action}`);
+    }
     if (action === "select") {
       this.#expectExact(tokens, 1, "mesh select all|none|invert");
       const mode = String(tokens[0]).toLowerCase();
@@ -1735,6 +1745,40 @@ export class DevConsole {
         throw new Error("Uso: mesh frame world|local|viewer");
       }
       return this.commands.execute("mesh.frame.set", { mode });
+    }
+    if (action === "constraint") {
+      this.#expectExact(tokens, 1, "mesh constraint free|x|y|z|xy|xz|yz");
+      const mode = String(tokens[0]).toLowerCase();
+      if (!["free", "x", "y", "z", "xy", "xz", "yz"].includes(mode)) {
+        throw new Error("Uso: mesh constraint free|x|y|z|xy|xz|yz");
+      }
+      return this.commands.execute("mesh.constraint.set", { mode });
+    }
+    if (action === "snap") {
+      const property = String(tokens.shift() ?? "").toLowerCase();
+      const value = String(tokens.shift() ?? "").toLowerCase();
+      this.#expectMaximum(tokens, 0, "mesh snap on|off|mode|scope|anchor|tolerance|self");
+      if (["on", "off"].includes(property) && !value) {
+        return this.commands.execute("mesh.snap.set", { enabled: property === "on" });
+      }
+      if (property === "mode" && ["auto", "vertex", "edge", "face"].includes(value)) {
+        return this.commands.execute("mesh.snap.set", { mode: value });
+      }
+      if (property === "scope" && ["active", "scene"].includes(value)) {
+        return this.commands.execute("mesh.snap.set", { scope: value });
+      }
+      if (property === "anchor" && ["active", "pivot", "nearest"].includes(value)) {
+        return this.commands.execute("mesh.snap.set", { anchor: value });
+      }
+      if (property === "tolerance") {
+        return this.commands.execute("mesh.snap.set", {
+          tolerancePixels: this.#number(value)
+        });
+      }
+      if (property === "self" && ["on", "off"].includes(value)) {
+        return this.commands.execute("mesh.snap.set", { self: value === "on" });
+      }
+      throw new Error("Uso: mesh snap on|off | mode auto|vertex|edge|face | scope active|scene | anchor active|pivot|nearest | tolerance px | self on|off");
     }
     if (["weld", "occlusion"].includes(action)) {
       this.#expectExact(tokens, 1, `mesh ${action} on|off`);
@@ -1760,8 +1804,45 @@ export class DevConsole {
         operations: [{ type, value }]
       });
     }
+    if (action === "deform") {
+      if (tokens.length < 4) {
+        throw new Error("Uso: mesh deform move|rotate|scale exprX exprY exprZ [radius=n metric=... falloff=... axis=x var.nome=n]");
+      }
+      const operation = String(tokens.shift()).toLowerCase();
+      if (!["move", "rotate", "scale"].includes(operation)) {
+        throw new Error("Operação procedural deve ser move, rotate ou scale.");
+      }
+      const expressions = tokens.splice(0, 3);
+      const args = {
+        operation,
+        expressions,
+        radius: 0,
+        metric: "euclidean",
+        falloff: "smooth",
+        axis: "x",
+        variables: {},
+        elastic: { damping: 2.5, frequency: 3 }
+      };
+      for (const token of tokens) {
+        const separator = token.indexOf("=");
+        if (separator < 1) throw new Error(`Opção procedural inválida: ${token}.`);
+        const name = token.slice(0, separator);
+        const raw = token.slice(separator + 1);
+        if (name === "radius") args.radius = this.#number(raw);
+        else if (name === "metric") args.metric = raw;
+        else if (name === "falloff") args.falloff = raw;
+        else if (name === "axis") args.axis = raw;
+        else if (name === "damping") args.elastic.damping = this.#number(raw);
+        else if (name === "frequency") args.elastic.frequency = this.#number(raw);
+        else if (name === "falloffExpr") args.falloffExpression = raw;
+        else if (name.startsWith("var.")) {
+          args.variables[name.slice(4)] = this.#number(raw);
+        } else throw new Error(`Opção procedural desconhecida: ${name}.`);
+      }
+      return this.commands.execute("mesh.deform.apply", args);
+    }
 
-    throw new Error("Uso: mesh enter|status|apply|cancel|select|frame|weld|occlusion|affine|help");
+    throw new Error("Uso: mesh enter|status|apply|cancel|undo|redo|select|frame|constraint|snap|weld|occlusion|affine|deform|help");
   }
 
   #meshHelp() {
@@ -1771,9 +1852,18 @@ export class DevConsole {
         "mesh status",
         "mesh select all|none|invert",
         "mesh frame world|local|viewer",
+        "mesh constraint free|x|y|z|xy|xz|yz",
+        "mesh snap on|off",
+        "mesh snap mode auto|vertex|edge|face",
+        "mesh snap scope active|scene",
+        "mesh snap anchor active|pivot|nearest",
+        "mesh snap tolerance px",
         "mesh weld on|off",
         "mesh occlusion on|off",
         "mesh affine move|rotate|scale x y z",
+        "mesh deform move|rotate|scale exprX exprY exprZ radius=n metric=euclidean|geodesic|viewer|axis falloff=linear|smooth|smoother|gaussian|elastic|custom",
+        "mesh undo",
+        "mesh redo",
         "mesh apply",
         "mesh cancel"
       ],
@@ -1782,14 +1872,22 @@ export class DevConsole {
         "move, rotate, scale e position operam sobre os vértices selecionados.",
         "O frame viewer é capturado e permanece travado até a troca de frame.",
         "No frame viewer, X aponta para a direita da tela, Y para cima e Z é normal ao plano da tela.",
-        "Aplicar produz uma única operação object.geometry.replace no histórico; cancelar descarta a prévia."
+        "As restrições são compartilhadas pelo gizmo, comandos afins e deformações.",
+        "Snap em vértice, aresta e face pode usar a malha ativa ou a cena visível sem selecionar outros objetos.",
+        "mesh undo e mesh redo operam no histórico interno; Aplicar produz uma única operação persistente."
       ],
       examples: [
         "mesh enter",
         "mesh frame viewer",
+        "mesh constraint xy",
+        "mesh snap on",
+        "mesh snap mode auto",
         "move 2 0 0",
         "rotate 0 0 15",
         "scale 1.2 1 1",
+        'mesh deform move "2*w" 0 0 radius=5 metric=geodesic falloff=elastic',
+        "mesh undo",
+        "mesh redo",
         "mesh apply"
       ]
     };

@@ -1,19 +1,23 @@
 import * as THREE from "three";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js";
+import { applyMeshDeformation } from "./MeshDeformation.js";
+import { buildMeshTopology } from "./MeshTopology.js";
 import {
   affineDeltaWorld,
   assertInvertibleWorldMatrix,
   cameraFrameQuaternion,
   coincidentVertexGroups,
   composeRotationFrame,
+  constrainAffineValue,
   expandCoincidentSelection,
+  normalizeMeshConstraint,
   selectedVertexPivotWorld,
   transformLocalPositions,
   translatePivotToWorld
 } from "./MeshEditMath.js";
 
 export class MeshEditController {
-  static apiVersion = "mesh-edit-controller-v1";
+  static apiVersion = "mesh-edit-controller-v2";
   #session = null;
   #listeners = new Set();
   #unsubscribeSandbox = null;
@@ -91,6 +95,7 @@ export class MeshEditController {
       object.rotation ?? [0, 0, 0, 1]
     ]);
     const groups = coincidentVertexGroups(descriptor.positions);
+    const topology = buildMeshTopology(descriptor);
     const selectedIndices = selectAll
       ? descriptor.positions.map((_, index) => index)
       : [];
@@ -113,6 +118,18 @@ export class MeshEditController {
       weldCoincident: true,
       occlusion: true,
       groups,
+      topology,
+      constraint: "free",
+      snap: {
+        enabled: false,
+        mode: "auto",
+        scope: "active",
+        anchor: "active",
+        tolerancePixels: 18,
+        self: false
+      },
+      history: { entries: [], index: -1, limit: 100 },
+      lastOperation: "Inicial",
       frameMode: "local",
       previousFrameMode: "local",
       frameQuaternion: localFrame,
@@ -130,7 +147,11 @@ export class MeshEditController {
         selectedIndices,
         frameMode: "local",
         frameQuaternion: localFrame,
-        options: { occlusion: true },
+        options: {
+          occlusion: true,
+          constraint: "free",
+          snap: this.#session.snap
+        },
         onVertexPick: payload => this.#handleVertexPick(payload),
         onTransformPreview: positions => this.#acceptPreview(positions),
         onTransformCommit: positions => this.#acceptTransform(positions)
@@ -139,6 +160,7 @@ export class MeshEditController {
       this.#session = null;
       throw error;
     }
+    this.#recordHistory("Inicial", { force: true });
     // A sessão começa com todos os vértices selecionados; mostrar o gizmo
     // de translação torna a mudança de modo imediatamente visível. O clique
     // nos marcadores continua selecionando vértices mesmo neste modo.
@@ -242,6 +264,101 @@ export class MeshEditController {
     return this.status();
   }
 
+  setConstraint(mode) {
+    const session = this.#requireSession();
+    session.constraint = normalizeMeshConstraint(mode);
+    this.renderer.setMeshEditConstraint?.(session.constraint);
+    this.#notify();
+    return this.status();
+  }
+
+  setSnap(patch = {}) {
+    const session = this.#requireSession();
+    const next = { ...session.snap };
+    if (patch.enabled !== undefined) next.enabled = Boolean(patch.enabled);
+    if (patch.mode !== undefined) {
+      const mode = String(patch.mode).toLowerCase();
+      if (!["auto", "vertex", "edge", "face"].includes(mode)) {
+        throw new RangeError(`Modo de snap desconhecido: ${patch.mode}.`);
+      }
+      next.mode = mode;
+    }
+    if (patch.scope !== undefined) {
+      const scope = String(patch.scope).toLowerCase();
+      if (!["active", "scene"].includes(scope)) {
+        throw new RangeError(`Escopo de snap desconhecido: ${patch.scope}.`);
+      }
+      next.scope = scope;
+    }
+    if (patch.anchor !== undefined) {
+      const anchor = String(patch.anchor).toLowerCase();
+      if (!["active", "pivot", "nearest"].includes(anchor)) {
+        throw new RangeError(`Âncora de snap desconhecida: ${patch.anchor}.`);
+      }
+      next.anchor = anchor;
+    }
+    if (patch.tolerancePixels !== undefined) {
+      const tolerance = Number(patch.tolerancePixels);
+      if (!Number.isFinite(tolerance) || tolerance < 2 || tolerance > 80) {
+        throw new RangeError("A tolerância de snap deve ficar entre 2 e 80 px.");
+      }
+      next.tolerancePixels = tolerance;
+    }
+    if (patch.self !== undefined) next.self = Boolean(patch.self);
+    session.snap = next;
+    this.renderer.updateMeshEditSnap?.(next);
+    this.#notify();
+    return this.status();
+  }
+
+  undo() {
+    const session = this.#requireSession();
+    if (session.history.index <= 0) return this.status();
+    session.history.index -= 1;
+    this.#restoreHistoryEntry(session.history.entries[session.history.index]);
+    return this.status();
+  }
+
+  redo() {
+    const session = this.#requireSession();
+    if (session.history.index >= session.history.entries.length - 1) {
+      return this.status();
+    }
+    session.history.index += 1;
+    this.#restoreHistoryEntry(session.history.entries[session.history.index]);
+    return this.status();
+  }
+
+  applyProcedural(args = {}) {
+    const session = this.#requireTransformableSelection();
+    const result = applyMeshDeformation({
+      descriptor: session.descriptor,
+      selectedIndices: session.selectedIndices,
+      objectWorldMatrix: session.objectWorldMatrix,
+      frameQuaternion: session.frameQuaternion,
+      constraint: session.constraint,
+      ...args
+    });
+    session.descriptor = Object.freeze({
+      ...session.descriptor,
+      positions: result.positions.map(point => [...point])
+    });
+    this.#markGeometryChanged(session);
+    this.renderer.updateMeshEditGeometry(session.descriptor);
+    this.renderer.updateMeshEditInfluence?.(
+      result.affectedIndices,
+      result.weights
+    );
+    this.#recordHistory(`Procedural ${args.operation ?? "move"}`);
+    this.#notify();
+    return Object.freeze({
+      ...this.status(),
+      affectedCount: result.affectedIndices.length,
+      metric: result.metric,
+      falloff: result.falloff
+    });
+  }
+
   setFrame(mode) {
     const session = this.#requireSession();
     const next = String(mode);
@@ -305,18 +422,21 @@ export class MeshEditController {
         targetWorld: position
       })
     });
-    session.dirty = true;
-    this.#refreshGroups(session);
-    this.#refreshPivot(session);
+    this.#markGeometryChanged(session);
     this.renderer.updateMeshEditGeometry(session.descriptor);
+    this.#recordHistory("Posicionar pivô");
     this.#notify();
     return this.status();
   }
 
   applyAffine({ operations = [] } = {}) {
     for (const operation of operations) {
-      this.#applyAffine(operation.type, operation.value, { notify: false });
+      this.#applyAffine(operation.type, operation.value, {
+        notify: false,
+        recordHistory: false
+      });
     }
+    if (operations.length) this.#recordHistory("Transformação afim");
     this.#notify();
     return this.status();
   }
@@ -341,12 +461,17 @@ export class MeshEditController {
         componentMode: "vertex",
         frameMode: null,
         viewerPlaneLocked: false,
+        constraint: "free",
+        snap: null,
+        canUndo: false,
+        canRedo: false,
         canEnter: availability.ok,
         selectionCount: selection.members.length,
         reason: availability.ok ? null : availability.message
       });
     }
     const session = this.#session;
+    const rendererStatus = this.renderer.getMeshEditStatus?.() ?? {};
     return Object.freeze({
       active: true,
       objectId: session.objectId,
@@ -355,11 +480,22 @@ export class MeshEditController {
       componentMode: "vertex",
       vertexCount: session.descriptor.positions.length,
       uniqueVertexCount: session.groups.groups.length,
+      edgeCount: session.topology.edgeCount,
+      faceCount: session.topology.faceCount,
       selectedCount: session.selectedIndices.size,
       activeVertex: session.activeVertex,
       frameMode: session.frameMode,
       viewerPlaneLocked: session.frameMode === "viewer",
       frameQuaternion: Object.freeze([...session.frameQuaternion]),
+      constraint: session.constraint,
+      snap: Object.freeze({ ...session.snap }),
+      snapCandidate: rendererStatus.snapCandidate ?? null,
+      canUndo: session.history.index > 0,
+      canRedo: session.history.index < session.history.entries.length - 1,
+      undoDepth: session.history.index,
+      redoDepth: session.history.entries.length - session.history.index - 1,
+      historyLength: session.history.entries.length,
+      lastOperation: session.lastOperation,
       weldCoincident: session.weldCoincident,
       occlusion: session.occlusion,
       dirty: session.dirty,
@@ -389,12 +525,20 @@ export class MeshEditController {
     this.#listeners.clear();
   }
 
-  #applyAffine(type, value, { notify = true } = {}) {
+  #applyAffine(type, value, {
+    notify = true,
+    recordHistory = true
+  } = {}) {
     const session = this.#requireTransformableSelection();
     const pivotWorld = session.pivotWorld;
-    const deltaWorldMatrix = affineDeltaWorld({
+    const constrainedValue = constrainAffineValue({
       type,
       value,
+      constraint: session.constraint
+    });
+    const deltaWorldMatrix = affineDeltaWorld({
+      type,
+      value: constrainedValue,
       pivotWorld,
       frameQuaternion: session.frameQuaternion
     });
@@ -407,10 +551,10 @@ export class MeshEditController {
         deltaWorldMatrix
       })
     });
-    session.dirty = true;
-    this.#refreshGroups(session);
-    this.#refreshPivot(session);
+    this.#markGeometryChanged(session);
     this.renderer.updateMeshEditGeometry(session.descriptor);
+    this.renderer.updateMeshEditInfluence?.([], []);
+    if (recordHistory) this.#recordHistory(`${type} afim`);
     if (notify) this.#notify();
     return this.status();
   }
@@ -447,6 +591,7 @@ export class MeshEditController {
 
   #acceptPreview() {
     this.#requireSession().dirty = true;
+    this.#notify();
   }
 
   #acceptTransform(positions) {
@@ -455,9 +600,8 @@ export class MeshEditController {
       ...session.descriptor,
       positions: positions.map(point => [...point])
     });
-    session.dirty = true;
-    this.#refreshGroups(session);
-    this.#refreshPivot(session);
+    this.#markGeometryChanged(session);
+    this.#recordHistory("Gizmo");
     this.#notify();
   }
 
@@ -528,6 +672,54 @@ export class MeshEditController {
     this.renderer.updateMeshEditSelection([...session.selectedIndices], {
       activeVertex: session.activeVertex
     });
+    this.renderer.updateMeshEditInfluence?.([], []);
+    this.#notify();
+  }
+
+  #markGeometryChanged(session) {
+    this.#refreshGroups(session);
+    session.topology = buildMeshTopology(session.descriptor);
+    this.#refreshPivot(session);
+    session.dirty = this.geometryRegistry.key(session.descriptor) !==
+      session.initialBufferKey;
+  }
+
+  #recordHistory(label, { force = false } = {}) {
+    const session = this.#requireSession();
+    const entry = {
+      label: String(label ?? "Operação"),
+      key: this.geometryRegistry.key(session.descriptor),
+      positions: session.descriptor.positions.map(point => [...point]),
+      selectedIndices: [...session.selectedIndices],
+      activeVertex: session.activeVertex
+    };
+    const current = session.history.entries[session.history.index];
+    if (!force && current?.key === entry.key) return false;
+    session.history.entries.splice(session.history.index + 1);
+    session.history.entries.push(entry);
+    if (session.history.entries.length > session.history.limit) {
+      session.history.entries.shift();
+    }
+    session.history.index = session.history.entries.length - 1;
+    session.lastOperation = entry.label;
+    return true;
+  }
+
+  #restoreHistoryEntry(entry) {
+    const session = this.#requireSession();
+    session.descriptor = Object.freeze({
+      ...session.descriptor,
+      positions: entry.positions.map(point => [...point])
+    });
+    session.selectedIndices = new Set(entry.selectedIndices);
+    session.activeVertex = entry.activeVertex;
+    session.lastOperation = entry.label;
+    this.#markGeometryChanged(session);
+    this.renderer.updateMeshEditGeometry(session.descriptor);
+    this.renderer.updateMeshEditSelection([...session.selectedIndices], {
+      activeVertex: session.activeVertex
+    });
+    this.renderer.updateMeshEditInfluence?.([], []);
     this.#notify();
   }
 

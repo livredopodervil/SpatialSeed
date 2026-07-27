@@ -122,7 +122,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260725-0029f1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260727-0033b";
+} from "../../region-box/src/reducer.js?build=20260727-0034d";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -141,7 +141,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260724-0029f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260727-0033b";
+} from "../../devtools/src/DevConsole.js?build=20260727-0034d";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -169,14 +169,19 @@ import {
 import {
   MeshEditController,
   affineDeltaWorld,
+  applyMeshDeformation,
+  buildMeshTopology,
   coincidentVertexGroups,
+  constrainAffineValue,
+  constrainWorldDeltaMatrix,
   composeRotationFrame,
   expandCoincidentSelection,
+  geodesicVertexDistances,
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid,
   transformLocalPositions,
   transformLocalPositionsInto
-} from "../../mesh-editor-core/src/index.js?build=20260727-0033b";
+} from "../../mesh-editor-core/src/index.js?build=20260727-0034d";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -361,6 +366,132 @@ export function createRuntimeLayerTests() {
           expandCoincidentSelection([0, 1, 4], groups),
           [0, 1, 2, 3, 4, 5]
         );
+      },
+
+      "restrições de eixo e plano são comuns a move rotate e scale"() {
+        assertDeepEqual(
+          constrainAffineValue({ type: "move", value: [1, 2, 3], constraint: "xy" }),
+          [1, 2, 0]
+        );
+        assertDeepEqual(
+          constrainAffineValue({ type: "rotate", value: [10, 20, 30], constraint: "z" }),
+          [0, 0, 30]
+        );
+        assertDeepEqual(
+          constrainAffineValue({ type: "scale", value: [2, 3, 4], constraint: "xz" }),
+          [2, 1, 4]
+        );
+        const constrained = constrainWorldDeltaMatrix({
+          type: "move",
+          deltaWorldMatrix: new THREE.Matrix4().makeTranslation(1, 2, 3).toArray(),
+          constraint: "x"
+        });
+        assertVectorNear(
+          new THREE.Vector3().setFromMatrixPosition(
+            new THREE.Matrix4().fromArray(constrained)
+          ).toArray(),
+          [1, 0, 0]
+        );
+      },
+
+      "topologia deriva arestas faces e distância geodésica"() {
+        const positions = [
+          [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]
+        ];
+        const topology = buildMeshTopology({
+          positions,
+          indices: [0, 1, 2, 0, 2, 3]
+        });
+        assertEqual(topology.faceCount, 2);
+        assertEqual(topology.edgeCount, 5);
+        const distances = geodesicVertexDistances({
+          positions,
+          topology,
+          seeds: [0]
+        });
+        assertNear(distances[1], 1);
+        assertNear(distances[3], 1);
+        assertNear(distances[2], Math.sqrt(2));
+      },
+
+      "deformação procedural usa campo geodésico sem alterar seleção"() {
+        const result = applyMeshDeformation({
+          descriptor: {
+            positions: [[0, 0, 0], [1, 0, 0], [2, 0, 0]],
+            indices: [0, 1, 2],
+            normals: [],
+            uvs: []
+          },
+          selectedIndices: [0],
+          objectWorldMatrix: new THREE.Matrix4().toArray(),
+          operation: "move",
+          expressions: ["2*w", "0", "0"],
+          radius: 2,
+          metric: "geodesic",
+          falloff: "smooth",
+          constraint: "x"
+        });
+        assertVectorNear(result.positions[0], [2, 0, 0]);
+        assertVectorNear(result.positions[1], [2, 0, 0]);
+        assertVectorNear(result.positions[2], [2, 0, 0]);
+        assertDeepEqual(result.affectedIndices, [0, 1, 2]);
+      },
+
+      "histórico interno desfaz e refaz sem tocar no sandbox"() {
+        const region = new Region(
+          { id: "mesh-history-region", name: "Mesh", type: "box-region" },
+          { objects: [{
+            id: "mesh-history-box",
+            kind: "box",
+            name: "Caixa",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            geometry: { type: "box", size: [2, 2, 2] },
+            material: { color: "#ffffff" }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "mesh-history-region",
+          objectId: "mesh-history-box"
+        });
+        let visual = null;
+        const renderer = {
+          beginMeshEdit(args) { visual = args; },
+          endMeshEdit() { visual = null; },
+          updateMeshEditGeometry(geometry) { visual.geometry = geometry; },
+          updateMeshEditSelection() {},
+          updateMeshEditOptions() {},
+          updateMeshEditInfluence() {},
+          setMeshEditFrame() {},
+          setMeshEditConstraint() {},
+          updateMeshEditSnap() {},
+          setTransformMode() {},
+          readNavigationCamera() { return { quaternion: [0, 0, 0, 1] }; }
+        };
+        const controller = new MeshEditController({
+          sandbox,
+          editor,
+          renderer,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        const projectUndoDepth = sandbox.getHistoryDiagnostics().undoDepth;
+        controller.enter();
+        controller.translate([1, 0, 0]);
+        controller.rotate([0, 0, 15]);
+        assertEqual(controller.status().undoDepth, 2);
+        controller.undo();
+        assertEqual(controller.status().undoDepth, 1);
+        controller.undo();
+        assertEqual(controller.status().dirty, false);
+        controller.redo();
+        assertEqual(controller.status().dirty, true);
+        assertEqual(sandbox.getHistoryDiagnostics().undoDepth, projectUndoDepth);
+        controller.commit();
+        assertEqual(sandbox.getHistoryDiagnostics().undoDepth, projectUndoDepth + 1);
       },
 
       "controller aplica uma única troca de geometria no commit"() {
@@ -9416,6 +9547,16 @@ assets: {
           ),
           -2
         );
+      },
+
+      "funções de campo suportam clamp mix steps e fração"() {
+        assertNear(evaluateAffineExpression("clamp(3,0,2)"), 2);
+        assertNear(evaluateAffineExpression("mix(2,6,0.25)"), 3);
+        assertNear(evaluateAffineExpression("step(0.5,0.25)"), 0);
+        assertNear(evaluateAffineExpression("step(0.5,0.75)"), 1);
+        assertNear(evaluateAffineExpression("smoothstep(0,1,0.5)"), 0.5);
+        assertNear(evaluateAffineExpression("smootherstep(0,1,0.5)"), 0.5);
+        assertNear(evaluateAffineExpression("fract(2.75)"), 0.75);
       },
 
       "graus radianos e voltas são equivalentes"() {

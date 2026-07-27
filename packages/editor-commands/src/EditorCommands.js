@@ -209,13 +209,24 @@ export function createEditorCommands({
         category: "mesh-edit",
         mutates: false
       })
+      .register("mesh.edit.undo", () => meshEditor.undo(), {
+        category: "mesh-edit",
+        mutates: false
+      })
+      .register("mesh.edit.redo", () => meshEditor.redo(), {
+        category: "mesh-edit",
+        mutates: false
+      })
       .register("mesh.vertices.select-all", () => meshEditor.selectAll())
       .register("mesh.vertices.clear", () => meshEditor.clearSelection())
       .register("mesh.vertices.invert", () => meshEditor.invertSelection())
       .register("mesh.frame.set", ({ mode }) => meshEditor.setFrame(mode))
       .register("mesh.frame.viewer.toggle", () => meshEditor.toggleViewerFrame())
+      .register("mesh.constraint.set", ({ mode }) => meshEditor.setConstraint(mode))
+      .register("mesh.snap.set", args => meshEditor.setSnap(args))
       .register("mesh.options.set", args => meshEditor.setOptions(args))
-      .register("mesh.affine.apply", args => meshEditor.applyAffine(args));
+      .register("mesh.affine.apply", args => meshEditor.applyAffine(args))
+      .register("mesh.deform.apply", args => meshEditor.applyProcedural(args));
   }
 
   if (propertyService) {

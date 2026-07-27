@@ -13,7 +13,8 @@ const FUNCTION_NAMES = Object.freeze(new Set([
   "sqrt", "cbrt", "abs", "exp",
   "log", "log10", "min", "max",
   "floor", "ceil", "round", "trunc",
-  "sign", "hypot"
+  "sign", "hypot", "clamp", "mix", "step",
+  "smoothstep", "smootherstep", "fract"
 ]));
 
 export const NativeAffineMathBackend = Object.freeze({
@@ -794,7 +795,22 @@ const NATIVE_FUNCTIONS = Object.freeze({
   round: Math.round,
   trunc: Math.trunc,
   sign: Math.sign,
-  hypot: Math.hypot
+  hypot: Math.hypot,
+  clamp: (value, minimum, maximum) =>
+    Math.min(maximum, Math.max(minimum, value)),
+  mix: (left, right, amount) => left + (right - left) * amount,
+  step: (edge, value) => value < edge ? 0 : 1,
+  smoothstep: (edge0, edge1, value) => {
+    if (edge0 === edge1) return value < edge0 ? 0 : 1;
+    const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
+    return t * t * (3 - 2 * t);
+  },
+  smootherstep: (edge0, edge1, value) => {
+    if (edge0 === edge1) return value < edge0 ? 0 : 1;
+    const t = Math.min(1, Math.max(0, (value - edge0) / (edge1 - edge0)));
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  },
+  fract: value => value - Math.floor(value)
 });
 
 function deepFreeze(value) {

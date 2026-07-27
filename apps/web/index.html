@@ -472,7 +472,7 @@
 
 <section id="mesh-edit-panel" hidden>
   <header>
-    <strong>Edição de malha</strong>
+    <strong>Edição adaptativa de malha</strong>
     <button id="close-mesh-edit" type="button">×</button>
   </header>
   <div class="mesh-edit-content">
@@ -483,6 +483,10 @@
       <button id="mesh-commit" type="button">Aplicar</button>
       <button id="mesh-cancel" type="button">Cancelar</button>
     </div>
+    <div class="actions mesh-history-actions">
+      <button id="mesh-undo" type="button">↶ Desfazer interno</button>
+      <button id="mesh-redo" type="button">↷ Refazer interno</button>
+    </div>
     <fieldset>
       <legend>Referencial</legend>
       <div class="actions mesh-frame-actions">
@@ -490,7 +494,20 @@
         <button id="mesh-frame-local" type="button">Objeto</button>
         <button id="mesh-frame-viewer" type="button">Travar plano do viewer</button>
       </div>
-      <p>Com o plano travado, X acompanha a direita da tela, Y acompanha o alto e Z é normal ao plano do viewer.</p>
+      <p>No frame travado, X acompanha a direita da tela, Y o alto e Z a normal dirigida ao observador.</p>
+    </fieldset>
+    <fieldset>
+      <legend>Graus de liberdade</legend>
+      <div class="mesh-constraint-grid">
+        <button id="mesh-constraint-free" type="button" data-mesh-constraint="free">Livre</button>
+        <button id="mesh-constraint-x" type="button" data-mesh-constraint="x">X</button>
+        <button id="mesh-constraint-y" type="button" data-mesh-constraint="y">Y</button>
+        <button id="mesh-constraint-z" type="button" data-mesh-constraint="z">Z</button>
+        <button id="mesh-constraint-xy" type="button" data-mesh-constraint="xy">XY</button>
+        <button id="mesh-constraint-xz" type="button" data-mesh-constraint="xz">XZ</button>
+        <button id="mesh-constraint-yz" type="button" data-mesh-constraint="yz">YZ</button>
+      </div>
+      <small>As mesmas restrições são aplicadas ao gizmo, aos comandos afins e às deformações procedurais.</small>
     </fieldset>
     <fieldset>
       <legend>Vértices</legend>
@@ -500,13 +517,42 @@
         <button id="mesh-select-invert" type="button">Inverter</button>
       </div>
       <label><input id="mesh-weld" type="checkbox" checked> Mover vértices coincidentes juntos</label>
-      <label><input id="mesh-occlusion" type="checkbox" checked> No toque/clique, impedir seleção de vértices ocluídos</label>
+      <label><input id="mesh-occlusion" type="checkbox" checked> Impedir seleção de vértices ocluídos</label>
     </fieldset>
     <fieldset>
-      <legend>Comandos afins</legend>
+      <legend>Snap adaptativo</legend>
+      <label><input id="mesh-snap-enabled" type="checkbox"> Ativar snap</label>
+      <div class="mesh-form-grid">
+        <label><span>Modo</span><select id="mesh-snap-mode"><option value="auto">Auto</option><option value="vertex">Vértice</option><option value="edge">Aresta</option><option value="face">Face</option></select></label>
+        <label><span>Escopo</span><select id="mesh-snap-scope"><option value="active">Malha ativa</option><option value="scene">Cena visível</option></select></label>
+        <label><span>Âncora</span><select id="mesh-snap-anchor"><option value="active">Vértice ativo</option><option value="pivot">Pivô</option><option value="nearest">Selecionado mais próximo</option></select></label>
+        <label><span>Tolerância px</span><input id="mesh-snap-tolerance" type="number" min="2" max="80" value="18" step="1"></label>
+      </div>
+      <label><input id="mesh-snap-self" type="checkbox"> Permitir autosnap ao usar a cena</label>
+      <small id="mesh-snap-diagnostic">Sem alvo de snap.</small>
+    </fieldset>
+    <fieldset>
+      <legend>Comandos afins rígidos</legend>
       <div class="mesh-vector-row"><span>Mover</span><input id="mesh-move-x" type="number" value="0" step="0.1"><input id="mesh-move-y" type="number" value="0" step="0.1"><input id="mesh-move-z" type="number" value="0" step="0.1"><button id="mesh-affine-move" type="button">Aplicar</button></div>
       <div class="mesh-vector-row"><span>Girar °</span><input id="mesh-rotate-x" type="number" value="0" step="1"><input id="mesh-rotate-y" type="number" value="0" step="1"><input id="mesh-rotate-z" type="number" value="0" step="1"><button id="mesh-affine-rotate" type="button">Aplicar</button></div>
       <div class="mesh-vector-row"><span>Escalar</span><input id="mesh-scale-x" type="number" value="1" step="0.1"><input id="mesh-scale-y" type="number" value="1" step="0.1"><input id="mesh-scale-z" type="number" value="1" step="0.1"><button id="mesh-affine-scale" type="button">Aplicar</button></div>
+    </fieldset>
+    <fieldset>
+      <legend>Transformação procedural parametrizada</legend>
+      <div class="mesh-form-grid">
+        <label><span>Operação</span><select id="mesh-deform-operation"><option value="move">Mover</option><option value="rotate">Girar</option><option value="scale">Escalar</option></select></label>
+        <label><span>Raio</span><input id="mesh-deform-radius" type="number" value="5" min="0" step="0.1"></label>
+        <label><span>Métrica</span><select id="mesh-deform-metric"><option value="euclidean">Euclidiana</option><option value="geodesic">Geodésica</option><option value="viewer">Plano do viewer</option><option value="axis">Eixo</option></select></label>
+        <label><span>Eixo métrico</span><select id="mesh-deform-axis"><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
+        <label><span>Falloff</span><select id="mesh-deform-falloff"><option value="linear">Linear</option><option value="smooth" selected>Suave</option><option value="smoother">Suavíssimo</option><option value="gaussian">Gaussiano</option><option value="elastic">Elástico</option><option value="custom">Expressão</option></select></label>
+        <label><span>Amortecimento</span><input id="mesh-deform-damping" type="number" value="2.5" step="0.1"></label>
+        <label><span>Frequência</span><input id="mesh-deform-frequency" type="number" value="3" step="0.1"></label>
+      </div>
+      <div class="mesh-expression-row"><label>X <input id="mesh-deform-x" type="text" value="2*w" spellcheck="false"></label><label>Y <input id="mesh-deform-y" type="text" value="0" spellcheck="false"></label><label>Z <input id="mesh-deform-z" type="text" value="0" spellcheck="false"></label></div>
+      <label class="mesh-wide-label"><span>Falloff personalizado</span><input id="mesh-deform-falloff-expression" type="text" value="1-smoothstep(0,1,q)" spellcheck="false"></label>
+      <label class="mesh-wide-label"><span>Variáveis JSON</span><textarea id="mesh-deform-variables" rows="2" spellcheck="false">{"amount":2}</textarea></label>
+      <button id="mesh-deform-apply" type="button">Aplicar deformação</button>
+      <small>Variáveis: i, count, u, lx/ly/lz, wx/wy/wz, fx/fy/fz, nx/ny/nz, px/py/pz, r, q, w, pi, tau, e, phi e variáveis JSON.</small>
     </fieldset>
     <p id="mesh-edit-error" role="alert"></p>
   </div>

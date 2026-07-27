@@ -988,3 +988,64 @@ html[data-toolbar-layout="vertical"] #selection-panel{
     grid-column: 1 / -1;
   }
 }
+
+.mesh-history-actions button {
+  flex: 1 1 180px;
+}
+
+.mesh-constraint-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.mesh-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mesh-form-grid label,
+.mesh-wide-label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mesh-form-grid input,
+.mesh-form-grid select,
+.mesh-wide-label input,
+.mesh-wide-label textarea,
+.mesh-expression-row input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.mesh-expression-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.mesh-expression-row label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+
+#mesh-snap-diagnostic {
+  color: #b7d8ff;
+}
+
+@media (max-width: 700px) {
+  .mesh-constraint-grid {
+    grid-template-columns: repeat(4, minmax(52px, 1fr));
+  }
+
+  .mesh-form-grid,
+  .mesh-expression-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -105,23 +105,40 @@ pivot relative dx dy dz
 
 `rotate` recebe graus. Fora da edição de malha, fatores de `scale` devem ser positivos. Na sessão de malha, podem ser negativos para reflexão, mas não nulos. `position` define posição mundial do pivô, enquanto `move` aplica delta no referencial ativo.
 
-### 3.4 Edição de malha por vértices
+### 3.4 Edição adaptativa de malha
 
 ```text
 mesh enter
 mesh status
+mesh undo
+mesh redo
 mesh select all|none|invert
 mesh frame world|local|viewer
+mesh constraint free|x|y|z|xy|xz|yz
+mesh snap on|off
+mesh snap mode auto|vertex|edge|face
+mesh snap scope active|scene
+mesh snap anchor active|pivot|nearest
+mesh snap tolerance px
+mesh snap self on|off
 mesh weld on|off
 mesh occlusion on|off
 mesh affine move|rotate|scale x y z
+mesh deform move|rotate|scale exprX exprY exprZ [opções]
 mesh apply
 mesh cancel
 ```
 
-Durante uma sessão, somente os vértices do objeto ativo são selecionáveis. Os comandos `position`, `move`, `rotate`, `scale` e `clear` são redirecionados para os vértices selecionados. `mesh frame viewer` captura o frame atual da câmera: `X` acompanha a direita da tela, `Y` o alto e `Z` a normal ao plano. A câmera pode ser movida depois sem alterar o frame capturado.
+Durante a sessão, somente os vértices do objeto ativo são selecionáveis. Objetos visíveis podem servir como referências de snap sem entrar na seleção. `mesh frame viewer` congela o frame da câmera; as restrições de eixo ou plano são compartilhadas pelo gizmo, comandos afins e deformações.
 
-A sessão é transitória. `mesh apply` produz uma única troca persistente de geometria; `mesh cancel` descarta todas as prévias. Consulte `docs/MESH_EDITING_0033A.md` para a matemática e as limitações topológicas.
+As opções de `mesh deform` incluem `radius=n`, `metric=euclidean|geodesic|viewer|axis`, `axis=x|y|z`, `falloff=linear|smooth|smoother|gaussian|elastic|custom`, `damping=n`, `frequency=n`, `falloffExpr=expressão` e `var.nome=n`. Exemplos:
+
+```text
+mesh deform move "2*w" 0 0 radius=5 metric=geodesic falloff=smooth
+mesh deform move "amount*w" 0 0 radius=6 metric=geodesic falloff=elastic var.amount=2
+```
+
+`mesh undo` e `mesh redo` operam somente no histórico interno da sessão. `mesh apply` produz uma única troca persistente de geometria; `mesh cancel` descarta todas as prévias. Consulte `docs/MESH_EDITING_0034.md`.
 
 ### 3.5 Snapping e vértices de diagnóstico
 

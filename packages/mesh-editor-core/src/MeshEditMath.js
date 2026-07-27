@@ -216,6 +216,154 @@ export function translatePivotToWorld({
   });
 }
 
+
+export const MESH_CONSTRAINTS = Object.freeze([
+  "free", "x", "y", "z", "xy", "xz", "yz"
+]);
+
+export function normalizeMeshConstraint(value = "free") {
+  const normalized = String(value ?? "free").toLowerCase();
+  if (!MESH_CONSTRAINTS.includes(normalized)) {
+    throw new RangeError(`Restrição de malha desconhecida: ${value}.`);
+  }
+  return normalized;
+}
+
+export function meshConstraintMask(value = "free") {
+  const constraint = normalizeMeshConstraint(value);
+  return Object.freeze([
+    constraint === "free" || constraint.includes("x") ? 1 : 0,
+    constraint === "free" || constraint.includes("y") ? 1 : 0,
+    constraint === "free" || constraint.includes("z") ? 1 : 0
+  ]);
+}
+
+export function constrainAffineValue({ type, value, constraint = "free" } = {}) {
+  const mask = meshConstraintMask(constraint);
+  const input = vector3(value, `Valor ${type}`).toArray();
+  if (type === "move" || type === "rotate") {
+    return input.map((component, index) => component * mask[index]);
+  }
+  if (type === "scale") {
+    return input.map((component, index) => mask[index] ? component : 1);
+  }
+  throw new RangeError(`Operação afim de malha desconhecida: ${type}.`);
+}
+
+export function projectWorldDeltaToConstraint({
+  deltaWorld,
+  frameQuaternion = [0, 0, 0, 1],
+  constraint = "free"
+} = {}) {
+  const mask = meshConstraintMask(constraint);
+  const frame = new THREE.Quaternion().fromArray(
+    normalizedQuaternion(frameQuaternion, "Orientação do referencial")
+  );
+  const inverse = frame.clone().invert();
+  const original = vector3(deltaWorld, "Deslocamento mundial");
+  const local = original.clone().applyQuaternion(inverse);
+  const projectedLocal = new THREE.Vector3(
+    local.x * mask[0],
+    local.y * mask[1],
+    local.z * mask[2]
+  );
+  const projected = projectedLocal.applyQuaternion(frame);
+  const residual = original.clone().sub(projected);
+  return Object.freeze({
+    deltaWorld: Object.freeze(projected.toArray()),
+    residualWorld: Object.freeze(residual.toArray()),
+    residualLength: residual.length()
+  });
+}
+
+export function constrainWorldDeltaMatrix({
+  type,
+  deltaWorldMatrix,
+  pivotWorld = [0, 0, 0],
+  frameQuaternion = [0, 0, 0, 1],
+  constraint = "free"
+} = {}) {
+  const normalizedConstraint = normalizeMeshConstraint(constraint);
+  const delta = matrix4(deltaWorldMatrix, "Transformação mundial");
+  if (normalizedConstraint === "free") return delta.toArray();
+  const pivot = vector3(pivotWorld, "Pivô");
+  const frameQuaternionObject = new THREE.Quaternion().fromArray(
+    normalizedQuaternion(frameQuaternion, "Orientação do referencial")
+  );
+  const frame = new THREE.Matrix4().makeRotationFromQuaternion(frameQuaternionObject);
+  const frameInverse = frame.clone().invert();
+
+  if (type === "move") {
+    const translation = new THREE.Vector3().setFromMatrixPosition(delta);
+    const projected = projectWorldDeltaToConstraint({
+      deltaWorld: translation.toArray(),
+      frameQuaternion,
+      constraint: normalizedConstraint
+    });
+    return new THREE.Matrix4().makeTranslation(...projected.deltaWorld).toArray();
+  }
+
+  const operation = frameInverse.clone()
+    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z))
+    .multiply(delta)
+    .multiply(new THREE.Matrix4().makeTranslation(pivot.x, pivot.y, pivot.z))
+    .multiply(frame);
+  const position = new THREE.Vector3();
+  const rotation = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  operation.decompose(position, rotation, scale);
+  const mask = meshConstraintMask(normalizedConstraint);
+
+  if (type === "rotate") {
+    const euler = new THREE.Euler().setFromQuaternion(rotation, "XYZ");
+    const degrees = [euler.x, euler.y, euler.z]
+      .map((component, index) => component * 180 / Math.PI * mask[index]);
+    return affineDeltaWorld({
+      type: "rotate",
+      value: degrees,
+      pivotWorld,
+      frameQuaternion
+    });
+  }
+
+  if (type === "scale") {
+    const factors = [scale.x, scale.y, scale.z]
+      .map((component, index) => mask[index] ? component : 1);
+    return affineDeltaWorld({
+      type: "scale",
+      value: factors,
+      pivotWorld,
+      frameQuaternion
+    });
+  }
+
+  throw new RangeError(`Operação afim de malha desconhecida: ${type}.`);
+}
+
+export function pointInFrame({
+  pointWorld,
+  frameQuaternion = [0, 0, 0, 1],
+  originWorld = [0, 0, 0]
+} = {}) {
+  const frame = new THREE.Quaternion().fromArray(
+    normalizedQuaternion(frameQuaternion, "Orientação do referencial")
+  );
+  return vector3(pointWorld, "Ponto mundial")
+    .sub(vector3(originWorld, "Origem mundial"))
+    .applyQuaternion(frame.clone().invert())
+    .toArray();
+}
+
+export function frameVectorToWorld({
+  vector,
+  frameQuaternion = [0, 0, 0, 1]
+} = {}) {
+  const frame = new THREE.Quaternion().fromArray(
+    normalizedQuaternion(frameQuaternion, "Orientação do referencial")
+  );
+  return vector3(vector, "Vetor no referencial").applyQuaternion(frame).toArray();
+}
+
 export function coincidentVertexGroups(positions, epsilon = 1e-6) {
   const tolerance = Number(epsilon);
   if (!Number.isFinite(tolerance) || tolerance <= 0) {

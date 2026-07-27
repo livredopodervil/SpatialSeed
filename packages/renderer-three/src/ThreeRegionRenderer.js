@@ -44,20 +44,27 @@ import {
   createAnimationTargetSnapshot
 } from "./AnimationTransformOverlay.js?build=20260720-0028d";
 import {
+  constrainWorldDeltaMatrix,
+  projectWorldDeltaToConstraint,
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid,
   transformLocalPositions,
   transformLocalPositionsInto,
   translatePivotToWorld
-} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0033a";
+} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0034d";
+import {
+  buildMeshTopology
+} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0034d";
 
 export class ThreeRegionRenderer {
-  static apiVersion = "renderer-three-navigation-camera-v3";
+  static apiVersion = "renderer-three-navigation-camera-v4";
   #meshes = new Map();
   #cameraVisuals = new Map();
   #selectionSnapshot = null;
   #session = null;
   #tap = null;
+  #lastPointer = null;
+  #meshTopologyCache = new WeakMap();
   #textureLoader = new THREE.TextureLoader();
   #projectObject = object => object;
   #geometryRegistry = null;
@@ -316,11 +323,24 @@ export class ThreeRegionRenderer {
       this.#inputDiagnostics.pointerDown += 1;
       this.#inputDiagnostics.lastPointerType = event.pointerType || "mouse";
       this.#inputDiagnostics.discardedReason = null;
+      this.#lastPointer = {
+        x: event.clientX,
+        y: event.clientY,
+        type: event.pointerType || "mouse"
+      };
       this.#tap = {
         id: event.pointerId,
         x: event.clientX,
         y: event.clientY,
         time: performance.now(),
+        type: event.pointerType || "mouse"
+      };
+    }, true);
+
+    canvas.addEventListener("pointermove", event => {
+      this.#lastPointer = {
+        x: event.clientX,
+        y: event.clientY,
         type: event.pointerType || "mouse"
       };
     }, true);
@@ -425,6 +445,8 @@ export class ThreeRegionRenderer {
     wire.frustumCulled = false;
 
     const occlusion = options.occlusion !== false;
+    const constraint = String(options.constraint ?? "free");
+    const snap = normalizeMeshSnapSettings(options.snap);
     const markerGeometry = new THREE.BufferGeometry();
     const markers = new THREE.Points(
       markerGeometry,
@@ -440,7 +462,45 @@ export class ThreeRegionRenderer {
     markers.renderOrder = 1200;
     markers.frustumCulled = false;
 
-    group.add(mesh, wire, markers);
+    const snapMarkerGeometry = new THREE.BufferGeometry();
+    snapMarkerGeometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute([0, 0, 0], 3)
+    );
+    const snapMarker = new THREE.Points(
+      snapMarkerGeometry,
+      new THREE.PointsMaterial({
+        color: 0xfff176,
+        size: 14,
+        sizeAttenuation: false,
+        depthTest: false,
+        depthWrite: false
+      })
+    );
+    snapMarker.name = `mesh-edit-snap-target:${id}`;
+    snapMarker.visible = false;
+    snapMarker.renderOrder = 1300;
+
+    const snapLineGeometry = new THREE.BufferGeometry();
+    snapLineGeometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3)
+    );
+    const snapLine = new THREE.Line(
+      snapLineGeometry,
+      new THREE.LineBasicMaterial({
+        color: 0xfff176,
+        transparent: true,
+        opacity: 0.85,
+        depthTest: false,
+        depthWrite: false
+      })
+    );
+    snapLine.name = `mesh-edit-snap-line:${id}`;
+    snapLine.visible = false;
+    snapLine.renderOrder = 1299;
+
+    group.add(mesh, wire, markers, snapMarker, snapLine);
     this.scene.add(group);
     this.#batchManager.update(id, new THREE.Matrix4().makeScale(0, 0, 0));
     this.#flushBatchBounds();
@@ -457,6 +517,13 @@ export class ThreeRegionRenderer {
       activeVertex: selectedIndices.at(-1) ?? null,
       frameMode,
       frameQuaternion: [...frameQuaternion],
+      constraint,
+      snap,
+      topology: buildMeshTopology(descriptor),
+      influence: new Map(),
+      snapMarker,
+      snapLine,
+      lastSnapCandidate: null,
       options: { occlusion },
       onVertexPick:
         typeof onVertexPick === "function" ? onVertexPick : null,
@@ -482,6 +549,8 @@ export class ThreeRegionRenderer {
       );
     }
     edit.descriptor = descriptor;
+    edit.topology = buildMeshTopology(descriptor);
+    edit.lastSnapCandidate = null;
     const attribute = edit.mesh.geometry.getAttribute("position");
     descriptor.positions.forEach((point, index) => {
       attribute.setXYZ(index, point[0], point[1], point[2]);
@@ -519,6 +588,35 @@ export class ThreeRegionRenderer {
     return this.getMeshEditStatus();
   }
 
+  setMeshEditConstraint(mode = "free") {
+    const edit = this.#requireMeshEdit();
+    edit.constraint = String(mode ?? "free").toLowerCase();
+    edit.lastSnapCandidate = null;
+    this.#configureTransformForEditor();
+    return this.getMeshEditStatus();
+  }
+
+  updateMeshEditSnap(patch = {}) {
+    const edit = this.#requireMeshEdit();
+    edit.snap = normalizeMeshSnapSettings({ ...edit.snap, ...patch });
+    edit.lastSnapCandidate = null;
+    if (!edit.snap.enabled) this.#clearMeshSnapOverlay();
+    return this.getMeshEditStatus();
+  }
+
+  updateMeshEditInfluence(indices = [], weights = []) {
+    const edit = this.#requireMeshEdit();
+    edit.influence = new Map();
+    indices.forEach((index, ordinal) => {
+      const value = Number(weights[ordinal] ?? 0);
+      if (Number.isInteger(Number(index)) && Number.isFinite(value)) {
+        edit.influence.set(Number(index), value);
+      }
+    });
+    this.#updateMeshEditMarkerColors();
+    return this.getMeshEditStatus();
+  }
+
   setMeshEditFrame({ mode, quaternion } = {}) {
     const edit = this.#requireMeshEdit();
     edit.frameMode = String(mode ?? edit.frameMode);
@@ -542,6 +640,10 @@ export class ThreeRegionRenderer {
     edit.wire.material.dispose?.();
     edit.markers.geometry.dispose?.();
     edit.markers.material.dispose?.();
+    edit.snapMarker.geometry.dispose?.();
+    edit.snapMarker.material.dispose?.();
+    edit.snapLine.geometry.dispose?.();
+    edit.snapLine.material.dispose?.();
     if (restoreBatch) {
       const proxy = this.#meshes.get(edit.objectId);
       const matrix = proxy?.userData.canonicalWorldMatrix;
@@ -566,6 +668,16 @@ export class ThreeRegionRenderer {
       activeVertex: edit.activeVertex,
       frameMode: edit.frameMode,
       frameQuaternion: Object.freeze([...edit.frameQuaternion]),
+      constraint: edit.constraint,
+      snap: Object.freeze({ ...edit.snap }),
+      snapCandidate: edit.lastSnapCandidate
+        ? Object.freeze({
+            type: edit.lastSnapCandidate.type,
+            objectId: edit.lastSnapCandidate.objectId,
+            key: edit.lastSnapCandidate.key,
+            score: edit.lastSnapCandidate.score
+          })
+        : null,
       occlusion: edit.options.occlusion
     });
   }
@@ -1639,11 +1751,18 @@ export class ThreeRegionRenderer {
       if (enabled) {
         this.transform.setMode(this.editorState.tool.transformMode ?? mode);
         this.transform.setSpace("local");
+        const axes = meshConstraintAxes(this.#meshEdit.constraint);
+        this.transform.showX = axes.x;
+        this.transform.showY = axes.y;
+        this.transform.showZ = axes.z;
       }
       this.orbit.enabled = mode === "navigate" || !this.transform.dragging;
       return;
     }
 
+    this.transform.showX = true;
+    this.transform.showY = true;
+    this.transform.showZ = true;
     const enabled=this.editorState.pivot.editing||["translate","rotate","scale"].includes(mode);
     this.transform.enabled=enabled;
     this.transform.getHelper().visible=enabled;
@@ -1751,16 +1870,31 @@ export class ThreeRegionRenderer {
         this.transformAnchor.quaternion,
         this.transformAnchor.scale
       );
-      const positions = transformLocalPositionsInto({
+      const rawDelta = current
+        .clone()
+        .multiply(initial.clone().invert());
+      const constrainedDelta = constrainWorldDeltaMatrix({
+        type: this.#session.mode,
+        deltaWorldMatrix: rawDelta.toArray(),
+        pivotWorld: this.#session.initialAnchor.position.toArray(),
+        frameQuaternion: this.#meshEdit.frameQuaternion,
+        constraint: this.#meshEdit.constraint
+      });
+      let positions = transformLocalPositionsInto({
         sourcePositions: this.#session.initialPositions,
         targetPositions: this.#session.workingPositions,
         selectedIndices: this.#meshEdit.selectedIndices,
         objectWorldMatrix: this.#meshEdit.objectWorldMatrix,
-        deltaWorldMatrix: current
-          .clone()
-          .multiply(initial.clone().invert())
-          .toArray()
+        deltaWorldMatrix: constrainedDelta
       });
+      if (
+        this.#session.mode === "translate" &&
+        this.#meshEdit.snap.enabled
+      ) {
+        positions = this.#applyMeshSnap(positions);
+      } else {
+        this.#clearMeshSnapOverlay();
+      }
       this.#setMeshEditPositions(positions, {
         finalize: false,
         changedIndices: this.#meshEdit.selectedIndices
@@ -2290,6 +2424,505 @@ export class ThreeRegionRenderer {
     return material;
   }
 
+  #applyMeshSnap(positions) {
+    const edit = this.#requireMeshEdit();
+    const pointer = this.#lastPointer;
+    if (!pointer || !edit.snap.enabled) {
+      this.#clearMeshSnapOverlay();
+      return positions;
+    }
+    const rect = this.canvas.getBoundingClientRect();
+    const anchor = this.#meshSnapAnchorWorld(positions, pointer, rect);
+    if (!anchor) {
+      this.#clearMeshSnapOverlay();
+      return positions;
+    }
+    const candidates = this.#meshSnapCandidates({
+      positions,
+      anchorWorld: anchor.point,
+      pointer,
+      rect
+    });
+    if (!candidates.length) {
+      edit.lastSnapCandidate = null;
+      this.#clearMeshSnapOverlay();
+      return positions;
+    }
+    candidates.sort((left, right) => left.score - right.score);
+    let candidate = candidates[0];
+    const previous = edit.lastSnapCandidate;
+    if (previous) {
+      const previousCurrent = candidates.find(item => item.key === previous.key);
+      if (
+        previousCurrent &&
+        previousCurrent.screenDistance <= edit.snap.tolerancePixels * 1.35 &&
+        candidate.score >= previousCurrent.score * 0.8
+      ) candidate = previousCurrent;
+    }
+    const projected = projectWorldDeltaToConstraint({
+      deltaWorld: new THREE.Vector3()
+        .fromArray(candidate.pointWorld)
+        .sub(new THREE.Vector3().fromArray(anchor.point))
+        .toArray(),
+      frameQuaternion: edit.frameQuaternion,
+      constraint: edit.constraint
+    });
+    const residualPixels = worldVectorScreenLength({
+      camera: this.camera,
+      rect,
+      originWorld: anchor.point,
+      vectorWorld: projected.residualWorld
+    });
+    if (residualPixels > edit.snap.tolerancePixels * 1.35) {
+      edit.lastSnapCandidate = null;
+      this.#clearMeshSnapOverlay();
+      return positions;
+    }
+    const snapped = transformLocalPositions({
+      positions,
+      selectedIndices: edit.selectedIndices,
+      objectWorldMatrix: edit.objectWorldMatrix,
+      deltaWorldMatrix: new THREE.Matrix4()
+        .makeTranslation(...projected.deltaWorld)
+        .toArray()
+    });
+    edit.lastSnapCandidate = {
+      ...candidate,
+      residualPixels
+    };
+    this.#showMeshSnapOverlay(anchor.point, candidate.pointWorld, candidate.type);
+    return snapped;
+  }
+
+  #meshSnapAnchorWorld(positions, pointer, rect) {
+    const edit = this.#requireMeshEdit();
+    edit.group.updateMatrixWorld(true);
+    const worldMatrix = edit.group.matrixWorld;
+    if (
+      edit.snap.anchor === "active" &&
+      Number.isInteger(edit.activeVertex) &&
+      edit.selectedIndices.has(edit.activeVertex)
+    ) {
+      return {
+        index: edit.activeVertex,
+        point: new THREE.Vector3()
+          .fromArray(positions[edit.activeVertex])
+          .applyMatrix4(worldMatrix)
+          .toArray()
+      };
+    }
+    if (edit.snap.anchor === "nearest") {
+      let best = null;
+      for (const index of edit.selectedIndices) {
+        const point = new THREE.Vector3()
+          .fromArray(positions[index])
+          .applyMatrix4(worldMatrix);
+        const screen = projectWorldToScreen(point, this.camera, rect);
+        if (!screen.visible) continue;
+        const distance = Math.hypot(pointer.x - screen.x, pointer.y - screen.y);
+        if (!best || distance < best.distance) {
+          best = { index, point: point.toArray(), distance };
+        }
+      }
+      if (best) return best;
+    }
+    const point = selectedVertexPivotWorld({
+      positions,
+      selectedIndices: edit.selectedIndices,
+      objectWorldMatrix: edit.objectWorldMatrix
+    });
+    return point ? { index: null, point } : null;
+  }
+
+  #meshSnapCandidates({ positions, anchorWorld, pointer, rect }) {
+    const edit = this.#requireMeshEdit();
+    const candidates = [];
+    const tolerance = edit.snap.tolerancePixels;
+    const enabled = type => edit.snap.mode === "auto" || edit.snap.mode === type;
+    const add = candidate => {
+      const scored = this.#scoreMeshSnapCandidate({
+        ...candidate,
+        anchorWorld,
+        rect,
+        tolerance
+      });
+      if (scored.screenDistance <= tolerance && scored.score <= 3) {
+        candidates.push(scored);
+      }
+    };
+
+    if (edit.snap.scope === "active" || edit.snap.self) {
+      edit.group.updateMatrixWorld(true);
+      const matrix = edit.group.matrixWorld;
+      if (enabled("vertex")) {
+        positions.forEach((point, index) => {
+          if (edit.selectedIndices.has(index)) return;
+          const world = new THREE.Vector3().fromArray(point).applyMatrix4(matrix);
+          const screen = projectWorldToScreen(world, this.camera, rect);
+          if (!screen.visible) return;
+          const screenDistance = Math.hypot(pointer.x - screen.x, pointer.y - screen.y);
+          if (screenDistance > tolerance) return;
+          add({
+            type: "vertex",
+            key: `active:vertex:${index}`,
+            objectId: edit.objectId,
+            pointWorld: world.toArray(),
+            screenDistance
+          });
+        });
+      }
+      if (enabled("edge")) {
+        for (const edge of edit.topology.edges) {
+          if (edit.selectedIndices.has(edge.a) && edit.selectedIndices.has(edge.b)) continue;
+          const start = new THREE.Vector3().fromArray(positions[edge.a]).applyMatrix4(matrix);
+          const end = new THREE.Vector3().fromArray(positions[edge.b]).applyMatrix4(matrix);
+          const screenStart = projectWorldToScreen(start, this.camera, rect);
+          const screenEnd = projectWorldToScreen(end, this.camera, rect);
+          if (!screenStart.visible && !screenEnd.visible) continue;
+          const closest = closestScreenSegmentPoint(pointer, screenStart, screenEnd);
+          const parameter = this.#meshSnapEdgeParameter({
+            start,
+            end,
+            anchorWorld,
+            fallback: closest.parameter
+          });
+          const target = start.clone().lerp(end, parameter);
+          const targetScreen = projectWorldToScreen(target, this.camera, rect);
+          const screenDistance = Math.hypot(
+            pointer.x - targetScreen.x,
+            pointer.y - targetScreen.y
+          );
+          if (screenDistance > tolerance) continue;
+          add({
+            type: "edge",
+            key: `active:edge:${edge.a}:${edge.b}`,
+            objectId: edit.objectId,
+            pointWorld: target.toArray(),
+            screenDistance
+          });
+        }
+      }
+    }
+
+    if (edit.snap.scope === "scene") {
+      let primitiveBudget = 120000;
+      for (const batch of this.#batchManager.batches()) {
+        if (primitiveBudget <= 0) break;
+        const geometry = batch.geometry;
+        const attribute = geometry.getAttribute("position");
+        if (!attribute) continue;
+        const topology = this.#topologyForGeometry(geometry);
+        for (let instanceId = 0; instanceId < batch.mesh.count; instanceId += 1) {
+          if (primitiveBudget <= 0) break;
+          const objectId = batch.objectAt(instanceId);
+          if (!objectId || objectId === edit.objectId) continue;
+          const matrix = new THREE.Matrix4();
+          batch.mesh.getMatrixAt(instanceId, matrix);
+          matrix.premultiply(batch.mesh.matrixWorld);
+          if (enabled("vertex")) {
+            for (let index = 0; index < attribute.count && primitiveBudget > 0; index += 1) {
+              primitiveBudget -= 1;
+              const world = new THREE.Vector3(
+                attribute.getX(index),
+                attribute.getY(index),
+                attribute.getZ(index)
+              ).applyMatrix4(matrix);
+              const screen = projectWorldToScreen(world, this.camera, rect);
+              if (!screen.visible) continue;
+              const screenDistance = Math.hypot(pointer.x - screen.x, pointer.y - screen.y);
+              if (screenDistance > tolerance) continue;
+              add({
+                type: "vertex",
+                key: `${objectId}:vertex:${index}`,
+                objectId,
+                pointWorld: world.toArray(),
+                screenDistance
+              });
+            }
+          }
+          if (enabled("edge")) {
+            for (const edge of topology.edges) {
+              if (primitiveBudget-- <= 0) break;
+              const start = new THREE.Vector3(
+                attribute.getX(edge.a),
+                attribute.getY(edge.a),
+                attribute.getZ(edge.a)
+              ).applyMatrix4(matrix);
+              const end = new THREE.Vector3(
+                attribute.getX(edge.b),
+                attribute.getY(edge.b),
+                attribute.getZ(edge.b)
+              ).applyMatrix4(matrix);
+              const screenStart = projectWorldToScreen(start, this.camera, rect);
+              const screenEnd = projectWorldToScreen(end, this.camera, rect);
+              if (!screenStart.visible && !screenEnd.visible) continue;
+              const closest = closestScreenSegmentPoint(pointer, screenStart, screenEnd);
+              const parameter = this.#meshSnapEdgeParameter({
+                start,
+                end,
+                anchorWorld,
+                fallback: closest.parameter
+              });
+              const target = start.clone().lerp(end, parameter);
+              const targetScreen = projectWorldToScreen(target, this.camera, rect);
+              const screenDistance = Math.hypot(
+                pointer.x - targetScreen.x,
+                pointer.y - targetScreen.y
+              );
+              if (screenDistance > tolerance) continue;
+              add({
+                type: "edge",
+                key: `${objectId}:edge:${edge.a}:${edge.b}`,
+                objectId,
+                pointWorld: target.toArray(),
+                screenDistance
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (enabled("face")) {
+      const ndc = new THREE.Vector2(
+        ((pointer.x - rect.left) / rect.width) * 2 - 1,
+        -((pointer.y - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(ndc, this.camera);
+      const targets = [];
+      if (edit.snap.scope === "active" || edit.snap.self) targets.push(edit.mesh);
+      if (edit.snap.scope === "scene") {
+        for (const batch of this.#batchManager.batches()) targets.push(batch.mesh);
+      }
+      for (const hit of raycaster.intersectObjects(targets, false)) {
+        let objectId = edit.objectId;
+        if (hit.object === edit.mesh) {
+          const face = edit.topology.faces[hit.faceIndex ?? -1];
+          if (face?.vertices.every(index => edit.selectedIndices.has(index))) {
+            continue;
+          }
+        }
+        if (hit.object.isInstancedMesh) {
+          objectId = this.#batchManager.objectFromHit(hit);
+          if (!objectId || objectId === edit.objectId) continue;
+        }
+        const faceTarget = this.#meshSnapFacePoint(hit, anchorWorld);
+        if (!faceTarget) continue;
+        const faceScreen = projectWorldToScreen(faceTarget, this.camera, rect);
+        const screenDistance = Math.hypot(
+          pointer.x - faceScreen.x,
+          pointer.y - faceScreen.y
+        );
+        if (screenDistance > tolerance) continue;
+        add({
+          type: "face",
+          key: `${objectId}:face:${hit.faceIndex ?? 0}`,
+          objectId,
+          pointWorld: faceTarget.toArray(),
+          screenDistance
+        });
+        break;
+      }
+    }
+    return candidates;
+  }
+
+  #meshSnapFacePoint(hit, anchorWorld) {
+    const edit = this.#requireMeshEdit();
+    if (edit.constraint === "free") return hit.point.clone();
+    const geometry = hit.object.geometry;
+    const position = geometry?.getAttribute?.("position");
+    const face = hit.face;
+    if (!position || !face) return null;
+    const matrix = hit.object.matrixWorld.clone();
+    if (hit.object.isInstancedMesh && Number.isInteger(hit.instanceId)) {
+      const instance = new THREE.Matrix4();
+      hit.object.getMatrixAt(hit.instanceId, instance);
+      matrix.multiply(instance);
+    }
+    const a = new THREE.Vector3(
+      position.getX(face.a), position.getY(face.a), position.getZ(face.a)
+    ).applyMatrix4(matrix);
+    const b = new THREE.Vector3(
+      position.getX(face.b), position.getY(face.b), position.getZ(face.b)
+    ).applyMatrix4(matrix);
+    const c = new THREE.Vector3(
+      position.getX(face.c), position.getY(face.c), position.getZ(face.c)
+    ).applyMatrix4(matrix);
+    const triangle = new THREE.Triangle(a, b, c);
+    const normal = triangle.getNormal(new THREE.Vector3());
+    if (normal.lengthSq() <= 1e-12) return null;
+    const anchor = new THREE.Vector3().fromArray(anchorWorld);
+    const frame = new THREE.Quaternion().fromArray(edit.frameQuaternion).normalize();
+    const axes = meshConstraintAxes(edit.constraint);
+    const allowed = [axes.x, axes.y, axes.z]
+      .map((enabled, index) => enabled ? index : -1)
+      .filter(index => index >= 0);
+    let target = null;
+    if (allowed.length === 1) {
+      const direction = new THREE.Vector3(
+        allowed[0] === 0 ? 1 : 0,
+        allowed[0] === 1 ? 1 : 0,
+        allowed[0] === 2 ? 1 : 0
+      ).applyQuaternion(frame);
+      const denominator = normal.dot(direction);
+      if (Math.abs(denominator) <= 1e-10) return null;
+      const amount = normal.dot(a.clone().sub(anchor)) / denominator;
+      target = anchor.clone().addScaledVector(direction, amount);
+    } else if (allowed.length === 2) {
+      const forbidden = [0, 1, 2].find(index => !allowed.includes(index));
+      const movementNormal = new THREE.Vector3(
+        forbidden === 0 ? 1 : 0,
+        forbidden === 1 ? 1 : 0,
+        forbidden === 2 ? 1 : 0
+      ).applyQuaternion(frame);
+      const dot = movementNormal.dot(normal);
+      const determinant = 1 - dot * dot;
+      if (Math.abs(determinant) <= 1e-10) {
+        return Math.abs(normal.dot(hit.point.clone().sub(a))) <= 1e-6
+          ? hit.point.clone()
+          : null;
+      }
+      const desired = hit.point.clone();
+      const residualMovement = movementNormal.dot(desired.clone().sub(anchor));
+      const residualFace = normal.dot(desired.clone().sub(a));
+      const lambdaMovement = (residualMovement - dot * residualFace) / determinant;
+      const lambdaFace = (residualFace - dot * residualMovement) / determinant;
+      target = desired
+        .addScaledVector(movementNormal, -lambdaMovement)
+        .addScaledVector(normal, -lambdaFace);
+    }
+    if (!target) return null;
+    return triangle.containsPoint(target) ? target : null;
+  }
+
+  #meshSnapEdgeParameter({ start, end, anchorWorld, fallback }) {
+    const edit = this.#requireMeshEdit();
+    if (edit.constraint === "free") return fallback;
+    const frameInverse = new THREE.Quaternion()
+      .fromArray(edit.frameQuaternion)
+      .normalize()
+      .invert();
+    const anchor = new THREE.Vector3().fromArray(anchorWorld);
+    const residual = start.clone().sub(anchor).applyQuaternion(frameInverse);
+    const direction = end.clone().sub(start).applyQuaternion(frameInverse);
+    const axes = meshConstraintAxes(edit.constraint);
+    const forbiddenResidual = new THREE.Vector3(
+      axes.x ? 0 : residual.x,
+      axes.y ? 0 : residual.y,
+      axes.z ? 0 : residual.z
+    );
+    const forbiddenDirection = new THREE.Vector3(
+      axes.x ? 0 : direction.x,
+      axes.y ? 0 : direction.y,
+      axes.z ? 0 : direction.z
+    );
+    const denominator = forbiddenDirection.lengthSq();
+    if (denominator <= 1e-12) return fallback;
+    return THREE.MathUtils.clamp(
+      -forbiddenDirection.dot(forbiddenResidual) / denominator,
+      0,
+      1
+    );
+  }
+
+  #scoreMeshSnapCandidate({
+    type,
+    key,
+    objectId,
+    pointWorld,
+    screenDistance,
+    anchorWorld,
+    rect,
+    tolerance
+  }) {
+    const projected = projectWorldDeltaToConstraint({
+      deltaWorld: new THREE.Vector3()
+        .fromArray(pointWorld)
+        .sub(new THREE.Vector3().fromArray(anchorWorld))
+        .toArray(),
+      frameQuaternion: this.#meshEdit.frameQuaternion,
+      constraint: this.#meshEdit.constraint
+    });
+    const residualPixels = worldVectorScreenLength({
+      camera: this.camera,
+      rect,
+      originWorld: anchorWorld,
+      vectorWorld: projected.residualWorld
+    });
+    const penalty = { vertex: 0, edge: 0.08, face: 0.16 }[type] ?? 1;
+    return {
+      type,
+      key,
+      objectId,
+      pointWorld,
+      screenDistance,
+      residualPixels,
+      score: screenDistance / tolerance + residualPixels / tolerance + penalty
+    };
+  }
+
+  #topologyForGeometry(geometry) {
+    let topology = this.#meshTopologyCache.get(geometry);
+    if (topology) return topology;
+    const attribute = geometry.getAttribute("position");
+    const empty = Object.freeze({ edges: Object.freeze([]), faces: Object.freeze([]) });
+    if (!attribute) return empty;
+    const positions = [];
+    for (let index = 0; index < attribute.count; index += 1) {
+      positions.push([
+        attribute.getX(index),
+        attribute.getY(index),
+        attribute.getZ(index)
+      ]);
+    }
+    try {
+      topology = buildMeshTopology({
+        positions,
+        indices: geometry.index ? Array.from(geometry.index.array) : []
+      });
+    } catch {
+      // Alguns assets auxiliares podem ter atributos de posição que não
+      // descrevem triângulos completos. Eles continuam renderizáveis, mas
+      // não oferecem arestas ou faces como referências de snap.
+      topology = empty;
+    }
+    this.#meshTopologyCache.set(geometry, topology);
+    return topology;
+  }
+
+  #showMeshSnapOverlay(anchorWorld, targetWorld, type = "vertex") {
+    const edit = this.#requireMeshEdit();
+    const color = ({
+      vertex: 0xfff176,
+      edge: 0x7dffb2,
+      face: 0xff8ad8
+    })[type] ?? 0xfff176;
+    edit.snapMarker.material.color.setHex(color);
+    edit.snapLine.material.color.setHex(color);
+    edit.group.updateMatrixWorld(true);
+    const inverse = edit.group.matrixWorld.clone().invert();
+    const anchor = new THREE.Vector3().fromArray(anchorWorld).applyMatrix4(inverse);
+    const target = new THREE.Vector3().fromArray(targetWorld).applyMatrix4(inverse);
+    const marker = edit.snapMarker.geometry.getAttribute("position");
+    marker.setXYZ(0, target.x, target.y, target.z);
+    marker.needsUpdate = true;
+    const line = edit.snapLine.geometry.getAttribute("position");
+    line.setXYZ(0, anchor.x, anchor.y, anchor.z);
+    line.setXYZ(1, target.x, target.y, target.z);
+    line.needsUpdate = true;
+    edit.snapMarker.visible = true;
+    edit.snapLine.visible = true;
+  }
+
+  #clearMeshSnapOverlay() {
+    const edit = this.#meshEdit;
+    if (!edit) return;
+    edit.snapMarker.visible = false;
+    edit.snapLine.visible = false;
+  }
+
   #requireMeshEdit() {
     if (!this.#meshEdit) {
       throw new Error("Nenhuma edição de malha está ativa no viewer.");
@@ -2358,12 +2991,21 @@ export class ThreeRegionRenderer {
     const normal = new THREE.Color(0x7ec8ff);
     const selected = new THREE.Color(0xffb347);
     const active = new THREE.Color(0xffffff);
+    const positiveInfluence = new THREE.Color(0x77ffb0);
+    const negativeInfluence = new THREE.Color(0xff6f91);
+    const mixed = new THREE.Color();
     for (let index = 0; index < count; index += 1) {
-      const color = index === edit.activeVertex
-        ? active
-        : edit.selectedIndices.has(index)
-          ? selected
-          : normal;
+      let color = normal;
+      if (index === edit.activeVertex) color = active;
+      else if (edit.selectedIndices.has(index)) color = selected;
+      else if (edit.influence?.has(index)) {
+        const weight = Number(edit.influence.get(index));
+        mixed.copy(normal).lerp(
+          weight < 0 ? negativeInfluence : positiveInfluence,
+          Math.min(1, Math.abs(weight))
+        );
+        color = mixed;
+      }
       attribute.setXYZ(index, color.r, color.g, color.b);
     }
     attribute.needsUpdate = true;
@@ -2761,6 +3403,89 @@ function shadowMapType(type) {
     "pcf-soft": THREE.PCFSoftShadowMap,
     vsm: THREE.VSMShadowMap
   })[type] ?? THREE.PCFSoftShadowMap;
+}
+
+function normalizeMeshSnapSettings(value = {}) {
+  const mode = String(value?.mode ?? "auto").toLowerCase();
+  const scope = String(value?.scope ?? "active").toLowerCase();
+  const anchor = String(value?.anchor ?? "active").toLowerCase();
+  if (!["auto", "vertex", "edge", "face"].includes(mode)) {
+    throw new RangeError(`Modo de snap desconhecido: ${mode}.`);
+  }
+  if (!["active", "scene"].includes(scope)) {
+    throw new RangeError(`Escopo de snap desconhecido: ${scope}.`);
+  }
+  if (!["active", "pivot", "nearest"].includes(anchor)) {
+    throw new RangeError(`Âncora de snap desconhecida: ${anchor}.`);
+  }
+  const tolerancePixels = Number(value?.tolerancePixels ?? 18);
+  if (!Number.isFinite(tolerancePixels) || tolerancePixels < 2 || tolerancePixels > 80) {
+    throw new RangeError("A tolerância de snap deve ficar entre 2 e 80 px.");
+  }
+  return {
+    enabled: Boolean(value?.enabled),
+    mode,
+    scope,
+    anchor,
+    tolerancePixels,
+    self: Boolean(value?.self)
+  };
+}
+
+function meshConstraintAxes(constraint = "free") {
+  const normalized = String(constraint ?? "free").toLowerCase();
+  return {
+    x: normalized === "free" || normalized.includes("x"),
+    y: normalized === "free" || normalized.includes("y"),
+    z: normalized === "free" || normalized.includes("z")
+  };
+}
+
+function projectWorldToScreen(pointWorld, camera, rect) {
+  const projected = pointWorld.clone().project(camera);
+  return {
+    x: rect.left + (projected.x + 1) * 0.5 * rect.width,
+    y: rect.top + (1 - projected.y) * 0.5 * rect.height,
+    z: projected.z,
+    visible: projected.z >= -1 && projected.z <= 1
+  };
+}
+
+function closestScreenSegmentPoint(pointer, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const parameter = lengthSquared <= 1e-12
+    ? 0
+    : THREE.MathUtils.clamp(
+        ((pointer.x - start.x) * dx + (pointer.y - start.y) * dy) /
+          lengthSquared,
+        0,
+        1
+      );
+  const x = start.x + dx * parameter;
+  const y = start.y + dy * parameter;
+  return {
+    parameter,
+    distance: Math.hypot(pointer.x - x, pointer.y - y)
+  };
+}
+
+function worldVectorScreenLength({
+  camera,
+  rect,
+  originWorld,
+  vectorWorld
+}) {
+  const origin = new THREE.Vector3().fromArray(originWorld);
+  const target = origin.clone().add(new THREE.Vector3().fromArray(vectorWorld));
+  const originScreen = projectWorldToScreen(origin, camera, rect);
+  const targetScreen = projectWorldToScreen(target, camera, rect);
+  if (!originScreen.visible && !targetScreen.visible) return Infinity;
+  return Math.hypot(
+    targetScreen.x - originScreen.x,
+    targetScreen.y - originScreen.y
+  );
 }
 
 function previewSessionKey(session = {}) {
