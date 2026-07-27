@@ -12,16 +12,16 @@ import {
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0036d";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260727-0036d";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260727-0036d";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260727-0037a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260726-0031a";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260726-0031a";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260727-0036d";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260727-0037a";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029f";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260727-0036d";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260727-0037a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260724-0029f";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -83,13 +83,17 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0036d";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260727-0036d";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260727-0037a";
 import {
   EditContextController
 } from "../../../packages/edit-context/src/index.js?build=20260727-0036d";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260727-0036d";
+} from "../../../packages/edit-hud/src/index.js?build=20260727-0037a";
+import {
+  PathToolService,
+  SpatialReferenceResolver
+} from "../../../packages/spatial-references/src/index.js?build=20260727-0037a";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -395,6 +399,24 @@ export async function createWebRuntime({
     renderer,
     meshEditor
   });
+  const spatialReferences = new SpatialReferenceResolver({
+    sandbox,
+    editor,
+    geometryRegistry
+  });
+  const pathTools = new PathToolService({
+    resolver: spatialReferences,
+    selectionOperations,
+    sandbox,
+    editor,
+    requireObjectMode: action => {
+      if (meshEditor.active) {
+        throw new Error(
+          `Finalize ou cancele a edição de malha antes de ${action}.`
+        );
+      }
+    }
+  });
 
   const sandboxRecovery = new SandboxRecoveryController({
     sandbox: baseSandbox,
@@ -445,6 +467,7 @@ export async function createWebRuntime({
     propertyService,
     meshEditor,
     editContext,
+    pathTools,
     canMutateProject: action =>
       viewerCoordinator.requireAuthority(action)
   });
@@ -854,6 +877,12 @@ export async function createWebRuntime({
     .register("mesh.edit.status", () =>
       meshEditor.status()
     )
+    .register("path.references.list", () =>
+      pathTools.listReferences()
+    )
+    .register("path.reference.inspect", args =>
+      pathTools.inspect(args)
+    )
     .register("edit.context.status", () =>
       editContext.status()
     )
@@ -1036,6 +1065,13 @@ export async function createWebRuntime({
       environment: "pmrem-procedural",
       materialModels: ["standard", "physical"],
       opticalEffects: ["transmission", "dispersion", "iridescence"]
+    }))
+    .register("pathReferences", () => ({
+      apiVersion: SpatialReferenceResolver.apiVersion,
+      toolApiVersion: PathToolService.apiVersion,
+      referenceKinds: ["path", "profile", "point"],
+      tools: ["tube", "sweep", "array"],
+      persistence: "snapshot"
     }))
     .register("animation", () => ({
       apiVersion: ANIMATION_RUNTIME_VERSION,

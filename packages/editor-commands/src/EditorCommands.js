@@ -10,6 +10,7 @@ export function createEditorCommands({
   propertyService = null,
   meshEditor = null,
   editContext = null,
+  pathTools = null,
   canMutateProject = () => true
 }) {
   const commands = new CommandRegistry();
@@ -231,6 +232,30 @@ export function createEditorCommands({
       })
       .register("edit.navigation.locks.clear", () =>
         editContext.clearNavigationLocks());
+  }
+
+  if (pathTools) {
+    commands
+      .register("path.reference.inspect", args =>
+        pathTools.inspect(args), {
+          category: "path-reference",
+          mutates: false
+        })
+      .register("path.tube.create", args =>
+        pathTools.createTube(args), {
+          category: "path-tools",
+          mutates: true
+        })
+      .register("path.sweep.create", args =>
+        pathTools.createSweep(args), {
+          category: "path-tools",
+          mutates: true
+        })
+      .register("path.array.create", args =>
+        pathTools.arraySelection(args), {
+          category: "path-tools",
+          mutates: true
+        });
   }
 
   if (meshEditor) {

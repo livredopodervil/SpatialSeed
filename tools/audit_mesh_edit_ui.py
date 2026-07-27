@@ -60,12 +60,18 @@ for needle in [
     'id="mesh-extrude"',
     'id="mesh-bridge"',
     'id="mesh-flip-normal"',
-    'data-mesh-section-toggle="topology"'
+    'data-mesh-section-toggle="topology"',
+    'data-mesh-section-toggle="paths"',
+    'id="path-reference-object"',
+    'id="path-profile-object"',
+    'id="path-create-tube"',
+    'id="path-create-sweep"',
+    'id="path-create-array"'
 ]:
     require("apps/web/index.html", needle)
 
 for needle in [
-    'static apiVersion = "mesh-edit-panel-v4"',
+    'static apiVersion = "mesh-edit-panel-v5"',
     '"mesh.topology.apply"',
     '"mesh.component.mode.set"',
     '"mesh.selection.apply"',
@@ -74,7 +80,10 @@ for needle in [
     "activateSelection()",
     'this.#click("mesh-frame-world", "edit.context.frame.set"',
     'this.#click("mesh-frame-local", "edit.context.frame.set"',
-    'this.#click("mesh-frame-viewer", "edit.context.frame.set"'
+    'this.#click("mesh-frame-viewer", "edit.context.frame.set"',
+    '"path.tube.create"',
+    '"path.sweep.create"',
+    '"path.array.create"'
 ]:
     require("packages/mesh-edit-panel/src/MeshEditPanel.js", needle)
 
@@ -116,13 +125,17 @@ ids = set(re.findall(r'id="([^"]+)"', html))
 panel_source = (ROOT / "packages/mesh-edit-panel/src/MeshEditPanel.js").read_text(
     encoding="utf-8"
 )
-referenced = set(re.findall(r'"(mesh-[a-z0-9-]+)"', panel_source))
-allowed_prefixes = {"mesh-create", "mesh-move", "mesh-rotate", "mesh-scale"}
-missing = sorted(reference for reference in referenced
-                 if reference not in ids and reference not in allowed_prefixes
-                 and reference != "mesh-edit-panel-v4")
+referenced = set()
+for method in ["element", "click", "value", "text"]:
+    referenced.update(re.findall(
+        rf'this\.#{method}\("([a-z0-9-]+)"',
+        panel_source
+    ))
+missing = sorted(reference for reference in referenced if reference not in ids)
 if missing:
-    raise SystemExit(f"Controles de malha ausentes no HTML: {', '.join(missing)}")
+    raise SystemExit(
+        "Controles do workspace ausentes no HTML: " + ", ".join(missing)
+    )
 
 runtime_source = (ROOT / "apps/web/bootstrap/createWebRuntime.js").read_text(
     encoding="utf-8"

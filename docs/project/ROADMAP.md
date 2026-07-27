@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 27 de julho de 2026 durante o marco `0035`.
+> Documento vivo. Auditado em 27 de julho de 2026 durante o marco `0037`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -212,6 +212,31 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
   inversão de diagonal, ponte de contornos, soldagem e orientação de faces;
 - histórico interno completo e commit editorial atômico;
 - painel flutuante único, redimensionável e configurável por checkboxes.
+
+### 0036 — Workspace e navegação de edição — implementado
+
+- painel único para seleção, transformação e edição de malha;
+- HUD destacável com estados de alta frequência;
+- eixos independentes e frames mundo, objeto, viewer e plano personalizado;
+- plane lock e point lock locais ao viewer.
+
+### 0037a — Referências espaciais e ferramentas por caminho — implementado
+
+- objetos resolvidos como caminhos, perfis planares e pontos;
+- linha central declarada, maior contorno, arestas soltas e pivôs da seleção;
+- tubo por caminho, varredura de perfil e distribuição hierárquica;
+- frames de transporte paralelo com correção de costura e torção explícita;
+- comandos comuns ao painel e console;
+- referências snapshot, sem dependência procedural implícita.
+
+### Próximas extensões geométricas
+
+- sanitização configurável com relatório de degenerações, contornos,
+  não-manifold e auto-interseções;
+- booleanos robustos em Worker e limpeza posterior;
+- referências vinculadas por grafo de modificadores;
+- objetos 2D, polylines e curvas Bézier de primeira classe;
+- loft, perfis com furos e variação procedural ao longo do caminho.
 
 ### Próxima extensão do editor topológico
 

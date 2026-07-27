@@ -69,7 +69,9 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 - configuração local de sombras, ambiente, reflexos e materiais físicos;
 - edição isolada de malha com vértices, arestas e faces, meia-arestas
   transitórias, snap adaptativo, falloff em tempo real e undo interno;
-- operações topológicas primitivas e painel flutuante único configurável.
+- operações topológicas primitivas e painel flutuante único configurável;
+- objetos resolvíveis como caminhos, perfis e pontos, com tubo, varredura e
+  distribuição hierárquica por frames de transporte paralelo.
 
 ## Invariantes
 
@@ -131,14 +133,18 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente o editor topológico 0035a em mobile e avançar em incrementos independentes:
+Validar visualmente o fluxo de referências espaciais `0037a` em mobile e avançar
+em incrementos independentes:
 
-1. UVs/normais por canto, materiais por face e grupos de suavização;
-2. bevel, knife, loop/ring cut e bridge entre contornos desiguais;
-3. assets de malha compartilhados com copy-on-write e persistência compacta;
-4. retomar rigs, alvos e direção de cena sem misturar estado do viewer e documento.
+1. analisador e pipeline configurável de sanitização de malhas;
+2. booleanos robustos em Worker, com diagnóstico e limpeza posterior;
+3. objetos 2D, polylines e curvas como referências de primeira classe;
+4. referências vinculadas por grafo de modificadores, sem ciclos e com
+   invalidação incremental;
+5. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
 
-Referência: `docs/project/ROADMAP.md` e `docs/MESH_TOPOLOGY_0035A.md`.
+Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md` e
+`docs/PATH_REFERENCES_0037A.md`.
 
 ## Protocolo para nova LLM
 

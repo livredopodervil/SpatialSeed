@@ -1,5 +1,5 @@
 export class MeshEditPanel {
-  static apiVersion = "mesh-edit-panel-v4";
+  static apiVersion = "mesh-edit-panel-v5";
 
   constructor({ root, query, execute, subscribe, subscribeContext = null }) {
     if (!root) throw new TypeError("MeshEditPanel exige root.");
@@ -19,9 +19,12 @@ export class MeshEditPanel {
   refresh(snapshot = null) {
     const state = snapshot ?? this.query("mesh.edit.status");
     const context = this.query("edit.context.status");
+    const references = this.query("path.references.list") ?? [];
     this.latest = state;
     this.latestContext = context;
+    this.latestReferences = references;
     const active = Boolean(state.active);
+    this.#refreshReferenceSelects(references);
     this.root.dataset.active = active ? "true" : "false";
     this.root.dataset.subjectLevel = context.subjectLevel;
     for (const button of this.root.querySelectorAll("[data-edit-workspace-subject]")) {
@@ -65,6 +68,9 @@ export class MeshEditPanel {
 
     for (const id of this.#activeControlIds()) {
       this.#element(id).disabled = !active;
+    }
+    for (const id of this.#pathControlIds()) {
+      this.#element(id).disabled = active;
     }
     this.#element("mesh-enter").disabled = active || !state.canEnter;
     this.#element("mesh-commit").disabled = !active || Boolean(state.stale);
@@ -198,6 +204,52 @@ export class MeshEditPanel {
       source: this.#element("edit-point-source").value
     }));
     this.#click("edit-navigation-clear", "edit.navigation.locks.clear");
+
+    this.#element("path-reference-object").addEventListener("change", () =>
+      this.#refreshExtractionSelects()
+    );
+    this.#element("path-profile-object").addEventListener("change", () =>
+      this.#refreshExtractionSelects()
+    );
+    this.#click("path-create-tube", "path.tube.create", () => ({
+      path: this.#pathReference(),
+      radius: this.#number("path-tube-radius"),
+      tubularSegments: this.#integer("path-segments"),
+      radialSegments: this.#integer("path-radial-segments"),
+      closed: this.#element("path-closed").checked
+    }));
+    this.#click("path-create-sweep", "path.sweep.create", () => ({
+      path: this.#pathReference(),
+      profile: this.#profileReference(),
+      segments: this.#integer("path-segments"),
+      closedPath: this.#element("path-closed").checked,
+      twistDegrees: this.#number("path-sweep-twist"),
+      scaleStart: this.#number("path-sweep-scale-start"),
+      scaleEnd: this.#number("path-sweep-scale-end"),
+      caps: this.#element("path-caps").checked
+    }));
+    this.#click("path-create-array", "path.array.create", () => ({
+      path: this.#pathReference(),
+      count: this.#integer("path-array-count"),
+      align: this.#element("path-array-align").checked,
+      closed: this.#element("path-closed").checked,
+      includePathObject: this.#element("path-array-include-reference").checked
+    }));
+    this.#element("path-inspect-reference").addEventListener("click", () => {
+      try {
+        const result = this.query("path.reference.inspect", {
+          kind: "path",
+          reference: this.#pathReference()
+        });
+        this.#text(
+          "path-reference-status",
+          `${result.objectName}: ${result.points.length} pontos; ${result.closed ? "fechado" : "aberto"}; extração ${result.extraction}.`
+        );
+        this.#text("mesh-edit-error", "");
+      } catch (error) {
+        this.#text("mesh-edit-error", error.message);
+      }
+    });
 
     this.#click("mesh-enter", "mesh.edit.enter");
     this.#click("mesh-commit", "mesh.edit.commit");
@@ -409,6 +461,101 @@ export class MeshEditPanel {
     }
   }
 
+  #refreshReferenceSelects(references) {
+    const pathSelect = this.#element("path-reference-object");
+    const profileSelect = this.#element("path-profile-object");
+    const previousPath = pathSelect.value;
+    const previousProfile = profileSelect.value;
+    const pathOptions = [
+      { value: "@selection-origins", label: "Origens dos objetos selecionados" },
+      ...references
+        .filter(reference => reference.pathExtractions?.length)
+        .map(reference => ({
+          value: reference.id,
+          label: `${reference.name} · ${reference.kind}`
+        }))
+    ];
+    const profileOptions = references
+      .filter(reference => reference.profileExtractions?.length)
+      .map(reference => ({
+        value: reference.id,
+        label: `${reference.name} · ${reference.kind}`
+      }));
+    fillSelect(pathSelect, pathOptions, previousPath);
+    fillSelect(profileSelect, profileOptions, previousProfile);
+    const activeReference = references.find(reference => reference.selected);
+    if (!previousPath && activeReference?.pathExtractions?.length) {
+      pathSelect.value = activeReference.id;
+    }
+    if (!previousProfile && activeReference?.profileExtractions?.length) {
+      profileSelect.value = activeReference.id;
+    }
+    this.#refreshExtractionSelects();
+  }
+
+  #refreshExtractionSelects() {
+    const references = this.latestReferences ?? [];
+    const pathValue = this.#element("path-reference-object").value;
+    const profileValue = this.#element("path-profile-object").value;
+    const pathReference = references.find(reference => reference.id === pathValue);
+    const profileReference = references.find(reference => reference.id === profileValue);
+    fillSelect(
+      this.#element("path-reference-extraction"),
+      (pathValue === "@selection-origins"
+        ? ["auto"]
+        : pathReference?.pathExtractions ?? ["auto"]
+      ).map(value => ({ value, label: extractionLabel(value) })),
+      this.#element("path-reference-extraction").value
+    );
+    fillSelect(
+      this.#element("path-profile-extraction"),
+      (profileReference?.profileExtractions ?? ["auto"])
+        .map(value => ({ value, label: extractionLabel(value) })),
+      this.#element("path-profile-extraction").value
+    );
+  }
+
+  #pathReference() {
+    const value = this.#element("path-reference-object").value;
+    if (!value) throw new Error("Escolha um objeto de caminho.");
+    if (value === "@selection-origins") {
+      return {
+        source: "selection-origins",
+        extraction: "auto",
+        closed: this.#element("path-closed").checked
+      };
+    }
+    return {
+      source: "object",
+      objectId: value,
+      extraction: this.#element("path-reference-extraction").value,
+      closed: this.#element("path-closed").checked
+    };
+  }
+
+  #profileReference() {
+    const objectId = this.#element("path-profile-object").value;
+    if (!objectId) throw new Error("Escolha um objeto de perfil.");
+    return {
+      source: "object",
+      objectId,
+      extraction: this.#element("path-profile-extraction").value
+    };
+  }
+
+  #pathControlIds() {
+    return [
+      "path-reference-object", "path-reference-extraction",
+      "path-profile-object", "path-profile-extraction",
+      "path-closed", "path-caps", "path-array-align",
+      "path-array-include-reference", "path-tube-radius",
+      "path-segments", "path-radial-segments", "path-create-tube",
+      "path-sweep-twist", "path-sweep-scale-start",
+      "path-sweep-scale-end", "path-create-sweep",
+      "path-array-count", "path-create-array", "path-inspect-reference"
+    ];
+  }
+
   #displayArguments() {
     return {
       vertices: this.#element("mesh-show-vertices").checked,
@@ -530,6 +677,12 @@ export class MeshEditPanel {
     );
   }
 
+  #integer(id) {
+    const value = this.#number(id);
+    if (!Number.isInteger(value)) throw new Error(`Valor inteiro exigido em ${id}.`);
+    return value;
+  }
+
   #number(id) {
     const value = Number(this.#element(id).value);
     if (!Number.isFinite(value)) throw new Error(`Valor inválido em ${id}.`);
@@ -548,4 +701,25 @@ export class MeshEditPanel {
   }
 
   #text(id, value) { this.#element(id).textContent = value; }
+}
+
+function extractionLabel(value) {
+  return ({
+    auto: "Automática",
+    centerline: "Linha central declarada",
+    boundary: "Maior contorno",
+    "loose-edges": "Arestas soltas",
+    contour: "Contorno declarado"
+  })[value] ?? value;
+}
+
+function fillSelect(select, options, preferred) {
+  const available = new Set(options.map(option => option.value));
+  select.replaceChildren(...options.map(option => {
+    const element = document.createElement("option");
+    element.value = option.value;
+    element.textContent = option.label;
+    return element;
+  }));
+  if (preferred && available.has(preferred)) select.value = preferred;
 }

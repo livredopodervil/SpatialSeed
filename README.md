@@ -75,6 +75,10 @@ O menu **Painéis → Render** controla iluminação, sombras, reflexos ambienta
 
 O botão **Editar** abre um workspace único para seleção, transformação e edição de malha. Um HUD destacável mantém sempre disponíveis nível objeto/vértice/aresta/face, ferramenta, frame, eixos independentes, snap combinável, influência proporcional, plane lock, point lock, undo/redo interno e aplicar/cancelar. Na sessão de malha, vértices, arestas e faces do objeto ativo são os únicos componentes selecionáveis. Gizmo, comandos afins e deformações procedurais compartilham frames, travas de eixo/plano, snap adaptativo e um histórico interno independente. O falloff proporcional atua durante o arrasto do gizmo em tempo real. O painel reúne criação, exclusão, duplicação, extrusão, inset, preenchimento, divisão, subdivisão, colapso, ponte de contornos, soldagem e orientação de faces. O commit substitui a geometria em uma única entrada de undo editorial. Consulte [Edição adaptativa de malha — build 0034d](docs/MESH_EDITING_0034.md), [Gizmo proporcional em tempo real — build 0034g](docs/MESH_EDITING_0034G.md), [Edição topológica unificada — build 0035a](docs/MESH_TOPOLOGY_0035A.md) e [Workspace/HUD unificados — build 0036b](docs/EDIT_WORKSPACE_0036B.md).
 
+## Objetos como caminhos e perfis
+
+A seção **Caminhos** do workspace **Editar** aceita objetos como referências geométricas. Um tubo pode fornecer sua linha central; superfícies abertas podem fornecer contornos ou arestas soltas; formas e extrusões podem fornecer perfis planares. As mesmas referências alimentam criação de tubo, varredura de perfil e distribuição hierárquica ao longo do caminho. O frame da varredura usa transporte paralelo para reduzir torções artificiais. Nesta versão, as referências são snapshots independentes, não modificadores vinculados. Consulte [Referências espaciais e ferramentas por caminho — build 0037a](docs/PATH_REFERENCES_0037A.md).
+
 ## Execução local
 
 O projeto usa módulos ES nativos e dependências vendorizadas. Não há etapa obrigatória de compilação nem `npm install`.
@@ -496,6 +500,7 @@ flowchart TD
 | `packages/mesh-edit-panel` | workspace declarativo de objeto e malha |
 | `packages/edit-context` | estado efêmero unificado de ferramenta, frame, eixos, snap e travas |
 | `packages/edit-hud` | HUD destacável de ações de alta frequência |
+| `packages/spatial-references` | resolução de objetos como caminhos, perfis e pontos; frames de transporte e ferramentas por trajetória |
 | `packages/property-registry` | propriedades tipadas, inspeção e edição atômica em lote |
 | `packages/script-runtime` | Workers, SES, sessões, planos espaciais/de câmera e procedimentos |
 | `packages/experiment-runtime` | definições, parâmetros e planejamento de experimentos |
@@ -647,7 +652,7 @@ As decisões de workflow estão documentadas em [`docs/project/WORKFLOW.md`](doc
 SpatialSeed ainda não é um modelador DCC completo nem um motor de jogo pronto para produção. Permanecem fora do escopo implementado:
 
 - operações topológicas avançadas de DCC, como bevel, knife, loop cut, remalhamento e UVs por canto;
-- curvas Bézier, polylines e um sistema geométrico 2D completo;
+- curvas Bézier, polylines e um sistema geométrico 2D completo; referências por caminho usam, por enquanto, linhas centrais e contornos discretos;
 - persistência de clips, keyframes e animações no documento;
 - eventos, colisões e interatividade programável contínua;
 - serialização compacta de grandes receitas procedurais e instâncias hierárquicas;
@@ -661,9 +666,10 @@ Esses limites são mantidos explícitos para evitar que uma demonstração seja 
 
 1. consolidar origens individuais, grupos e customização interna da interface;
 2. decidir persistência de clips/keyframes e modelo de eventos;
-3. geometria 2D, polylines e curvas Bézier;
-4. ampliar o editor topológico com bevel, knife, loops, UVs e assets de malha compartilhados;
-5. persistência compacta, múltiplos viewers, formatos 3D e colaboração regional.
+3. sanitização e operações booleanas robustas entre objetos;
+4. geometria 2D, polylines, curvas Bézier e referências vinculadas por modificadores;
+5. ampliar o editor topológico com bevel, knife, loops, UVs e assets de malha compartilhados;
+6. persistência compacta, formatos 3D e colaboração regional.
 
 Os registros de planejamento e prioridades anteriores permanecem em [`docs/project/ROADMAP.md`](docs/project/ROADMAP.md).
 

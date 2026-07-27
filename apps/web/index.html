@@ -571,6 +571,7 @@
         <label><input type="checkbox" data-mesh-section-toggle="session" checked> Sessão</label>
         <label><input type="checkbox" data-mesh-section-toggle="selection" checked> Seleção</label>
         <label><input type="checkbox" data-mesh-section-toggle="topology" checked> Topologia</label>
+        <label><input type="checkbox" data-mesh-section-toggle="paths" checked> Caminhos</label>
         <label><input type="checkbox" data-mesh-section-toggle="transform" checked> Transformação</label>
         <label><input type="checkbox" data-mesh-section-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-mesh-section-toggle="influence" checked> Influência</label>
@@ -682,6 +683,44 @@
         <button id="mesh-bridge" type="button">Ponte de contornos</button>
         <button id="mesh-cleanup" type="button">Limpar malha</button>
       </div>
+    </fieldset>
+
+    <fieldset data-mesh-section="paths">
+      <legend>Objetos como caminhos, perfis e conjuntos de pontos</legend>
+      <p class="mesh-section-note">
+        As referências são resolvidas como snapshot no momento da operação. O objeto
+        original permanece independente do tubo, varredura ou distribuição criada.
+      </p>
+      <div class="mesh-form-grid">
+        <label><span>Objeto de caminho</span><select id="path-reference-object"></select></label>
+        <label><span>Extração</span><select id="path-reference-extraction"><option value="auto">Automática</option><option value="centerline">Linha central declarada</option><option value="boundary">Maior contorno</option><option value="loose-edges">Arestas soltas</option></select></label>
+        <label><span>Objeto de perfil</span><select id="path-profile-object"></select></label>
+        <label><span>Extração do perfil</span><select id="path-profile-extraction"><option value="auto">Automática</option><option value="contour">Contorno declarado</option><option value="boundary">Maior contorno planar</option></select></label>
+      </div>
+      <div class="mesh-checkbox-grid">
+        <label><input id="path-closed" type="checkbox"> Caminho fechado</label>
+        <label><input id="path-caps" type="checkbox" checked> Tampar varredura aberta</label>
+        <label><input id="path-array-align" type="checkbox" checked> Orientar cópias pela tangente</label>
+        <label><input id="path-array-include-reference" type="checkbox"> Incluir objeto-caminho na distribuição</label>
+      </div>
+      <div class="mesh-form-grid">
+        <label><span>Raio do tubo</span><input id="path-tube-radius" type="number" min="0.001" value="0.25" step="0.05"></label>
+        <label><span>Segmentos do caminho</span><input id="path-segments" type="number" min="2" value="64" step="1"></label>
+        <label><span>Segmentos radiais</span><input id="path-radial-segments" type="number" min="3" value="8" step="1"></label>
+        <button id="path-create-tube" type="button">Criar tubo pelo objeto</button>
+      </div>
+      <div class="mesh-form-grid">
+        <label><span>Torção total °</span><input id="path-sweep-twist" type="number" value="0" step="1"></label>
+        <label><span>Escala inicial</span><input id="path-sweep-scale-start" type="number" value="1" step="0.1"></label>
+        <label><span>Escala final</span><input id="path-sweep-scale-end" type="number" value="1" step="0.1"></label>
+        <button id="path-create-sweep" type="button">Extrudar perfil pelo caminho</button>
+      </div>
+      <div class="mesh-form-grid">
+        <label><span>Quantidade de cópias</span><input id="path-array-count" type="number" min="1" max="10000" value="8" step="1"></label>
+        <button id="path-create-array" type="button">Distribuir seleção no caminho</button>
+        <button id="path-inspect-reference" type="button">Inspecionar referência</button>
+      </div>
+      <small id="path-reference-status">Escolha um objeto de caminho.</small>
     </fieldset>
 
     <fieldset data-mesh-section="transform">
@@ -931,6 +970,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0036d"></script>
+<script type="module" src="./boot.js?build=20260727-0037a"></script>
 </body>
 </html>
