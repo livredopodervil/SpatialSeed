@@ -129,6 +129,10 @@
   <button id="camera-settings" title="Configurar planos de recorte">
     Câmera
   </button>
+  <button id="viewer-render-settings"
+    title="Iluminação, sombras, reflexos e materiais locais">
+    Render
+  </button>
   <button
     id="viewer-new"
     title="Conectar viewers ou iniciar outro projeto local"
@@ -320,6 +324,14 @@
       <output id="camera-object-summary"></output>
     </fieldset>
   </form>
+</section>
+
+<section id="viewer-render-panel" hidden>
+  <header>
+    <strong>Renderização local do viewer</strong>
+    <button id="close-viewer-render" title="Fechar">×</button>
+  </header>
+  <div id="viewer-render-panel-root"></div>
 </section>
 
 <section id="developer-panel" hidden>

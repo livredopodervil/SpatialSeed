@@ -68,6 +68,7 @@
           "review",
           "diagnostics",
           "camera-settings",
+          "viewer-render-settings",
           "viewer-new",
           "developer",
           "console",
@@ -98,6 +99,7 @@
       "review-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 420 },
       "diagnostic-panel": { "anchor": "right", "top": "toolbar", "width": 520, "height": 520 },
       "camera-panel": { "anchor": "right", "top": "toolbar", "width": 460, "height": 650 },
+      "viewer-render-panel": { "anchor": "right", "top": "toolbar", "width": 500, "height": 720 },
       "developer-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
       "console-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
       "procedure-editor-panel": { "anchor": "left", "top": "toolbar", "width": 760, "height": 680 },
@@ -140,6 +142,9 @@
       "corner": "top-left",
       "size": 64,
       "helpStorageKey": "spatialseed.ui.scene-help.v1"
+    },
+    "viewerRender": {
+      "storageKey": "spatialseed.viewer.render.v1"
     }
   }
 }

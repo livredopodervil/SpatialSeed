@@ -5,7 +5,17 @@ import {
 import {
   InstanceBatchManager
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
-import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
+import { BatchMaterialCache } from "../../batch-material-cache/src/index.js?build=20260726-0032a";
+import {
+  DEFAULT_VIEWER_RENDER_SETTINGS,
+  describeViewerRenderPresets,
+  mergeViewerRenderSettings,
+  normalizeViewerRenderSettings,
+  viewerRenderPreset
+} from "./ViewerRenderSettings.js?build=20260726-0032a";
+import {
+  createViewerEnvironmentTexture
+} from "./ViewerEnvironment.js?build=20260726-0032a";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
@@ -45,7 +55,13 @@ export class ThreeRegionRenderer {
   #projectObject = object => object;
   #geometryRegistry = null;
   #resourceCache = new ThreeResourceCache({ textureLoader: this.#textureLoader });
-  #materialCache = new BatchMaterialCache({ resourceCache: this.#resourceCache });
+  #materialCache = null;
+  #viewerRenderSettings = DEFAULT_VIEWER_RENDER_SETTINGS;
+  #environmentTarget = null;
+  #hemisphereLight = null;
+  #directionalLight = null;
+  #shadowFloor = null;
+  #lastState = null;
   #batchManager = null;
   #selectedVisualIds = new Set();
   #selectionOutlines = null;
@@ -140,7 +156,8 @@ export class ThreeRegionRenderer {
       selection,
       editorState,
       geometryRegistry = createDefaultGeometryRegistry(),
-      projectObject = object => object
+      projectObject = object => object,
+      viewerRenderSettings = DEFAULT_VIEWER_RENDER_SETTINGS
     }
   ) {
     if (typeof dispatch !== "function") throw new TypeError("dispatch must be a function");
@@ -160,9 +177,19 @@ export class ThreeRegionRenderer {
       typeof projectObject === "function"
         ? projectObject
         : object => object;
+    this.#viewerRenderSettings = normalizeViewerRenderSettings(
+      viewerRenderSettings
+    );
+    this.#materialCache = new BatchMaterialCache({
+      resourceCache: this.#resourceCache,
+      viewerMaterialSettings: this.#viewerRenderSettings.materials
+    });
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(
+      globalThis.devicePixelRatio ?? 1,
+      this.#viewerRenderSettings.quality.pixelRatioCap
+    ));
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
@@ -175,6 +202,8 @@ export class ThreeRegionRenderer {
       createBatch: descriptor => {
         const batch = new InstanceBatch(descriptor);
         batch.mesh.frustumCulled = false;
+        batch.mesh.castShadow = this.#viewerRenderSettings.shadows.enabled;
+        batch.mesh.receiveShadow = this.#viewerRenderSettings.shadows.enabled;
         this.scene.add(batch.mesh);
         return batch;
       }
@@ -222,10 +251,29 @@ export class ThreeRegionRenderer {
     this.#vertexMarkers.visible = false;
     this.scene.add(this.#vertexMarkers);
 
-    this.scene.add(new THREE.HemisphereLight(0xaecbff, 0x182012, 2.2));
-    const light = new THREE.DirectionalLight(0xffffff, 2.5);
-    light.position.set(8, 16, 10);
-    this.scene.add(light);
+    this.#hemisphereLight = new THREE.HemisphereLight();
+    this.scene.add(this.#hemisphereLight);
+
+    this.#directionalLight = new THREE.DirectionalLight();
+    this.scene.add(
+      this.#directionalLight,
+      this.#directionalLight.target
+    );
+
+    this.#shadowFloor = new THREE.Mesh(
+      new THREE.PlaneGeometry(200, 200),
+      new THREE.ShadowMaterial({
+        color: 0x000000,
+        opacity: 0.28,
+        transparent: true
+      })
+    );
+    this.#shadowFloor.name = "viewer-shadow-floor";
+    this.#shadowFloor.rotation.x = -Math.PI / 2;
+    this.#shadowFloor.receiveShadow = true;
+    this.scene.add(this.#shadowFloor);
+
+    this.#applyViewerRenderSettings();
 
     const grid = new THREE.GridHelper(200, 100, 0x6688aa, 0x243142);
     grid.position.y = 0.01;
@@ -278,6 +326,53 @@ export class ThreeRegionRenderer {
     addEventListener("resize", () => this.resize());
 
     this.animate();
+  }
+
+  getViewerRenderSettings() {
+    return Object.freeze(
+      structuredClone(this.#viewerRenderSettings)
+    );
+  }
+
+  getViewerRenderPresets() {
+    return describeViewerRenderPresets();
+  }
+
+  setViewerRenderSettings(patch = {}) {
+    const previous = this.#viewerRenderSettings;
+    const next = mergeViewerRenderSettings(previous, patch);
+    const materialChanged = JSON.stringify(previous.materials) !==
+      JSON.stringify(next.materials);
+    const environmentChanged =
+      previous.environment.enabled !== next.environment.enabled ||
+      previous.environment.preset !== next.environment.preset;
+    const shadowProgramChanged =
+      previous.shadows.enabled !== next.shadows.enabled ||
+      previous.shadows.type !== next.shadows.type;
+
+    this.#viewerRenderSettings = next;
+    this.#materialCache.setViewerMaterialSettings(next.materials);
+    this.#applyViewerRenderSettings(previous);
+
+    if (materialChanged) {
+      this.#rebuildRenderableBatches();
+    } else if (environmentChanged || shadowProgramChanged) {
+      this.#markBatchMaterialsForUpdate();
+    }
+
+    return this.getViewerRenderSettings();
+  }
+
+  applyViewerRenderPreset(id) {
+    return this.setViewerRenderSettings(
+      viewerRenderPreset(id)
+    );
+  }
+
+  resetViewerRenderSettings() {
+    return this.setViewerRenderSettings(
+      DEFAULT_VIEWER_RENDER_SETTINGS
+    );
   }
 
   getCameraProjection() {
@@ -414,6 +509,7 @@ export class ThreeRegionRenderer {
   }
 
   update(state) {
+    this.#lastState = state;
     this.#incrementalDiagnostics.fullUpdates += 1;
     const seen = new Set();
     const hierarchy = new HierarchyIndex(state.objects);
@@ -436,6 +532,7 @@ export class ThreeRegionRenderer {
   }
 
   applyChanges(state, changes = []) {
+    this.#lastState = state;
     this.#incrementalDiagnostics.incrementalUpdates += 1;
     const hierarchy = new HierarchyIndex(state.objects);
     this.#hierarchy = hierarchy;
@@ -719,6 +816,126 @@ export class ThreeRegionRenderer {
       ...this.#incrementalDiagnostics,
       meshes: this.#meshes.size
     };
+  }
+
+  #applyViewerRenderSettings(previous = null) {
+    const settings = this.#viewerRenderSettings;
+    const pixelRatio = Math.min(
+      globalThis.devicePixelRatio ?? 1,
+      settings.quality.pixelRatioCap
+    );
+    this.renderer.setPixelRatio(pixelRatio);
+    this.renderer.transmissionResolutionScale =
+      settings.quality.transmissionResolutionScale;
+    this.renderer.toneMapping = toneMapping(settings.toneMapping.mode);
+    this.renderer.toneMappingExposure = settings.toneMapping.exposure;
+
+    this.renderer.shadowMap.enabled = settings.shadows.enabled;
+    this.renderer.shadowMap.type = shadowMapType(settings.shadows.type);
+
+    const hemisphere = settings.lighting.hemisphere;
+    this.#hemisphereLight.visible = hemisphere.enabled;
+    this.#hemisphereLight.color.set(hemisphere.skyColor);
+    this.#hemisphereLight.groundColor.set(hemisphere.groundColor);
+    this.#hemisphereLight.intensity = hemisphere.intensity;
+
+    const directional = settings.lighting.directional;
+    this.#directionalLight.visible = directional.enabled;
+    this.#directionalLight.color.set(directional.color);
+    this.#directionalLight.intensity = directional.intensity;
+    this.#directionalLight.position.fromArray(directional.position);
+    this.#directionalLight.target.position.fromArray(directional.target);
+    this.#directionalLight.target.updateMatrixWorld();
+    this.#directionalLight.castShadow =
+      settings.shadows.enabled && directional.enabled;
+
+    const shadow = this.#directionalLight.shadow;
+    const mapSizeChanged =
+      shadow.mapSize.x !== settings.shadows.mapSize ||
+      shadow.mapSize.y !== settings.shadows.mapSize;
+    shadow.mapSize.set(
+      settings.shadows.mapSize,
+      settings.shadows.mapSize
+    );
+    shadow.camera.near = settings.shadows.near;
+    shadow.camera.far = Math.max(
+      settings.shadows.near + 0.001,
+      settings.shadows.far
+    );
+    shadow.camera.left = -settings.shadows.extent;
+    shadow.camera.right = settings.shadows.extent;
+    shadow.camera.top = settings.shadows.extent;
+    shadow.camera.bottom = -settings.shadows.extent;
+    shadow.camera.updateProjectionMatrix();
+    shadow.bias = settings.shadows.bias;
+    shadow.normalBias = settings.shadows.normalBias;
+    if (mapSizeChanged && shadow.map) {
+      shadow.map.dispose();
+      shadow.map = null;
+    }
+
+    const floor = settings.shadows;
+    this.#shadowFloor.visible = floor.enabled && floor.floorEnabled;
+    this.#shadowFloor.position.y = floor.floorY;
+    this.#shadowFloor.material.opacity = floor.floorOpacity;
+    const floorSizeChanged =
+      this.#shadowFloor.userData.size !== floor.floorSize;
+    if (floorSizeChanged) {
+      this.#shadowFloor.geometry.dispose();
+      this.#shadowFloor.geometry = new THREE.PlaneGeometry(
+        floor.floorSize,
+        floor.floorSize
+      );
+      this.#shadowFloor.userData.size = floor.floorSize;
+    }
+
+    for (const batch of this.#batchManager?.batches?.() ?? []) {
+      batch.mesh.castShadow = settings.shadows.enabled;
+      batch.mesh.receiveShadow = settings.shadows.enabled;
+    }
+
+    const environmentChanged = !previous ||
+      previous.environment.enabled !== settings.environment.enabled ||
+      previous.environment.preset !== settings.environment.preset;
+    if (environmentChanged) {
+      this.#environmentTarget?.dispose?.();
+      this.#environmentTarget = settings.environment.enabled
+        ? createViewerEnvironmentTexture(
+            this.renderer,
+            settings.environment.preset
+          )
+        : null;
+    }
+
+    const environmentTexture = this.#environmentTarget?.texture ?? null;
+    this.scene.environment = environmentTexture;
+    this.scene.environmentIntensity = settings.environment.intensity;
+    this.scene.background =
+      settings.environment.background && environmentTexture
+        ? environmentTexture
+        : new THREE.Color(settings.background.color);
+    this.scene.backgroundBlurriness = settings.environment.background
+      ? settings.environment.backgroundBlur
+      : 0;
+    this.scene.backgroundIntensity = settings.environment.background
+      ? settings.environment.backgroundIntensity
+      : 1;
+  }
+
+  #markBatchMaterialsForUpdate() {
+    for (const batch of this.#batchManager.batches()) {
+      if (batch.material) batch.material.needsUpdate = true;
+    }
+  }
+
+  #rebuildRenderableBatches() {
+    const state = this.#lastState;
+    for (const [id, proxy] of this.#meshes) {
+      if (!proxy.userData.batchKey) continue;
+      this.#removeFromBatch(id, proxy.userData.batchKey);
+      proxy.userData.batchKey = null;
+    }
+    if (state) this.update(state);
   }
 
   #upsertObject(object, worldMatrix) {
@@ -1913,6 +2130,27 @@ getResourceDiagnostics() {
     this.orbit.update();
     this.renderer.render(this.scene, this.camera);
   };
+}
+
+function toneMapping(mode) {
+  return ({
+    none: THREE.NoToneMapping,
+    linear: THREE.LinearToneMapping,
+    reinhard: THREE.ReinhardToneMapping,
+    cineon: THREE.CineonToneMapping,
+    aces: THREE.ACESFilmicToneMapping,
+    agx: THREE.AgXToneMapping,
+    neutral: THREE.NeutralToneMapping
+  })[mode] ?? THREE.ACESFilmicToneMapping;
+}
+
+function shadowMapType(type) {
+  return ({
+    basic: THREE.BasicShadowMap,
+    pcf: THREE.PCFShadowMap,
+    "pcf-soft": THREE.PCFSoftShadowMap,
+    vsm: THREE.VSMShadowMap
+  })[type] ?? THREE.PCFSoftShadowMap;
 }
 
 function previewSessionKey(session = {}) {

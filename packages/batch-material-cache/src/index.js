@@ -1,1 +1,4 @@
-export { BatchMaterialCache } from "./BatchMaterialCache.js";
+export {
+  BatchMaterialCache,
+  resolveViewerMaterial
+} from "./BatchMaterialCache.js";

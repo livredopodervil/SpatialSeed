@@ -18,6 +18,7 @@ export async function startApplication(
     geometryCreationRoot: $("geometry-create-panel"),
     experimentPanelRoot: $("experiment-panel"),
     animationPanelRoot: $("animation-panel"),
+    viewerRenderPanelRoot: $("viewer-render-panel-root"),
     procedureEditorRoot: $("procedure-editor-root"),
     inspectorRoot: $("inspector-panel"),
     buildInfo,

@@ -22,6 +22,8 @@ O resultado atual combina:
 - câmera de navegação controlável por painel, console e procedimentos;
 - hierarquia de grupos aninháveis com transformações locais;
 - propriedades, materiais, texturas e cores de instância editáveis em lote;
+- renderização local configurável por viewer, com sombras, ambiente PMREM,
+  materiais físicos, transmissão, dispersão e iridescência;
 - aplicação web instalável, utilizável offline depois do primeiro carregamento;
 - recuperação automática local por checkpoint e comandos confirmados;
 - múltiplos viewers locais sobre o mesmo sandbox, com câmeras e seleções
@@ -64,6 +66,10 @@ históricos e explicita dependências e limitações:
 No menu **Projeto**, use **Como instalar** para adicionar o PWA ao aparelho. O primeiro acesso precisa de rede; depois que o service worker instalar os recursos, o aplicativo pode abrir offline.
 
 O build efetivamente carregado aparece no rodapé. Se a publicação e o cache controlador forem diferentes, feche todas as janelas do aplicativo e abra-o novamente.
+
+## Renderização do viewer
+
+O menu **Painéis → Render** controla iluminação, sombras, reflexos ambientais e materiais físicos apenas no viewer atual. A configuração não altera o mundo nem o arquivo do projeto. Consulte [Renderização local do viewer — build 0032a](docs/VIEWER_RENDERING_0032A.md).
 
 ## Execução local
 

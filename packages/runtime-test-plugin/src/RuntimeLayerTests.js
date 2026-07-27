@@ -33,7 +33,14 @@ import {
   textureKey,
   ThreeResourceCache
 } from "../../renderer-resource-cache/src/index.js";
-import { BatchMaterialCache } from "../../batch-material-cache/src/index.js";
+import {
+  BatchMaterialCache,
+  resolveViewerMaterial
+} from "../../batch-material-cache/src/index.js";
+import {
+  normalizeViewerRenderSettings,
+  viewerRenderPreset
+} from "../../renderer-three/src/ViewerRenderSettings.js";
 import {
   InstanceBatchIndex
 } from "../../instance-batches/src/InstanceBatchIndex.js?build=20260713-0019g-c2";
@@ -6237,6 +6244,10 @@ assets: {
           configuration.presentation.sceneExit.helpStorageKey,
           "spatialseed.ui.scene-help.v1"
         );
+        assertEqual(
+          configuration.presentation.viewerRender.storageKey,
+          "spatialseed.viewer.render.v1"
+        );
         assertEqual(Object.isFrozen(configuration),true);
       },
       "rejeita controle repetido entre grupos"() {
@@ -7010,6 +7021,106 @@ assets: {
     });
   }
 },
+
+    "viewer-render-settings": {
+      "normaliza limites e mantém configuração congelada"() {
+        const settings = normalizeViewerRenderSettings({
+          quality: {
+            pixelRatioCap: 99,
+            transmissionResolutionScale: 0
+          },
+          shadows: {
+            mapSize: 777,
+            floorOpacity: 4
+          },
+          materials: {
+            ior: 8,
+            roughness: -1,
+            dispersion: 12
+          }
+        });
+
+        assertEqual(settings.quality.pixelRatioCap, 3);
+        assertEqual(settings.quality.transmissionResolutionScale, 0.1);
+        assertEqual(settings.shadows.mapSize, 1024);
+        assertEqual(settings.shadows.floorOpacity, 1);
+        assertEqual(settings.materials.ior, 2.333);
+        assertEqual(settings.materials.roughness, 0);
+        assertEqual(settings.materials.dispersion, 10);
+        assertEqual(Object.isFrozen(settings.materials), true);
+      },
+
+      "preset cristal ativa transmissão e dispersão"() {
+        const settings = viewerRenderPreset("crystal-blue");
+
+        assertEqual(settings.materials.mode, "override");
+        assertEqual(settings.materials.color, "#72cfff");
+        assert(settings.materials.transmission > 0.9);
+        assert(settings.materials.dispersion > 0);
+        assertEqual(settings.environment.enabled, true);
+        assertEqual(settings.shadows.enabled, true);
+      },
+
+      "modo projeto preserva parâmetros do documento"() {
+        const material = resolveViewerMaterial({
+          model: "physical",
+          color: "#abcdef",
+          parameters: {
+            roughness: 0.44,
+            transmission: 0.7,
+            ior: 1.33
+          }
+        }, {
+          mode: "project",
+          colorMode: "override",
+          color: "#112233",
+          roughness: 0.1,
+          transmission: 1,
+          ior: 2
+        });
+
+        assertEqual(material.color, "#112233");
+        assertEqual(material.parameters.roughness, 0.44);
+        assertEqual(material.parameters.transmission, 0.7);
+        assertEqual(material.parameters.ior, 1.33);
+      },
+
+      "modo sobrescrever produz material físico local"() {
+        const resourceCache = {
+          acquireTexture() { return null; },
+          releaseTexture() { return true; }
+        };
+        const cache = new BatchMaterialCache({
+          resourceCache,
+          viewerMaterialSettings: {
+            mode: "override",
+            colorMode: "override",
+            color: "#72cfff",
+            roughness: 0.05,
+            transmission: 0.95,
+            ior: 1.46,
+            thickness: 0.8,
+            attenuationColor: "#38a8ff",
+            attenuationDistance: 8,
+            dispersion: 0.18,
+            envMapIntensity: 1.4
+          }
+        });
+        const acquired = cache.acquire({
+          appearanceId: "crystal",
+          material: { color: "#ffffff" }
+        });
+        const material = acquired.value.material;
+
+        assertEqual(material.isMeshPhysicalMaterial, true);
+        assertEqual(material.color.getHexString(), "72cfff");
+        assertEqual(material.transmission, 0.95);
+        assertEqual(material.ior, 1.46);
+        assertEqual(material.dispersion, 0.18);
+        assertEqual(material.envMapIntensity, 1.4);
+        cache.release(acquired.key);
+      }
+    },
 
     "batch-material-cache": {
       "aparência idêntica reutiliza material"() {

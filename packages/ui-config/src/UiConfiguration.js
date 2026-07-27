@@ -65,6 +65,7 @@ export function normalizeUiConfiguration(source = {}) {
     )
   });
   const sceneExit = source.presentation?.sceneExit ?? {};
+  const viewerRender = source.presentation?.viewerRender ?? {};
   const corner = sceneExit.corner ?? "top-left";
   if (!["top-left", "top-right", "bottom-left", "bottom-right"].includes(corner)) {
     throw new RangeError("presentation.sceneExit.corner inválido.");
@@ -115,6 +116,12 @@ export function normalizeUiConfiguration(source = {}) {
         helpStorageKey: requiredText(
           sceneExit.helpStorageKey ?? "spatialseed.ui.scene-help.v1",
           "presentation.sceneExit.helpStorageKey"
+        )
+      }),
+      viewerRender: Object.freeze({
+        storageKey: requiredText(
+          viewerRender.storageKey ?? "spatialseed.viewer.render.v1",
+          "presentation.viewerRender.storageKey"
         )
       })
     })

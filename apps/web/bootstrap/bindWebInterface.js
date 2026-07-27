@@ -25,6 +25,7 @@ export function bindWebInterface({
     objectInspector,
     transformToolPanel,
     experimentPanel,
+    viewerRenderPanel,
     sandboxRecovery,
     viewerCoordinator,
     viewerDirectory,
@@ -184,6 +185,7 @@ export function bindWebInterface({
     "#review-panel",
     "#diagnostic-panel",
     "#camera-panel",
+    "#viewer-render-panel",
     "#developer-panel",
     "#console-panel",
     "#procedure-editor-panel",
@@ -639,6 +641,16 @@ export function bindWebInterface({
   $("close-camera").addEventListener(
     "click",
     () => panelManager.hide("#camera-panel")
+  );
+
+  $("viewer-render-settings").addEventListener("click", () => {
+    viewerRenderPanel.refresh();
+    panelManager.show("#viewer-render-panel");
+  });
+
+  $("close-viewer-render").addEventListener(
+    "click",
+    () => panelManager.hide("#viewer-render-panel")
   );
 
   $("camera-projection-apply").addEventListener("click", () => {

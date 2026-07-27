@@ -10,7 +10,7 @@ import {
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260724-0029f";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260725-0029f1";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260726-0032a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260726-0031a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -76,6 +76,9 @@ import {
   AnimationPanel
 } from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
 import {
+  ViewerRenderPanel
+} from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
+import {
   BrowserSandboxIdentity,
   createSandboxId,
   createRecoveryRecord,
@@ -103,6 +106,7 @@ export async function createWebRuntime({
   geometryCreationRoot,
   experimentPanelRoot,
   animationPanelRoot,
+  viewerRenderPanelRoot,
   procedureEditorRoot,
   inspectorRoot,
   onConsoleOutput,
@@ -597,6 +601,21 @@ export async function createWebRuntime({
         };
       },
       { category: "viewer", mutates: false }
+    )
+    .register(
+      "viewer.render.settings.set",
+      settings => renderer.setViewerRenderSettings(settings),
+      { category: "viewer-render", mutates: false }
+    )
+    .register(
+      "viewer.render.settings.reset",
+      () => renderer.resetViewerRenderSettings(),
+      { category: "viewer-render", mutates: false }
+    )
+    .register(
+      "viewer.render.preset.apply",
+      ({ id }) => renderer.applyViewerRenderPreset(id),
+      { category: "viewer-render", mutates: false }
     );
 
   const spatialPlanCommitService = new SpatialPlanCommitService({
@@ -779,6 +798,12 @@ export async function createWebRuntime({
     .register("viewer.camera.helpers", () =>
       renderer.getCameraVisualState()
     )
+    .register("viewer.render.settings", () =>
+      renderer.getViewerRenderSettings()
+    )
+    .register("viewer.render.presets", () =>
+      renderer.getViewerRenderPresets()
+    )
     .register("viewer.instances.status", () =>
       viewerCoordinator.status()
     )
@@ -818,6 +843,15 @@ export async function createWebRuntime({
     execute: (id, args) => runtime.execute(id, args)
   });
   runtime.onDispose(() => animationPanel.dispose());
+  const viewerRenderPanel = new ViewerRenderPanel({
+    root: viewerRenderPanelRoot,
+    query: (id, args) => runtime.query(id, args),
+    execute: (id, args) => runtime.execute(id, args),
+    storageKey:
+      uiConfiguration?.presentation?.viewerRender?.storageKey ??
+      "spatialseed.viewer.render.v1"
+  });
+  runtime.onDispose(() => viewerRenderPanel.dispose());
 
   const procedureCatalog = new ProcedureCatalog({
     storage: new BrowserProcedureCatalogStore()
@@ -904,7 +938,10 @@ export async function createWebRuntime({
       viewers: viewerCoordinator.status(),
       viewerSessions: viewerDirectory.status(),
       transformPreview: transformPreviews.status(),
-      renderer: renderer.renderer?.info?.render ?? null,
+      renderer: {
+        render: renderer.renderer?.info?.render ?? null,
+        viewerSettings: renderer.getViewerRenderSettings()
+      },
       appearance: appearanceRuntime.stats(),
       incremental: renderer.getIncrementalDiagnostics(),
       runtimeApi: {
@@ -921,6 +958,14 @@ export async function createWebRuntime({
       identityApiVersion: BrowserSandboxIdentity.apiVersion,
       mode: "indexeddb-command-journal",
       portable: false
+    }))
+    .register("viewerRendering", () => ({
+      apiVersion: "viewer-render-settings-v1",
+      scope: "local-viewer",
+      shadows: true,
+      environment: "pmrem-procedural",
+      materialModels: ["standard", "physical"],
+      opticalEffects: ["transmission", "dispersion", "iridescence"]
     }))
     .register("animation", () => ({
       apiVersion: ANIMATION_RUNTIME_VERSION,
@@ -1083,6 +1128,7 @@ export async function createWebRuntime({
       geometryCreationPanel,
       experimentPanel,
       animationPanel,
+      viewerRenderPanel,
       geometryRegistry,
       propertyRegistry,
       propertyService,
