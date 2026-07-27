@@ -177,7 +177,7 @@
 
 <aside id="edit-hud" aria-label="HUD de edição">
   <div id="edit-hud-handle" class="edit-hud-handle">
-    <button id="edit-hud-open" type="button" title="Abrir painel unificado">Editar</button>
+    <button id="edit-hud-open" type="button" title="Abrir painel unificado de edição">✎</button>
     <small id="edit-hud-status">Objeto · select · world · XYZ</small>
     <details class="edit-hud-config">
       <summary title="Configurar HUD">⚙</summary>
@@ -197,17 +197,23 @@
         <label><input type="checkbox" data-edit-hud-group-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="history" checked> Histórico</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="actions" checked> Ações contextuais</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="session" checked> Sessão</label>
+      </div>
+      <div class="edit-hud-config-defaults">
+        <label>Extrusão <input id="edit-hud-default-extrude" type="number" step="0.1" value="1"></label>
+        <label>Inset <input id="edit-hud-default-inset" type="number" min="0.001" max="0.999" step="0.05" value="0.2"></label>
+        <label>Raio de caminho <input id="edit-hud-default-path-radius" type="number" min="0.001" step="0.01" value="0.08"></label>
       </div>
       <button id="edit-hud-reset" type="button">Restaurar HUD</button>
     </details>
   </div>
   <div class="edit-hud-strip">
     <div class="edit-hud-group" data-edit-hud-group="subject" aria-label="Nível de edição">
-      <button id="edit-hud-object" type="button" data-edit-subject="object">Obj</button>
-      <button type="button" data-edit-subject="vertex">V</button>
-      <button type="button" data-edit-subject="edge">E</button>
-      <button type="button" data-edit-subject="face">F</button>
+      <button id="edit-hud-object" type="button" data-edit-subject="object" title="Editar objetos">◫</button>
+      <button type="button" data-edit-subject="vertex" title="Editar vértices">●</button>
+      <button type="button" data-edit-subject="edge" title="Editar arestas">━</button>
+      <button type="button" data-edit-subject="face" title="Editar faces">▲</button>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="tool" aria-label="Ferramenta">
       <button type="button" data-edit-tool="navigate" title="Navegar">☝</button>
@@ -217,36 +223,70 @@
       <button type="button" data-edit-tool="scale" title="Escalar">⤢</button>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="frame" aria-label="Referencial">
-      <button type="button" data-edit-frame="world">M</button>
-      <button type="button" data-edit-frame="local">O</button>
-      <button type="button" data-edit-frame="viewer">Vista</button>
-      <button type="button" data-edit-frame="custom-plane">Plano</button>
+      <button type="button" data-edit-frame="world" title="Frame mundial">◎</button>
+      <button type="button" data-edit-frame="local" title="Frame do objeto">◇</button>
+      <button type="button" data-edit-frame="viewer" title="Frame do viewer">▣</button>
+      <button type="button" data-edit-frame="custom-plane" title="Plano personalizado">▱</button>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="axes" aria-label="Eixos permitidos">
-      <label><input id="edit-hud-axis-x" type="checkbox" checked> X</label>
-      <label><input id="edit-hud-axis-y" type="checkbox" checked> Y</label>
-      <label><input id="edit-hud-axis-z" type="checkbox" checked> Z</label>
+      <label title="Permitir eixo X"><input id="edit-hud-axis-x" type="checkbox" checked><span>X</span></label>
+      <label title="Permitir eixo Y"><input id="edit-hud-axis-y" type="checkbox" checked><span>Y</span></label>
+      <label title="Permitir eixo Z"><input id="edit-hud-axis-z" type="checkbox" checked><span>Z</span></label>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="snap" aria-label="Snap">
-      <label title="Ativar snap"><input id="edit-hud-snap-enabled" type="checkbox"> Snap</label>
-      <label><input id="edit-hud-snap-auto" type="checkbox" checked> Auto</label>
-      <label><input id="edit-hud-snap-vertex" type="checkbox" checked> V</label>
-      <label><input id="edit-hud-snap-edge" type="checkbox" checked> E</label>
-      <label><input id="edit-hud-snap-face" type="checkbox" checked> F</label>
-      <label><input id="edit-hud-snap-grid" type="checkbox"> G</label>
-      <label title="Influência proporcional"><input id="edit-hud-proportional" type="checkbox"> ∿</label>
+      <label title="Ativar snap"><input id="edit-hud-snap-enabled" type="checkbox"><span>⌁</span></label>
+      <label title="Snap automático"><input id="edit-hud-snap-auto" type="checkbox" checked><span>A</span></label>
+      <label title="Snap em vértices"><input id="edit-hud-snap-vertex" type="checkbox" checked><span>●</span></label>
+      <label title="Snap em arestas"><input id="edit-hud-snap-edge" type="checkbox" checked><span>━</span></label>
+      <label title="Snap em faces"><input id="edit-hud-snap-face" type="checkbox" checked><span>▲</span></label>
+      <label title="Snap em grade"><input id="edit-hud-snap-grid" type="checkbox"><span>#</span></label>
+      <label title="Influência proporcional"><input id="edit-hud-proportional" type="checkbox"><span>∿</span></label>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="navigation" aria-label="Travas de navegação">
-      <label><input id="edit-hud-plane-lock" type="checkbox"> Plano</label>
-      <label><input id="edit-hud-point-lock" type="checkbox"> Ponto</label>
+      <label title="Travar navegação em plano"><input id="edit-hud-plane-lock" type="checkbox"><span>▱</span></label>
+      <label title="Orbitar ponto travado"><input id="edit-hud-point-lock" type="checkbox"><span>⊙</span></label>
+    </div>
+    <div class="edit-hud-group edit-hud-context-actions" data-edit-hud-group="actions" aria-label="Ações contextuais">
+      <button id="edit-hud-create" type="button" data-hud-context="object" title="Criar objeto usando parâmetros e objeto de referência">＋</button>
+      <button id="edit-hud-create-light" type="button" data-hud-context="object" title="Criar luz com os últimos parâmetros memorizados">☀</button>
+      <button id="edit-hud-material" type="button" data-hud-context="object" title="Abrir material, luz e criação no painel Editar">◒</button>
+      <button id="edit-hud-enter-mesh" type="button" data-hud-context="object" title="Entrar na edição da malha selecionada">▦</button>
+      <button id="edit-hud-draw-path" type="button" data-hud-context="object" title="Desenhar spline à mão livre no viewer">〰</button>
+      <button id="edit-hud-group" type="button" data-hud-context="object" title="Agrupar objetos selecionados">⊞</button>
+      <button id="edit-hud-ungroup" type="button" data-hud-context="object" title="Desagrupar seleção">⊟</button>
+      <button id="edit-hud-duplicate" type="button" data-hud-context="object mesh" title="Duplicar objeto ou componentes selecionados">⧉</button>
+      <button id="edit-hud-delete" type="button" data-hud-context="object mesh" title="Excluir objeto ou componentes selecionados">⌫</button>
+      <button id="edit-hud-select-all" type="button" data-hud-context="mesh" title="Selecionar todos os componentes">◉</button>
+      <button id="edit-hud-select-none" type="button" data-hud-context="mesh" title="Limpar seleção de componentes">○</button>
+      <button id="edit-hud-select-invert" type="button" data-hud-context="mesh" title="Inverter seleção de componentes">◐</button>
+      <button id="edit-hud-select-grow" type="button" data-hud-context="mesh" title="Expandir seleção para componentes vizinhos">⊕</button>
+      <button id="edit-hud-select-shrink" type="button" data-hud-context="mesh" title="Contrair seleção">⊖</button>
+      <button id="edit-hud-select-linked" type="button" data-hud-context="mesh" title="Selecionar componentes conectados">⛓</button>
+      <button id="edit-hud-select-boundary" type="button" data-hud-context="edge face" title="Selecionar contorno">□</button>
+      <button id="edit-hud-create-vertex" type="button" data-hud-context="vertex" title="Criar vértice na origem local da malha">•</button>
+      <button id="edit-hud-create-edge" type="button" data-hud-context="vertex" title="Criar aresta entre vértices selecionados">╱</button>
+      <button id="edit-hud-create-face" type="button" data-hud-context="vertex edge" title="Criar face a partir da seleção">△</button>
+      <button id="edit-hud-fill" type="button" data-hud-context="vertex edge" title="Preencher contorno selecionado">▰</button>
+      <button id="edit-hud-weld" type="button" data-hud-context="vertex" title="Soldar vértices selecionados">⋈</button>
+      <button id="edit-hud-extrude" type="button" data-hud-context="vertex edge face" title="Extrudar usando a distância memorizada">⇧</button>
+      <button id="edit-hud-inset" type="button" data-hud-context="face" title="Inset usando o valor memorizado">▣</button>
+      <button id="edit-hud-split" type="button" data-hud-context="edge" title="Dividir aresta ao meio">÷</button>
+      <button id="edit-hud-collapse" type="button" data-hud-context="edge" title="Colapsar aresta selecionada">⌁</button>
+      <button id="edit-hud-flip-edge" type="button" data-hud-context="edge" title="Inverter diagonal entre duas faces">⇄</button>
+      <button id="edit-hud-bridge" type="button" data-hud-context="edge" title="Criar ponte entre contornos compatíveis">∪</button>
+      <button id="edit-hud-subdivide" type="button" data-hud-context="face" title="Subdividir faces selecionadas">⊞</button>
+      <button id="edit-hud-flip-normal" type="button" data-hud-context="face" title="Inverter normal das faces selecionadas">⇵</button>
+      <button id="edit-hud-path-from-selection" type="button" data-hud-context="vertex edge face" title="Criar caminho da seleção de componentes">⌇</button>
+      <button id="edit-hud-recalculate-normals" type="button" data-hud-context="mesh" title="Recalcular normais da malha">N</button>
+      <button id="edit-hud-cleanup" type="button" data-hud-context="mesh" title="Sanitizar a malha: remover órfãos e recalcular normais">✧</button>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="history">
       <button id="edit-hud-undo" type="button" title="Desfazer interno">↶</button>
       <button id="edit-hud-redo" type="button" title="Refazer interno">↷</button>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="session">
-      <button id="edit-hud-apply" type="button">Aplicar</button>
-      <button id="edit-hud-cancel" type="button">Cancelar</button>
+      <button id="edit-hud-apply" type="button" title="Aplicar sessão de malha">✓</button>
+      <button id="edit-hud-cancel" type="button" title="Cancelar sessão de malha">×</button>
     </div>
   </div>
 </aside>
@@ -524,8 +564,9 @@
 
     <details class="mesh-panel-config">
       <summary>Configurar painel</summary>
-      <label><input id="mesh-panel-adaptive" type="checkbox" checked> Mostrar somente ferramentas relevantes ao contexto atual</label>
+      <label><input id="mesh-panel-adaptive" type="checkbox"> Ocultar ferramentas incompatíveis; por padrão todas permanecem visíveis</label>
       <div class="mesh-checkbox-grid">
+        <label><input type="checkbox" data-mesh-section-toggle="create" checked> Criar, luz e material</label>
         <label><input type="checkbox" data-mesh-section-toggle="context" checked> Contexto</label>
         <label><input type="checkbox" data-mesh-section-toggle="session" checked> Sessão</label>
         <label><input type="checkbox" data-mesh-section-toggle="selection" checked> Seleção</label>
@@ -538,6 +579,56 @@
         <label><input type="checkbox" data-mesh-section-toggle="diagnostics" checked> Diagnóstico</label>
       </div>
     </details>
+
+    <fieldset data-mesh-section="create">
+      <legend>Criar, objetos de referência, luz e material</legend>
+      <div class="mesh-form-grid">
+        <label><span>Objeto de referência</span><select id="edit-create-reference"><option value="">Nenhum; usar valores abaixo</option></select></label>
+        <label><span>Usar referência</span><select id="edit-create-reference-mode"><option value="position-rotation">Posição e orientação</option><option value="position">Somente posição</option><option value="rotation">Somente orientação</option></select></label>
+        <label><span>Geometria</span><select id="edit-create-geometry"></select></label>
+        <label><span>Cor padrão</span><span class="edit-color-pair"><input id="edit-material-color" type="color" value="#6699cc"><input id="edit-material-color-text" type="text" value="#6699cc" spellcheck="false"></span></label>
+      </div>
+      <div class="mesh-operation-grid">
+        <button id="edit-create-object" type="button">Criar objeto</button>
+        <button id="edit-open-advanced-create" type="button">Criação avançada</button>
+      </div>
+      <details class="edit-material-settings" open>
+        <summary>Material do objeto e valores memorizados</summary>
+        <div class="mesh-form-grid">
+          <label><span>Modelo</span><select id="edit-material-model"><option value="standard">Standard</option><option value="physical">Physical</option></select></label>
+          <label><span>Opacidade</span><input id="edit-material-opacity" type="number" min="0" max="1" step="0.05" value="1"></label>
+          <label><span>Rugosidade</span><input id="edit-material-roughness" type="number" min="0" max="1" step="0.05" value="0.55"></label>
+          <label><span>Metallicidade</span><input id="edit-material-metalness" type="number" min="0" max="1" step="0.05" value="0"></label>
+          <label><span>Transmissão</span><input id="edit-material-transmission" type="number" min="0" max="1" step="0.05" value="0"></label>
+          <label><span>IOR</span><input id="edit-material-ior" type="number" min="1" max="2.333" step="0.01" value="1.5"></label>
+          <label><span>Espessura</span><input id="edit-material-thickness" type="number" min="0" step="0.1" value="0.5"></label>
+          <label><span>Dispersão</span><input id="edit-material-dispersion" type="number" min="0" step="0.01" value="0"></label>
+          <label><span>Verniz</span><input id="edit-material-clearcoat" type="number" min="0" max="1" step="0.05" value="0"></label>
+          <label><span>Reflexo ambiente</span><input id="edit-material-env" type="number" min="0" step="0.1" value="1"></label>
+        </div>
+        <div class="actions">
+          <button id="edit-material-apply" type="button">Aplicar material à seleção</button>
+          <button id="edit-material-read" type="button">Ler material da seleção</button>
+        </div>
+      </details>
+      <details class="edit-light-settings">
+        <summary>Criar luz editável</summary>
+        <div class="mesh-form-grid">
+          <label><span>Tipo</span><select id="edit-light-type"><option value="point">Pontual</option><option value="directional">Direcional</option><option value="spot">Spot</option><option value="ambient">Ambiente</option></select></label>
+          <label><span>Intensidade</span><input id="edit-light-intensity" type="number" min="0" step="0.1" value="3"></label>
+          <label><span>Distância</span><input id="edit-light-distance" type="number" min="0" step="0.5" value="0"></label>
+          <label><span>Decaimento</span><input id="edit-light-decay" type="number" min="0" step="0.1" value="2"></label>
+          <label><span>Ângulo °</span><input id="edit-light-angle" type="number" min="1" max="179" step="1" value="45"></label>
+          <label><span>Penumbra</span><input id="edit-light-penumbra" type="number" min="0" max="1" step="0.05" value="0.2"></label>
+          <label><input id="edit-light-shadow" type="checkbox" checked> Projetar sombra</label>
+        </div>
+        <div class="actions">
+          <button id="edit-create-light" type="button">Criar luz e selecionar</button>
+          <button id="edit-light-apply" type="button">Aplicar à luz selecionada</button>
+          <button id="edit-light-read" type="button">Ler luz selecionada</button>
+        </div>
+      </details>
+    </fieldset>
 
     <fieldset data-mesh-section="context">
       <legend>Contexto, ferramenta e seleção</legend>
@@ -823,6 +914,14 @@
       <span>Nome opcional</span>
       <input name="name" type="text" autocomplete="off">
     </label>
+    <label class="geometry-field">
+      <span>Objeto como argumento</span>
+      <select name="reference-object"><option value="">Nenhum</option></select>
+    </label>
+    <label class="geometry-field">
+      <span>Transformação da referência</span>
+      <select name="reference-mode"><option value="position-rotation">Posição e orientação</option><option value="position">Somente posição</option><option value="rotation">Somente orientação</option></select>
+    </label>
     <fieldset>
       <legend>Origem</legend>
       <div class="geometry-vector geometry-origin">
@@ -988,6 +1087,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0037b"></script>
+<script type="module" src="./boot.js?build=20260727-0037c"></script>
 </body>
 </html>

@@ -59,6 +59,17 @@ def require(path: str, needle: str) -> None:
         raise SystemExit(f"Contrato ausente em {path}: {needle}")
 
 
+for path, needle in [
+    ("packages/region-box/src/reducer.js", 'case "light.create"'),
+    ("packages/renderer-three/src/ThreeRegionRenderer.js", "#upsertLightVisual"),
+    ("packages/property-registry/src/createDefaultPropertyRegistry.js", 'id: "light.intensity"'),
+    ("packages/property-registry/src/createDefaultPropertyRegistry.js", 'id: "appearance.roughness"'),
+    ("packages/edit-hud/src/EditHud.js", "#refreshContextActions"),
+    ("packages/geometry-creation-panel/src/GeometryCreationPanel.js", 'reference-object')
+]:
+    require(path, needle)
+
+
 for needle in [
     "#mesh-edit-panel {",
     "position: fixed;",
@@ -89,7 +100,13 @@ for needle in [
     'id="path-from-selection-create"',
     'id="path-convert-bezier"',
     'id="edit-hud-columns"',
-    'id="edit-hud-rows"'
+    'id="edit-hud-rows"',
+    'id="edit-hud-create-light"',
+    'id="edit-hud-material"',
+    'id="edit-hud-extrude"',
+    'id="edit-create-reference"',
+    'id="edit-material-apply"',
+    'id="edit-light-apply"'
 ]:
     require("apps/web/index.html", needle)
 
@@ -99,7 +116,7 @@ for needle in [
     '"mesh.component.mode.set"',
     '"mesh.selection.apply"',
     '"mesh.deform.settings.set"',
-    'spatialseed.edit.workspace.sections.v2',
+    'spatialseed.edit.workspace.sections.v3',
     "activateSelection()",
     'this.#click("mesh-frame-world", "edit.context.frame.set"',
     'this.#click("mesh-frame-local", "edit.context.frame.set"',
@@ -142,6 +159,17 @@ for needle in [
 require("packages/edit-context/src/EditContextController.js", "class EditContextController")
 require("packages/edit-hud/src/EditHud.js", "class EditHud")
 require("packages/mesh-editor-core/src/MeshEditController.js", 'setTransformMode("translate")')
+
+
+for path, needle in [
+    ("packages/region-box/src/reducer.js", 'case "light.create"'),
+    ("packages/renderer-three/src/ThreeRegionRenderer.js", "#upsertLightVisual"),
+    ("packages/property-registry/src/createDefaultPropertyRegistry.js", 'id: "light.intensity"'),
+    ("packages/property-registry/src/createDefaultPropertyRegistry.js", 'id: "appearance.roughness"'),
+    ("packages/edit-hud/src/EditHud.js", "#refreshContextActions"),
+    ("packages/geometry-creation-panel/src/GeometryCreationPanel.js", 'reference-object')
+]:
+    require(path, needle)
 
 html = (ROOT / "apps/web/index.html").read_text(encoding="utf-8")
 ids = set(re.findall(r'id="([^"]+)"', html))

@@ -932,7 +932,7 @@ export class MeshEditController {
   }
 
   #editAvailability(object) {
-    if (!object || ["camera", "group"].includes(object.kind)) {
+    if (!object || ["camera", "group", "light"].includes(object.kind)) {
       return {
         ok: false,
         message: "O objeto selecionado não possui malha editável."

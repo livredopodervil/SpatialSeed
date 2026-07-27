@@ -5,7 +5,7 @@ import {
 } from "./PropertyBatchProgram.js";
 import {
   resolveSelectionTargetIds
-} from "./SelectionTargetResolver.js";
+} from "./SelectionTargetResolver.js?build=20260727-0037c";
 
 export class SelectionPropertyService {
   static apiVersion = "selection-properties-v1";

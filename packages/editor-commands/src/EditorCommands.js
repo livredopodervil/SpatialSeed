@@ -110,6 +110,10 @@ export function createEditorCommands({
       requireObjectMode("criar objetos");
       return selectionOperations.createGeometrySeries(args);
     })
+    .register("light.create", args => {
+      requireObjectMode("criar luzes");
+      return selectionOperations.createLight(args);
+    })
     .register("selection.position", ({ position }) =>
       meshEditor?.active
         ? meshEditor.setPivotPosition(position)

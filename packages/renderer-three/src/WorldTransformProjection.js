@@ -33,7 +33,7 @@ export function affectedHierarchyIds(hierarchy, changes = []) {
 }
 
 export function isRenderableSceneNode(node) {
-  return !["group", "camera"].includes(node?.kind);
+  return !["group", "camera", "light"].includes(node?.kind);
 }
 
 export function projectedSubtreeIds(hierarchy, id) {

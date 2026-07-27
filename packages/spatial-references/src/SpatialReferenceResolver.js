@@ -45,7 +45,7 @@ export class SpatialReferenceResolver {
       this.editor.selection.snapshot().members.map(member => member.objectId)
     );
     return Object.freeze(state.objects
-      .filter(object => !["group", "camera"].includes(object.kind))
+      .filter(object => !["group", "camera", "light"].includes(object.kind))
       .map(object => {
         let geometryType = null;
         let curveType = null;
@@ -217,7 +217,7 @@ export class SpatialReferenceResolver {
     const state = this.sandbox.getSnapshot();
     const hierarchy = new HierarchyIndex(state.objects);
     const object = resolveObject(state.objects, this.editor.selection.snapshot(), reference);
-    if (["group", "camera"].includes(object.kind)) {
+    if (["group", "camera", "light"].includes(object.kind)) {
       throw new Error(`${object.name ?? object.id} não é uma geometria utilizável.`);
     }
     return { state, hierarchy, object };

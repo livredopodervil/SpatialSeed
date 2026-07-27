@@ -1,5 +1,7 @@
+const STORAGE_KEY = "spatialseed.geometry.creation.defaults.v1";
+
 export class GeometryCreationPanel {
-  constructor({ root, geometryRegistry, execute }) {
+  constructor({ root, geometryRegistry, query = null, execute }) {
     if (!root) throw new TypeError("GeometryCreationPanel exige root.");
     if (!geometryRegistry?.describe) {
       throw new TypeError("GeometryCreationPanel exige registro descritivo.");
@@ -10,7 +12,9 @@ export class GeometryCreationPanel {
 
     this.root = root;
     this.registry = geometryRegistry;
+    this.query = typeof query === "function" ? query : null;
     this.execute = execute;
+    this.defaults = this.#loadDefaults();
     this.descriptions = geometryRegistry.describe();
     this.form = root.querySelector("form");
     this.type = root.querySelector("[data-geometry-type]");
@@ -26,8 +30,16 @@ export class GeometryCreationPanel {
 
     this.onTypeChange = () => this.refresh();
     this.onSubmit = event => this.create(event);
+    this.onFormChange = () => this.#saveDefaults();
+    this.onReferenceFocus = () => this.#refreshReferenceObjects();
     this.type.addEventListener("change", this.onTypeChange);
     this.form.addEventListener("submit", this.onSubmit);
+    this.form.addEventListener("change", this.onFormChange);
+    this.form.elements.namedItem("reference-object")?.addEventListener(
+      "focus", this.onReferenceFocus
+    );
+    this.#restoreCommonDefaults();
+    this.#refreshReferenceObjects();
     this.refresh();
   }
 
@@ -38,10 +50,16 @@ export class GeometryCreationPanel {
         this.#parameterField(parameter)
       )
     );
+    this.#restoreParameterDefaults(description.type);
     const planar = description.placement === "planar";
+    const remembered = this.defaults.common ?? {};
     const originY = this.form.elements.namedItem("origin-y");
-    if (originY) originY.value = planar ? "0.02" : "1";
-    this.form.elements.namedItem("plane").value = planar ? "xz" : "native";
+    if (originY && !("origin-y" in remembered)) {
+      originY.value = planar ? "0.02" : "1";
+    }
+    if (!("plane" in remembered)) {
+      this.form.elements.namedItem("plane").value = planar ? "xz" : "native";
+    }
     this.result.textContent = `${description.label} · ${
       description.topology === "open-surface" ? "superfície aberta" : "sólido fechado"
     }`;
@@ -58,11 +76,23 @@ export class GeometryCreationPanel {
 
       const name = String(this.form.elements.namedItem("name").value).trim();
       const color = String(this.form.elements.namedItem("color").value).trim();
-      const origin = ["x", "y", "z"].map(axis =>
+      let origin = ["x", "y", "z"].map(axis =>
         finite(this.form.elements.namedItem(`origin-${axis}`).value, `origem ${axis}`)
       );
+      let rotation = [0, 0, 0, 1];
+      const referenceId = this.form.elements.namedItem("reference-object")?.value ?? "";
+      const referenceMode = this.form.elements.namedItem("reference-mode")?.value ?? "position-rotation";
+      const reference = this.#referenceObject(referenceId);
+      if (reference && ["position", "position-rotation"].includes(referenceMode)) {
+        origin = [...reference.position];
+      }
+      if (reference && ["rotation", "position-rotation"].includes(referenceMode)) {
+        rotation = [...reference.rotation];
+      }
       const plane = this.form.elements.namedItem("plane").value;
-      const placement = plane === "native" ? null : { origin, plane };
+      const placement = plane === "native" || reference
+        ? null
+        : { origin, plane };
       const count = integer(
         finite(this.form.elements.namedItem("series-count").value, "Quantidade"),
         "Quantidade"
@@ -79,6 +109,7 @@ export class GeometryCreationPanel {
         name: name || null,
         geometry,
         position: placement ? undefined : origin,
+        rotation,
         placement,
         color,
         count,
@@ -100,6 +131,96 @@ export class GeometryCreationPanel {
   dispose() {
     this.type.removeEventListener("change", this.onTypeChange);
     this.form.removeEventListener("submit", this.onSubmit);
+    this.form.removeEventListener("change", this.onFormChange);
+    this.form.elements.namedItem("reference-object")?.removeEventListener(
+      "focus", this.onReferenceFocus
+    );
+  }
+
+  #loadDefaults() {
+    try {
+      const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
+      return value && typeof value === "object" ? value : {};
+    } catch {
+      return {};
+    }
+  }
+
+  #restoreCommonDefaults() {
+    for (const [name, value] of Object.entries(this.defaults.common ?? {})) {
+      const control = this.form.elements.namedItem(name);
+      if (!control) continue;
+      if (control.type === "checkbox") control.checked = Boolean(value);
+      else control.value = String(value);
+    }
+    if (this.defaults.type && this.descriptions.some(item => item.type === this.defaults.type)) {
+      this.type.value = this.defaults.type;
+    }
+  }
+
+  #saveDefaults() {
+    const commonNames = [
+      "name", "color", "origin-x", "origin-y", "origin-z", "plane",
+      "series-count", "series-move-x", "series-move-y", "series-move-z",
+      "series-rotate-x", "series-rotate-y", "series-rotate-z",
+      "series-scale-x", "series-scale-y", "series-scale-z",
+      "reference-object", "reference-mode"
+    ];
+    const common = {};
+    for (const name of commonNames) {
+      const control = this.form.elements.namedItem(name);
+      if (control) common[name] = control.type === "checkbox" ? control.checked : control.value;
+    }
+    const parameters = {};
+    for (const control of this.parameters.querySelectorAll("input, select, textarea")) {
+      parameters[control.name] = control.type === "checkbox" ? control.checked : control.value;
+    }
+    this.defaults = {
+      ...this.defaults,
+      type: this.type.value,
+      common,
+      parameters: {
+        ...(this.defaults.parameters ?? {}),
+        [this.type.value]: parameters
+      }
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.defaults));
+  }
+
+  #restoreParameterDefaults(type) {
+    const values = this.defaults.parameters?.[type] ?? {};
+    for (const control of this.parameters.querySelectorAll("input, select, textarea")) {
+      if (!(control.name in values)) continue;
+      if (control.type === "checkbox") control.checked = Boolean(values[control.name]);
+      else control.value = String(values[control.name]);
+    }
+  }
+
+  #refreshReferenceObjects() {
+    const select = this.form.elements.namedItem("reference-object");
+    if (!select || !this.query) return;
+    const previous = select.value || this.defaults.common?.["reference-object"] || "";
+    const objects = this.query("scene.objects.list") ?? [];
+    select.replaceChildren(...[
+      { value: "", label: "Nenhum" },
+      ...objects.map(object => ({
+        value: object.id,
+        label: `${object.name} · ${object.kind}`
+      }))
+    ].map(item => {
+      const option = this.root.ownerDocument.createElement("option");
+      option.value = item.value;
+      option.textContent = item.label;
+      return option;
+    }));
+    if ([...select.options].some(option => option.value === previous)) {
+      select.value = previous;
+    }
+  }
+
+  #referenceObject(id) {
+    if (!id || !this.query) return null;
+    return (this.query("scene.objects.list") ?? []).find(object => object.id === id) ?? null;
   }
 
   #description() {

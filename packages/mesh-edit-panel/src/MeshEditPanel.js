@@ -1,3 +1,5 @@
+const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
+
 export class MeshEditPanel {
   static apiVersion = "mesh-edit-panel-v6";
 
@@ -14,12 +16,14 @@ export class MeshEditPanel {
     this.query = query;
     this.execute = execute;
     this.latest = null;
+    this.creationDefaults = loadCreationDefaults();
     this.unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
     this.unsubscribeContext = subscribeContext?.(() => this.refresh()) ?? null;
     this.unsubscribeSketch = subscribeSketch?.(() => this.refresh()) ?? null;
     this.onKeyDown = event => this.#handleShortcut(event);
     document.addEventListener("keydown", this.onKeyDown, true);
     this.#bind();
+    this.#bindCreationMaterial();
     this.#bindSectionConfiguration();
     this.refresh();
   }
@@ -34,6 +38,7 @@ export class MeshEditPanel {
     this.latestContext = context;
     this.latestReferences = references;
     this.latestSketch = sketch;
+    this.#refreshCreationReferences();
     const active = Boolean(state.active);
     this.#refreshReferenceSelects(references);
     this.root.dataset.active = active ? "true" : "false";
@@ -176,6 +181,317 @@ export class MeshEditPanel {
       active || !selectedPath || selectedReference?.curveType === "bezier";
     this.#element("path-edit-controls").disabled = active || !selectedPath;
     this.#applyAdaptiveVisibility(state, context);
+  }
+
+  #bindCreationMaterial() {
+    const catalog = this.query("geometry.catalog") ?? [];
+    const geometrySelect = this.#element("edit-create-geometry");
+    geometrySelect.replaceChildren(...catalog.map(description => {
+      const option = document.createElement("option");
+      option.value = description.type;
+      option.textContent = description.label;
+      return option;
+    }));
+    if (catalog.some(item => item.type === this.creationDefaults.geometryType)) {
+      geometrySelect.value = this.creationDefaults.geometryType;
+    }
+
+    const map = {
+      color: "edit-material-color-text",
+      model: "edit-material-model",
+      opacity: "edit-material-opacity",
+      roughness: "edit-material-roughness",
+      metalness: "edit-material-metalness",
+      transmission: "edit-material-transmission",
+      ior: "edit-material-ior",
+      thickness: "edit-material-thickness",
+      dispersion: "edit-material-dispersion",
+      clearcoat: "edit-material-clearcoat",
+      envMapIntensity: "edit-material-env",
+      lightType: "edit-light-type",
+      lightIntensity: "edit-light-intensity",
+      lightDistance: "edit-light-distance",
+      lightDecay: "edit-light-decay",
+      lightAngleDeg: "edit-light-angle",
+      lightPenumbra: "edit-light-penumbra"
+    };
+    for (const [key, id] of Object.entries(map)) {
+      const value = this.creationDefaults[key];
+      if (value !== undefined) this.#element(id).value = String(value);
+    }
+    this.#element("edit-light-shadow").checked =
+      this.creationDefaults.lightCastShadow !== false;
+    this.#syncMaterialColor(this.#element("edit-material-color-text").value);
+    this.#refreshLightParameterVisibility();
+
+    const save = () => {
+      this.creationDefaults = {
+        ...this.creationDefaults,
+        geometryType: geometrySelect.value,
+        color: this.#element("edit-material-color-text").value,
+        model: this.#element("edit-material-model").value,
+        opacity: this.#number("edit-material-opacity"),
+        roughness: this.#number("edit-material-roughness"),
+        metalness: this.#number("edit-material-metalness"),
+        transmission: this.#number("edit-material-transmission"),
+        ior: this.#number("edit-material-ior"),
+        thickness: this.#number("edit-material-thickness"),
+        dispersion: this.#number("edit-material-dispersion"),
+        clearcoat: this.#number("edit-material-clearcoat"),
+        envMapIntensity: this.#number("edit-material-env"),
+        lightType: this.#element("edit-light-type").value,
+        lightIntensity: this.#number("edit-light-intensity"),
+        lightDistance: this.#number("edit-light-distance"),
+        lightDecay: this.#number("edit-light-decay"),
+        lightAngleDeg: this.#number("edit-light-angle"),
+        lightPenumbra: this.#number("edit-light-penumbra"),
+        lightCastShadow: this.#element("edit-light-shadow").checked
+      };
+      localStorage.setItem(CREATION_STORAGE_KEY, JSON.stringify(this.creationDefaults));
+    };
+    for (const id of Object.values(map).filter(id =>
+      !["edit-material-color-text", "edit-light-type"].includes(id)
+    )) {
+      this.#element(id).addEventListener("change", save);
+    }
+    geometrySelect.addEventListener("change", save);
+    this.#element("edit-light-type").addEventListener("change", () => {
+      this.#refreshLightParameterVisibility();
+      save();
+    });
+    this.#element("edit-light-shadow").addEventListener("change", save);
+    this.#element("edit-material-color").addEventListener("input", event => {
+      this.#syncMaterialColor(event.target.value);
+      save();
+    });
+    this.#element("edit-material-color-text").addEventListener("change", event => {
+      try {
+        this.#syncMaterialColor(event.target.value);
+        save();
+        this.#text("mesh-edit-error", "");
+      } catch (error) {
+        this.#text("mesh-edit-error", error.message);
+        this.#syncMaterialColor(this.creationDefaults.color ?? "#6699cc");
+      }
+    });
+
+    this.#element("edit-create-object").addEventListener("click", () => {
+      const description = catalog.find(item => item.type === geometrySelect.value);
+      if (!description) return;
+      const reference = this.#creationReference();
+      const mode = this.#element("edit-create-reference-mode").value;
+      const result = this.#execute("object.create.geometry", {
+        geometry: Object.fromEntries([
+          ["type", description.type],
+          ...description.parameters.map(parameter => [parameter.id, structuredClone(parameter.default)])
+        ]),
+        position: reference && ["position", "position-rotation"].includes(mode)
+          ? [...reference.position]
+          : [0, 1, 0],
+        rotation: reference && ["rotation", "position-rotation"].includes(mode)
+          ? [...reference.rotation]
+          : [0, 0, 0, 1],
+        color: this.#element("edit-material-color-text").value
+      });
+      if (result?.changed) this.#applyMaterialDefaults();
+      save();
+    });
+    this.#element("edit-create-light").addEventListener("click", () => {
+      const reference = this.#creationReference();
+      const mode = this.#element("edit-create-reference-mode").value;
+      this.#execute("light.create", {
+        type: this.#element("edit-light-type").value,
+        position: reference && ["position", "position-rotation"].includes(mode)
+          ? [...reference.position]
+          : [0, 3, 0],
+        rotation: reference && ["rotation", "position-rotation"].includes(mode)
+          ? [...reference.rotation]
+          : [0, 0, 0, 1],
+        color: this.#element("edit-material-color-text").value,
+        intensity: this.#number("edit-light-intensity"),
+        distance: this.#number("edit-light-distance"),
+        decay: this.#number("edit-light-decay"),
+        angleDeg: this.#number("edit-light-angle"),
+        penumbra: this.#number("edit-light-penumbra"),
+        castShadow: this.#element("edit-light-shadow").checked
+      });
+      save();
+    });
+    this.#element("edit-light-apply").addEventListener("click", () => {
+      this.#applyLightDefaults();
+      save();
+    });
+    this.#element("edit-light-read").addEventListener("click", () => {
+      try {
+        this.#readLightFromSelection();
+        save();
+        this.#text("mesh-edit-error", "");
+      } catch (error) {
+        this.#text("mesh-edit-error", error.message);
+      }
+    });
+    this.#element("edit-material-apply").addEventListener("click", () => {
+      this.#applyMaterialDefaults();
+      save();
+    });
+    this.#element("edit-material-read").addEventListener("click", () => {
+      try {
+        this.#readMaterialFromSelection();
+        save();
+        this.#text("mesh-edit-error", "");
+      } catch (error) {
+        this.#text("mesh-edit-error", error.message);
+      }
+    });
+    this.#element("edit-open-advanced-create").addEventListener("click", () => {
+      this.root.dispatchEvent(new CustomEvent("spatialseed:open-geometry-create", {
+        bubbles: true
+      }));
+    });
+  }
+
+  #refreshCreationReferences() {
+    const select = this.#element("edit-create-reference");
+    const previous = select.value;
+    const objects = this.query("scene.objects.list") ?? [];
+    select.replaceChildren(...[
+      { id: "", name: "Nenhum; usar valores padrão", kind: "" },
+      ...objects
+    ].map(object => {
+      const option = document.createElement("option");
+      option.value = object.id;
+      option.textContent = object.id
+        ? `${object.name} · ${object.kind}`
+        : object.name;
+      return option;
+    }));
+    if ([...select.options].some(option => option.value === previous)) {
+      select.value = previous;
+    }
+  }
+
+  #creationReference() {
+    const id = this.#element("edit-create-reference").value;
+    if (!id) return null;
+    return (this.query("scene.objects.list") ?? []).find(object => object.id === id) ?? null;
+  }
+
+  #syncMaterialColor(value) {
+    const color = normalizeColor(value);
+    this.#element("edit-material-color").value = color;
+    this.#element("edit-material-color-text").value = color;
+  }
+
+  #materialPatch() {
+    return {
+      "appearance.model": this.#element("edit-material-model").value,
+      "appearance.color": normalizeColor(this.#element("edit-material-color-text").value),
+      "appearance.opacity": this.#number("edit-material-opacity"),
+      "appearance.transparent": this.#number("edit-material-opacity") < 1,
+      "appearance.roughness": this.#number("edit-material-roughness"),
+      "appearance.metalness": this.#number("edit-material-metalness"),
+      "appearance.transmission": this.#number("edit-material-transmission"),
+      "appearance.ior": this.#number("edit-material-ior"),
+      "appearance.thickness": this.#number("edit-material-thickness"),
+      "appearance.dispersion": this.#number("edit-material-dispersion"),
+      "appearance.clearcoat": this.#number("edit-material-clearcoat"),
+      "appearance.envMapIntensity": this.#number("edit-material-env")
+    };
+  }
+
+  #applyMaterialDefaults() {
+    return this.#execute("selection.properties.set", {
+      patch: this.#materialPatch(),
+      targetScope: "renderables"
+    });
+  }
+
+  #lightPatch() {
+    return {
+      "light.type": this.#element("edit-light-type").value,
+      "light.color": normalizeColor(this.#element("edit-material-color-text").value),
+      "light.intensity": this.#number("edit-light-intensity"),
+      "light.distance": this.#number("edit-light-distance"),
+      "light.decay": this.#number("edit-light-decay"),
+      "light.angleDeg": this.#number("edit-light-angle"),
+      "light.penumbra": this.#number("edit-light-penumbra"),
+      "light.castShadow": this.#element("edit-light-shadow").checked
+    };
+  }
+
+  #applyLightDefaults() {
+    return this.#execute("selection.properties.set", {
+      patch: this.#lightPatch(),
+      targetScope: "selection"
+    });
+  }
+
+  #readLightFromSelection() {
+    const inspection = this.query("selection.properties.inspect", {
+      targetScope: "selection"
+    });
+    if (!inspection?.count) throw new Error("Seleção vazia.");
+    const fields = {
+      "light.type": "edit-light-type",
+      "light.color": "edit-material-color-text",
+      "light.intensity": "edit-light-intensity",
+      "light.distance": "edit-light-distance",
+      "light.decay": "edit-light-decay",
+      "light.angleDeg": "edit-light-angle",
+      "light.penumbra": "edit-light-penumbra",
+      "light.castShadow": "edit-light-shadow"
+    };
+    for (const [propertyId, controlId] of Object.entries(fields)) {
+      const property = inspection.properties[propertyId];
+      if (property?.status !== "uniform") continue;
+      const control = this.#element(controlId);
+      if (control.type === "checkbox") control.checked = Boolean(property.value);
+      else control.value = String(property.value);
+    }
+    this.#syncMaterialColor(this.#element("edit-material-color-text").value);
+    this.#refreshLightParameterVisibility();
+  }
+
+  #refreshLightParameterVisibility() {
+    const type = this.#element("edit-light-type").value;
+    const visibility = {
+      "edit-light-distance": ["point", "spot"].includes(type),
+      "edit-light-decay": ["point", "spot"].includes(type),
+      "edit-light-angle": type === "spot",
+      "edit-light-penumbra": type === "spot",
+      "edit-light-shadow": type !== "ambient"
+    };
+    for (const [id, visible] of Object.entries(visibility)) {
+      const control = this.#element(id);
+      const container = control.closest("label") ?? control;
+      container.hidden = !visible;
+      control.disabled = !visible;
+    }
+  }
+
+  #readMaterialFromSelection() {
+    const inspection = this.query("selection.properties.inspect", {
+      targetScope: "renderables"
+    });
+    if (!inspection?.count) throw new Error("Seleção vazia.");
+    const fields = {
+      "appearance.model": "edit-material-model",
+      "appearance.color": "edit-material-color-text",
+      "appearance.opacity": "edit-material-opacity",
+      "appearance.roughness": "edit-material-roughness",
+      "appearance.metalness": "edit-material-metalness",
+      "appearance.transmission": "edit-material-transmission",
+      "appearance.ior": "edit-material-ior",
+      "appearance.thickness": "edit-material-thickness",
+      "appearance.dispersion": "edit-material-dispersion",
+      "appearance.clearcoat": "edit-material-clearcoat",
+      "appearance.envMapIntensity": "edit-material-env"
+    };
+    for (const [propertyId, controlId] of Object.entries(fields)) {
+      const property = inspection.properties[propertyId];
+      if (property?.status === "uniform") this.#element(controlId).value = String(property.value);
+    }
+    this.#syncMaterialColor(this.#element("edit-material-color-text").value);
   }
 
   activateSelection() {
@@ -504,11 +820,11 @@ export class MeshEditPanel {
   }
 
   #bindSectionConfiguration() {
-    const storageKey = "spatialseed.edit.workspace.sections.v2";
+    const storageKey = "spatialseed.edit.workspace.sections.v3";
     let stored = {};
     try { stored = JSON.parse(localStorage.getItem(storageKey) ?? "{}"); }
     catch { stored = {}; }
-    this.#element("mesh-panel-adaptive").checked = stored.adaptive !== false;
+    this.#element("mesh-panel-adaptive").checked = stored.adaptive === true;
     const apply = () => {
       for (const checkbox of this.root.querySelectorAll("[data-mesh-section-toggle]")) {
         const section = checkbox.dataset.meshSectionToggle;
@@ -678,7 +994,7 @@ export class MeshEditPanel {
     for (const element of this.root.querySelectorAll("[data-mesh-section]")) {
       const userVisible = element.dataset.userVisible !== "false";
       const requirement = element.dataset.editContext ?? "any";
-      const contextVisible = requirement === "any" ||
+      const contextVisible = !adaptive || requirement === "any" ||
         (requirement === "mesh" && mesh) ||
         (requirement === "object" && !mesh);
       const section = element.dataset.meshSection;
@@ -697,13 +1013,15 @@ export class MeshEditPanel {
       element.hidden = !(userVisible && contextVisible && adaptiveVisible);
     }
     for (const group of this.root.querySelectorAll("[data-path-context]")) {
-      group.hidden = group.dataset.pathContext === "mesh" ? !mesh : mesh;
+      group.hidden = adaptive && (group.dataset.pathContext === "mesh" ? !mesh : mesh);
     }
     const mode = state?.componentMode ?? "vertex";
     for (const control of this.root.querySelectorAll("[data-component-modes]")) {
-      control.hidden = !control.dataset.componentModes.split(/\s+/).includes(mode);
+      const compatible = control.dataset.componentModes.split(/\s+/).includes(mode);
+      control.hidden = adaptive && !compatible;
+      control.disabled = !state?.active || !compatible;
     }
-    if (state?.pathControlMode) {
+    if (state?.pathControlMode && adaptive) {
       this.#element("mesh-mode-face").hidden = true;
       for (const section of this.root.querySelectorAll('[data-mesh-section="topology"]')) {
         section.hidden = true;
@@ -888,4 +1206,41 @@ function fillSelect(select, options, preferred) {
     return element;
   }));
   if (preferred && available.has(preferred)) select.value = preferred;
+}
+
+function loadCreationDefaults() {
+  const fallback = {
+    geometryType: "box",
+    color: "#6699cc",
+    model: "standard",
+    opacity: 1,
+    roughness: 0.55,
+    metalness: 0,
+    transmission: 0,
+    ior: 1.5,
+    thickness: 0.5,
+    dispersion: 0,
+    clearcoat: 0,
+    envMapIntensity: 1,
+    lightType: "point",
+    lightIntensity: 3,
+    lightDistance: 0,
+    lightDecay: 2,
+    lightAngleDeg: 45,
+    lightPenumbra: 0.2,
+    lightCastShadow: true
+  };
+  try {
+    return { ...fallback, ...JSON.parse(localStorage.getItem(CREATION_STORAGE_KEY) ?? "{}") };
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeColor(value) {
+  const source = String(value ?? "").trim();
+  const short = /^#([0-9a-f]{3})$/i.exec(source);
+  if (short) return `#${[...short[1]].map(char => char + char).join("")}`.toLowerCase();
+  if (!/^#[0-9a-f]{6}$/i.test(source)) throw new Error(`Cor inválida: ${value}.`);
+  return source.toLowerCase();
 }

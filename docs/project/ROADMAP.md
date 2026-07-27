@@ -240,6 +240,17 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - edição de âncoras e controles Bézier sem perder o descritor de caminho;
 - criação de caminho a partir de seleção de vértices, arestas ou faces.
 
+### 0037c — HUD contextual, luzes e materiais — implementado
+
+- configuração do HUD rolável, redimensionável e sempre contida na viewport;
+- HUD estritamente icônico, iluminado por estado e filtrado por contexto;
+- seleção, topologia, caminhos, criação e operações frequentes disponíveis no HUD;
+- seções essenciais do workspace visíveis por padrão, sem depender de painéis paralelos;
+- criação comum e avançada usando outro objeto como argumento de transformação;
+- memória local de geometria, cor e parâmetros de material;
+- materiais físicos editáveis por objeto no workspace e Inspector;
+- luzes pontuais, direcionais, spot e ambiente como objetos persistentes editáveis.
+
 ### Próximas extensões geométricas
 
 - sanitização configurável com relatório de degenerações, contornos,

@@ -1481,3 +1481,206 @@ html[data-toolbar-layout="vertical"] #selection-panel{
     grid-template-rows:repeat(var(--edit-hud-rows),auto);
   }
 }
+
+/* 0037c — HUD contextual rolável e workspace de criação/material */
+.edit-hud-config[open]{
+  position:fixed!important;
+  inset:8px 8px auto auto!important;
+  width:min(420px,calc(100vw - 16px))!important;
+  min-width:min(280px,calc(100vw - 16px));
+  min-height:180px;
+  max-width:calc(100vw - 16px)!important;
+  max-height:calc(100dvh - 16px)!important;
+  overflow:auto!important;
+  overscroll-behavior:contain;
+  resize:both;
+  touch-action:pan-x pan-y;
+  scrollbar-gutter:stable both-edges;
+}
+.edit-hud-config-defaults{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px;
+  padding:9px;
+  border-top:1px solid #ffffff17;
+  background:#08121ff7;
+}
+.edit-hud-config-defaults label{display:grid;gap:3px;font-size:12px}
+.edit-hud-config-defaults input{width:100%;min-width:0;box-sizing:border-box}
+.edit-hud-context-actions button{
+  width:32px;
+  height:32px;
+  padding:0!important;
+  display:grid;
+  place-items:center;
+  font-size:18px;
+  line-height:1;
+}
+.edit-hud-context-actions button[data-active="true"]{
+  background:#173c5f;
+  color:#eaf7ff;
+  border-color:#71c1ff;
+  box-shadow:0 0 0 1px #71c1ff55 inset,0 0 10px #3aa9ff33;
+}
+.edit-hud-context-actions button:disabled{display:none;opacity:.28}
+#mesh-edit-panel [data-mesh-section="create"]{display:block}
+.edit-color-pair{display:grid;grid-template-columns:3.2rem minmax(0,1fr);gap:.4rem}
+.edit-color-pair input[type="color"]{width:100%;height:2.2rem;padding:.15rem}
+.edit-material-settings,.edit-light-settings{margin-top:.6rem}
+#mesh-edit-panel .mesh-edit-content{
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+#mesh-edit-panel{
+  min-width:min(320px,calc(100vw - 1rem));
+  min-height:260px;
+  resize:both;
+  overflow:hidden;
+}
+@media(max-width:700px){
+  .edit-hud-config[open]{
+    inset:6px!important;
+    width:auto!important;
+    min-width:0;
+    resize:vertical;
+  }
+  .edit-hud-config-grid,.edit-hud-config-groups,.edit-hud-config-defaults{
+    grid-template-columns:minmax(0,1fr);
+  }
+  #mesh-edit-panel{resize:none;min-width:0}
+}
+
+/* 0037c — HUD estritamente icônico, estados luminosos e configuração acessível */
+#edit-hud-status{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  padding:0!important;
+  margin:-1px!important;
+  overflow:hidden!important;
+  clip:rect(0,0,0,0)!important;
+  white-space:nowrap!important;
+  border:0!important;
+}
+.edit-hud-handle{gap:4px}
+.edit-hud-handle>button,
+.edit-hud-handle>details>summary{
+  width:30px;
+  height:30px;
+  padding:0!important;
+  display:grid;
+  place-items:center;
+  font-size:17px;
+}
+.edit-hud-checks label{
+  position:relative;
+  width:32px;
+  height:32px;
+  min-width:32px!important;
+  min-height:32px!important;
+  padding:0!important;
+  display:grid!important;
+  place-items:center;
+  overflow:hidden;
+}
+.edit-hud-checks label>input{
+  position:absolute;
+  inline-size:1px;
+  block-size:1px;
+  opacity:0;
+  pointer-events:none;
+}
+.edit-hud-checks label>span{
+  width:100%;
+  height:100%;
+  display:grid;
+  place-items:center;
+  color:#7e91a5;
+  background:#0b1724;
+  transition:background .12s ease,color .12s ease,box-shadow .12s ease;
+}
+.edit-hud-checks label>input:checked+span{
+  color:#effaff;
+  background:#19466f;
+  box-shadow:0 0 0 1px #78c2ff inset,0 0 10px #3aa9ff4d;
+}
+.edit-hud-checks label:focus-within{outline:2px solid #78c2ff;outline-offset:1px}
+.edit-hud-group button{font-size:17px;line-height:1}
+.edit-hud-group button[data-active="true"]{
+  color:#effaff;
+  background:#19466f;
+  outline:1px solid #78c2ff;
+  box-shadow:0 0 10px #3aa9ff4d;
+}
+.edit-hud-config[open] .edit-hud-config-grid,
+.edit-hud-config[open] .edit-hud-config-groups,
+.edit-hud-config[open] .edit-hud-config-defaults{
+  flex:none;
+  width:100%;
+  max-width:none;
+}
+
+/* 0037c — cada ícone ocupa uma célula; colunas × linhas definem a janela do HUD */
+#edit-hud{--edit-hud-cell:32px}
+#edit-hud[data-size="compact"]{--edit-hud-cell:26px}
+#edit-hud[data-size="large"]{--edit-hud-cell:42px}
+.edit-hud-strip,
+#edit-hud[data-orientation="vertical"] .edit-hud-strip{
+  display:grid!important;
+  gap:3px;
+  padding:5px;
+  align-items:stretch;
+  justify-items:stretch;
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+.edit-hud-strip{
+  grid-template-columns:repeat(var(--edit-hud-columns),var(--edit-hud-cell))!important;
+  grid-template-rows:none!important;
+  grid-auto-flow:row!important;
+  grid-auto-rows:var(--edit-hud-cell);
+  width:max-content;
+  max-width:calc(100vw - 12px);
+  max-height:var(--edit-hud-window-height)!important;
+}
+#edit-hud[data-orientation="vertical"] .edit-hud-strip{
+  grid-template-columns:none!important;
+  grid-template-rows:repeat(var(--edit-hud-rows),var(--edit-hud-cell))!important;
+  grid-auto-flow:column!important;
+  grid-auto-columns:var(--edit-hud-cell);
+  height:max-content;
+  max-height:calc(100dvh - 44px)!important;
+  max-width:var(--edit-hud-window-width)!important;
+}
+.edit-hud-group,
+#edit-hud[data-orientation="vertical"] .edit-hud-group{
+  display:contents!important;
+}
+.edit-hud-group[hidden]{display:none!important}
+.edit-hud-group button,
+.edit-hud-group label,
+.edit-hud-context-actions button{
+  box-sizing:border-box;
+  width:var(--edit-hud-cell)!important;
+  height:var(--edit-hud-cell)!important;
+  min-width:0!important;
+  min-height:0!important;
+  padding:0!important;
+  margin:0!important;
+  border-radius:8px;
+  place-self:stretch;
+}
+.edit-hud-context-actions button:disabled{
+  display:grid!important;
+  opacity:.28;
+  color:#718096;
+  background:#0b1724;
+  border-color:#ffffff12;
+  box-shadow:none;
+}
+#edit-hud{
+  overflow:visible!important;
+  backdrop-filter:none!important;
+}

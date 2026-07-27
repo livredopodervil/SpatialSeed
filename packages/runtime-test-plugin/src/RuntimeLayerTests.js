@@ -91,11 +91,11 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260726-0031a";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260727-0037c";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
-} from "../../project-files/src/ProjectValidator.js?build=20260724-0029f";
+} from "../../project-files/src/ProjectValidator.js?build=20260727-0037c";
 import {
   ProjectSerializer
 } from "../../project-files/src/ProjectSerializer.js?build=20260724-0029f";
@@ -122,7 +122,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260725-0029f1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260727-0035a";
+} from "../../region-box/src/reducer.js?build=20260727-0037c";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -138,7 +138,7 @@ import {
   createDefaultPropertyRegistry,
   resolveSelectionTargetIds,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260724-0029f";
+} from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260727-0035a";
@@ -160,7 +160,7 @@ import {
   renderableSubtreeIds,
   selectionReferenceWorldPosition,
   selectionUnitId
-} from "../../renderer-three/src/WorldTransformProjection.js?build=20260724-0029f";
+} from "../../renderer-three/src/WorldTransformProjection.js?build=20260727-0037c";
 import {
   SelectionOutlineBatch,
   benchmarkSelectionOutlines,
@@ -185,7 +185,7 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260727-0037b";
+} from "../../mesh-editor-core/src/index.js?build=20260727-0037c";
 import {
   EditContextController,
   axesFromConstraint,
@@ -197,7 +197,7 @@ import {
   createSweepGeometryDescriptor,
   orderEdgeChain,
   rotationMinimizingFrames
-} from "../../spatial-references/src/index.js?build=20260727-0037b";
+} from "../../spatial-references/src/index.js?build=20260727-0037c";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -272,6 +272,53 @@ import {
 
 export function createRuntimeLayerTests() {
   return {
+    "lights-materials": {
+      "luz é criada como objeto persistente editável"() {
+        const state = Object.freeze({ objects: Object.freeze([]) });
+        const result = boxRegionReducer(state, {
+          type: "light.create",
+          id: "light-test",
+          name: "Luz teste",
+          position: [1, 2, 3],
+          rotation: [0, 0, 0, 1],
+          light: {
+            type: "spot",
+            color: "#88ccff",
+            intensity: 4,
+            distance: 20,
+            decay: 2,
+            angleDeg: 35,
+            penumbra: 0.25,
+            castShadow: true
+          }
+        });
+        const light = result.state.objects[0];
+        assertEqual(light.kind, "light");
+        assertEqual(light.light.type, "spot");
+        assertDeepEqual(light.position, [1, 2, 3]);
+        assertEqual(light.light.color, "#88ccff");
+      },
+
+      "registro expõe luzes e materiais físicos sem misturar escopos"() {
+        const registry = createDefaultPropertyRegistry();
+        const light = {
+          id: "light-test",
+          kind: "light",
+          light: { type: "point", color: "#ffffff", intensity: 3 }
+        };
+        const mesh = { id: "mesh-test", kind: "box" };
+        assertEqual(registry.require("light.intensity").supports(light), true);
+        assertEqual(registry.require("light.intensity").supports(mesh), false);
+        assertEqual(registry.require("appearance.roughness").supports(mesh), true);
+        assertEqual(registry.require("appearance.roughness").supports(light), false);
+        assertDeepEqual(resolveSelectionTargetIds({
+          selection: { members: [{ objectId: mesh.id }, { objectId: light.id }] },
+          state: { objects: [mesh, light] },
+          targetScope: "renderables"
+        }), [mesh.id]);
+      }
+    },
+
     "edit-context": {
       "checkboxes de eixo produzem restrições ortogonais"() {
         assertEqual(constraintFromAxes({ x: true, y: true, z: true }), "free");
@@ -6851,6 +6898,49 @@ assets: {
               schemaVersion: 1,
               objects: [project.scene.objects[1]]
             }
+          }),
+          "exige schema 3"
+        );
+      },
+
+      "schema 3 preserva luz lógica sem aparência"() {
+        const assets = new AppearanceRuntime().exportAssets();
+        const project = new ProjectValidator().validate({
+          format: "spatial-seed",
+          schemaVersion: 3,
+          assets,
+          scene: {
+            schemaVersion: 1,
+            objects: [{
+              id: "light-main",
+              kind: "light",
+              name: "Luz principal",
+              position: [2, 4, 6],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              light: {
+                type: "spot",
+                color: "#88ccff",
+                intensity: 5,
+                distance: 30,
+                decay: 2,
+                angleDeg: 35,
+                penumbra: 0.25,
+                castShadow: true
+              }
+            }]
+          }
+        });
+        const light = project.scene.objects[0];
+        assertEqual(light.kind, "light");
+        assertEqual(light.light.type, "spot");
+        assertEqual("appearanceId" in light, false);
+        assertThrowsMessage(
+          () => new ProjectValidator().validate({
+            format: "spatial-seed",
+            schemaVersion: 2,
+            assets,
+            scene: { schemaVersion: 1, objects: [light] }
           }),
           "exige schema 3"
         );

@@ -194,6 +194,42 @@ export class SelectionOperations {
     };
   }
 
+  createLight({
+    name = null,
+    type = "point",
+    position = [0, 3, 0],
+    rotation = [0, 0, 0, 1],
+    color = "#ffffff",
+    intensity = 3,
+    distance = 0,
+    decay = 2,
+    angleDeg = 45,
+    penumbra = 0.2,
+    castShadow = true
+  } = {}) {
+    const id = crypto.randomUUID();
+    const index = this.sandbox.getSnapshot().objects.length + 1;
+    const changed = this.sandbox.dispatch({
+      type: "light.create",
+      id,
+      name: name || `Luz ${index}`,
+      position: [...position],
+      rotation: [...rotation],
+      light: {
+        type,
+        color,
+        intensity,
+        distance,
+        decay,
+        angleDeg,
+        penumbra,
+        castShadow
+      }
+    });
+    if (changed) this.#selectIds([id]);
+    return { changed, id };
+  }
+
   duplicate() {
     return this.duplicateMany(1);
   }

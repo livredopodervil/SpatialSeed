@@ -1403,6 +1403,13 @@ export function bindWebInterface({
   $("geometry-create").addEventListener("click", () => {
     panelManager.show("#geometry-create-panel");
   });
+  $("edit-hud-create").addEventListener("click", () => {
+    panelManager.show("#geometry-create-panel");
+  });
+  $("mesh-edit-panel").addEventListener(
+    "spatialseed:open-geometry-create",
+    () => panelManager.show("#geometry-create-panel")
+  );
 
   $("close-geometry-create").addEventListener(
     "click",

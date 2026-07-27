@@ -5,12 +5,12 @@ export {
   formatPropertyValue,
   propertyComponentCount
 } from "./PropertyInputCodec.js";
-export { createDefaultPropertyRegistry } from "./createDefaultPropertyRegistry.js";
+export { createDefaultPropertyRegistry } from "./createDefaultPropertyRegistry.js?build=20260727-0037c";
 export { SelectionPropertyService } from "./SelectionPropertyService.js";
 export {
   PROPERTY_TARGET_SCOPES,
   resolveSelectionTargetIds
-} from "./SelectionTargetResolver.js";
+} from "./SelectionTargetResolver.js?build=20260727-0037c";
 export {
   PROPERTY_BATCH_PROGRAM_VERSION,
   compilePropertyBatchProgram,
