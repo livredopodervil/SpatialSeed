@@ -1,7 +1,7 @@
 # Referência da linguagem e do console SpatialSeed
 
-> Referência normativa P0. Auditada em 20 de julho de 2026 contra o runtime
-> `0028d`. Consulte `help`, `help create`, `help animate`, `procedure help` e
+> Referência normativa P0. Auditada em 27 de julho de 2026 contra o runtime
+> `0033a`. Consulte `help`, `help create`, `help mesh`, `help animate`, `procedure help` e
 > `runtime test help` para confirmar as capabilities do build carregado.
 
 ## 1. Três linguagens, uma fronteira editorial
@@ -103,10 +103,27 @@ pivot custom x y z
 pivot relative dx dy dz
 ```
 
-`rotate` recebe graus. Fatores de `scale` devem ser positivos. `position` define
-posição, enquanto `move` aplica delta.
+`rotate` recebe graus. Fora da edição de malha, fatores de `scale` devem ser positivos. Na sessão de malha, podem ser negativos para reflexão, mas não nulos. `position` define posição mundial do pivô, enquanto `move` aplica delta no referencial ativo.
 
-### 3.4 Snapping e vértices de diagnóstico
+### 3.4 Edição de malha por vértices
+
+```text
+mesh enter
+mesh status
+mesh select all|none|invert
+mesh frame world|local|viewer
+mesh weld on|off
+mesh occlusion on|off
+mesh affine move|rotate|scale x y z
+mesh apply
+mesh cancel
+```
+
+Durante uma sessão, somente os vértices do objeto ativo são selecionáveis. Os comandos `position`, `move`, `rotate`, `scale` e `clear` são redirecionados para os vértices selecionados. `mesh frame viewer` captura o frame atual da câmera: `X` acompanha a direita da tela, `Y` o alto e `Z` a normal ao plano. A câmera pode ser movida depois sem alterar o frame capturado.
+
+A sessão é transitória. `mesh apply` produz uma única troca persistente de geometria; `mesh cancel` descarta todas as prévias. Consulte `docs/MESH_EDITING_0033A.md` para a matemática e as limitações topológicas.
+
+### 3.5 Snapping e vértices de diagnóstico
 
 ```text
 snap move valor
@@ -116,10 +133,9 @@ snap grid on|off
 vertices on|off
 ```
 
-Valores de snapping não podem ser negativos. `vertices` é visualização de
-diagnóstico; não é edição de mesh.
+Valores de snapping não podem ser negativos. Fora da sessão de malha, `vertices` mostra apenas os vértices da caixa delimitadora como diagnóstico; dentro da sessão, os marcadores reais são administrados pelo editor de malha.
 
-### 3.5 Ciclo de objetos e grupos
+### 3.6 Ciclo de objetos e grupos
 
 ```text
 duplicate

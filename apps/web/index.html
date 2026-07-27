@@ -141,6 +141,7 @@
   </button>
   <button id="inspector">Inspector</button>
   <button id="transform-tools">Transformação</button>
+  <button id="mesh-editor">Editar malha</button>
   <button id="geometry-create">Criar</button>
   <button id="experiment-lab" title="Explorar construções paramétricas">
     ∿ Experimentos
@@ -466,6 +467,48 @@
     </div>
 
     <textarea id="tt-diagnostics" class="component-text" readonly></textarea>
+  </div>
+</section>
+
+<section id="mesh-edit-panel" hidden>
+  <header>
+    <strong>Edição de malha</strong>
+    <button id="close-mesh-edit" type="button">×</button>
+  </header>
+  <div class="mesh-edit-content">
+    <p id="mesh-edit-status"></p>
+    <small id="mesh-edit-details"></small>
+    <div class="actions">
+      <button id="mesh-enter" type="button">Editar seleção</button>
+      <button id="mesh-commit" type="button">Aplicar</button>
+      <button id="mesh-cancel" type="button">Cancelar</button>
+    </div>
+    <fieldset>
+      <legend>Vértices</legend>
+      <div class="actions">
+        <button id="mesh-select-all" type="button">Todos</button>
+        <button id="mesh-select-none" type="button">Nenhum</button>
+        <button id="mesh-select-invert" type="button">Inverter</button>
+      </div>
+      <label><input id="mesh-weld" type="checkbox" checked> Mover vértices coincidentes juntos</label>
+      <label><input id="mesh-occlusion" type="checkbox" checked> No toque/clique, impedir seleção de vértices ocluídos</label>
+    </fieldset>
+    <fieldset>
+      <legend>Referencial</legend>
+      <div class="actions mesh-frame-actions">
+        <button id="mesh-frame-world" type="button">Mundo</button>
+        <button id="mesh-frame-local" type="button">Objeto</button>
+        <button id="mesh-frame-viewer" type="button">Travar plano do viewer</button>
+      </div>
+      <p>Com o plano travado, X acompanha a direita da tela, Y acompanha o alto e Z é normal ao plano do viewer.</p>
+    </fieldset>
+    <fieldset>
+      <legend>Comandos afins</legend>
+      <div class="mesh-vector-row"><span>Mover</span><input id="mesh-move-x" type="number" value="0" step="0.1"><input id="mesh-move-y" type="number" value="0" step="0.1"><input id="mesh-move-z" type="number" value="0" step="0.1"><button id="mesh-affine-move" type="button">Aplicar</button></div>
+      <div class="mesh-vector-row"><span>Girar °</span><input id="mesh-rotate-x" type="number" value="0" step="1"><input id="mesh-rotate-y" type="number" value="0" step="1"><input id="mesh-rotate-z" type="number" value="0" step="1"><button id="mesh-affine-rotate" type="button">Aplicar</button></div>
+      <div class="mesh-vector-row"><span>Escalar</span><input id="mesh-scale-x" type="number" value="1" step="0.1"><input id="mesh-scale-y" type="number" value="1" step="0.1"><input id="mesh-scale-z" type="number" value="1" step="0.1"><button id="mesh-affine-scale" type="button">Aplicar</button></div>
+    </fieldset>
+    <p id="mesh-edit-error" role="alert"></p>
   </div>
 </section>
 

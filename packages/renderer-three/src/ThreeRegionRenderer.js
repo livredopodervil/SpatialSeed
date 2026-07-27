@@ -43,9 +43,16 @@ import {
   composeAnimationOverlay,
   createAnimationTargetSnapshot
 } from "./AnimationTransformOverlay.js?build=20260720-0028d";
+import {
+  selectedVertexPivotWorld,
+  snapWorldPointToFrameGrid,
+  transformLocalPositions,
+  transformLocalPositionsInto,
+  translatePivotToWorld
+} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0033a";
 
 export class ThreeRegionRenderer {
-  static apiVersion = "renderer-three-navigation-camera-v2";
+  static apiVersion = "renderer-three-navigation-camera-v3";
   #meshes = new Map();
   #cameraVisuals = new Map();
   #selectionSnapshot = null;
@@ -134,6 +141,7 @@ export class ThreeRegionRenderer {
     vertexSize: 5
   };
   #vertexMarkers = null;
+  #meshEdit = null;
   #inputDiagnostics = {
     pointerDown: 0,
     pointerUp: 0,
@@ -328,6 +336,238 @@ export class ThreeRegionRenderer {
     this.animate();
   }
 
+  canBeginMeshEdit(objectId) {
+    const id = String(objectId ?? "").trim();
+    if (!id) return Object.freeze({ ok: false, reason: "object-id-empty" });
+    if (this.#meshEdit) {
+      return Object.freeze({ ok: false, reason: "mesh-edit-active" });
+    }
+    if (this.#session) {
+      return Object.freeze({ ok: false, reason: "transform-active" });
+    }
+    if (this.#animationTargetIds.has(id)) {
+      return Object.freeze({ ok: false, reason: "animation-active" });
+    }
+    if (this.#sharedTransformObjectIds.has(id)) {
+      return Object.freeze({ ok: false, reason: "shared-preview-active" });
+    }
+    const proxy = this.#meshes.get(id);
+    const location = this.#batchManager.locationOf(id);
+    const batch = location
+      ? this.#batchManager.getBatch(location.batchKey)
+      : null;
+    if (!proxy || !batch || proxy.userData.logicalOnly) {
+      return Object.freeze({ ok: false, reason: "object-not-renderable" });
+    }
+    return Object.freeze({ ok: true, reason: null });
+  }
+
+  beginMeshEdit({
+    objectId,
+    geometry,
+    objectWorldMatrix,
+    selectedIndices = [],
+    frameMode = "local",
+    frameQuaternion = [0, 0, 0, 1],
+    options = {},
+    onVertexPick = null,
+    onTransformPreview = null,
+    onTransformCommit = null
+  } = {}) {
+    const id = String(objectId ?? "").trim();
+    const availability = this.canBeginMeshEdit(id);
+    if (!availability.ok) {
+      const messages = {
+        "mesh-edit-active": "Já existe uma edição de malha ativa neste viewer.",
+        "transform-active": "Finalize o arrasto atual antes de editar a malha.",
+        "animation-active": "Interrompa a animação ativa deste objeto antes de editar sua malha.",
+        "shared-preview-active": "Aguarde o término da transformação compartilhada deste objeto.",
+        "object-not-renderable": `Objeto renderizável inexistente: ${id}.`,
+        "object-id-empty": "Identificador do objeto ausente."
+      };
+      throw new Error(
+        messages[availability.reason] ??
+        "A malha não pode ser editada agora."
+      );
+    }
+    const proxy = this.#meshes.get(id);
+    const location = this.#batchManager.locationOf(id);
+    const batch = this.#batchManager.getBatch(location.batchKey);
+    const descriptor = this.#geometryRegistry.normalize(geometry);
+    const editGeometry = this.#geometryRegistry.create(descriptor);
+    const group = new THREE.Group();
+    group.name = `mesh-edit:${id}`;
+    group.matrixAutoUpdate = false;
+    group.matrix.fromArray(objectWorldMatrix);
+    group.matrixWorldNeedsUpdate = true;
+
+    const material = this.#cloneBatchMaterial(batch, id);
+    const mesh = new THREE.Mesh(editGeometry, material);
+    mesh.name = `mesh-edit-surface:${id}`;
+    mesh.castShadow = this.#viewerRenderSettings.shadows.enabled;
+    mesh.receiveShadow = this.#viewerRenderSettings.shadows.enabled;
+    mesh.frustumCulled = false;
+
+    const wire = new THREE.Mesh(
+      editGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0x7ec8ff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.2,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
+      })
+    );
+    wire.name = `mesh-edit-wire:${id}`;
+    wire.frustumCulled = false;
+
+    const occlusion = options.occlusion !== false;
+    const markerGeometry = new THREE.BufferGeometry();
+    const markers = new THREE.Points(
+      markerGeometry,
+      new THREE.PointsMaterial({
+        size: Math.max(5, this.#transformConfig.vertexSize),
+        sizeAttenuation: false,
+        vertexColors: true,
+        depthTest: occlusion,
+        depthWrite: false
+      })
+    );
+    markers.name = `mesh-edit-vertices:${id}`;
+    markers.renderOrder = 1200;
+    markers.frustumCulled = false;
+
+    group.add(mesh, wire, markers);
+    this.scene.add(group);
+    this.#batchManager.update(id, new THREE.Matrix4().makeScale(0, 0, 0));
+    this.#flushBatchBounds();
+
+    this.#meshEdit = {
+      objectId: id,
+      descriptor,
+      objectWorldMatrix: [...objectWorldMatrix],
+      group,
+      mesh,
+      wire,
+      markers,
+      selectedIndices: new Set(selectedIndices),
+      activeVertex: selectedIndices.at(-1) ?? null,
+      frameMode,
+      frameQuaternion: [...frameQuaternion],
+      options: { occlusion },
+      onVertexPick:
+        typeof onVertexPick === "function" ? onVertexPick : null,
+      onTransformPreview:
+        typeof onTransformPreview === "function" ? onTransformPreview : null,
+      onTransformCommit:
+        typeof onTransformCommit === "function" ? onTransformCommit : null
+    };
+    this.#updateMeshEditMarkerGeometry();
+    this.#configureTransformForEditor();
+    this.#rebuildAnchor();
+    this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
+    return this.getMeshEditStatus();
+  }
+
+  updateMeshEditGeometry(geometry) {
+    const edit = this.#requireMeshEdit();
+    const descriptor = this.#geometryRegistry.normalize(geometry);
+    if (descriptor.positions.length !== edit.descriptor.positions.length) {
+      throw new Error(
+        "A prévia de edição não pode alterar a quantidade de vértices."
+      );
+    }
+    edit.descriptor = descriptor;
+    const attribute = edit.mesh.geometry.getAttribute("position");
+    descriptor.positions.forEach((point, index) => {
+      attribute.setXYZ(index, point[0], point[1], point[2]);
+    });
+    attribute.needsUpdate = true;
+    this.#finalizeMeshEditGeometry();
+    this.#updateMeshEditMarkerGeometry();
+    this.#rebuildAnchor();
+    return this.getMeshEditStatus();
+  }
+
+  updateMeshEditSelection(selectedIndices = [], {
+    activeVertex = null
+  } = {}) {
+    const edit = this.#requireMeshEdit();
+    edit.selectedIndices = new Set(selectedIndices.map(Number));
+    edit.activeVertex = activeVertex === null ? null : Number(activeVertex);
+    this.#updateMeshEditMarkerColors();
+    this.#rebuildAnchor();
+    return this.getMeshEditStatus();
+  }
+
+  updateMeshEditOptions(patch = {}) {
+    const edit = this.#requireMeshEdit();
+    edit.options = {
+      ...edit.options,
+      ...(patch.occlusion === undefined
+        ? {}
+        : { occlusion: Boolean(patch.occlusion) })
+    };
+    edit.markers.material.depthTest = edit.options.occlusion;
+    edit.markers.material.needsUpdate = true;
+    return this.getMeshEditStatus();
+  }
+
+  setMeshEditFrame({ mode, quaternion } = {}) {
+    const edit = this.#requireMeshEdit();
+    edit.frameMode = String(mode ?? edit.frameMode);
+    if (!Array.isArray(quaternion) || quaternion.length !== 4) {
+      throw new TypeError("O referencial de malha exige um quaternion.");
+    }
+    edit.frameQuaternion = [...quaternion];
+    this.#configureTransformForEditor();
+    this.#rebuildAnchor();
+    return this.getMeshEditStatus();
+  }
+
+  endMeshEdit({ restoreBatch = true } = {}) {
+    const edit = this.#meshEdit;
+    if (!edit) return false;
+    if (this.#session?.kind === "mesh") this.#session = null;
+    this.transform.detach();
+    this.scene.remove(edit.group);
+    edit.mesh.geometry.dispose?.();
+    edit.mesh.material.dispose?.();
+    edit.wire.material.dispose?.();
+    edit.markers.geometry.dispose?.();
+    edit.markers.material.dispose?.();
+    if (restoreBatch) {
+      const proxy = this.#meshes.get(edit.objectId);
+      const matrix = proxy?.userData.canonicalWorldMatrix;
+      if (matrix) this.#batchManager.update(edit.objectId, matrix);
+    }
+    this.#meshEdit = null;
+    this.#flushBatchBounds();
+    this.#configureTransformForEditor();
+    this.#rebuildAnchor();
+    this.#updateSelectionAppearance();
+    return true;
+  }
+
+  getMeshEditStatus() {
+    const edit = this.#meshEdit;
+    if (!edit) return Object.freeze({ active: false });
+    return Object.freeze({
+      active: true,
+      objectId: edit.objectId,
+      vertexCount: edit.descriptor.positions.length,
+      selectedCount: edit.selectedIndices.size,
+      activeVertex: edit.activeVertex,
+      frameMode: edit.frameMode,
+      frameQuaternion: Object.freeze([...edit.frameQuaternion]),
+      occlusion: edit.options.occlusion
+    });
+  }
+
   getViewerRenderSettings() {
     return Object.freeze(
       structuredClone(this.#viewerRenderSettings)
@@ -469,6 +709,35 @@ export class ThreeRegionRenderer {
   }
 
   selectScreenRect(rectangle, operation = this.#selectionOperation) {
+    if (this.#meshEdit) {
+      const rect = this.canvas.getBoundingClientRect();
+      this.#meshEdit.group.updateMatrixWorld(true);
+      const indices = [];
+      for (
+        let index = 0;
+        index < this.#meshEdit.descriptor.positions.length;
+        index += 1
+      ) {
+        const projected = new THREE.Vector3()
+          .fromArray(this.#meshEdit.descriptor.positions[index])
+          .applyMatrix4(this.#meshEdit.group.matrixWorld)
+          .project(this.camera);
+        if (projected.z < -1 || projected.z > 1) continue;
+        const x = (projected.x + 1) * 0.5 * rect.width;
+        const y = (1 - projected.y) * 0.5 * rect.height;
+        if (
+          x >= rectangle.left && x <= rectangle.right &&
+          y >= rectangle.top && y <= rectangle.bottom
+        ) indices.push(index);
+      }
+      this.#meshEdit.onVertexPick?.({ indices, operation });
+      return {
+        operation,
+        selected: indices.length,
+        component: "vertex",
+        objectId: this.#meshEdit.objectId
+      };
+    }
     const r = this.canvas.getBoundingClientRect(), byId = new Map();
     for (const [objectId, proxy] of this.#meshes) {
       if (
@@ -1008,6 +1277,24 @@ export class ThreeRegionRenderer {
       object.instanceState?.color ?? null;
 
     this.#applyObjectInstanceColor(object.id);
+    if (this.#meshEdit?.objectId === object.id) {
+      const location = this.#batchManager.locationOf(object.id);
+      const batch = location
+        ? this.#batchManager.getBatch(location.batchKey)
+        : null;
+      if (batch) {
+        const previousMaterial = this.#meshEdit.mesh.material;
+        this.#meshEdit.mesh.material = this.#cloneBatchMaterial(
+          batch,
+          object.id
+        );
+        previousMaterial.dispose?.();
+      }
+      this.#batchManager.update(
+        object.id,
+        new THREE.Matrix4().makeScale(0, 0, 0)
+      );
+    }
   }
 
   #removeObject(id) {
@@ -1341,6 +1628,20 @@ export class ThreeRegionRenderer {
     const mode=this.editorState.tool.mode;
     this.#interactionMode=mode;
     this.#selectionOperation=this.editorState.selectionOperation??"replace";
+
+    if (this.#meshEdit) {
+      const enabled = ["translate", "rotate", "scale"].includes(mode) &&
+        this.#meshEdit.selectedIndices.size > 0;
+      this.transform.enabled = enabled;
+      this.transform.getHelper().visible = enabled;
+      if (enabled) {
+        this.transform.setMode(this.editorState.tool.transformMode ?? mode);
+        this.transform.setSpace("local");
+      }
+      this.orbit.enabled = mode === "navigate" || !this.transform.dragging;
+      return;
+    }
+
     const enabled=this.editorState.pivot.editing||["translate","rotate","scale"].includes(mode);
     this.transform.enabled=enabled;
     this.transform.getHelper().visible=enabled;
@@ -1351,6 +1652,28 @@ export class ThreeRegionRenderer {
 
   #beginSession() {
     if (this.#session) return;
+
+    if (this.#meshEdit) {
+      if (!this.#meshEdit.selectedIndices.size) return;
+      this.transformAnchor.updateMatrixWorld(true);
+      this.#session = {
+        kind: "mesh",
+        initialAnchor: {
+          position: this.transformAnchor.position.clone(),
+          quaternion: this.transformAnchor.quaternion.clone(),
+          scale: this.transformAnchor.scale.clone()
+        },
+        mode: this.transform.getMode(),
+        initialPositions: this.#meshEdit.descriptor.positions.map(
+          point => [...point]
+        ),
+        workingPositions: this.#meshEdit.descriptor.positions.map(
+          point => [...point]
+        )
+      };
+      this.#transformLifecycleDiagnostics.sessionsStarted += 1;
+      return;
+    }
 
     if (this.editorState.pivot.editing) {
       this.#session = { kind: "pivot" };
@@ -1415,6 +1738,40 @@ export class ThreeRegionRenderer {
 
     const startedAt=performance.now();
 
+    if (this.#session.kind === "mesh") {
+      const initial = new THREE.Matrix4().compose(
+        this.#session.initialAnchor.position,
+        this.#session.initialAnchor.quaternion,
+        this.#session.initialAnchor.scale
+      );
+      const current = new THREE.Matrix4().compose(
+        this.transformAnchor.position,
+        this.transformAnchor.quaternion,
+        this.transformAnchor.scale
+      );
+      const positions = transformLocalPositionsInto({
+        sourcePositions: this.#session.initialPositions,
+        targetPositions: this.#session.workingPositions,
+        selectedIndices: this.#meshEdit.selectedIndices,
+        objectWorldMatrix: this.#meshEdit.objectWorldMatrix,
+        deltaWorldMatrix: current
+          .clone()
+          .multiply(initial.clone().invert())
+          .toArray()
+      });
+      this.#setMeshEditPositions(positions, {
+        finalize: false,
+        changedIndices: this.#meshEdit.selectedIndices
+      });
+      this.#meshEdit.onTransformPreview?.();
+      const elapsed = performance.now() - startedAt;
+      const diagnostics = this.#transformLifecycleDiagnostics;
+      diagnostics.previews += 1;
+      diagnostics.lastPreviewMs = elapsed;
+      diagnostics.maxPreviewMs = Math.max(diagnostics.maxPreviewMs, elapsed);
+      return;
+    }
+
     if (this.#session.kind === "pivot") {
       this.#storeEditedPivot(this.transformAnchor.position);
       return;
@@ -1457,6 +1814,49 @@ export class ThreeRegionRenderer {
     this.#session=null;
 
     try {
+      if (session.kind === "mesh") {
+        let positions = this.#meshEdit.descriptor.positions.map(
+          point => [...point]
+        );
+        if (
+          session.mode === "translate" &&
+          this.#transformConfig.gridLock &&
+          this.#transformConfig.translationSnap
+        ) {
+          const pivotWorld = selectedVertexPivotWorld({
+            positions,
+            selectedIndices: this.#meshEdit.selectedIndices,
+            objectWorldMatrix: this.#meshEdit.objectWorldMatrix
+          });
+          if (pivotWorld) {
+            const targetWorld = snapWorldPointToFrameGrid({
+              pointWorld: pivotWorld,
+              frameQuaternion: this.#meshEdit.frameQuaternion,
+              step: this.#transformConfig.translationSnap
+            });
+            positions = translatePivotToWorld({
+              positions,
+              selectedIndices: this.#meshEdit.selectedIndices,
+              objectWorldMatrix: this.#meshEdit.objectWorldMatrix,
+              targetWorld
+            });
+            this.#setMeshEditPositions(positions, {
+              finalize: false,
+              changedIndices: this.#meshEdit.selectedIndices
+            });
+          }
+        }
+        this.#finalizeMeshEditGeometry();
+        this.#meshEdit.onTransformCommit?.(positions);
+        this.#transformLifecycleDiagnostics.commits += 1;
+        this.transformAnchor.quaternion.fromArray(
+          this.#meshEdit.frameQuaternion
+        );
+        this.transformAnchor.scale.set(1, 1, 1);
+        this.#rebuildAnchor();
+        return;
+      }
+
       if (session.kind === "pivot") {
         this.#storeEditedPivot(this.transformAnchor.position);
         this.#transformLifecycleDiagnostics.commits += 1;
@@ -1689,6 +2089,27 @@ export class ThreeRegionRenderer {
   #rebuildAnchor() {
     if (this.#session) return;
 
+    if (this.#meshEdit) {
+      const pivot = selectedVertexPivotWorld({
+        positions: this.#meshEdit.descriptor.positions,
+        selectedIndices: this.#meshEdit.selectedIndices,
+        objectWorldMatrix: this.#meshEdit.objectWorldMatrix
+      });
+      const enabled = pivot &&
+        ["translate", "rotate", "scale"].includes(this.editorState.tool.mode);
+      if (!enabled) {
+        this.transform.detach();
+        return;
+      }
+      this.transformAnchor.position.fromArray(pivot);
+      this.transformAnchor.quaternion.fromArray(
+        this.#meshEdit.frameQuaternion
+      );
+      this.transformAnchor.scale.set(1, 1, 1);
+      this.transform.attach(this.transformAnchor);
+      return;
+    }
+
     const pivot = this.#calculatePivot();
     if (!pivot) { this.transform.detach(); return; }
     if (!this.editorState.pivot.editing && !["translate","rotate","scale"].includes(this.editorState.tool.mode)) {
@@ -1715,6 +2136,10 @@ export class ThreeRegionRenderer {
   }
 
   #updateVertexMarkers() {
+    if (this.#meshEdit) {
+      this.#vertexMarkers.visible = false;
+      return;
+    }
     if (
       !this.#transformConfig.showVertices ||
       !this.#selectionSnapshot?.members?.length
@@ -1783,6 +2208,7 @@ export class ThreeRegionRenderer {
     this.transform.showZ = config.showZ;
     this.#vertexMarkers.material.size = config.vertexSize;
     this.#vertexMarkers.material.needsUpdate = true;
+    if (this.#meshEdit) this.#updateMeshEditMarkerColors();
 
     this.#updateVertexMarkers();
 
@@ -1809,6 +2235,13 @@ export class ThreeRegionRenderer {
   }
 
   getSelectionPivotPosition() {
+    if (this.#meshEdit) {
+      return selectedVertexPivotWorld({
+        positions: this.#meshEdit.descriptor.positions,
+        selectedIndices: this.#meshEdit.selectedIndices,
+        objectWorldMatrix: this.#meshEdit.objectWorldMatrix
+      });
+    }
     return this.#calculatePivot()?.toArray() ?? null;
   }
 
@@ -1846,7 +2279,155 @@ export class ThreeRegionRenderer {
     });
   }
 
+  #cloneBatchMaterial(batch, objectId) {
+    const material = batch.material.clone();
+    const instanceColor = batch.colorAt(objectId);
+    if (instanceColor && material.color) {
+      material.color.multiply(instanceColor);
+    }
+    return material;
+  }
+
+  #requireMeshEdit() {
+    if (!this.#meshEdit) {
+      throw new Error("Nenhuma edição de malha está ativa no viewer.");
+    }
+    return this.#meshEdit;
+  }
+
+  #setMeshEditPositions(positions, {
+    finalize = true,
+    changedIndices = null
+  } = {}) {
+    const edit = this.#requireMeshEdit();
+    edit.descriptor = Object.freeze({
+      ...edit.descriptor,
+      positions
+    });
+    const meshAttribute = edit.mesh.geometry.getAttribute("position");
+    const markerAttribute = edit.markers.geometry.getAttribute("position");
+    const indices = changedIndices === null
+      ? positions.map((_, index) => index)
+      : [...changedIndices];
+    for (const index of indices) {
+      const point = positions[index];
+      meshAttribute.setXYZ(index, point[0], point[1], point[2]);
+      markerAttribute?.setXYZ(index, point[0], point[1], point[2]);
+    }
+    meshAttribute.needsUpdate = true;
+    if (markerAttribute) markerAttribute.needsUpdate = true;
+    else this.#updateMeshEditMarkerGeometry();
+    if (finalize) this.#finalizeMeshEditGeometry();
+  }
+
+  #finalizeMeshEditGeometry() {
+    const edit = this.#requireMeshEdit();
+    edit.mesh.geometry.computeVertexNormals();
+    edit.mesh.geometry.computeBoundingBox();
+    edit.mesh.geometry.computeBoundingSphere();
+  }
+
+  #updateMeshEditMarkerGeometry() {
+    const edit = this.#meshEdit;
+    if (!edit) return;
+    const count = edit.descriptor.positions.length;
+    let attribute = edit.markers.geometry.getAttribute("position");
+    if (!attribute || attribute.count !== count) {
+      attribute = new THREE.Float32BufferAttribute(count * 3, 3);
+      edit.markers.geometry.setAttribute("position", attribute);
+    }
+    edit.descriptor.positions.forEach((point, index) => {
+      attribute.setXYZ(index, point[0], point[1], point[2]);
+    });
+    attribute.needsUpdate = true;
+    const color = edit.markers.geometry.getAttribute("color");
+    if (!color || color.count !== count) this.#updateMeshEditMarkerColors();
+  }
+
+  #updateMeshEditMarkerColors() {
+    const edit = this.#meshEdit;
+    if (!edit) return;
+    const count = edit.descriptor.positions.length;
+    let attribute = edit.markers.geometry.getAttribute("color");
+    if (!attribute || attribute.count !== count) {
+      attribute = new THREE.Float32BufferAttribute(count * 3, 3);
+      edit.markers.geometry.setAttribute("color", attribute);
+    }
+    const normal = new THREE.Color(0x7ec8ff);
+    const selected = new THREE.Color(0xffb347);
+    const active = new THREE.Color(0xffffff);
+    for (let index = 0; index < count; index += 1) {
+      const color = index === edit.activeVertex
+        ? active
+        : edit.selectedIndices.has(index)
+          ? selected
+          : normal;
+      attribute.setXYZ(index, color.r, color.g, color.b);
+    }
+    attribute.needsUpdate = true;
+    edit.markers.material.size = Math.max(
+      5,
+      this.#transformConfig.vertexSize
+    );
+    edit.markers.material.needsUpdate = true;
+  }
+
+  #pickMeshEditVertex(event, rect, pointerType) {
+    const edit = this.#requireMeshEdit();
+    const radius = pointerType === "touch" ? 22 : 12;
+    edit.group.updateMatrixWorld(true);
+    const candidates = [];
+    const cameraPosition = this.camera.getWorldPosition(new THREE.Vector3());
+    const world = new THREE.Vector3();
+    const projected = new THREE.Vector3();
+
+    edit.descriptor.positions.forEach((point, index) => {
+      world.fromArray(point).applyMatrix4(edit.group.matrixWorld);
+      const cameraDistance = world.distanceTo(cameraPosition);
+      projected.copy(world).project(this.camera);
+      if (projected.z < -1 || projected.z > 1) return;
+      const x = rect.left + (projected.x + 1) * 0.5 * rect.width;
+      const y = rect.top + (1 - projected.y) * 0.5 * rect.height;
+      const screenDistance = Math.hypot(event.clientX - x, event.clientY - y);
+      if (screenDistance > radius) return;
+      candidates.push({
+        index,
+        screenDistance,
+        cameraDistance,
+        world: world.clone()
+      });
+    });
+
+    candidates.sort((left, right) =>
+      left.screenDistance - right.screenDistance ||
+      left.cameraDistance - right.cameraDistance
+    );
+    if (!edit.options.occlusion) return candidates[0]?.index ?? null;
+
+    const visibilityRay = new THREE.Raycaster();
+    for (const candidate of candidates) {
+      const direction = candidate.world.clone().sub(cameraPosition);
+      const distance = direction.length();
+      if (distance <= 1e-9) return candidate.index;
+      direction.multiplyScalar(1 / distance);
+      const tolerance = Math.max(1e-4, distance * 1e-5);
+      visibilityRay.set(cameraPosition, direction);
+      visibilityRay.near = 0;
+      visibilityRay.far = Math.max(0, distance - tolerance);
+      if (!visibilityRay.intersectObject(edit.mesh, false).length) {
+        return candidate.index;
+      }
+    }
+    return null;
+  }
+
   #updateSelectionAppearance() {
+    if (this.#meshEdit) {
+      this.#selectionOutlines.update([]);
+      this.#selectedVisualIds = new Set();
+      this.#updateCameraVisualAppearance();
+      return;
+    }
     const selected=new Set((this.#selectionSnapshot?.members??[]).map(m=>m.objectId));
     const activeId=this.#selectionSnapshot?.activeMember?.objectId;
     const outlines=[];
@@ -1982,6 +2563,33 @@ export class ThreeRegionRenderer {
       Number(this.pointer.y.toFixed(3))
     ];
     this.raycaster.setFromCamera(this.pointer, this.camera);
+
+    if (this.#meshEdit) {
+      if (this.#interactionMode === "navigate") {
+        this.#inputDiagnostics.discardedReason = "navigation-mode";
+        return;
+      }
+      const transformMode = ["translate", "rotate", "scale"]
+        .includes(this.#interactionMode);
+      const gizmoActive = transformMode &&
+        (this.transform.axis !== null || this.transform.dragging);
+      if (gizmoActive) {
+        this.#inputDiagnostics.gizmoHits = 1;
+        this.#inputDiagnostics.discardedReason = "gizmo-active";
+        return;
+      }
+      const operation = this.editorState.multiSelect
+        ? "toggle"
+        : this.#selectionOperation;
+      const index = this.#pickMeshEditVertex(event, rect, pointerType);
+      this.#meshEdit.onVertexPick?.({ index, operation });
+      this.#inputDiagnostics.selectionAction = `vertex:${operation}`;
+      this.#inputDiagnostics.lastObjectId = this.#meshEdit.objectId;
+      this.#inputDiagnostics.discardedReason = index === null
+        ? "nenhum-vertice"
+        : null;
+      return;
+    }
 
     // Atualiza apenas lotes modificados. O Raycaster ordena os
     // resultados pela distância à câmera, não pelo centro do mundo.

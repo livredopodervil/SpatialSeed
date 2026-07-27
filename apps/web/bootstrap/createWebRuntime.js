@@ -9,19 +9,19 @@ import {
   ViewerCameraController,
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260724-0029f";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260726-0032a";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0033a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260727-0033a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260726-0031a";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260727-0033a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260726-0031a";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260726-0031a";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260725-0029f1";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260727-0033a";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029f";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260726-0031a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260727-0033a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260724-0029f";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -79,6 +79,12 @@ import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
 import {
+  MeshEditController
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0033a";
+import {
+  MeshEditPanel
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260727-0033a";
+import {
   BrowserSandboxIdentity,
   createSandboxId,
   createRecoveryRecord,
@@ -96,7 +102,7 @@ import {
   createIndependentProjectUrl
 } from "../../../packages/local-viewers/src/index.js?build=20260725-0029f1";
 
-const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v2";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v3";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({
@@ -107,6 +113,7 @@ export async function createWebRuntime({
   experimentPanelRoot,
   animationPanelRoot,
   viewerRenderPanelRoot,
+  meshEditPanelRoot,
   procedureEditorRoot,
   inspectorRoot,
   onConsoleOutput,
@@ -370,6 +377,12 @@ export async function createWebRuntime({
     geometryRegistry,
     appearanceRuntime
   });
+  const meshEditor = new MeshEditController({
+    sandbox,
+    editor,
+    renderer,
+    geometryRegistry
+  });
 
   const sandboxRecovery = new SandboxRecoveryController({
     sandbox: baseSandbox,
@@ -418,9 +431,17 @@ export async function createWebRuntime({
     benchmarkRunner,
     resourceAudit,
     propertyService,
+    meshEditor,
     canMutateProject: action =>
       viewerCoordinator.requireAuthority(action)
   });
+  const requireNoMeshEdit = action => {
+    if (meshEditor.active) {
+      throw new Error(
+        `Finalize ou cancele a edição de malha antes de ${action}.`
+      );
+    }
+  };
   for (const command of VIEWER_CAMERA_COMMANDS) {
     commands.register(
       command,
@@ -431,23 +452,34 @@ export async function createWebRuntime({
   commands
     .register(
       "camera.object.create",
-      args => cameraObjects.create(args),
+      args => {
+        requireNoMeshEdit("criar uma câmera persistente");
+        return cameraObjects.create(args);
+      },
       { category: "camera-object", mutates: true }
     )
     .register(
       "camera.object.projection.set",
-      ({ id, ...patch }) =>
-        cameraObjects.updateProjection(id, patch),
+      ({ id, ...patch }) => {
+        requireNoMeshEdit("alterar uma câmera persistente");
+        return cameraObjects.updateProjection(id, patch);
+      },
       { category: "camera-object", mutates: true }
     )
     .register(
       "camera.object.capture-viewer",
-      ({ id }) => cameraObjects.captureViewer(id),
+      ({ id }) => {
+        requireNoMeshEdit("capturar o viewer em uma câmera persistente");
+        return cameraObjects.captureViewer(id);
+      },
       { category: "camera-object", mutates: true }
     )
     .register(
       "camera.object.default.set",
-      ({ id = null } = {}) => cameraObjects.setDefault(id),
+      ({ id = null } = {}) => {
+        requireNoMeshEdit("alterar a câmera padrão");
+        return cameraObjects.setDefault(id);
+      },
       { category: "camera-object", mutates: true }
     )
     .register(
@@ -630,6 +662,7 @@ export async function createWebRuntime({
     currentBaseVersion: () => sandbox.revision
   });
   commands.register("program.plan.commit", ({ plan }) => {
+    requireNoMeshEdit("confirmar um plano");
     const planCommands = Array.isArray(plan?.commands)
       ? plan.commands
       : [];
@@ -683,6 +716,7 @@ export async function createWebRuntime({
   commands.register(
     "experiment.create",
     ({ id, parameters = {} }) => {
+      requireNoMeshEdit("confirmar um experimento espacial");
       viewerCoordinator.requireAuthority(
         "confirmar um experimento espacial"
       );
@@ -804,6 +838,9 @@ export async function createWebRuntime({
     .register("viewer.render.presets", () =>
       renderer.getViewerRenderPresets()
     )
+    .register("mesh.edit.status", () =>
+      meshEditor.status()
+    )
     .register("viewer.instances.status", () =>
       viewerCoordinator.status()
     )
@@ -852,6 +889,14 @@ export async function createWebRuntime({
       "spatialseed.viewer.render.v1"
   });
   runtime.onDispose(() => viewerRenderPanel.dispose());
+  const meshEditPanel = new MeshEditPanel({
+    root: meshEditPanelRoot,
+    query: (id, args) => runtime.query(id, args),
+    execute: (id, args) => runtime.execute(id, args),
+    subscribe: listener => meshEditor.subscribe(listener)
+  });
+  runtime.onDispose(() => meshEditPanel.dispose());
+  runtime.onDispose(() => meshEditor.dispose());
 
   const procedureCatalog = new ProcedureCatalog({
     storage: new BrowserProcedureCatalogStore()
@@ -1055,6 +1100,9 @@ export async function createWebRuntime({
   const unsubscribeSelection = editor.selection.subscribe(
     snapshot => runtime.emit("selection.changed", snapshot)
   );
+  const unsubscribeMeshEdit = meshEditor.subscribe(
+    snapshot => runtime.emit("mesh.edit.changed", snapshot)
+  );
 
   const unsubscribeEditor = editor.subscribe(
     snapshot => runtime.emit("editor.changed", snapshot)
@@ -1102,6 +1150,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeCameraObjects)
     .onDispose(unsubscribeViewer)
     .onDispose(unsubscribeEditor)
+    .onDispose(unsubscribeMeshEdit)
     .onDispose(unsubscribeSelection)
     .onDispose(unsubscribeSandbox);
 
@@ -1129,6 +1178,8 @@ export async function createWebRuntime({
       experimentPanel,
       animationPanel,
       viewerRenderPanel,
+      meshEditor,
+      meshEditPanel,
       geometryRegistry,
       propertyRegistry,
       propertyService,

@@ -19,6 +19,7 @@ export async function startApplication(
     experimentPanelRoot: $("experiment-panel"),
     animationPanelRoot: $("animation-panel"),
     viewerRenderPanelRoot: $("viewer-render-panel-root"),
+    meshEditPanelRoot: $("mesh-edit-panel"),
     procedureEditorRoot: $("procedure-editor-root"),
     inspectorRoot: $("inspector-panel"),
     buildInfo,

@@ -71,6 +71,10 @@ O build efetivamente carregado aparece no rodapé. Se a publicação e o cache c
 
 O menu **Painéis → Render** controla iluminação, sombras, reflexos ambientais e materiais físicos apenas no viewer atual. A configuração não altera o mundo nem o arquivo do projeto. Consulte [Renderização local do viewer — build 0032a](docs/VIEWER_RENDERING_0032A.md).
 
+## Edição de malha
+
+O menu **Editar → Editar malha** abre uma sessão local para selecionar e transformar somente os vértices do objeto ativo. Gizmo e comandos numéricos compartilham a mesma transformação afim em referenciais de mundo, objeto ou viewer congelado. O commit substitui a geometria em uma única entrada de undo. Consulte [Edição de malha por vértices — build 0033a](docs/MESH_EDITING_0033A.md).
+
 ## Execução local
 
 O projeto usa módulos ES nativos e dependências vendorizadas. Não há etapa obrigatória de compilação nem `npm install`.
@@ -488,6 +492,8 @@ flowchart TD
 | `packages/region-box` | reducer puro e modelo de estado da região atual |
 | `packages/scene-hierarchy` | grupos, parentesco, transforms locais e ciclo de subárvores |
 | `packages/geometry-registry` | famílias paramétricas e providers de geometria |
+| `packages/mesh-editor-core` | sessão, seleção e matemática afim da edição de vértices |
+| `packages/mesh-edit-panel` | painel declarativo da sessão de malha |
 | `packages/property-registry` | propriedades tipadas, inspeção e edição atômica em lote |
 | `packages/script-runtime` | Workers, SES, sessões, planos espaciais/de câmera e procedimentos |
 | `packages/experiment-runtime` | definições, parâmetros e planejamento de experimentos |
@@ -546,6 +552,7 @@ runtime test procedure-catalog
 runtime test spatial-plan-commit
 runtime test property-contract
 runtime test geometry-creation
+runtime test mesh-edit-math
 runtime test file-interop
 runtime test project-recovery
 runtime test experiment-contract

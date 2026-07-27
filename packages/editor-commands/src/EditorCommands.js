@@ -8,18 +8,30 @@ export function createEditorCommands({
   benchmarkRunner,
   resourceAudit,
   propertyService = null,
+  meshEditor = null,
   canMutateProject = () => true
 }) {
   const commands = new CommandRegistry();
+  const requireObjectMode = action => {
+    if (meshEditor?.active) {
+      throw new Error(
+        `Finalize ou cancele a edição de malha antes de ${action}.`
+      );
+    }
+  };
 
   commands
     .register("tool.set", ({ mode }) => {
       renderer.setTransformMode(mode);
       return editor.snapshot().tool;
     })
-    .register("space.toggle", () => ({
-      space: renderer.toggleSpace()
-    }))
+    .register("space.toggle", () => {
+      if (!meshEditor?.active) {
+        return { space: renderer.toggleSpace() };
+      }
+      const status = meshEditor.toggleFrameSpace();
+      return { space: status.frameMode, meshEdit: status };
+    })
     .register("selection.multi.toggle", () => {
       editor.setMultiSelect(!editor.multiSelect);
       return { multiSelect: editor.multiSelect };
@@ -32,6 +44,7 @@ export function createEditorCommands({
       return { enabled: editor.areaSelection };
     })
     .register("selection.clear", () => {
+      if (meshEditor?.active) return meshEditor.clearSelection();
       editor.selection.clear();
       return editor.selection.snapshot();
     })
@@ -39,6 +52,7 @@ export function createEditorCommands({
       id,
       regionId = "region-main"
     } = {}) => {
+      requireObjectMode("alterar a seleção de objetos");
       const objectId = String(id ?? "").trim();
       const exists = selectionOperations.sandbox
         .getSnapshot()
@@ -54,13 +68,24 @@ export function createEditorCommands({
       });
       return editor.selection.snapshot();
     })
-    .register("history.undo", () => ({
-      changed: selectionOperations.sandbox.undo()
-    }))
-    .register("history.redo", () => ({
-      changed: selectionOperations.sandbox.redo()
-    }))
+    .register("history.undo", () => {
+      if (meshEditor?.active) {
+        throw new Error(
+          "Finalize ou cancele a edição de malha antes de desfazer."
+        );
+      }
+      return { changed: selectionOperations.sandbox.undo() };
+    })
+    .register("history.redo", () => {
+      if (meshEditor?.active) {
+        throw new Error(
+          "Finalize ou cancele a edição de malha antes de refazer."
+        );
+      }
+      return { changed: selectionOperations.sandbox.redo() };
+    })
     .register("pivot.edit.toggle", () => {
+      requireObjectMode("editar o pivô do objeto");
       const enabled = !editor.pivot.editing;
       const changed = renderer.setPivotEditing(enabled);
 
@@ -70,64 +95,85 @@ export function createEditorCommands({
         reason: changed ? null : "selection-empty"
       };
     })
-    .register("object.create.box", args =>
-      selectionOperations.createBox(args)
-    )
-    .register("object.create.geometry", args =>
-      selectionOperations.createGeometry(args)
-    )
-    .register("object.create.geometrySeries", args =>
-      selectionOperations.createGeometrySeries(args)
-    )
+    .register("object.create.box", args => {
+      requireObjectMode("criar objetos");
+      return selectionOperations.createBox(args);
+    })
+    .register("object.create.geometry", args => {
+      requireObjectMode("criar objetos");
+      return selectionOperations.createGeometry(args);
+    })
+    .register("object.create.geometrySeries", args => {
+      requireObjectMode("criar objetos");
+      return selectionOperations.createGeometrySeries(args);
+    })
     .register("selection.position", ({ position }) =>
-      selectionOperations.setSelectionPosition(position)
+      meshEditor?.active
+        ? meshEditor.setPivotPosition(position)
+        : selectionOperations.setSelectionPosition(position)
     )
     .register("selection.translate", ({ delta }) =>
-      selectionOperations.translate(delta)
+      meshEditor?.active
+        ? meshEditor.translate(delta)
+        : selectionOperations.translate(delta)
     )
     .register("selection.rotate", ({ degrees }) =>
-      selectionOperations.rotateEuler(degrees)
+      meshEditor?.active
+        ? meshEditor.rotate(degrees)
+        : selectionOperations.rotateEuler(degrees)
     )
     .register("selection.scale", ({ factors }) =>
-      selectionOperations.scaleBy(factors)
+      meshEditor?.active
+        ? meshEditor.scale(factors)
+        : selectionOperations.scaleBy(factors)
     )
-    .register("selection.duplicate", () =>
-      selectionOperations.duplicate()
-    )
-    .register("selection.group", (args = {}) =>
-      selectionOperations.group({
+    .register("selection.duplicate", () => {
+      requireObjectMode("duplicar objetos");
+      return selectionOperations.duplicate();
+    })
+    .register("selection.group", (args = {}) => {
+      requireObjectMode("agrupar objetos");
+      return selectionOperations.group({
         ...args,
         anchorWorldPosition:
           args.anchorWorldPosition ??
           renderer.getSelectionPivotPosition()
-      })
-    )
-    .register("selection.ungroup", () =>
-      selectionOperations.ungroup()
-    )
-    .register("selection.duplicateMany", ({ count }) =>
-      selectionOperations.duplicateMany(count)
-    )
-    .register("selection.duplicateAffine", ({ count, operations }) =>
-      selectionOperations.duplicateAffine(count, operations)
-    )
-    .register("selection.repeat", () =>
-      selectionOperations.repeat()
-    )
-    .register("selection.delete", () =>
-      selectionOperations.deleteSelection()
-    )
+      });
+    })
+    .register("selection.ungroup", () => {
+      requireObjectMode("desagrupar objetos");
+      return selectionOperations.ungroup();
+    })
+    .register("selection.duplicateMany", ({ count }) => {
+      requireObjectMode("duplicar objetos");
+      return selectionOperations.duplicateMany(count);
+    })
+    .register("selection.duplicateAffine", ({ count, operations }) => {
+      requireObjectMode("duplicar objetos por programa afim");
+      return selectionOperations.duplicateAffine(count, operations);
+    })
+    .register("selection.repeat", () => {
+      requireObjectMode("repetir a duplicação");
+      return selectionOperations.repeat();
+    })
+    .register("selection.delete", () => {
+      requireObjectMode("excluir objetos");
+      return selectionOperations.deleteSelection();
+    })
     .register("pivot.policy", ({ policy }) => {
+      requireObjectMode("alterar o pivô do objeto");
       editor.setPivotEditing(false);
       editor.setPivotPolicy(policy);
       return editor.snapshot().pivot;
     })
-    .register("pivot.absolute", ({ position }) =>
-      selectionOperations.setPivotAbsolute(position)
-    )
-    .register("pivot.relative", ({ offset }) =>
-      selectionOperations.setPivotRelative(offset)
-    )
+    .register("pivot.absolute", ({ position }) => {
+      requireObjectMode("alterar o pivô do objeto");
+      return selectionOperations.setPivotAbsolute(position);
+    })
+    .register("pivot.relative", ({ offset }) => {
+      requireObjectMode("alterar o pivô do objeto");
+      return selectionOperations.setPivotRelative(offset);
+    })
     .register("vertices.set", ({ enabled }) =>
       renderer.setTransformConfig({ showVertices: Boolean(enabled) })
     )
@@ -146,37 +192,69 @@ export function createEditorCommands({
       renderer.getTransformDiagnostics()
     );
 
+  if (meshEditor) {
+    commands
+      .register("mesh.edit.enter", args => meshEditor.enter(args), {
+        category: "mesh-edit",
+        mutates: false
+      })
+      .register("mesh.edit.commit", () => {
+        canMutateProject("aplicar a edição de malha");
+        return meshEditor.commit();
+      }, {
+        category: "mesh-edit",
+        mutates: true
+      })
+      .register("mesh.edit.cancel", () => meshEditor.cancel(), {
+        category: "mesh-edit",
+        mutates: false
+      })
+      .register("mesh.vertices.select-all", () => meshEditor.selectAll())
+      .register("mesh.vertices.clear", () => meshEditor.clearSelection())
+      .register("mesh.vertices.invert", () => meshEditor.invertSelection())
+      .register("mesh.frame.set", ({ mode }) => meshEditor.setFrame(mode))
+      .register("mesh.frame.viewer.toggle", () => meshEditor.toggleViewerFrame())
+      .register("mesh.options.set", args => meshEditor.setOptions(args))
+      .register("mesh.affine.apply", args => meshEditor.applyAffine(args));
+  }
+
   if (propertyService) {
     commands
       .register("selection.properties.set", ({
         patch,
         targetScope = "selection"
-      }) =>
-        propertyService.setSelection(patch, { targetScope })
-      )
+      }) => {
+        requireObjectMode("alterar propriedades do objeto");
+        return propertyService.setSelection(patch, { targetScope });
+      })
       .register("selection.properties.unset", ({
         properties,
         targetScope = "selection"
-      }) =>
-        propertyService.unsetSelection(properties, { targetScope })
-      )
-      .register("selection.properties.applyExpression", args =>
-        propertyService.setSelectionProcedural(args)
-      );
+      }) => {
+        requireObjectMode("alterar propriedades do objeto");
+        return propertyService.unsetSelection(properties, { targetScope });
+      })
+      .register("selection.properties.applyExpression", args => {
+        requireObjectMode("alterar propriedades do objeto");
+        return propertyService.setSelectionProcedural(args);
+      });
   }
 
   commands
     .register("project.inspect", () =>
       projectService.inspect()
     )
-    .register("project.save", () =>
-      projectService.save()
-    )
+    .register("project.save", () => {
+      requireObjectMode("salvar o projeto");
+      return projectService.save();
+    })
     .register("project.open", ({ text }) => {
+      requireObjectMode("abrir outro projeto");
       canMutateProject("abrir outro projeto");
       return projectService.openText(text);
     })
     .register("project.new", () => {
+      requireObjectMode("criar outro projeto");
       canMutateProject("criar outro projeto");
       return projectService.newProject();
     });

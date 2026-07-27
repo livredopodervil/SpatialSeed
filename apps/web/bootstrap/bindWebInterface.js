@@ -24,6 +24,7 @@ export function bindWebInterface({
     procedureCatalogEditor,
     objectInspector,
     transformToolPanel,
+    meshEditPanel,
     experimentPanel,
     viewerRenderPanel,
     sandboxRecovery,
@@ -79,6 +80,7 @@ export function bindWebInterface({
   let lastViewerOutcome = null;
   let latestSelection = runtime.query("selection.snapshot");
   let latestEditor = runtime.query("editor.snapshot");
+  let latestMeshEdit = runtime.query("mesh.edit.status");
   let latestViewerInstances = runtime.query(
     "viewer.instances.status"
   );
@@ -191,6 +193,7 @@ export function bindWebInterface({
     "#procedure-editor-panel",
     "#inspector-panel",
     "#transform-tools-panel",
+    "#mesh-edit-panel",
     "#geometry-create-panel",
     "#experiment-panel",
     "#animation-panel"
@@ -223,8 +226,8 @@ export function bindWebInterface({
       outline.update(region, sandbox, modules.describe(), state);
     }
 
-    $("undo").disabled = !status.canUndo;
-    $("redo").disabled = !status.canRedo;
+    $("undo").disabled = latestMeshEdit.active || !status.canUndo;
+    $("redo").disabled = latestMeshEdit.active || !status.canRedo;
     $("review").disabled = !status.dirty;
     const replica = latestViewerInstances.role === "replica";
     $("project-open").disabled = replica;
@@ -232,11 +235,20 @@ export function bindWebInterface({
     $("confirm-proposal").disabled = replica;
     $("viewer-new").disabled = !latestViewerInstances.available;
     const selectionActions=runtime.query("selection.actions.describe");
-    $("group-selection").disabled=!selectionActions.canGroup;
-    $("ungroup-selection").disabled=!selectionActions.canUngroup;
+    $("group-selection").disabled=latestMeshEdit.active||!selectionActions.canGroup;
+    $("ungroup-selection").disabled=latestMeshEdit.active||!selectionActions.canUngroup;
+    $("duplicate-selection").disabled=latestMeshEdit.active||latestSelection.members.length===0;
+    $("repeat-duplicate").disabled=latestMeshEdit.active;
+    $("delete-selection").disabled=latestMeshEdit.active||latestSelection.members.length===0;
+    $("inspector").disabled=latestMeshEdit.active||latestSelection.members.length===0;
+    $("geometry-create").disabled=latestMeshEdit.active;
+    $("pivot-policy").disabled=latestMeshEdit.active;
+    $("edit-pivot").disabled=latestMeshEdit.active||latestSelection.members.length===0;
     const count=latestSelection?.members?.length??0,active=latestSelection?.activeMember?.objectId??"∅",mode=latestEditor?.tool?.mode??"select",operation=latestEditor?.selectionOperation??"replace";
     const viewerRole = replica ? "viewer réplica" : "viewer autoritativo";
-    $("status").textContent=`${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"} · ${viewerRole}`;
+    $("status").textContent=latestMeshEdit.active
+      ? `malha ${latestMeshEdit.objectId} · ${latestMeshEdit.selectedCount}/${latestMeshEdit.vertexCount} vértices · frame ${latestMeshEdit.frameMode} · ${mode} · ${viewerRole}`
+      : `${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"} · ${viewerRole}`;
   }
 
   const scheduleUiFrame = callback =>
@@ -462,16 +474,35 @@ export function bindWebInterface({
 
       $("clear-selection").disabled = empty;
       $("edit-pivot").disabled = empty;
-      $("duplicate-selection").disabled = empty;
-      $("delete-selection").disabled = empty;
-      $("inspector").disabled = empty;
+      $("duplicate-selection").disabled = latestMeshEdit.active || empty;
+      $("delete-selection").disabled = latestMeshEdit.active || empty;
+      $("inspector").disabled = latestMeshEdit.active || empty;
       if (
         !$("camera-panel").hidden &&
         !$("camera-panel").contains(documentRoot.activeElement)
       ) {
         refreshCameraObjects();
       }
+      if (!$("mesh-edit-panel").hidden) meshEditPanel.refresh();
       uiRefresh.request("selection.changed");
+    }
+  );
+
+  const unsubscribeMeshEdit = runtime.subscribe(
+    "mesh.edit.changed",
+    snapshot => {
+      latestMeshEdit = snapshot;
+      $("space").textContent = snapshot.active
+        ? snapshot.frameMode === "viewer"
+          ? "Viewer"
+          : snapshot.frameMode === "local"
+            ? "Objeto"
+            : "Mundo"
+        : renderer.transform.space === "local" ? "Local" : "Mundo";
+      marquee.setEnabled(
+        latestEditor.tool.mode === "select" && latestEditor.areaSelection
+      );
+      uiRefresh.request("mesh.edit.changed");
     }
   );
 
@@ -1368,6 +1399,16 @@ export function bindWebInterface({
     () => panelManager.hide("#transform-tools-panel")
   );
 
+  $("mesh-editor").addEventListener("click", () => {
+    panelManager.show("#mesh-edit-panel");
+    meshEditPanel.refresh();
+  });
+
+  $("close-mesh-edit").addEventListener(
+    "click",
+    () => panelManager.hide("#mesh-edit-panel")
+  );
+
   $("geometry-create").addEventListener("click", () => {
     panelManager.show("#geometry-create-panel");
   });
@@ -1665,6 +1706,7 @@ export function bindWebInterface({
       clearInterval(developerTimer);
       clearTimeout(statusTimer);
       unsubscribeEditor();
+      unsubscribeMeshEdit();
       unsubscribeSelection();
       unsubscribeWorld();
       unsubscribeViewer();

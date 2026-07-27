@@ -884,3 +884,53 @@ html[data-toolbar-layout="vertical"] #selection-panel{
     grid-template-columns:minmax(7.2rem,.9fr) minmax(0,1.1fr);
   }
 }
+
+#mesh-edit-panel .mesh-edit-content {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  overflow: auto;
+}
+
+#mesh-edit-panel fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+#mesh-edit-panel .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+#mesh-edit-panel button[data-active="true"] {
+  outline: 2px solid #74b9ff;
+  background: #183552;
+}
+
+.mesh-vector-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 1fr) repeat(3, minmax(54px, .7fr)) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.mesh-vector-row input {
+  min-width: 0;
+  width: 100%;
+}
+
+#mesh-edit-error {
+  min-height: 1.2em;
+  color: #ff8f8f;
+}
+
+@media (max-width: 640px) {
+  .mesh-vector-row {
+    grid-template-columns: 1fr repeat(3, minmax(48px, .7fr));
+  }
+  .mesh-vector-row button {
+    grid-column: 1 / -1;
+  }
+}

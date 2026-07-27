@@ -47,6 +47,7 @@
         "id": "edit",
         "label": "Editar",
         "items": [
+          "mesh-editor",
           "group-selection",
           "ungroup-selection",
           "undo",
@@ -107,7 +108,8 @@
       "transform-tools-panel": { "anchor": "left", "top": "toolbar", "width": 410, "height": 540 },
       "geometry-create-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
       "experiment-panel": { "anchor": "right", "top": "toolbar", "width": 470, "height": 680 },
-      "animation-panel": { "anchor": "left", "top": "toolbar", "width": 470, "height": 650 }
+      "animation-panel": { "anchor": "left", "top": "toolbar", "width": 470, "height": 650 },
+      "mesh-edit-panel": { "anchor": "right", "top": "toolbar", "width": 460, "height": 720 }
     }
   },
   "shortcuts": {

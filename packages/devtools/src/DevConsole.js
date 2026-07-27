@@ -499,8 +499,7 @@ export class DevConsole {
 
       case "clear":
         this.#expectMaximum(tokens, 0, "clear");
-        this.editor.selection.clear();
-        return { selection: [] };
+        return this.commands.execute("selection.clear");
 
       case "create":
         return this.#create(tokens);
@@ -535,11 +534,17 @@ export class DevConsole {
       case "viewers":
         return this.#viewers(tokens);
 
-      case "scale":
+      case "scale": {
         this.#expectExact(tokens, 3, "scale sx sy sz");
+        const meshActive = Boolean(
+          this.queries?.execute("mesh.edit.status")?.active
+        );
         return this.commands.execute("selection.scale", {
-          factors: tokens.map(value => this.#positive(value))
+          factors: tokens.map(value => meshActive
+            ? this.#nonZero(value)
+            : this.#positive(value))
         });
+      }
 
       case "pivot":
         return this.#pivot(tokens);
@@ -564,11 +569,11 @@ export class DevConsole {
 
       case "undo":
         this.#expectMaximum(tokens, 0, "undo");
-        return { changed: this.sandbox.undo() };
+        return this.commands.execute("history.undo");
 
       case "redo":
         this.#expectMaximum(tokens, 0, "redo");
-        return { changed: this.sandbox.redo() };
+        return this.commands.execute("history.redo");
 
       case "gizmo":
         this.#expectMaximum(tokens, 0, "gizmo");
@@ -579,6 +584,9 @@ export class DevConsole {
 
       case "vertices":
         return this.#vertices(tokens);
+
+      case "mesh":
+        return this.#mesh(tokens);
 
       case "benchmark":
         return this.#benchmark(tokens);
@@ -630,6 +638,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "viewers") {
         return this.#viewersHelp();
       }
+      if (String(topic).toLowerCase() === "mesh") {
+        return this.#meshHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -647,7 +658,7 @@ export class DevConsole {
         "test help|all|sandbox|reducer|commands|project",
         "runtime test viewer-animation|animation-runtime|animation-commands|" +
         "experiment-contract|experiment-plugin|" +
-        "experiment-panel|placement-frame|" +
+        "experiment-panel|placement-frame|mesh-edit-math|" +
         "geometry-creation|geometry-registry|" +
         "file-interop|project-files|project-recovery|pwa-status|spatial-planning|" +
         "spatial-plan-commit|procedure-catalog|procedure-editor|all",
@@ -687,6 +698,12 @@ export class DevConsole {
         "pivot absolute x y z",
         "pivot relative dx dy dz",
         "vertices on|off",
+        "mesh enter|status|apply|cancel|help",
+        "mesh select all|none|invert",
+        "mesh frame world|local|viewer",
+        "mesh weld on|off",
+        "mesh occlusion on|off",
+        "mesh affine move|rotate|scale x y z",
         "snap move|rotate|scale valor",
         "snap grid on|off",
         "select object-id [object-id ...]",
@@ -1678,6 +1695,106 @@ export class DevConsole {
     });
   }
 
+  #mesh(tokens) {
+    const action = String(tokens.shift() ?? "status").toLowerCase();
+
+    if (action === "help") {
+      this.#expectMaximum(tokens, 0, "mesh help");
+      return this.#meshHelp();
+    }
+    if (action === "status") {
+      this.#expectMaximum(tokens, 0, "mesh status");
+      return this.queries?.execute("mesh.edit.status") ?? { active: false };
+    }
+    if (action === "enter") {
+      this.#expectMaximum(tokens, 0, "mesh enter");
+      return this.commands.execute("mesh.edit.enter");
+    }
+    if (["apply", "commit"].includes(action)) {
+      this.#expectMaximum(tokens, 0, `mesh ${action}`);
+      return this.commands.execute("mesh.edit.commit");
+    }
+    if (action === "cancel") {
+      this.#expectMaximum(tokens, 0, "mesh cancel");
+      return this.commands.execute("mesh.edit.cancel");
+    }
+    if (action === "select") {
+      this.#expectExact(tokens, 1, "mesh select all|none|invert");
+      const mode = String(tokens[0]).toLowerCase();
+      if (mode === "all") return this.commands.execute("mesh.vertices.select-all");
+      if (["none", "clear"].includes(mode)) {
+        return this.commands.execute("mesh.vertices.clear");
+      }
+      if (mode === "invert") return this.commands.execute("mesh.vertices.invert");
+      throw new Error("Uso: mesh select all|none|invert");
+    }
+    if (action === "frame") {
+      this.#expectExact(tokens, 1, "mesh frame world|local|viewer");
+      const mode = String(tokens[0]).toLowerCase();
+      if (!["world", "local", "viewer"].includes(mode)) {
+        throw new Error("Uso: mesh frame world|local|viewer");
+      }
+      return this.commands.execute("mesh.frame.set", { mode });
+    }
+    if (["weld", "occlusion"].includes(action)) {
+      this.#expectExact(tokens, 1, `mesh ${action} on|off`);
+      const value = String(tokens[0]).toLowerCase();
+      if (!["on", "off"].includes(value)) {
+        throw new Error(`Uso: mesh ${action} on|off`);
+      }
+      return this.commands.execute("mesh.options.set", {
+        [action === "weld" ? "weldCoincident" : "occlusion"]:
+          value === "on"
+      });
+    }
+    if (action === "affine") {
+      this.#expectExact(tokens, 4, "mesh affine move|rotate|scale x y z");
+      const type = String(tokens.shift()).toLowerCase();
+      if (!["move", "rotate", "scale"].includes(type)) {
+        throw new Error("Uso: mesh affine move|rotate|scale x y z");
+      }
+      const value = tokens.map(token => type === "scale"
+        ? this.#nonZero(token)
+        : this.#number(token));
+      return this.commands.execute("mesh.affine.apply", {
+        operations: [{ type, value }]
+      });
+    }
+
+    throw new Error("Uso: mesh enter|status|apply|cancel|select|frame|weld|occlusion|affine|help");
+  }
+
+  #meshHelp() {
+    return {
+      usage: [
+        "mesh enter",
+        "mesh status",
+        "mesh select all|none|invert",
+        "mesh frame world|local|viewer",
+        "mesh weld on|off",
+        "mesh occlusion on|off",
+        "mesh affine move|rotate|scale x y z",
+        "mesh apply",
+        "mesh cancel"
+      ],
+      notes: [
+        "Durante a sessão, somente vértices da malha ativa são selecionáveis.",
+        "move, rotate, scale e position operam sobre os vértices selecionados.",
+        "O frame viewer é capturado e permanece travado até a troca de frame.",
+        "No frame viewer, X aponta para a direita da tela, Y para cima e Z é normal ao plano da tela.",
+        "Aplicar produz uma única operação object.geometry.replace no histórico; cancelar descarta a prévia."
+      ],
+      examples: [
+        "mesh enter",
+        "mesh frame viewer",
+        "move 2 0 0",
+        "rotate 0 0 15",
+        "scale 1.2 1 1",
+        "mesh apply"
+      ]
+    };
+  }
+
   #inspect(target = "all", qualifier = null) {
     switch (target) {
       case "selection": return this.editor.selection.snapshot();
@@ -1718,7 +1835,12 @@ export class DevConsole {
 
   #selectCommand(tokens) {
     const action=(tokens[0]??"").toLowerCase();
-    if(action==="clear"){this.editor.selection.clear();return this.editor.selection.snapshot()}
+    if(action==="clear") return this.commands.execute("selection.clear");
+    if (this.queries?.execute("mesh.edit.status")?.active) {
+      throw new Error(
+        "Durante a edição de malha, use mesh select all|none|invert; a seleção de objetos está bloqueada."
+      );
+    }
     if(["only","add","remove","toggle"].includes(action)){const ids=tokens.slice(1);if(!ids.length)throw new Error(`Uso: select ${action} object-id [...]`);return this.#modifySelection(action,ids)}
     return this.#select(tokens);
   }
@@ -2114,6 +2236,14 @@ export class DevConsole {
     const number = this.#number(value);
     if (number <= 0) {
       throw new Error(`Valor deve ser positivo: ${value}`);
+    }
+    return number;
+  }
+
+  #nonZero(value) {
+    const number = this.#number(value);
+    if (Math.abs(number) <= 1e-12) {
+      throw new Error(`Valor não pode ser nulo: ${value}`);
     }
     return number;
   }

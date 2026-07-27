@@ -122,7 +122,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260725-0029f1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260724-0029f";
+} from "../../region-box/src/reducer.js?build=20260727-0033a";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -141,7 +141,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260724-0029f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260726-0031a";
+} from "../../devtools/src/DevConsole.js?build=20260727-0033a";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -166,6 +166,17 @@ import {
   benchmarkSelectionOutlines,
   selectionOutlineInstance
 } from "../../renderer-three/src/SelectionOutlineBatch.js?build=20260718-0027g";
+import {
+  MeshEditController,
+  affineDeltaWorld,
+  coincidentVertexGroups,
+  composeRotationFrame,
+  expandCoincidentSelection,
+  selectedVertexPivotWorld,
+  snapWorldPointToFrameGrid,
+  transformLocalPositions,
+  transformLocalPositionsInto
+} from "../../mesh-editor-core/src/index.js?build=20260727-0033a";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -240,6 +251,290 @@ import {
 
 export function createRuntimeLayerTests() {
   return {
+    "mesh-edit-math": {
+      "frame do viewer converte X e Y no plano congelado"() {
+        const viewerQuaternion = new THREE.Quaternion()
+          .setFromEuler(new THREE.Euler(0, Math.PI / 2, 0))
+          .toArray();
+        const delta = affineDeltaWorld({
+          type: "move",
+          value: [2, 3, 0],
+          pivotWorld: [0, 0, 0],
+          frameQuaternion: viewerQuaternion
+        });
+        const positions = transformLocalPositions({
+          positions: [[0, 0, 0]],
+          selectedIndices: [0],
+          objectWorldMatrix: new THREE.Matrix4().toArray(),
+          deltaWorldMatrix: delta
+        });
+        assertVectorNear(positions[0], [0, 3, -2]);
+      },
+
+      "frame local compõe quaternions da hierarquia sem herdar escala"() {
+        const parent = new THREE.Quaternion()
+          .setFromEuler(new THREE.Euler(0, Math.PI / 2, 0));
+        const child = new THREE.Quaternion()
+          .setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0));
+        const frame = new THREE.Quaternion().fromArray(
+          composeRotationFrame([parent.toArray(), child.toArray()])
+        );
+        const expected = parent.clone().multiply(child);
+        assertVectorNear(
+          new THREE.Vector3(0, 1, 0).applyQuaternion(frame).toArray(),
+          new THREE.Vector3(0, 1, 0).applyQuaternion(expected).toArray()
+        );
+      },
+
+      "delta mundial volta corretamente ao espaço local não uniforme"() {
+        const world = new THREE.Matrix4().compose(
+          new THREE.Vector3(10, 2, -4),
+          new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(0, Math.PI / 2, 0)
+          ),
+          new THREE.Vector3(2, 3, 4)
+        );
+        const source = [[0, 0, 0], [1, 0, 0]];
+        const pivot = selectedVertexPivotWorld({
+          positions: source,
+          selectedIndices: [0, 1],
+          objectWorldMatrix: world.toArray()
+        });
+        const delta = affineDeltaWorld({
+          type: "rotate",
+          value: [0, 0, 180],
+          pivotWorld: pivot,
+          frameQuaternion: [0, 0, 0, 1]
+        });
+        const result = transformLocalPositions({
+          positions: source,
+          selectedIndices: [0, 1],
+          objectWorldMatrix: world.toArray(),
+          deltaWorldMatrix: delta
+        });
+        const after = selectedVertexPivotWorld({
+          positions: result,
+          selectedIndices: [0, 1],
+          objectWorldMatrix: world.toArray()
+        });
+        assertVectorNear(after, pivot);
+      },
+
+      "prévia reutiliza buffer de posições sem alterar vértices não selecionados"() {
+        const source = [[0, 0, 0], [1, 0, 0], [2, 0, 0]];
+        const target = source.map(point => [...point]);
+        const result = transformLocalPositionsInto({
+          sourcePositions: source,
+          targetPositions: target,
+          selectedIndices: [1],
+          objectWorldMatrix: new THREE.Matrix4().toArray(),
+          deltaWorldMatrix: new THREE.Matrix4()
+            .makeTranslation(0, 2, 0)
+            .toArray()
+        });
+        assertEqual(result, target);
+        assertDeepEqual(result, [[0, 0, 0], [1, 2, 0], [2, 0, 0]]);
+      },
+
+      "grade absoluta acompanha o frame congelado do viewer"() {
+        const frame = new THREE.Quaternion()
+          .setFromEuler(new THREE.Euler(0, Math.PI / 2, 0))
+          .toArray();
+        const snapped = snapWorldPointToFrameGrid({
+          pointWorld: [0.1, 1.6, -2.4],
+          frameQuaternion: frame,
+          step: 1
+        });
+        assertVectorNear(snapped, [0, 2, -2]);
+      },
+
+      "seleção soldada inclui todos os registros coincidentes"() {
+        const groups = coincidentVertexGroups([
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 0, 0],
+          [1 + 1e-8, 0, 0],
+          [0.49e-6, 2, 0],
+          [0.51e-6, 2, 0]
+        ]);
+        assertDeepEqual(
+          expandCoincidentSelection([0, 1, 4], groups),
+          [0, 1, 2, 3, 4, 5]
+        );
+      },
+
+      "controller aplica uma única troca de geometria no commit"() {
+        const region = new Region(
+          { id: "mesh-region", name: "Mesh", type: "box-region" },
+          { objects: [{
+            id: "mesh-box",
+            kind: "box",
+            name: "Caixa",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            geometry: { type: "box", size: [2, 2, 2] },
+            material: { color: "#ffffff" }
+          }, {
+            id: "other-box",
+            kind: "box",
+            name: "Outra caixa",
+            position: [5, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            geometry: { type: "box", size: [1, 1, 1] },
+            material: { color: "#888888" }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "mesh-region",
+          objectId: "mesh-box"
+        });
+        let visual = null;
+        const renderer = {
+          beginMeshEdit(args) { visual = args; },
+          endMeshEdit() { visual = null; },
+          updateMeshEditGeometry(geometry) { visual.geometry = geometry; },
+          updateMeshEditSelection() {},
+          updateMeshEditOptions() {},
+          setMeshEditFrame() {},
+          setTransformMode() {},
+          readNavigationCamera() { return { quaternion: [0, 0, 0, 1] }; }
+        };
+        const controller = new MeshEditController({
+          sandbox,
+          editor,
+          renderer,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        controller.enter();
+        controller.translate([1, 0, 0]);
+        sandbox.dispatch({
+          type: "object.update",
+          id: "other-box",
+          patch: { name: "Outra caixa renomeada" }
+        });
+        assertEqual(controller.status().stale, false);
+        const undoDepthBeforeCommit =
+          sandbox.getHistoryDiagnostics().undoDepth;
+        const result = controller.commit();
+        const object = sandbox.getSnapshot().objects[0];
+        assertEqual(result.changed, true);
+        assertEqual(object.geometry.type, "buffer");
+        assertEqual(object.kind, "buffer");
+        assertEqual(
+          sandbox.getHistoryDiagnostics().undoDepth,
+          undoDepthBeforeCommit + 1
+        );
+        assertEqual(sandbox.undo(), true);
+        assertEqual(
+          sandbox.getSnapshot().objects[0].geometry.type,
+          "box"
+        );
+      },
+
+      "frame do viewer permanece congelado após mover a câmera"() {
+        const region = new Region(
+          { id: "mesh-frame-region", name: "Mesh", type: "box-region" },
+          { objects: [{
+            id: "mesh-frame-box",
+            kind: "box",
+            name: "Caixa",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            geometry: { type: "box", size: [1, 1, 1] },
+            material: { color: "#ffffff" }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "mesh-frame-region",
+          objectId: "mesh-frame-box"
+        });
+        let cameraQuaternion = new THREE.Quaternion()
+          .setFromEuler(new THREE.Euler(0.2, 0.4, -0.1))
+          .toArray();
+        const renderer = {
+          beginMeshEdit() {},
+          endMeshEdit() {},
+          updateMeshEditGeometry() {},
+          updateMeshEditSelection() {},
+          updateMeshEditOptions() {},
+          setMeshEditFrame() {},
+          setTransformMode() {},
+          readNavigationCamera() { return { quaternion: cameraQuaternion }; }
+        };
+        const controller = new MeshEditController({
+          sandbox,
+          editor,
+          renderer,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        controller.enter();
+        controller.setFrame("viewer");
+        const frozen = controller.status().frameQuaternion;
+        cameraQuaternion = new THREE.Quaternion()
+          .setFromEuler(new THREE.Euler(-0.7, 1.1, 0.5))
+          .toArray();
+        assertVectorNear(controller.status().frameQuaternion, frozen);
+        const undoDepth = sandbox.getHistoryDiagnostics().undoDepth;
+        const result = controller.commit();
+        assertEqual(result.changed, false);
+        assertEqual(sandbox.getHistoryDiagnostics().undoDepth, undoDepth);
+      },
+
+      "entrada é recusada enquanto a malha participa de animação"() {
+        const region = new Region(
+          { id: "mesh-block-region", name: "Mesh", type: "box-region" },
+          { objects: [{
+            id: "mesh-block-box",
+            kind: "box",
+            name: "Caixa",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            geometry: { type: "box", size: [1, 1, 1] },
+            material: { color: "#ffffff" }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "mesh-block-region",
+          objectId: "mesh-block-box"
+        });
+        const renderer = {
+          beginMeshEdit() {},
+          endMeshEdit() {},
+          updateMeshEditGeometry() {},
+          updateMeshEditSelection() {},
+          updateMeshEditOptions() {},
+          setMeshEditFrame() {},
+          setTransformMode() {},
+          readNavigationCamera() { return { quaternion: [0, 0, 0, 1] }; },
+          canBeginMeshEdit() {
+            return { ok: false, reason: "animation-active" };
+          }
+        };
+        const controller = new MeshEditController({
+          sandbox,
+          editor,
+          renderer,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        const status = controller.status();
+        assertEqual(status.canEnter, false);
+        assert(status.reason.includes("animação"));
+        assertThrowsMessage(() => controller.enter(), "animação");
+      }
+    },
     "runtime-api": {
       "fachada executa comandos sem expor registro"() {
         const commands = {

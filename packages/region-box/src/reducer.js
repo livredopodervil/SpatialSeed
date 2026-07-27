@@ -284,6 +284,24 @@ export function boxRegionReducer(state, command) {
       };
     }
 
+    case "object.geometry.replace": {
+      const geometry = freezeGeometry(command.geometry);
+      const objects = updateById(
+        state.objects,
+        command.id,
+        object => ({ ...object, kind: geometry.type, geometry })
+      );
+      if (objects === state.objects) return { state, changes: [] };
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [{
+          type: "object-updated",
+          objectId: command.id,
+          source: command.source ?? "object.geometry.replace"
+        }]
+      };
+    }
+
     case "object.transform": {
       const objects = updateById(
         state.objects,
