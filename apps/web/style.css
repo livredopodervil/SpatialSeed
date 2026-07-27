@@ -1684,3 +1684,74 @@ html[data-toolbar-layout="vertical"] #selection-panel{
   overflow:visible!important;
   backdrop-filter:none!important;
 }
+
+/* 0037e — ajuda contextual para mouse, teclado e toque */
+#edit-hud[data-help-mode="true"]{
+  outline:2px solid #78c2ff;
+  box-shadow:0 0 0 3px #0a1724,0 14px 38px #000b;
+}
+#edit-hud-help[data-active="true"]{
+  color:#effaff;
+  background:#19466f;
+  outline:1px solid #78c2ff;
+  box-shadow:0 0 10px #3aa9ff66;
+}
+.edit-hud-tooltip{
+  position:fixed;
+  z-index:10000;
+  width:max-content;
+  max-width:min(330px,calc(100vw - 16px));
+  display:grid;
+  gap:4px;
+  padding:9px 11px;
+  box-sizing:border-box;
+  color:#eaf6ff;
+  background:#07111df7;
+  border:1px solid #78c2ff88;
+  border-radius:10px;
+  box-shadow:0 10px 30px #000b;
+  backdrop-filter:blur(10px);
+  pointer-events:none;
+  overflow-wrap:anywhere;
+}
+.edit-hud-tooltip[hidden]{display:none!important}
+.edit-hud-tooltip strong{
+  font-size:13px;
+  line-height:1.25;
+  color:#ffffff;
+}
+.edit-hud-tooltip span{
+  font-size:12px;
+  line-height:1.38;
+  color:#b9cee2;
+}
+.edit-hud-help-note{
+  margin:0;
+  padding:9px;
+  border-top:1px solid #ffffff17;
+  color:#b9cee2;
+  background:#08121ff7;
+  font-size:12px;
+  line-height:1.4;
+}
+.edit-hud-config-grid label:has(#edit-hud-tap-hints){
+  display:flex;
+  align-items:center;
+  gap:7px;
+  grid-column:1 / -1;
+}
+.edit-hud-config-grid #edit-hud-tap-hints{
+  width:auto;
+  flex:0 0 auto;
+}
+@media (pointer:coarse){
+  .edit-hud-tooltip{
+    max-width:min(360px,calc(100vw - 12px));
+    padding:11px 13px;
+  }
+  .edit-hud-tooltip strong{font-size:14px}
+  .edit-hud-tooltip span{font-size:13px}
+}
+#edit-hud{touch-action:auto}
+.edit-hud-handle{touch-action:none}
+.edit-hud-config[open],.edit-hud-strip{touch-action:pan-x pan-y}

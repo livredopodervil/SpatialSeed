@@ -7,6 +7,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
   opacity: 0.96,
   columns: 4,
   rows: 2,
+  tapHints: true,
   left: 12,
   defaults: {
     extrude: 1,
@@ -33,6 +34,11 @@ export class EditHud {
   #unsubscribe = null;
   #preferences = structuredClone(DEFAULT_PREFERENCES);
   #drag = null;
+  #helpMode = false;
+  #hintPointer = null;
+  #hintTimer = null;
+  #hintHideTimer = null;
+  #suppressedClick = null;
 
   constructor({ root, query, execute, subscribe, openWorkspace = null }) {
     if (!root) throw new TypeError("EditHud exige root.");
@@ -44,6 +50,7 @@ export class EditHud {
     this.execute = execute;
     this.openWorkspace = openWorkspace;
     this.#loadPreferences();
+    this.#prepareHints();
     this.#bind();
     this.#applyPreferences();
     this.#unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
@@ -53,6 +60,8 @@ export class EditHud {
   dispose() {
     this.#unsubscribe?.();
     this.#listeners(false);
+    this.#clearHintTimer();
+    this.#clearHintHideTimer();
   }
 
   refresh(snapshot = null) {
@@ -109,6 +118,20 @@ export class EditHud {
   #bind() {
     this.#element("edit-hud-open").addEventListener("click", () => {
       this.openWorkspace?.();
+    });
+    this.#element("edit-hud-help").addEventListener("click", () => {
+      this.#helpMode = !this.#helpMode;
+      this.root.dataset.helpMode = this.#helpMode ? "true" : "false";
+      this.#element("edit-hud-help").dataset.active = this.#helpMode ? "true" : "false";
+      if (this.#helpMode) {
+        this.#showHint(this.#element("edit-hud-help"), {
+          sticky: true,
+          title: "Modo ajuda ativado",
+          description: "Toque em qualquer ícone para consultar sua função sem executar a ferramenta. Toque em ? novamente para sair."
+        });
+      } else {
+        this.#hideHint();
+      }
     });
     for (const button of this.root.querySelectorAll("[data-edit-subject]")) {
       button.addEventListener("click", () => this.#execute(
@@ -187,6 +210,7 @@ export class EditHud {
     this.#element("edit-hud-opacity").value = String(this.#preferences.opacity);
     this.#element("edit-hud-columns").value = String(this.#preferences.columns);
     this.#element("edit-hud-rows").value = String(this.#preferences.rows);
+    this.#element("edit-hud-tap-hints").checked = this.#preferences.tapHints !== false;
     this.#element("edit-hud-default-extrude").value = String(this.#preferences.defaults.extrude);
     this.#element("edit-hud-default-inset").value = String(this.#preferences.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(this.#preferences.defaults.pathRadius);
@@ -202,7 +226,7 @@ export class EditHud {
     for (const id of [
       "edit-hud-dock", "edit-hud-orientation", "edit-hud-size",
       "edit-hud-opacity", "edit-hud-columns", "edit-hud-rows",
-      "edit-hud-default-extrude", "edit-hud-default-inset",
+      "edit-hud-tap-hints", "edit-hud-default-extrude", "edit-hud-default-inset",
       "edit-hud-default-path-radius"
     ]) {
       this.#element(id).addEventListener("change", () => {
@@ -216,6 +240,7 @@ export class EditHud {
         this.#preferences.rows = integerBetween(
           this.#element("edit-hud-rows").value, 1, 8, 2
         );
+        this.#preferences.tapHints = this.#element("edit-hud-tap-hints").checked;
         this.#preferences.defaults = {
           extrude: finiteOr(this.#element("edit-hud-default-extrude").value, 1),
           inset: clamp(finiteOr(this.#element("edit-hud-default-inset").value, 0.2), 0.001, 0.999),
@@ -308,6 +333,189 @@ export class EditHud {
     this.#listeners(true);
   }
 
+  #prepareHints() {
+    const controls = this.root.querySelectorAll(
+      ".edit-hud-strip button, .edit-hud-strip label, #edit-hud-open, #edit-hud-help, .edit-hud-config > summary"
+    );
+    for (const control of controls) {
+      const hint = resolveHudHint(control);
+      control.dataset.hudHint = "true";
+      control.dataset.hudHintTitle = hint.title;
+      control.dataset.hudHintDescription = hint.description;
+      control.setAttribute("aria-label", hint.title);
+      control.setAttribute("aria-describedby", "edit-hud-tooltip-description");
+      if (control.tagName === "LABEL" && !control.hasAttribute("tabindex")) {
+        control.tabIndex = 0;
+      }
+      control.removeAttribute("title");
+    }
+  }
+
+  #hintTarget(target) {
+    const control = target?.closest?.('[data-hud-hint="true"]');
+    return control && this.root.contains(control) ? control : null;
+  }
+
+  #showHint(control, { sticky = false, duration = 0, title = null, description = null } = {}) {
+    if (!control) return;
+    this.#clearHintHideTimer();
+    const tooltip = this.#element("edit-hud-tooltip");
+    this.#element("edit-hud-tooltip-title").textContent =
+      title ?? control.dataset.hudHintTitle ?? "Ferramenta";
+    this.#element("edit-hud-tooltip-description").textContent =
+      description ?? control.dataset.hudHintDescription ?? "";
+    tooltip.hidden = false;
+    tooltip.dataset.sticky = sticky ? "true" : "false";
+    tooltip.dataset.visible = "true";
+    requestAnimationFrame(() => this.#positionHint(control));
+    if (duration > 0 && !sticky) {
+      this.#hintHideTimer = setTimeout(() => this.#hideHint(), duration);
+    }
+  }
+
+  #positionHint(control) {
+    const tooltip = this.#element("edit-hud-tooltip");
+    if (tooltip.hidden) return;
+    const anchor = control.getBoundingClientRect();
+    const rect = tooltip.getBoundingClientRect();
+    const margin = 8;
+    let left = anchor.left + anchor.width / 2 - rect.width / 2;
+    let top = anchor.bottom + 8;
+    if (top + rect.height > globalThis.innerHeight - margin) {
+      top = anchor.top - rect.height - 8;
+    }
+    left = clamp(left, margin, Math.max(margin, globalThis.innerWidth - rect.width - margin));
+    top = clamp(top, margin, Math.max(margin, globalThis.innerHeight - rect.height - margin));
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  }
+
+  #hideHint({ force = false } = {}) {
+    const tooltip = this.#element("edit-hud-tooltip");
+    if (!force && tooltip.dataset.sticky === "true" && this.#helpMode) return;
+    this.#clearHintHideTimer();
+    tooltip.dataset.visible = "false";
+    tooltip.dataset.sticky = "false";
+    tooltip.hidden = true;
+  }
+
+  #clearHintTimer() {
+    if (this.#hintTimer !== null) clearTimeout(this.#hintTimer);
+    this.#hintTimer = null;
+  }
+
+  #clearHintHideTimer() {
+    if (this.#hintHideTimer !== null) clearTimeout(this.#hintHideTimer);
+    this.#hintHideTimer = null;
+  }
+
+  #onHintPointerDown = event => {
+    const control = this.#hintTarget(event.target);
+    if (!control || event.pointerType === "mouse") return;
+    if (this.#helpMode && control.id !== "edit-hud-help") {
+      this.#suppressedClick = { control, until: performance.now() + 800 };
+      this.#showHint(control, { sticky: true });
+      return;
+    }
+    this.#clearHintTimer();
+    this.#hintPointer = {
+      pointerId: event.pointerId,
+      control,
+      x: event.clientX,
+      y: event.clientY,
+      longPress: false
+    };
+    this.#hintTimer = setTimeout(() => {
+      if (!this.#hintPointer || this.#hintPointer.pointerId !== event.pointerId) return;
+      this.#hintPointer.longPress = true;
+      this.#suppressedClick = { control, until: performance.now() + 800 };
+      this.#showHint(control, { sticky: true });
+      globalThis.navigator?.vibrate?.(12);
+    }, 480);
+  };
+
+  #onHintPointerMove = event => {
+    if (!this.#hintPointer || event.pointerId !== this.#hintPointer.pointerId) return;
+    const distance = Math.hypot(
+      event.clientX - this.#hintPointer.x,
+      event.clientY - this.#hintPointer.y
+    );
+    if (distance > 10) {
+      this.#clearHintTimer();
+      this.#hintPointer = null;
+    }
+  };
+
+  #onHintPointerUp = event => {
+    if (!this.#hintPointer || event.pointerId !== this.#hintPointer.pointerId) return;
+    const longPress = this.#hintPointer.longPress;
+    this.#clearHintTimer();
+    this.#hintPointer = null;
+    if (longPress && event.cancelable) event.preventDefault();
+  };
+
+  #onHintClickCapture = event => {
+    const control = this.#hintTarget(event.target);
+    if (!control) return;
+    const suppressed = this.#suppressedClick;
+    if (suppressed?.control === control && performance.now() <= suppressed.until) {
+      this.#suppressedClick = null;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (this.#helpMode && control.id !== "edit-hud-help") {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      this.#showHint(control, { sticky: true });
+    }
+  };
+
+  #onHintClickFeedback = event => {
+    const control = this.#hintTarget(event.target);
+    if (!control || control.id === "edit-hud-help" || this.#helpMode ||
+      this.#preferences.tapHints === false) return;
+    this.#showHint(control, { duration: 1300 });
+  };
+
+  #onHintPointerOver = event => {
+    if (event.pointerType !== "mouse") return;
+    const control = this.#hintTarget(event.target);
+    if (!control || control.contains(event.relatedTarget)) return;
+    this.#showHint(control);
+  };
+
+  #onHintPointerOut = event => {
+    if (event.pointerType !== "mouse") return;
+    const control = this.#hintTarget(event.target);
+    if (!control || control.contains(event.relatedTarget)) return;
+    this.#hideHint();
+  };
+
+  #onHintFocusIn = event => {
+    const control = this.#hintTarget(event.target);
+    if (control) this.#showHint(control);
+  };
+
+  #onHintFocusOut = event => {
+    const control = this.#hintTarget(event.target);
+    if (control && !control.contains(event.relatedTarget)) this.#hideHint();
+  };
+
+  #onHintDocumentPointerDown = event => {
+    if (this.root.contains(event.target)) return;
+    this.#hideHint({ force: !this.#helpMode });
+  };
+
+  #onHintKeyDown = event => {
+    if (event.key === "Escape") {
+      this.#helpMode = false;
+      this.root.dataset.helpMode = "false";
+      this.#element("edit-hud-help").dataset.active = "false";
+      this.#hideHint({ force: true });
+    }
+  };
+
   #createRememberedLight() {
     let defaults = {};
     try {
@@ -338,10 +546,22 @@ export class EditHud {
     const handle = this.#element("edit-hud-handle");
     const method = enabled ? "addEventListener" : "removeEventListener";
     handle[method]("pointerdown", this.#onPointerDown);
+    this.root[method]("pointerdown", this.#onHintPointerDown, true);
+    this.root[method]("click", this.#onHintClickCapture, true);
+    this.root[method]("click", this.#onHintClickFeedback);
+    this.root[method]("pointerover", this.#onHintPointerOver);
+    this.root[method]("pointerout", this.#onHintPointerOut);
+    this.root[method]("focusin", this.#onHintFocusIn);
+    this.root[method]("focusout", this.#onHintFocusOut);
     globalThis[method]("pointermove", this.#onPointerMove);
+    globalThis[method]("pointermove", this.#onHintPointerMove);
     globalThis[method]("pointerup", this.#onPointerUp);
+    globalThis[method]("pointerup", this.#onHintPointerUp);
     globalThis[method]("pointercancel", this.#onPointerUp);
+    globalThis[method]("pointercancel", this.#onHintPointerUp);
     globalThis[method]("resize", this.#onResize);
+    globalThis.document?.[method]("pointerdown", this.#onHintDocumentPointerDown, true);
+    globalThis.document?.[method]("keydown", this.#onHintKeyDown);
   }
 
   #onPointerDown = event => {
@@ -432,6 +652,7 @@ export class EditHud {
     this.#element("edit-hud-opacity").value = String(p.opacity);
     this.#element("edit-hud-columns").value = String(p.columns);
     this.#element("edit-hud-rows").value = String(p.rows);
+    this.#element("edit-hud-tap-hints").checked = p.tapHints !== false;
     this.#element("edit-hud-default-extrude").value = String(p.defaults.extrude);
     this.#element("edit-hud-default-inset").value = String(p.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(p.defaults.pathRadius);
@@ -559,6 +780,100 @@ export class EditHud {
     if (!element) throw new Error(`Controle do HUD ausente: ${id}.`);
     return element;
   }
+}
+
+const HUD_HINT_DETAILS = Object.freeze({
+  "edit-hud-open": ["Painel Editar", "Abre o workspace completo com parâmetros numéricos, criação, materiais, luzes, caminhos e operações de malha."],
+  "edit-hud-help": ["Ajuda dos ícones", "Ativa o modo de consulta. Nesse modo, tocar numa ferramenta mostra sua explicação sem executá-la."],
+  "edit-hud-object": ["Modo objeto", "Seleciona e transforma objetos inteiros. Encerre ou aplique a sessão de malha antes de retornar a este modo."],
+  "edit-hud-axis-x": ["Eixo X", "Permite ou bloqueia o componente X da transformação no frame ativo."],
+  "edit-hud-axis-y": ["Eixo Y", "Permite ou bloqueia o componente Y da transformação no frame ativo."],
+  "edit-hud-axis-z": ["Eixo Z", "Permite ou bloqueia o componente Z da transformação no frame ativo."],
+  "edit-hud-snap-enabled": ["Snap", "Liga ou desliga todas as modalidades de encaixe configuradas."],
+  "edit-hud-snap-auto": ["Snap automático", "Escolhe adaptativamente entre vértice, aresta, face e grade conforme proximidade e contexto."],
+  "edit-hud-snap-vertex": ["Snap em vértice", "Atrai a âncora da transformação para vértices compatíveis."],
+  "edit-hud-snap-edge": ["Snap em aresta", "Atrai a âncora para o ponto mais próximo de uma aresta compatível."],
+  "edit-hud-snap-face": ["Snap em face", "Atrai a transformação para a superfície de uma face compatível."],
+  "edit-hud-snap-grid": ["Snap em grade", "Quantiza a transformação segundo o espaçamento da grade."],
+  "edit-hud-proportional": ["Influência proporcional", "Move também vértices conectados segundo raio, métrica e função de atenuação configurados."],
+  "edit-hud-plane-lock": ["Travar plano", "Restringe a navegação e o frame de trabalho ao plano capturado."],
+  "edit-hud-point-lock": ["Travar ponto", "Mantém o alvo do viewer fixo e orbita ao redor desse ponto."],
+  "edit-hud-create": ["Criar objeto", "Abre a criação de geometria usando os parâmetros memorizados e, opcionalmente, outro objeto como referência."],
+  "edit-hud-create-light": ["Criar luz", "Cria uma luz com tipo, cor, intensidade e sombras memorizados."],
+  "edit-hud-material": ["Materiais e luzes", "Abre no painel Editar os parâmetros do material ou da luz selecionada."],
+  "edit-hud-enter-mesh": ["Editar malha", "Isola a malha do objeto selecionado e inicia uma sessão local de edição de componentes."],
+  "edit-hud-draw-path": ["Desenhar spline", "Desenha à mão livre no plano travado ou no plano atual do viewer e cria um caminho suavizado."],
+  "edit-hud-group": ["Agrupar", "Cria um grupo contendo os objetos selecionados."],
+  "edit-hud-ungroup": ["Desagrupar", "Remove o grupo selecionado e preserva seus filhos na cena."],
+  "edit-hud-duplicate": ["Duplicar", "Duplica objetos ou os componentes selecionados da malha."],
+  "edit-hud-delete": ["Excluir", "Exclui objetos ou componentes selecionados. A operação participa do undo correspondente."],
+  "edit-hud-select-all": ["Selecionar tudo", "Seleciona todos os componentes do modo atual na malha ativa."],
+  "edit-hud-select-none": ["Limpar seleção", "Remove todos os componentes da seleção interna da malha."],
+  "edit-hud-select-invert": ["Inverter seleção", "Troca componentes selecionados por não selecionados no modo atual."],
+  "edit-hud-select-grow": ["Expandir seleção", "Inclui componentes topologicamente vizinhos à seleção atual."],
+  "edit-hud-select-shrink": ["Contrair seleção", "Remove a camada externa de componentes da seleção atual."],
+  "edit-hud-select-linked": ["Selecionar conectados", "Seleciona todo o componente conexo que contém a seleção atual."],
+  "edit-hud-select-boundary": ["Selecionar contorno", "Seleciona arestas ou faces pertencentes ao contorno da região atual."],
+  "edit-hud-create-vertex": ["Criar vértice", "Adiciona um vértice à malha editável na origem local atual."],
+  "edit-hud-create-edge": ["Criar aresta", "Liga dois vértices selecionados quando a topologia permite."],
+  "edit-hud-create-face": ["Criar face", "Cria e triangula uma face a partir dos vértices ou arestas selecionados."],
+  "edit-hud-fill": ["Preencher", "Preenche um contorno selecionado com faces trianguladas."],
+  "edit-hud-weld": ["Soldar vértices", "Substitui vértices selecionados por uma posição comum e reconstrói as adjacências."],
+  "edit-hud-extrude": ["Extrudar", "Duplica a região selecionada, cria as faces laterais e desloca pela distância memorizada."],
+  "edit-hud-inset": ["Inset", "Cria uma região interna nas faces selecionadas usando o valor memorizado."],
+  "edit-hud-split": ["Dividir aresta", "Insere um vértice no meio da aresta e subdivide as faces adjacentes."],
+  "edit-hud-collapse": ["Colapsar aresta", "Funde as extremidades da aresta e remove faces degeneradas compatíveis."],
+  "edit-hud-flip-edge": ["Inverter diagonal", "Troca a diagonal compartilhada por duas faces triangulares adjacentes."],
+  "edit-hud-bridge": ["Criar ponte", "Conecta dois contornos compatíveis com uma faixa de faces."],
+  "edit-hud-subdivide": ["Subdividir faces", "Divide as faces selecionadas em faces menores."],
+  "edit-hud-flip-normal": ["Inverter normal", "Inverte a ordem dos vértices das faces e, portanto, a orientação de suas normais."],
+  "edit-hud-path-from-selection": ["Criar caminho", "Cria um novo objeto-caminho a partir de vértices, arestas ou contornos de faces selecionados."],
+  "edit-hud-recalculate-normals": ["Recalcular normais", "Reconstrói as normais da malha a partir da orientação atual das faces."],
+  "edit-hud-cleanup": ["Sanitizar malha", "Remove vértices órfãos e elementos degenerados básicos, compacta índices e recalcula normais."],
+  "edit-hud-undo": ["Desfazer interno", "Volta uma etapa dentro da sessão de edição de malha sem alterar o histórico do projeto."],
+  "edit-hud-redo": ["Refazer interno", "Reaplica uma etapa desfeita dentro da sessão de edição de malha."],
+  "edit-hud-apply": ["Aplicar", "Confirma toda a sessão de malha como uma única alteração no histórico do projeto."],
+  "edit-hud-cancel": ["Cancelar", "Descarta todas as alterações da sessão de malha e restaura o objeto original."]
+});
+
+const SUBJECT_HINTS = Object.freeze({
+  vertex: ["Modo vértice", "Seleciona e edita vértices reais da malha ativa."],
+  edge: ["Modo aresta", "Seleciona e edita arestas topológicas da malha ativa."],
+  face: ["Modo face", "Seleciona e edita faces da malha ativa."]
+});
+
+const TOOL_HINTS = Object.freeze({
+  navigate: ["Navegar", "Usa os gestos do viewer para orbitar, deslocar e aproximar a câmera."],
+  select: ["Selecionar", "Toca ou arrasta no viewer para selecionar objetos ou componentes do modo atual."],
+  translate: ["Mover", "Ativa o gizmo de translação e respeita frame, eixos, snap e influência proporcional."],
+  rotate: ["Girar", "Ativa o gizmo de rotação no frame e eixos configurados."],
+  scale: ["Escalar", "Ativa o gizmo de escala no frame e eixos configurados."]
+});
+
+const FRAME_HINTS = Object.freeze({
+  world: ["Frame mundial", "Usa os eixos globais X, Y e Z da cena."],
+  local: ["Frame do objeto", "Usa a orientação local do objeto ou da malha em edição."],
+  viewer: ["Frame do viewer", "Usa direita, alto e profundidade da vista capturada."],
+  "custom-plane": ["Plano personalizado", "Usa a base ortonormal do plano arbitrário travado."]
+});
+
+function resolveHudHint(control) {
+  const idHint = HUD_HINT_DETAILS[control.id];
+  if (idHint) return { title: idHint[0], description: idHint[1] };
+  const subject = control.dataset.editSubject;
+  if (subject && SUBJECT_HINTS[subject]) {
+    return { title: SUBJECT_HINTS[subject][0], description: SUBJECT_HINTS[subject][1] };
+  }
+  const tool = control.dataset.editTool;
+  if (tool && TOOL_HINTS[tool]) {
+    return { title: TOOL_HINTS[tool][0], description: TOOL_HINTS[tool][1] };
+  }
+  const frame = control.dataset.editFrame;
+  if (frame && FRAME_HINTS[frame]) {
+    return { title: FRAME_HINTS[frame][0], description: FRAME_HINTS[frame][1] };
+  }
+  const title = control.getAttribute("title") || control.getAttribute("aria-label") || "Ferramenta";
+  return { title, description: title };
 }
 
 function describeState(state) {

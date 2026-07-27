@@ -178,6 +178,7 @@
 <aside id="edit-hud" aria-label="HUD de edição">
   <div id="edit-hud-handle" class="edit-hud-handle">
     <button id="edit-hud-open" type="button" title="Abrir painel unificado de edição">✎</button>
+    <button id="edit-hud-help" type="button" title="Ativar modo ajuda dos ícones">?</button>
     <small id="edit-hud-status">Objeto · select · world · XYZ</small>
     <details class="edit-hud-config">
       <summary title="Configurar HUD">⚙</summary>
@@ -188,6 +189,7 @@
         <label>Opacidade <input id="edit-hud-opacity" type="range" min="0.45" max="1" step="0.05" value="0.96"></label>
         <label>Colunas <input id="edit-hud-columns" type="number" min="1" max="12" step="1" value="4"></label>
         <label>Linhas <input id="edit-hud-rows" type="number" min="1" max="8" step="1" value="2"></label>
+        <label><input id="edit-hud-tap-hints" type="checkbox" checked> Mostrar nome após toque</label>
       </div>
       <div class="edit-hud-config-groups">
         <label><input type="checkbox" data-edit-hud-group-toggle="subject" checked> Contexto</label>
@@ -205,6 +207,7 @@
         <label>Inset <input id="edit-hud-default-inset" type="number" min="0.001" max="0.999" step="0.05" value="0.2"></label>
         <label>Raio de caminho <input id="edit-hud-default-path-radius" type="number" min="0.001" step="0.01" value="0.08"></label>
       </div>
+      <p class="edit-hud-help-note">Toque curto executa. Pressione e segure para ver nome e explicação. O botão ? ativa um modo de consulta que não executa as ferramentas.</p>
       <button id="edit-hud-reset" type="button">Restaurar HUD</button>
     </details>
   </div>
@@ -288,6 +291,10 @@
       <button id="edit-hud-apply" type="button" title="Aplicar sessão de malha">✓</button>
       <button id="edit-hud-cancel" type="button" title="Cancelar sessão de malha">×</button>
     </div>
+  </div>
+  <div id="edit-hud-tooltip" class="edit-hud-tooltip" role="tooltip" aria-live="polite" hidden>
+    <strong id="edit-hud-tooltip-title"></strong>
+    <span id="edit-hud-tooltip-description"></span>
   </div>
 </aside>
 
@@ -1087,6 +1094,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0037d"></script>
+<script type="module" src="./boot.js?build=20260727-0037e"></script>
 </body>
 </html>

@@ -88,7 +88,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260727-0036d";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260727-0037c";
+} from "../../../packages/edit-hud/src/index.js?build=20260727-0037e";
 import {
   PathSketchController,
   PathToolService,

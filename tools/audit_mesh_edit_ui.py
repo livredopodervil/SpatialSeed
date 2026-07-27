@@ -104,6 +104,9 @@ for needle in [
     'id="edit-hud-create-light"',
     'id="edit-hud-material"',
     'id="edit-hud-extrude"',
+    'id="edit-hud-help"',
+    'id="edit-hud-tooltip"',
+    'id="edit-hud-tap-hints"',
     'id="edit-create-reference"',
     'id="edit-material-apply"',
     'id="edit-light-apply"'
@@ -158,6 +161,14 @@ for needle in [
     require("apps/web/index.html", needle)
 require("packages/edit-context/src/EditContextController.js", "class EditContextController")
 require("packages/edit-hud/src/EditHud.js", "class EditHud")
+for needle in [
+    "#prepareHints",
+    "#onHintPointerDown",
+    "#onHintClickCapture",
+    "Modo ajuda ativado",
+    "HUD_HINT_DETAILS"
+]:
+    require("packages/edit-hud/src/EditHud.js", needle)
 require("packages/mesh-editor-core/src/MeshEditController.js", 'setTransformMode("translate")')
 
 

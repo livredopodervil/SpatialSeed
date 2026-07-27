@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260727-0037d",
-  "channel": "fix/0037d-selection-query-order"
+  "build": "20260727-0037e",
+  "channel": "fix/0037e-touch-hints"
 }
