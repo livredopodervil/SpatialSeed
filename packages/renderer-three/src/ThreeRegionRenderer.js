@@ -44,22 +44,23 @@ import {
   createAnimationTargetSnapshot
 } from "./AnimationTransformOverlay.js?build=20260720-0028d";
 import {
+  cameraFrameQuaternion,
   constrainWorldDeltaMatrix,
   projectWorldDeltaToConstraint,
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid
-} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0035a";
+} from "../../mesh-editor-core/src/MeshEditMath.js?build=20260727-0036b";
 import {
   buildMeshTopology
-} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0035a";
+} from "../../mesh-editor-core/src/MeshTopology.js?build=20260727-0036b";
 import {
   createMeshInfluenceField,
   normalizeMeshDeformationSettings,
   transformLocalPositionsWithInfluenceInto
-} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260727-0035a";
+} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260727-0036b";
 import {
   normalizeMeshComponentMode
-} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260727-0035a";
+} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260727-0036b";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-navigation-camera-v4";
@@ -86,6 +87,13 @@ export class ThreeRegionRenderer {
   #selectionOutlines = null;
   #interactionMode = "select";
   #selectionOperation = "replace";
+  #objectTransformFrame = {
+    mode: "world",
+    quaternion: [0, 0, 0, 1]
+  };
+  #objectTransformAxes = { x: true, y: true, z: true };
+  #navigationLocks = { plane: null, point: null };
+  #applyingNavigationLocks = false;
   #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
   #batchCapacity = 65536;
   #hierarchy = new HierarchyIndex([]);
@@ -237,7 +245,10 @@ export class ThreeRegionRenderer {
     this.orbit.target.set(0, 1, 0);
     this.orbit.addEventListener(
       "change",
-      () => this.#notifyNavigationCamera()
+      () => {
+        this.#enforceNavigationLocks();
+        this.#notifyNavigationCamera();
+      }
     );
 
     this.transformAnchor = new THREE.Group();
@@ -877,6 +888,152 @@ export class ThreeRegionRenderer {
     );
   }
 
+  getObjectTransformFrame() {
+    return Object.freeze({
+      mode: this.#objectTransformFrame.mode,
+      quaternion: Object.freeze([...this.#objectTransformFrame.quaternion])
+    });
+  }
+
+  setObjectTransformFrame({ mode = "world", quaternion = null } = {}) {
+    const normalized = String(mode ?? "world").toLowerCase();
+    if (!["world", "local", "viewer", "custom-plane"].includes(normalized)) {
+      throw new RangeError(`Referencial de objeto desconhecido: ${mode}.`);
+    }
+    let nextQuaternion = [0, 0, 0, 1];
+    if (["viewer", "custom-plane"].includes(normalized)) {
+      if (!Array.isArray(quaternion) || quaternion.length !== 4) {
+        throw new TypeError("Referencial personalizado exige quaternion.");
+      }
+      nextQuaternion = quaternion.map(Number);
+      if (!nextQuaternion.every(Number.isFinite)) {
+        throw new TypeError("Quaternion do referencial contém valor inválido.");
+      }
+      const normalizedQuaternion = new THREE.Quaternion()
+        .fromArray(nextQuaternion)
+        .normalize();
+      nextQuaternion = normalizedQuaternion.toArray();
+    }
+    this.#objectTransformFrame = {
+      mode: normalized,
+      quaternion: nextQuaternion
+    };
+    if (normalized === "world" || normalized === "local") {
+      this.selection.orientationPolicy = normalized;
+      this.selection.notifyContextChanged();
+    }
+    this.#configureTransformForEditor();
+    this.#rebuildAnchor();
+    return this.getObjectTransformFrame();
+  }
+
+  getObjectTransformAxes() {
+    return Object.freeze({ ...this.#objectTransformAxes });
+  }
+
+  setObjectTransformAxes(patch = {}) {
+    this.#objectTransformAxes = {
+      x: patch.x === undefined ? this.#objectTransformAxes.x : Boolean(patch.x),
+      y: patch.y === undefined ? this.#objectTransformAxes.y : Boolean(patch.y),
+      z: patch.z === undefined ? this.#objectTransformAxes.z : Boolean(patch.z)
+    };
+    this.#configureTransformForEditor();
+    return this.getObjectTransformAxes();
+  }
+
+  readViewerReferenceFrame() {
+    const quaternion = new THREE.Quaternion().fromArray(
+      cameraFrameQuaternion(this.camera.quaternion.toArray())
+    );
+    const xAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
+    const yAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion);
+    return Object.freeze({
+      origin: Object.freeze(this.orbit.target.toArray()),
+      xAxis: Object.freeze(xAxis.toArray()),
+      yAxis: Object.freeze(yAxis.toArray()),
+      normal: Object.freeze(normal.toArray()),
+      quaternion: Object.freeze(quaternion.toArray()),
+      source: "viewer"
+    });
+  }
+
+  readSelectionReferenceFrame() {
+    const origin = this.getSelectionPivotPosition();
+    if (!origin) return null;
+    const activeId = this.#selectionSnapshot?.activeMember?.objectId;
+    const proxy = activeId ? this.#meshes.get(activeId) : null;
+    const quaternion = new THREE.Quaternion();
+    if (proxy) {
+      proxy.updateMatrixWorld(true);
+      proxy.matrixWorld.decompose(
+        new THREE.Vector3(),
+        quaternion,
+        new THREE.Vector3()
+      );
+    }
+    const xAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(quaternion);
+    const yAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(quaternion);
+    const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(quaternion);
+    return Object.freeze({
+      origin: Object.freeze([...origin]),
+      xAxis: Object.freeze(xAxis.toArray()),
+      yAxis: Object.freeze(yAxis.toArray()),
+      normal: Object.freeze(normal.toArray()),
+      quaternion: Object.freeze(quaternion.toArray()),
+      source: Object.freeze({ type: "object", objectId: activeId ?? null })
+    });
+  }
+
+  getNavigationLocks() {
+    return Object.freeze(structuredClone(this.#navigationLocks));
+  }
+
+  setNavigationPlaneLock(frame = null) {
+    this.#navigationLocks = {
+      ...this.#navigationLocks,
+      plane: frame ? normalizeNavigationPlane(frame) : null
+    };
+    if (this.#navigationLocks.point && this.#navigationLocks.plane) {
+      this.#navigationLocks.point = {
+        ...this.#navigationLocks.point,
+        point: projectPointToPlane(
+          this.#navigationLocks.point.point,
+          this.#navigationLocks.plane
+        )
+      };
+    }
+    this.#enforceNavigationLocks();
+    this.#notifyNavigationCamera();
+    return this.getNavigationLocks();
+  }
+
+  setNavigationPointLock(value = null) {
+    if (!value) {
+      this.#navigationLocks = { ...this.#navigationLocks, point: null };
+    } else {
+      const point = normalizeVector3Array(value.point ?? value, "Ponto travado");
+      this.#navigationLocks = {
+        ...this.#navigationLocks,
+        point: {
+          point: this.#navigationLocks.plane
+            ? projectPointToPlane(point, this.#navigationLocks.plane)
+            : point,
+          source: value.source ?? null
+        }
+      };
+    }
+    this.#enforceNavigationLocks();
+    this.#notifyNavigationCamera();
+    return this.getNavigationLocks();
+  }
+
+  clearNavigationLocks() {
+    this.#navigationLocks = { plane: null, point: null };
+    this.#notifyNavigationCamera();
+    return this.getNavigationLocks();
+  }
+
   getCameraProjection() {
     return Object.freeze({
       near: this.camera.near,
@@ -1046,10 +1203,9 @@ export class ThreeRegionRenderer {
   }
 
   toggleSpace() {
-    const next = this.transform.space === "world" ? "local" : "world";
-    this.transform.setSpace(next);
-    this.selection.orientationPolicy = next;
-    this.selection.notifyContextChanged();
+    const current = this.#objectTransformFrame.mode;
+    const next = current === "world" ? "local" : "world";
+    this.setObjectTransformFrame({ mode: next });
     return next;
   }
 
@@ -1922,14 +2078,21 @@ export class ThreeRegionRenderer {
       return;
     }
 
-    this.transform.showX = true;
-    this.transform.showY = true;
-    this.transform.showZ = true;
+    this.transform.showX = this.#objectTransformAxes.x;
+    this.transform.showY = this.#objectTransformAxes.y;
+    this.transform.showZ = this.#objectTransformAxes.z;
     const enabled=this.editorState.pivot.editing||["translate","rotate","scale"].includes(mode);
     this.transform.enabled=enabled;
     this.transform.getHelper().visible=enabled;
     if(this.editorState.pivot.editing){this.transform.setMode("translate");this.transform.setSpace("world")}
-    else if(enabled){this.transform.setMode(this.editorState.tool.transformMode??mode);this.transform.setSpace(this.selection.orientationPolicy==="local"?"local":"world")}
+    else if(enabled){
+      this.transform.setMode(this.editorState.tool.transformMode??mode);
+      this.transform.setSpace(
+        ["viewer", "custom-plane"].includes(this.#objectTransformFrame.mode)
+          ? "local"
+          : this.#objectTransformFrame.mode
+      );
+    }
     this.orbit.enabled=mode==="navigate"||!this.transform.dragging;
   }
 
@@ -2439,12 +2602,23 @@ export class ThreeRegionRenderer {
     const activeId = this.#selectionSnapshot?.activeMember?.objectId;
     const activeMesh = this.#meshes.get(activeId);
 
-    const alignToActive=
-      this.selection.orientationPolicy === "local" ||
+    const customFrame = ["viewer", "custom-plane"].includes(
+      this.#objectTransformFrame.mode
+    );
+    const alignToActive = this.#objectTransformFrame.mode === "local" ||
       this.editorState.tool.mode === "scale";
 
-    if (!this.editorState.pivot.editing && alignToActive && activeMesh) {
-      this.transformAnchor.quaternion.copy(activeMesh.quaternion);
+    if (!this.editorState.pivot.editing && customFrame) {
+      this.transformAnchor.quaternion.fromArray(
+        this.#objectTransformFrame.quaternion
+      );
+    } else if (!this.editorState.pivot.editing && alignToActive && activeMesh) {
+      activeMesh.updateMatrixWorld(true);
+      activeMesh.matrixWorld.decompose(
+        new THREE.Vector3(),
+        this.transformAnchor.quaternion,
+        new THREE.Vector3()
+      );
     } else {
       this.transformAnchor.quaternion.identity();
     }
@@ -2725,7 +2899,8 @@ export class ThreeRegionRenderer {
     const edit = this.#requireMeshEdit();
     const candidates = [];
     const tolerance = edit.snap.tolerancePixels;
-    const enabled = type => edit.snap.mode === "auto" || edit.snap.mode === type;
+    const enabled = type => edit.snap.modes?.includes(type) ??
+      (edit.snap.mode === "auto" || edit.snap.mode === type);
     const add = candidate => {
       const scored = this.#scoreMeshSnapCandidate({
         ...candidate,
@@ -3662,6 +3837,30 @@ export class ThreeRegionRenderer {
     if(samePoint&&sameIds&&now-this.#overlapCycle.time<1400)this.#overlapCycle.index=(this.#overlapCycle.index+1)%ids.length;else this.#overlapCycle={x,y,ids:[...ids],index:0,time:now};this.#overlapCycle.time=now;return ids[this.#overlapCycle.index];
   }
 
+  #enforceNavigationLocks() {
+    if (this.#applyingNavigationLocks) return;
+    const { plane, point } = this.#navigationLocks;
+    if (!plane && !point) return;
+    this.#applyingNavigationLocks = true;
+    try {
+      const current = this.orbit.target.clone();
+      let desired = current.clone();
+      if (plane) {
+        desired.fromArray(projectPointToPlane(current.toArray(), plane));
+      }
+      if (point) {
+        desired.fromArray(point.point);
+      }
+      const correction = desired.sub(current);
+      if (correction.lengthSq() > 1e-18) {
+        this.camera.position.add(correction);
+        this.orbit.target.add(correction);
+      }
+    } finally {
+      this.#applyingNavigationLocks = false;
+    }
+  }
+
   resize() {
     this.camera.aspect = innerWidth / innerHeight;
     this.camera.updateProjectionMatrix();
@@ -3793,9 +3992,18 @@ function normalizeMeshSnapSettings(value = {}) {
   if (!Number.isFinite(tolerancePixels) || tolerancePixels < 2 || tolerancePixels > 80) {
     throw new RangeError("A tolerância de snap deve ficar entre 2 e 80 px.");
   }
+  const modes = value?.modes === undefined
+    ? mode === "auto" ? ["vertex", "edge", "face"] : [mode]
+    : [...new Set(Array.from(value.modes ?? [], item =>
+        String(item).toLowerCase()
+      ))];
+  if (modes.some(item => !["vertex", "edge", "face"].includes(item))) {
+    throw new RangeError("modes contém alvo de snap desconhecido.");
+  }
   return {
     enabled: Boolean(value?.enabled),
     mode,
+    modes,
     scope,
     anchor,
     tolerancePixels,
@@ -3810,6 +4018,65 @@ function meshConstraintAxes(constraint = "free") {
     y: normalized === "free" || normalized.includes("y"),
     z: normalized === "free" || normalized.includes("z")
   };
+}
+
+function normalizeNavigationPlane(frame = {}) {
+  const origin = new THREE.Vector3().fromArray(
+    normalizeVector3Array(frame.origin ?? [0, 0, 0], "Origem do plano")
+  );
+  const normal = new THREE.Vector3().fromArray(
+    normalizeVector3Array(frame.normal ?? [0, 0, 1], "Normal do plano")
+  );
+  if (normal.lengthSq() < 1e-18) {
+    throw new RangeError("A normal do plano não pode ser nula.");
+  }
+  normal.normalize();
+  let xAxis = new THREE.Vector3().fromArray(
+    normalizeVector3Array(frame.xAxis ?? [1, 0, 0], "Eixo X do plano")
+  );
+  xAxis.addScaledVector(normal, -xAxis.dot(normal));
+  if (xAxis.lengthSq() < 1e-18) {
+    xAxis = Math.abs(normal.y) < 0.9
+      ? new THREE.Vector3(0, 1, 0).cross(normal)
+      : new THREE.Vector3(1, 0, 0).cross(normal);
+  }
+  xAxis.normalize();
+  const yAxis = normal.clone().cross(xAxis).normalize();
+  const quaternion = new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(xAxis, yAxis, normal)
+  );
+  return {
+    origin: origin.toArray(),
+    normal: normal.toArray(),
+    xAxis: xAxis.toArray(),
+    yAxis: yAxis.toArray(),
+    quaternion: quaternion.toArray(),
+    source: frame.source ?? null,
+    linked: Boolean(frame.linked)
+  };
+}
+
+function projectPointToPlane(point, plane) {
+  const value = new THREE.Vector3().fromArray(
+    normalizeVector3Array(point, "Ponto")
+  );
+  const origin = new THREE.Vector3().fromArray(plane.origin);
+  const normal = new THREE.Vector3().fromArray(plane.normal).normalize();
+  return value.addScaledVector(
+    normal,
+    -value.clone().sub(origin).dot(normal)
+  ).toArray();
+}
+
+function normalizeVector3Array(value, label) {
+  if (!Array.isArray(value) || value.length !== 3) {
+    throw new TypeError(`${label} deve conter três valores.`);
+  }
+  const values = value.map(Number);
+  if (!values.every(Number.isFinite)) {
+    throw new TypeError(`${label} contém valor inválido.`);
+  }
+  return values;
 }
 
 function projectWorldToScreen(pointWorld, camera, rect) {

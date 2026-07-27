@@ -1,13 +1,14 @@
 export class MeshEditPanel {
   static apiVersion = "mesh-edit-panel-v4";
 
-  constructor({ root, query, execute, subscribe }) {
+  constructor({ root, query, execute, subscribe, subscribeContext = null }) {
     if (!root) throw new TypeError("MeshEditPanel exige root.");
     this.root = root;
     this.query = query;
     this.execute = execute;
     this.latest = null;
     this.unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
+    this.unsubscribeContext = subscribeContext?.(() => this.refresh()) ?? null;
     this.onKeyDown = event => this.#handleShortcut(event);
     document.addEventListener("keydown", this.onKeyDown, true);
     this.#bind();
@@ -17,9 +18,37 @@ export class MeshEditPanel {
 
   refresh(snapshot = null) {
     const state = snapshot ?? this.query("mesh.edit.status");
+    const context = this.query("edit.context.status");
     this.latest = state;
+    this.latestContext = context;
     const active = Boolean(state.active);
     this.root.dataset.active = active ? "true" : "false";
+    this.root.dataset.subjectLevel = context.subjectLevel;
+    for (const button of this.root.querySelectorAll("[data-edit-workspace-subject]")) {
+      button.dataset.active = button.dataset.editWorkspaceSubject === context.subjectLevel
+        ? "true"
+        : "false";
+    }
+    for (const button of this.root.querySelectorAll("[data-edit-workspace-tool]")) {
+      button.dataset.active = button.dataset.editWorkspaceTool === context.tool
+        ? "true"
+        : "false";
+    }
+    for (const button of this.root.querySelectorAll("[data-edit-workspace-selection]")) {
+      button.dataset.active = button.dataset.editWorkspaceSelection === context.selectionOperation
+        ? "true"
+        : "false";
+    }
+    this.#element("edit-workspace-area").checked = Boolean(context.areaSelection);
+    this.#element("edit-workspace-multi").checked = Boolean(context.multiSelect);
+    this.#element("edit-workspace-object").disabled = active;
+    for (const id of [
+      "edit-workspace-duplicate", "edit-workspace-group",
+      "edit-workspace-ungroup", "edit-workspace-pivot"
+    ]) {
+      this.#element(id).disabled = active;
+    }
+    this.#element("edit-workspace-delete").disabled = false;
     const modeLabels = { vertex: "vértices", edge: "arestas", face: "faces" };
     this.#text("mesh-edit-status", active
       ? `${state.objectName} — ${state.selectedCount}/${
@@ -43,15 +72,15 @@ export class MeshEditPanel {
     this.#element("mesh-redo").disabled = !active || !state.canRedo;
 
     this.#element("mesh-frame-viewer").dataset.active =
-      state.viewerPlaneLocked ? "true" : "false";
-    this.#element("mesh-frame-viewer").textContent =
-      state.viewerPlaneLocked
-        ? "Destravar plano do viewer"
-        : "Travar plano do viewer";
+      context.frameMode === "viewer" ? "true" : "false";
     this.#element("mesh-frame-world").dataset.active =
-      state.frameMode === "world" ? "true" : "false";
+      context.frameMode === "world" ? "true" : "false";
     this.#element("mesh-frame-local").dataset.active =
-      state.frameMode === "local" ? "true" : "false";
+      context.frameMode === "local" ? "true" : "false";
+    this.#element("edit-plane-lock").dataset.active =
+      context.planeLock ? "true" : "false";
+    this.#element("edit-point-lock").dataset.active =
+      context.pointLock ? "true" : "false";
 
     for (const button of this.root.querySelectorAll("[data-mesh-constraint]")) {
       button.dataset.active = button.dataset.meshConstraint === state.constraint
@@ -128,10 +157,48 @@ export class MeshEditPanel {
 
   dispose() {
     this.unsubscribe?.();
+    this.unsubscribeContext?.();
     document.removeEventListener("keydown", this.onKeyDown, true);
   }
 
   #bind() {
+    for (const button of this.root.querySelectorAll("[data-edit-workspace-subject]")) {
+      button.addEventListener("click", () => this.#execute(
+        "edit.context.subject.set",
+        { level: button.dataset.editWorkspaceSubject }
+      ));
+    }
+    for (const button of this.root.querySelectorAll("[data-edit-workspace-tool]")) {
+      button.addEventListener("click", () => this.#execute(
+        "edit.context.tool.set",
+        { mode: button.dataset.editWorkspaceTool }
+      ));
+    }
+    for (const button of this.root.querySelectorAll("[data-edit-workspace-selection]")) {
+      button.addEventListener("click", () => this.#execute(
+        "edit.context.selection-operation.set",
+        { operation: button.dataset.editWorkspaceSelection }
+      ));
+    }
+    this.#element("edit-workspace-area").addEventListener("change", () =>
+      this.#execute("selection.area.toggle")
+    );
+    this.#element("edit-workspace-multi").addEventListener("change", () =>
+      this.#execute("selection.multi.toggle")
+    );
+    this.#click("edit-workspace-duplicate", "selection.duplicate");
+    this.#click("edit-workspace-delete", "selection.delete");
+    this.#click("edit-workspace-group", "selection.group");
+    this.#click("edit-workspace-ungroup", "selection.ungroup");
+    this.#click("edit-workspace-pivot", "pivot.edit.toggle");
+    this.#click("edit-plane-lock", "edit.navigation.plane.toggle", () => ({
+      source: this.#element("edit-plane-source").value
+    }));
+    this.#click("edit-point-lock", "edit.navigation.point.toggle", () => ({
+      source: this.#element("edit-point-source").value
+    }));
+    this.#click("edit-navigation-clear", "edit.navigation.locks.clear");
+
     this.#click("mesh-enter", "mesh.edit.enter");
     this.#click("mesh-commit", "mesh.edit.commit");
     this.#click("mesh-cancel", "mesh.edit.cancel");
@@ -154,9 +221,9 @@ export class MeshEditPanel {
         { mode: button.dataset.meshMode }
       ));
     }
-    this.#click("mesh-frame-world", "mesh.frame.set", () => ({ mode: "world" }));
-    this.#click("mesh-frame-local", "mesh.frame.set", () => ({ mode: "local" }));
-    this.#click("mesh-frame-viewer", "mesh.frame.viewer.toggle");
+    this.#click("edit.context.frame.set", () => ({ mode: "world" }));
+    this.#click("edit.context.frame.set", () => ({ mode: "local" }));
+    this.#click("edit.context.frame.set", () => ({ mode: "viewer" }));
     for (const button of this.root.querySelectorAll("[data-mesh-constraint]")) {
       button.addEventListener("click", () => this.#execute(
         "mesh.constraint.set",
@@ -419,7 +486,6 @@ export class MeshEditPanel {
       "mesh-inset", "mesh-split-parameter", "mesh-split",
       "mesh-subdivide", "mesh-collapse", "mesh-flip-edge",
       "mesh-weld-vertices", "mesh-flip-normal", "mesh-bridge", "mesh-cleanup",
-      "mesh-frame-world", "mesh-frame-local", "mesh-frame-viewer",
       "mesh-affine-move", "mesh-affine-rotate", "mesh-affine-scale",
       "mesh-weld", "mesh-occlusion", "mesh-snap-enabled",
       "mesh-snap-mode", "mesh-snap-scope", "mesh-snap-anchor",

@@ -9,6 +9,7 @@ export function createEditorCommands({
   resourceAudit,
   propertyService = null,
   meshEditor = null,
+  editContext = null,
   canMutateProject = () => true
 }) {
   const commands = new CommandRegistry();
@@ -195,6 +196,42 @@ export function createEditorCommands({
     .register("gizmo.inspect", () =>
       renderer.getTransformDiagnostics()
     );
+
+  if (editContext) {
+    commands
+      .register("edit.context.subject.set", ({ level, selectAll = false }) =>
+        editContext.setSubjectLevel(level, { selectAll }))
+      .register("edit.context.tool.set", ({ mode }) =>
+        editContext.setTool(mode))
+      .register("edit.context.selection-operation.set", ({ operation }) =>
+        editContext.setSelectionOperation(operation))
+      .register("edit.context.frame.set", ({ mode }) =>
+        editContext.setFrame(mode))
+      .register("edit.context.axes.set", patch =>
+        editContext.setAxes(patch))
+      .register("edit.context.snap.set", patch =>
+        editContext.setSnap(patch))
+      .register("edit.context.proportional.set", ({ enabled }) =>
+        editContext.setProportional(enabled))
+      .register("edit.navigation.plane.toggle", args =>
+        editContext.togglePlaneLock(args))
+      .register("edit.navigation.plane.clear", () => {
+        if (renderer.getNavigationLocks?.().plane) {
+          return editContext.togglePlaneLock();
+        }
+        return editContext.status();
+      })
+      .register("edit.navigation.point.toggle", args =>
+        editContext.togglePointLock(args))
+      .register("edit.navigation.point.clear", () => {
+        if (renderer.getNavigationLocks?.().point) {
+          return editContext.togglePointLock();
+        }
+        return editContext.status();
+      })
+      .register("edit.navigation.locks.clear", () =>
+        editContext.clearNavigationLocks());
+  }
 
   if (meshEditor) {
     commands

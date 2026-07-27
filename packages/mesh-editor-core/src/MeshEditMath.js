@@ -218,7 +218,7 @@ export function translatePivotToWorld({
 
 
 export const MESH_CONSTRAINTS = Object.freeze([
-  "free", "x", "y", "z", "xy", "xz", "yz"
+  "free", "none", "x", "y", "z", "xy", "xz", "yz"
 ]);
 
 export function normalizeMeshConstraint(value = "free") {

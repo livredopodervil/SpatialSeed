@@ -185,7 +185,12 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260727-0035a";
+} from "../../mesh-editor-core/src/index.js?build=20260727-0036b";
+import {
+  EditContextController,
+  axesFromConstraint,
+  constraintFromAxes
+} from "../../edit-context/src/index.js?build=20260727-0036b";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -260,6 +265,62 @@ import {
 
 export function createRuntimeLayerTests() {
   return {
+    "edit-context": {
+      "checkboxes de eixo produzem restrições ortogonais"() {
+        assertEqual(constraintFromAxes({ x: true, y: true, z: true }), "free");
+        assertEqual(constraintFromAxes({ x: true, y: false, z: true }), "xz");
+        assertEqual(constraintFromAxes({ x: false, y: false, z: false }), "none");
+        assertDeepEqual(axesFromConstraint("yz"), { x: false, y: true, z: true });
+      },
+
+      "contexto alterna objeto e componentes pela mesma autoridade"() {
+        const fixture = createEditContextFixture();
+        const context = new EditContextController(fixture);
+        assertEqual(context.status().subjectLevel, "object");
+        context.setSubjectLevel("edge");
+        assertEqual(fixture.meshEditor.active, true);
+        assertEqual(fixture.meshEditor.status().componentMode, "edge");
+        assertEqual(context.status().subjectLevel, "edge");
+        assertThrowsMessage(
+          () => context.setSubjectLevel("object"),
+          "Aplique ou cancele a edição de malha antes de retornar ao modo objeto."
+        );
+        fixture.meshEditor.cancel();
+        assertEqual(context.status().subjectLevel, "object");
+        context.dispose();
+      },
+
+      "snap aceita combinação simultânea de vértice e face"() {
+        const fixture = createEditContextFixture();
+        const context = new EditContextController(fixture);
+        context.setSubjectLevel("vertex");
+        context.setSnap({
+          enabled: true,
+          auto: false,
+          vertex: true,
+          edge: false,
+          face: true
+        });
+        assertDeepEqual(fixture.meshEditor.status().snap.modes, ["vertex", "face"]);
+        assertEqual(fixture.meshEditor.status().snap.enabled, true);
+        context.dispose();
+      },
+
+      "travas de plano e ponto permanecem locais ao viewer"() {
+        const fixture = createEditContextFixture();
+        const context = new EditContextController(fixture);
+        context.togglePlaneLock({ source: "world-xy" });
+        context.togglePointLock({ point: [2, 3, 4], source: "explicit" });
+        const status = context.status();
+        assertDeepEqual(status.planeLock.normal, [0, 0, 1]);
+        assertDeepEqual(status.pointLock.point, [2, 3, 4]);
+        context.clearNavigationLocks();
+        assertEqual(context.status().planeLock, null);
+        assertEqual(context.status().pointLock, null);
+        context.dispose();
+      }
+    },
+
     "mesh-edit-math": {
       "frame do viewer converte X e Y no plano congelado"() {
         const viewerQuaternion = new THREE.Quaternion()
@@ -11183,6 +11244,112 @@ function createShortcutEvent({
 
 function assert(condition, message = "Falha de asserção.") {
   if (!condition) throw new Error(message);
+}
+
+function createEditContextFixture() {
+  const editor = new EditorState();
+  const renderer = {
+    transform: { space: "world" },
+    objectFrame: { mode: "world", quaternion: [0, 0, 0, 1] },
+    objectAxes: { x: true, y: true, z: true },
+    locks: { plane: null, point: null },
+    transformConfig: {},
+    setTransformMode(mode) { editor.setToolMode(mode); },
+    setSelectionOperation(operation) {
+      editor.setSelectionOperation(operation);
+      return operation;
+    },
+    readNavigationCamera() {
+      return { quaternion: [0, 0, 0, 1], position: [0, 0, 10], focusDistance: 10 };
+    },
+    readViewerReferenceFrame() {
+      return {
+        origin: [0, 0, 0], xAxis: [1, 0, 0], yAxis: [0, 1, 0],
+        normal: [0, 0, 1], quaternion: [0, 0, 0, 1], source: "viewer"
+      };
+    },
+    readSelectionReferenceFrame() { return null; },
+    getSelectionPivotPosition() { return [0, 0, 0]; },
+    getObjectTransformFrame() { return structuredClone(this.objectFrame); },
+    setObjectTransformFrame(frame) {
+      this.objectFrame = {
+        mode: frame.mode,
+        quaternion: frame.quaternion ?? [0, 0, 0, 1]
+      };
+      return this.getObjectTransformFrame();
+    },
+    getObjectTransformAxes() { return { ...this.objectAxes }; },
+    setObjectTransformAxes(axes) {
+      this.objectAxes = { ...axes };
+      return this.getObjectTransformAxes();
+    },
+    setTransformConfig(patch) { this.transformConfig = { ...this.transformConfig, ...patch }; },
+    getNavigationLocks() { return structuredClone(this.locks); },
+    setNavigationPlaneLock(frame) {
+      this.locks.plane = frame ? structuredClone(frame) : null;
+      return this.getNavigationLocks();
+    },
+    setNavigationPointLock(value) {
+      this.locks.point = value ? structuredClone(value) : null;
+      return this.getNavigationLocks();
+    },
+    clearNavigationLocks() {
+      this.locks = { plane: null, point: null };
+      return this.getNavigationLocks();
+    }
+  };
+  const listeners = new Set();
+  let state = {
+    active: false,
+    componentMode: "vertex",
+    canEnter: true,
+    constraint: "free",
+    frameMode: null,
+    snap: null,
+    deformation: null,
+    canUndo: false,
+    canRedo: false
+  };
+  const emit = () => {
+    const snapshot = meshEditor.status();
+    for (const listener of listeners) listener(snapshot);
+  };
+  const meshEditor = {
+    get active() { return state.active; },
+    status() { return Object.freeze(structuredClone(state)); },
+    subscribe(listener) { listeners.add(listener); listener(this.status()); return () => listeners.delete(listener); },
+    enter() {
+      state = {
+        ...state,
+        active: true,
+        componentMode: "vertex",
+        frameMode: "local",
+        constraint: "free",
+        snap: {
+          enabled: false,
+          mode: "auto",
+          modes: ["vertex", "edge", "face"],
+          scope: "active",
+          anchor: "active",
+          tolerancePixels: 18,
+          self: false
+        },
+        deformation: { enabled: true }
+      };
+      emit();
+      return this.status();
+    },
+    cancel() { state = { ...state, active: false, frameMode: null }; emit(); },
+    setComponentMode(mode) { state = { ...state, componentMode: mode }; emit(); return this.status(); },
+    setConstraint(constraint) { state = { ...state, constraint }; emit(); return this.status(); },
+    setSnap(snap) { state = { ...state, snap: { ...state.snap, ...snap } }; emit(); return this.status(); },
+    setDeformation(patch) { state = { ...state, deformation: { ...state.deformation, ...patch } }; emit(); return this.status(); },
+    setFrame(mode) { state = { ...state, frameMode: mode }; emit(); return this.status(); },
+    setCustomFrame({ mode }) { state = { ...state, frameMode: mode }; emit(); return this.status(); },
+    referencePoint() { return [0, 0, 0]; },
+    referenceFrame() { return null; }
+  };
+  return { editor, renderer, meshEditor };
 }
 
 function assertEqual(actual, expected) {

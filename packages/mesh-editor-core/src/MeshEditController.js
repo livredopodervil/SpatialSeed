@@ -145,6 +145,7 @@ export class MeshEditController {
       snap: {
         enabled: false,
         mode: "auto",
+        modes: ["vertex", "edge", "face"],
         scope: "active",
         anchor: "active",
         tolerancePixels: 18,
@@ -380,6 +381,20 @@ export class MeshEditController {
         throw new RangeError(`Modo de snap desconhecido: ${patch.mode}.`);
       }
       next.mode = mode;
+      if (patch.modes === undefined) {
+        next.modes = mode === "auto"
+          ? ["vertex", "edge", "face"]
+          : [mode];
+      }
+    }
+    if (patch.modes !== undefined) {
+      const modes = [...new Set(Array.from(patch.modes ?? [], value =>
+        String(value).toLowerCase()
+      ))];
+      if (modes.some(mode => !["vertex", "edge", "face"].includes(mode))) {
+        throw new RangeError("modes contém alvo de snap desconhecido.");
+      }
+      next.modes = modes;
     }
     if (patch.scope !== undefined) {
       const scope = String(patch.scope).toLowerCase();
@@ -501,6 +516,99 @@ export class MeshEditController {
     });
     this.#notify();
     return this.status();
+  }
+
+  setCustomFrame({ mode = "custom-plane", quaternion } = {}) {
+    const session = this.#requireSession();
+    if (!Array.isArray(quaternion) || quaternion.length !== 4) {
+      throw new TypeError("Referencial personalizado exige quaternion.");
+    }
+    const values = quaternion.map(Number);
+    if (!values.every(Number.isFinite)) {
+      throw new TypeError("Quaternion do referencial contém valor inválido.");
+    }
+    session.previousFrameMode = session.frameMode;
+    session.frameMode = String(mode || "custom-plane");
+    session.frameQuaternion = values;
+    this.renderer.setMeshEditFrame({
+      mode: session.frameMode,
+      quaternion: session.frameQuaternion
+    });
+    this.#notify();
+    return this.status();
+  }
+
+  referencePoint() {
+    const session = this.#requireSession();
+    const mode = session.componentMode;
+    const active = session.activeComponents[mode];
+    if (active === null || active === undefined) {
+      return session.pivotWorld ? [...session.pivotWorld] : null;
+    }
+    const matrix = new THREE.Matrix4().fromArray(session.objectWorldMatrix);
+    if (mode === "vertex") {
+      return new THREE.Vector3()
+        .fromArray(session.descriptor.positions[active])
+        .applyMatrix4(matrix)
+        .toArray();
+    }
+    if (mode === "edge") {
+      const edge = session.topology.edges[active];
+      if (!edge) return null;
+      return new THREE.Vector3()
+        .fromArray(session.descriptor.positions[edge.a])
+        .add(new THREE.Vector3().fromArray(session.descriptor.positions[edge.b]))
+        .multiplyScalar(0.5)
+        .applyMatrix4(matrix)
+        .toArray();
+    }
+    const face = session.topology.faces[active];
+    return face
+      ? new THREE.Vector3().fromArray(face.centroid).applyMatrix4(matrix).toArray()
+      : null;
+  }
+
+  referenceFrame() {
+    const session = this.#requireSession();
+    if (session.componentMode !== "face") return null;
+    const faceIndex = session.activeComponents.face;
+    const face = session.topology.faces[faceIndex];
+    if (!face) return null;
+    const matrix = new THREE.Matrix4().fromArray(session.objectWorldMatrix);
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(matrix);
+    const origin = new THREE.Vector3().fromArray(face.centroid).applyMatrix4(matrix);
+    const normal = new THREE.Vector3().fromArray(face.normal)
+      .applyMatrix3(normalMatrix)
+      .normalize();
+    const [a, b] = face.vertices;
+    let xAxis = new THREE.Vector3()
+      .fromArray(session.descriptor.positions[b])
+      .sub(new THREE.Vector3().fromArray(session.descriptor.positions[a]))
+      .transformDirection(matrix)
+      .normalize();
+    xAxis.addScaledVector(normal, -xAxis.dot(normal));
+    if (xAxis.lengthSq() < 1e-12) {
+      xAxis = Math.abs(normal.y) < 0.9
+        ? new THREE.Vector3(0, 1, 0).cross(normal).normalize()
+        : new THREE.Vector3(1, 0, 0).cross(normal).normalize();
+    } else {
+      xAxis.normalize();
+    }
+    const yAxis = normal.clone().cross(xAxis).normalize();
+    const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, normal);
+    const quaternion = new THREE.Quaternion().setFromRotationMatrix(basis);
+    return Object.freeze({
+      origin: Object.freeze(origin.toArray()),
+      xAxis: Object.freeze(xAxis.toArray()),
+      yAxis: Object.freeze(yAxis.toArray()),
+      normal: Object.freeze(normal.toArray()),
+      quaternion: Object.freeze(quaternion.toArray()),
+      source: Object.freeze({
+        type: "face",
+        objectId: session.objectId,
+        componentId: faceIndex
+      })
+    });
   }
 
   toggleViewerFrame() {

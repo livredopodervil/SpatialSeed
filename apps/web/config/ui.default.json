@@ -3,53 +3,30 @@
   "profile": "touch-compact",
   "toolbar": {
     "layout": "horizontal",
-    "storageKey": "spatialseed.ui.toolbar.v1",
+    "storageKey": "spatialseed.ui.toolbar.v2",
     "primary": [
-      "tool-navigate",
-      "tool-select",
-      "tool-translate",
-      "tool-rotate",
-      "tool-scale",
-      "multi-select",
-      "duplicate-selection",
-      "repeat-duplicate",
-      "delete-selection",
-      "inspector",
+      "mesh-editor",
       "geometry-create",
+      "inspector",
       "animation",
       "scene-only",
       "viewport-fullscreen"
     ],
     "menus": [
       {
-        "id": "transform",
-        "label": "Transformar",
-        "items": [
-          "space",
-          "transform-tools"
-        ]
-      },
-      {
-        "id": "selection",
-        "label": "Seleção",
-        "items": [
-          "selection-replace",
-          "selection-add",
-          "selection-remove",
-          "selection-toggle",
-          "area-selection",
-          "clear-selection",
-          "pivot-policy",
-          "edit-pivot"
-        ]
-      },
-      {
         "id": "edit",
         "label": "Editar",
         "items": [
           "mesh-editor",
+          "multi-select",
+          "area-selection",
+          "pivot-policy",
+          "edit-pivot",
+          "duplicate-selection",
+          "repeat-duplicate",
           "group-selection",
           "ungroup-selection",
+          "delete-selection",
           "undo",
           "redo"
         ]
@@ -91,44 +68,168 @@
         ]
       }
     ],
-    "hidden": ["add-box"]
+    "hidden": [
+      "add-box"
+    ]
   },
   "panels": {
     "storageKey": "spatialseed.ui.layout.v2",
     "items": {
-      "outline": { "anchor": "right", "top": "toolbar", "width": 430, "height": 520 },
-      "review-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 420 },
-      "diagnostic-panel": { "anchor": "right", "top": "toolbar", "width": 520, "height": 520 },
-      "camera-panel": { "anchor": "right", "top": "toolbar", "width": 460, "height": 650 },
-      "viewer-render-panel": { "anchor": "right", "top": "toolbar", "width": 500, "height": 720 },
-      "developer-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
-      "console-panel": { "anchor": "left", "bottom": 12, "width": 720, "height": 520 },
-      "procedure-editor-panel": { "anchor": "left", "top": "toolbar", "width": 760, "height": 680 },
-      "inspector-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
-      "transform-tools-panel": { "anchor": "left", "top": "toolbar", "width": 410, "height": 540 },
-      "geometry-create-panel": { "anchor": "right", "top": "toolbar", "width": 430, "height": 620 },
-      "experiment-panel": { "anchor": "right", "top": "toolbar", "width": 470, "height": 680 },
-      "animation-panel": { "anchor": "left", "top": "toolbar", "width": 470, "height": 650 },
-      "mesh-edit-panel": { "anchor": "right", "top": "toolbar", "width": 460, "height": 720 }
+      "outline": {
+        "anchor": "right",
+        "top": "toolbar",
+        "width": 430,
+        "height": 520
+      },
+      "review-panel": {
+        "anchor": "right",
+        "top": "toolbar",
+        "width": 430,
+        "height": 420
+      },
+      "diagnostic-panel": {
+        "anchor": "right",
+        "top": "toolbar",
+        "width": 520,
+        "height": 520
+      },
+      "camera-panel": {
+        "anchor": "right",
+        "top": "toolbar",
+        "width": 460,
+        "height": 650
+      },
+      "viewer-render-panel": {
+        "anchor": "right",
+        "top": "toolbar",
+        "width": 500,
+        "height": 720
+      },
+      "developer-panel": {
+        "anchor": "left",
+        "bottom": 12,
+        "width": 720,
+        "height": 520
+      },
+      "console-panel": {
+        "anchor": "left",
+        "bottom": 12,
+        "width": 720,
+        "height": 520
+      },
+      "procedure-editor-panel": {
+        "anchor": "left",
+        "top": "toolbar",
+        "width": 760,
+        "height": 680
+      },
+      "inspector-panel": {
+        "anchor": "right",
+        "top": "toolbar",
+        "width": 430,
+        "height": 620
+      },
+      "transform-tools-panel": {
+        "anchor": "left",
+        "top": "toolbar",
+        "width": 410,
+        "height": 540
+      },
+      "geometry-create-panel": {
+        "anchor": "right",
+        "top": "toolbar",
+        "width": 430,
+        "height": 620
+      },
+      "experiment-panel": {
+        "anchor": "right",
+        "top": "toolbar",
+        "width": 470,
+        "height": 680
+      },
+      "animation-panel": {
+        "anchor": "left",
+        "top": "toolbar",
+        "width": 470,
+        "height": 650
+      },
+      "mesh-edit-panel": {
+        "anchor": "right",
+        "top": "toolbar",
+        "width": 540,
+        "height": 760
+      }
     }
   },
   "shortcuts": {
     "profile": "spatialseed",
     "storageKey": "spatialseed.ui.shortcuts.v1",
     "bindings": [
-      { "action": "history.undo", "chord": "Primary+Z", "context": "global" },
-      { "action": "history.redo", "chord": "Primary+Shift+Z", "context": "global" },
-      { "action": "history.redo", "chord": "Primary+Y", "context": "global" },
-      { "action": "tool.navigate", "chord": "Q", "context": "viewport" },
-      { "action": "tool.select", "chord": "S", "context": "viewport" },
-      { "action": "tool.translate", "chord": "W", "context": "viewport" },
-      { "action": "tool.rotate", "chord": "E", "context": "viewport" },
-      { "action": "tool.scale", "chord": "R", "context": "viewport" },
-      { "action": "selection.duplicate", "chord": "Primary+D", "context": "global" },
-      { "action": "selection.delete", "chord": "Delete", "context": "viewport" },
-      { "action": "selection.delete", "chord": "Backspace", "context": "viewport" },
-      { "action": "scene.toggle", "chord": "Tab", "context": "viewport" },
-      { "action": "viewport.fullscreen", "chord": "F", "context": "viewport" }
+      {
+        "action": "history.undo",
+        "chord": "Primary+Z",
+        "context": "global"
+      },
+      {
+        "action": "history.redo",
+        "chord": "Primary+Shift+Z",
+        "context": "global"
+      },
+      {
+        "action": "history.redo",
+        "chord": "Primary+Y",
+        "context": "global"
+      },
+      {
+        "action": "tool.navigate",
+        "chord": "Q",
+        "context": "viewport"
+      },
+      {
+        "action": "tool.select",
+        "chord": "S",
+        "context": "viewport"
+      },
+      {
+        "action": "tool.translate",
+        "chord": "W",
+        "context": "viewport"
+      },
+      {
+        "action": "tool.rotate",
+        "chord": "E",
+        "context": "viewport"
+      },
+      {
+        "action": "tool.scale",
+        "chord": "R",
+        "context": "viewport"
+      },
+      {
+        "action": "selection.duplicate",
+        "chord": "Primary+D",
+        "context": "global"
+      },
+      {
+        "action": "selection.delete",
+        "chord": "Delete",
+        "context": "viewport"
+      },
+      {
+        "action": "selection.delete",
+        "chord": "Backspace",
+        "context": "viewport"
+      },
+      {
+        "action": "scene.toggle",
+        "chord": "Tab",
+        "context": "viewport"
+      },
+      {
+        "action": "viewport.fullscreen",
+        "chord": "F",
+        "context": "viewport"
+      }
     ]
   },
   "presentation": {
@@ -147,6 +248,9 @@
     },
     "viewerRender": {
       "storageKey": "spatialseed.viewer.render.v1"
+    },
+    "editHud": {
+      "storageKey": "spatialseed.edit.hud.v1"
     }
   }
 }

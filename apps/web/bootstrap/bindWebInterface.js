@@ -25,6 +25,7 @@ export function bindWebInterface({
     objectInspector,
     transformToolPanel,
     meshEditPanel,
+    editHud,
     experimentPanel,
     viewerRenderPanel,
     sandboxRecovery,
@@ -1399,10 +1400,12 @@ export function bindWebInterface({
     () => panelManager.hide("#transform-tools-panel")
   );
 
-  $("mesh-editor").addEventListener("click", () => {
+  const openEditWorkspace = () => {
     panelManager.show("#mesh-edit-panel");
-    meshEditPanel.activateSelection();
-  });
+    meshEditPanel.refresh();
+  };
+  $("mesh-editor").addEventListener("click", openEditWorkspace);
+  $("edit-hud-open").addEventListener("click", openEditWorkspace);
 
   $("close-mesh-edit").addEventListener(
     "click",

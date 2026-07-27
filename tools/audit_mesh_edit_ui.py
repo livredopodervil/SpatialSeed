@@ -67,7 +67,16 @@ for needle in [
     require("packages/renderer-three/src/ThreeRegionRenderer.js", needle)
 
 require("packages/mesh-editor-core/src/MeshDeformation.js", "createMeshInfluenceField")
-require("apps/web/bootstrap/bindWebInterface.js", "meshEditPanel.activateSelection();")
+require("apps/web/bootstrap/bindWebInterface.js", "const openEditWorkspace = () =>")
+for needle in [
+    'id="edit-hud"',
+    'id="edit-hud-plane-lock"',
+    'id="edit-hud-point-lock"',
+    'data-edit-workspace-subject="object"'
+]:
+    require("apps/web/index.html", needle)
+require("packages/edit-context/src/EditContextController.js", "class EditContextController")
+require("packages/edit-hud/src/EditHud.js", "class EditHud")
 require("packages/mesh-editor-core/src/MeshEditController.js", 'setTransformMode("translate")')
 
 html = (ROOT / "apps/web/index.html").read_text(encoding="utf-8")

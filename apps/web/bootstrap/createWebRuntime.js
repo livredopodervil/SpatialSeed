@@ -9,19 +9,19 @@ import {
   ViewerCameraController,
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0035a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260727-0035a";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0036b";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260727-0036b";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260727-0035a";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260727-0036b";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260720-0028d";
 import { TransformToolPanel } from "../../../packages/editor-transform-tools/src/TransformToolPanel.js?build=20260714-0020b-a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260726-0031a";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260726-0031a";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260727-0035a";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260727-0036b";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260724-0029f";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260727-0035a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260727-0036b";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260724-0029f";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -80,10 +80,16 @@ import {
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0035a";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0036b";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260727-0035a";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260727-0036b";
+import {
+  EditContextController
+} from "../../../packages/edit-context/src/index.js?build=20260727-0036b";
+import {
+  EditHud
+} from "../../../packages/edit-hud/src/index.js?build=20260727-0036b";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -114,6 +120,7 @@ export async function createWebRuntime({
   animationPanelRoot,
   viewerRenderPanelRoot,
   meshEditPanelRoot,
+  editHudRoot,
   procedureEditorRoot,
   inspectorRoot,
   onConsoleOutput,
@@ -383,6 +390,11 @@ export async function createWebRuntime({
     renderer,
     geometryRegistry
   });
+  const editContext = new EditContextController({
+    editor,
+    renderer,
+    meshEditor
+  });
 
   const sandboxRecovery = new SandboxRecoveryController({
     sandbox: baseSandbox,
@@ -432,6 +444,7 @@ export async function createWebRuntime({
     resourceAudit,
     propertyService,
     meshEditor,
+    editContext,
     canMutateProject: action =>
       viewerCoordinator.requireAuthority(action)
   });
@@ -841,6 +854,9 @@ export async function createWebRuntime({
     .register("mesh.edit.status", () =>
       meshEditor.status()
     )
+    .register("edit.context.status", () =>
+      editContext.status()
+    )
     .register("viewer.instances.status", () =>
       viewerCoordinator.status()
     )
@@ -893,9 +909,18 @@ export async function createWebRuntime({
     root: meshEditPanelRoot,
     query: (id, args) => runtime.query(id, args),
     execute: (id, args) => runtime.execute(id, args),
-    subscribe: listener => meshEditor.subscribe(listener)
+    subscribe: listener => meshEditor.subscribe(listener),
+    subscribeContext: listener => editContext.subscribe(listener)
   });
+  const editHud = new EditHud({
+    root: editHudRoot,
+    query: (id, args) => runtime.query(id, args),
+    execute: (id, args) => runtime.execute(id, args),
+    subscribe: listener => editContext.subscribe(listener)
+  });
+  runtime.onDispose(() => editHud.dispose());
   runtime.onDispose(() => meshEditPanel.dispose());
+  runtime.onDispose(() => editContext.dispose());
   runtime.onDispose(() => meshEditor.dispose());
 
   const procedureCatalog = new ProcedureCatalog({
@@ -1103,6 +1128,9 @@ export async function createWebRuntime({
   const unsubscribeMeshEdit = meshEditor.subscribe(
     snapshot => runtime.emit("mesh.edit.changed", snapshot)
   );
+  const unsubscribeEditContext = editContext.subscribe(
+    snapshot => runtime.emit("edit.context.changed", snapshot)
+  );
 
   const unsubscribeEditor = editor.subscribe(
     snapshot => runtime.emit("editor.changed", snapshot)
@@ -1150,6 +1178,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeCameraObjects)
     .onDispose(unsubscribeViewer)
     .onDispose(unsubscribeEditor)
+    .onDispose(unsubscribeEditContext)
     .onDispose(unsubscribeMeshEdit)
     .onDispose(unsubscribeSelection)
     .onDispose(unsubscribeSandbox);
@@ -1180,6 +1209,8 @@ export async function createWebRuntime({
       viewerRenderPanel,
       meshEditor,
       meshEditPanel,
+      editContext,
+      editHud,
       geometryRegistry,
       propertyRegistry,
       propertyService,

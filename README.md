@@ -73,7 +73,7 @@ O menu **Painéis → Render** controla iluminação, sombras, reflexos ambienta
 
 ## Edição de malha
 
-O menu **Editar → Editar malha** abre uma sessão local na qual vértices, arestas e faces do objeto ativo são os únicos componentes selecionáveis. Gizmo, comandos afins e deformações procedurais compartilham frames, travas de eixo/plano, snap adaptativo e um histórico interno independente. O falloff proporcional atua durante o arrasto do gizmo em tempo real. O mesmo painel flutuante configurável reúne criação, exclusão, duplicação, extrusão, inset, preenchimento, divisão, subdivisão, colapso, ponte de contornos, soldagem e orientação de faces. O commit substitui a geometria em uma única entrada de undo editorial. Consulte [Edição adaptativa de malha — build 0034d](docs/MESH_EDITING_0034.md), [Gizmo proporcional em tempo real — build 0034g](docs/MESH_EDITING_0034G.md) e [Edição topológica unificada — build 0035a](docs/MESH_TOPOLOGY_0035A.md).
+O botão **Editar** abre um workspace único para seleção, transformação e edição de malha. Um HUD destacável mantém sempre disponíveis nível objeto/vértice/aresta/face, ferramenta, frame, eixos independentes, snap combinável, influência proporcional, plane lock, point lock, undo/redo interno e aplicar/cancelar. Na sessão de malha, vértices, arestas e faces do objeto ativo são os únicos componentes selecionáveis. Gizmo, comandos afins e deformações procedurais compartilham frames, travas de eixo/plano, snap adaptativo e um histórico interno independente. O falloff proporcional atua durante o arrasto do gizmo em tempo real. O painel reúne criação, exclusão, duplicação, extrusão, inset, preenchimento, divisão, subdivisão, colapso, ponte de contornos, soldagem e orientação de faces. O commit substitui a geometria em uma única entrada de undo editorial. Consulte [Edição adaptativa de malha — build 0034d](docs/MESH_EDITING_0034.md), [Gizmo proporcional em tempo real — build 0034g](docs/MESH_EDITING_0034G.md), [Edição topológica unificada — build 0035a](docs/MESH_TOPOLOGY_0035A.md) e [Workspace/HUD unificados — build 0036b](docs/EDIT_WORKSPACE_0036B.md).
 
 ## Execução local
 
@@ -493,7 +493,9 @@ flowchart TD
 | `packages/scene-hierarchy` | grupos, parentesco, transforms locais e ciclo de subárvores |
 | `packages/geometry-registry` | famílias paramétricas e providers de geometria |
 | `packages/mesh-editor-core` | sessão, meia-aresta transitória, operações de vértices/arestas/faces, restrições, snapping, deformação procedural e histórico interno |
-| `packages/mesh-edit-panel` | painel declarativo da sessão de malha |
+| `packages/mesh-edit-panel` | workspace declarativo de objeto e malha |
+| `packages/edit-context` | estado efêmero unificado de ferramenta, frame, eixos, snap e travas |
+| `packages/edit-hud` | HUD destacável de ações de alta frequência |
 | `packages/property-registry` | propriedades tipadas, inspeção e edição atômica em lote |
 | `packages/script-runtime` | Workers, SES, sessões, planos espaciais/de câmera e procedimentos |
 | `packages/experiment-runtime` | definições, parâmetros e planejamento de experimentos |

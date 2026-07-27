@@ -141,7 +141,7 @@
   </button>
   <button id="inspector">Inspector</button>
   <button id="transform-tools">Transformação</button>
-  <button id="mesh-editor">Editar malha</button>
+  <button id="mesh-editor">Editar</button>
   <button id="geometry-create">Criar</button>
   <button id="experiment-lab" title="Explorar construções paramétricas">
     ∿ Experimentos
@@ -175,6 +175,80 @@
   <button id="delete-selection">Excluir</button>
   <span id="status">Inicializando…</span>
 </header>
+
+<aside id="edit-hud" aria-label="HUD de edição">
+  <div id="edit-hud-handle" class="edit-hud-handle">
+    <button id="edit-hud-open" type="button" title="Abrir painel unificado">Editar</button>
+    <small id="edit-hud-status">Objeto · select · world · XYZ</small>
+    <details class="edit-hud-config">
+      <summary title="Configurar HUD">⚙</summary>
+      <div class="edit-hud-config-grid">
+        <label>Posição <select id="edit-hud-dock"><option value="floating">Flutuante</option><option value="top">Fixado acima</option><option value="bottom">Fixado abaixo</option></select></label>
+        <label>Orientação <select id="edit-hud-orientation"><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>
+        <label>Tamanho <select id="edit-hud-size"><option value="compact">Compacto</option><option value="normal">Normal</option><option value="large">Ampliado</option></select></label>
+        <label>Opacidade <input id="edit-hud-opacity" type="range" min="0.45" max="1" step="0.05" value="0.96"></label>
+      </div>
+      <div class="edit-hud-config-groups">
+        <label><input type="checkbox" data-edit-hud-group-toggle="subject" checked> Contexto</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="tool" checked> Ferramenta</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="frame" checked> Frame</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="axes" checked> Eixos</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="snap" checked> Snap</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="history" checked> Histórico</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="session" checked> Sessão</label>
+      </div>
+      <button id="edit-hud-reset" type="button">Restaurar HUD</button>
+    </details>
+  </div>
+  <div class="edit-hud-strip">
+    <div class="edit-hud-group" data-edit-hud-group="subject" aria-label="Nível de edição">
+      <button id="edit-hud-object" type="button" data-edit-subject="object">Obj</button>
+      <button type="button" data-edit-subject="vertex">V</button>
+      <button type="button" data-edit-subject="edge">E</button>
+      <button type="button" data-edit-subject="face">F</button>
+    </div>
+    <div class="edit-hud-group" data-edit-hud-group="tool" aria-label="Ferramenta">
+      <button type="button" data-edit-tool="navigate" title="Navegar">☝</button>
+      <button type="button" data-edit-tool="select" title="Selecionar">⌖</button>
+      <button type="button" data-edit-tool="translate" title="Mover">↔</button>
+      <button type="button" data-edit-tool="rotate" title="Girar">↻</button>
+      <button type="button" data-edit-tool="scale" title="Escalar">⤢</button>
+    </div>
+    <div class="edit-hud-group" data-edit-hud-group="frame" aria-label="Referencial">
+      <button type="button" data-edit-frame="world">M</button>
+      <button type="button" data-edit-frame="local">O</button>
+      <button type="button" data-edit-frame="viewer">Vista</button>
+      <button type="button" data-edit-frame="custom-plane">Plano</button>
+    </div>
+    <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="axes" aria-label="Eixos permitidos">
+      <label><input id="edit-hud-axis-x" type="checkbox" checked> X</label>
+      <label><input id="edit-hud-axis-y" type="checkbox" checked> Y</label>
+      <label><input id="edit-hud-axis-z" type="checkbox" checked> Z</label>
+    </div>
+    <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="snap" aria-label="Snap">
+      <label title="Ativar snap"><input id="edit-hud-snap-enabled" type="checkbox"> Snap</label>
+      <label><input id="edit-hud-snap-auto" type="checkbox" checked> Auto</label>
+      <label><input id="edit-hud-snap-vertex" type="checkbox" checked> V</label>
+      <label><input id="edit-hud-snap-edge" type="checkbox" checked> E</label>
+      <label><input id="edit-hud-snap-face" type="checkbox" checked> F</label>
+      <label><input id="edit-hud-snap-grid" type="checkbox"> G</label>
+      <label title="Influência proporcional"><input id="edit-hud-proportional" type="checkbox"> ∿</label>
+    </div>
+    <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="navigation" aria-label="Travas de navegação">
+      <label><input id="edit-hud-plane-lock" type="checkbox"> Plano</label>
+      <label><input id="edit-hud-point-lock" type="checkbox"> Ponto</label>
+    </div>
+    <div class="edit-hud-group" data-edit-hud-group="history">
+      <button id="edit-hud-undo" type="button" title="Desfazer interno">↶</button>
+      <button id="edit-hud-redo" type="button" title="Refazer interno">↷</button>
+    </div>
+    <div class="edit-hud-group" data-edit-hud-group="session">
+      <button id="edit-hud-apply" type="button">Aplicar</button>
+      <button id="edit-hud-cancel" type="button">Cancelar</button>
+    </div>
+  </div>
+</aside>
 
 <div id="selection-marquee" hidden></div>
 <aside id="selection-panel">
@@ -472,7 +546,7 @@
 
 <section id="mesh-edit-panel" hidden>
   <header>
-    <strong>Editor topológico de malha</strong>
+    <strong>Edição: selecionar, transformar e malha</strong>
     <button id="close-mesh-edit" type="button">×</button>
   </header>
   <div class="mesh-edit-content">
@@ -493,6 +567,7 @@
     <details class="mesh-panel-config">
       <summary>Configurar painel</summary>
       <div class="mesh-checkbox-grid">
+        <label><input type="checkbox" data-mesh-section-toggle="context" checked> Contexto</label>
         <label><input type="checkbox" data-mesh-section-toggle="session" checked> Sessão</label>
         <label><input type="checkbox" data-mesh-section-toggle="selection" checked> Seleção</label>
         <label><input type="checkbox" data-mesh-section-toggle="topology" checked> Topologia</label>
@@ -502,6 +577,40 @@
         <label><input type="checkbox" data-mesh-section-toggle="diagnostics" checked> Diagnóstico</label>
       </div>
     </details>
+
+    <fieldset data-mesh-section="context">
+      <legend>Contexto, ferramenta e seleção</legend>
+      <div class="mesh-mode-grid edit-workspace-subjects">
+        <button id="edit-workspace-object" type="button" data-edit-workspace-subject="object">Objeto</button>
+        <button id="edit-workspace-vertex" type="button" data-edit-workspace-subject="vertex">Vértice</button>
+        <button id="edit-workspace-edge" type="button" data-edit-workspace-subject="edge">Aresta</button>
+        <button id="edit-workspace-face" type="button" data-edit-workspace-subject="face">Face</button>
+      </div>
+      <div class="mesh-operation-grid edit-workspace-tools">
+        <button type="button" data-edit-workspace-tool="navigate">Navegar</button>
+        <button type="button" data-edit-workspace-tool="select">Selecionar</button>
+        <button type="button" data-edit-workspace-tool="translate">Mover</button>
+        <button type="button" data-edit-workspace-tool="rotate">Girar</button>
+        <button type="button" data-edit-workspace-tool="scale">Escalar</button>
+      </div>
+      <div class="mesh-operation-grid edit-workspace-selection-ops">
+        <button type="button" data-edit-workspace-selection="replace">Substituir</button>
+        <button type="button" data-edit-workspace-selection="add">Adicionar</button>
+        <button type="button" data-edit-workspace-selection="remove">Remover</button>
+        <button type="button" data-edit-workspace-selection="toggle">Alternar</button>
+      </div>
+      <div class="mesh-checkbox-grid">
+        <label><input id="edit-workspace-area" type="checkbox"> Seleção por área</label>
+        <label><input id="edit-workspace-multi" type="checkbox"> Seleção múltipla</label>
+      </div>
+      <div class="mesh-operation-grid">
+        <button id="edit-workspace-duplicate" type="button">Duplicar</button>
+        <button id="edit-workspace-delete" type="button">Excluir</button>
+        <button id="edit-workspace-group" type="button">Agrupar</button>
+        <button id="edit-workspace-ungroup" type="button">Desagrupar</button>
+        <button id="edit-workspace-pivot" type="button">Editar pivô</button>
+      </div>
+    </fieldset>
 
     <fieldset data-mesh-section="selection">
       <legend>Componentes e seleção</legend>
@@ -580,7 +689,14 @@
       <div class="actions mesh-frame-actions">
         <button id="mesh-frame-world" type="button">Mundo</button>
         <button id="mesh-frame-local" type="button">Objeto</button>
-        <button id="mesh-frame-viewer" type="button">Travar plano do viewer</button>
+        <button id="mesh-frame-viewer" type="button">Frame do viewer</button>
+      </div>
+      <div class="mesh-form-grid edit-navigation-locks">
+        <label><span>Plano de navegação</span><select id="edit-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <button id="edit-plane-lock" type="button">Travar/destravar plano</button>
+        <label><span>Ponto de órbita</span><select id="edit-point-source"><option value="component">Componente ativo</option><option value="selection">Pivô da seleção</option><option value="viewer">Alvo atual do viewer</option></select></label>
+        <button id="edit-point-lock" type="button">Travar/destravar ponto</button>
+        <button id="edit-navigation-clear" type="button">Limpar travas</button>
       </div>
       <div class="mesh-constraint-grid">
         <button id="mesh-constraint-free" type="button" data-mesh-constraint="free">Livre</button>
@@ -815,6 +931,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0035a"></script>
+<script type="module" src="./boot.js?build=20260727-0036b"></script>
 </body>
 </html>

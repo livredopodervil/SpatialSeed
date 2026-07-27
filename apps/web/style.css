@@ -1101,3 +1101,254 @@ html[data-toolbar-layout="vertical"] #selection-panel{
   .mesh-checkbox-grid,
   .mesh-operation-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* 0036b — HUD unificado de edição */
+#edit-hud {
+  --edit-hud-opacity: .96;
+  position: fixed;
+  z-index: 38;
+  display: grid;
+  max-width: calc(100vw - 12px);
+  max-height: min(56dvh, 520px);
+  color: #e8f2ff;
+  background: color-mix(in srgb, #07111d calc(var(--edit-hud-opacity) * 100%), transparent);
+  border: 1px solid #8bbcff42;
+  border-radius: 13px;
+  box-shadow: 0 12px 32px #0009;
+  backdrop-filter: blur(12px);
+  overflow: visible;
+  touch-action: none;
+}
+
+#edit-hud[data-dock="top"],
+#edit-hud[data-dock="bottom"] {
+  width: auto;
+  max-width: 100vw;
+  border-radius: 0;
+}
+
+.edit-hud-handle {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  cursor: grab;
+  user-select: none;
+  border-bottom: 1px solid #ffffff17;
+}
+
+#edit-hud[data-dock="top"] .edit-hud-handle,
+#edit-hud[data-dock="bottom"] .edit-hud-handle {
+  cursor: default;
+}
+
+#edit-hud-status {
+  flex: 1;
+  min-width: 90px;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #a9bfd7;
+}
+
+.edit-hud-config {
+  position: relative;
+}
+
+.edit-hud-config > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 3px 7px;
+  border-radius: 7px;
+}
+
+.edit-hud-config[open] {
+  position: static;
+}
+
+.edit-hud-config[open]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.edit-hud-config[open] > :not(summary) {
+  position: absolute;
+  right: 4px;
+  top: 34px;
+  z-index: 3;
+}
+
+.edit-hud-config-grid,
+.edit-hud-config-groups {
+  width: min(360px, calc(100vw - 24px));
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 9px;
+  background: #08121ff7;
+  border: 1px solid #8bbcff42;
+}
+
+.edit-hud-config-grid {
+  border-radius: 10px 10px 0 0;
+}
+
+.edit-hud-config-groups {
+  top: 100% !important;
+  margin-top: 154px;
+  border-top: 0;
+}
+
+#edit-hud-reset {
+  margin-top: 298px;
+  right: 4px;
+  width: min(360px, calc(100vw - 24px));
+  border-radius: 0 0 10px 10px;
+}
+
+.edit-hud-config-grid label,
+.edit-hud-config-groups label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.edit-hud-config-grid select,
+.edit-hud-config-grid input {
+  min-width: 0;
+  width: 100%;
+}
+
+.edit-hud-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 5px;
+  max-width: calc(100vw - 20px);
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x;
+}
+
+#edit-hud[data-orientation="vertical"] .edit-hud-strip {
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.edit-hud-group {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 3px;
+  padding-right: 4px;
+  border-right: 1px solid #ffffff1c;
+}
+
+#edit-hud[data-orientation="vertical"] .edit-hud-group {
+  border-right: 0;
+  border-bottom: 1px solid #ffffff1c;
+  padding: 3px 0 6px;
+}
+
+.edit-hud-group:last-child {
+  border: 0;
+  padding-right: 0;
+}
+
+.edit-hud-group button,
+.edit-hud-group label {
+  min-height: 30px;
+  min-width: 30px;
+  padding: 4px 7px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.edit-hud-group button[data-active="true"] {
+  background: #19466f;
+  outline: 2px solid #78c2ff;
+}
+
+.edit-hud-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #0b1724;
+  border: 1px solid #ffffff17;
+  cursor: pointer;
+  user-select: none;
+}
+
+.edit-hud-checks input {
+  margin: 0;
+}
+
+#edit-hud[data-plane-locked="true"] #edit-hud-plane-lock,
+#edit-hud[data-point-locked="true"] #edit-hud-point-lock {
+  accent-color: #71c1ff;
+}
+
+#edit-hud[data-size="compact"] .edit-hud-group button,
+#edit-hud[data-size="compact"] .edit-hud-group label {
+  min-height: 25px;
+  min-width: 25px;
+  padding: 2px 5px;
+  font-size: 11px;
+}
+
+#edit-hud[data-size="large"] .edit-hud-group button,
+#edit-hud[data-size="large"] .edit-hud-group label {
+  min-height: 40px;
+  min-width: 40px;
+  padding: 7px 10px;
+  font-size: 15px;
+}
+
+.edit-workspace-subjects {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.edit-workspace-tools {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.edit-workspace-selection-ops {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.edit-navigation-locks button[data-active="true"] {
+  background: #19466f;
+  outline: 2px solid #78c2ff;
+}
+
+@media (max-width: 700px) {
+  #edit-hud {
+    max-width: calc(100vw - 8px);
+  }
+  #edit-hud[data-dock="floating"] {
+    left: 4px !important;
+    right: 4px !important;
+    width: auto;
+  }
+  .edit-hud-handle {
+    min-height: 24px;
+  }
+  #edit-hud-status {
+    max-width: 160px;
+    font-size: 10px;
+  }
+  .edit-hud-strip {
+    max-width: calc(100vw - 18px);
+  }
+  .edit-workspace-tools,
+  .edit-workspace-selection-ops {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
