@@ -23,7 +23,6 @@ export function bindWebInterface({
     procedureCatalog,
     procedureCatalogEditor,
     objectInspector,
-    transformToolPanel,
     meshEditPanel,
     editHud,
     experimentPanel,
@@ -193,7 +192,6 @@ export function bindWebInterface({
     "#console-panel",
     "#procedure-editor-panel",
     "#inspector-panel",
-    "#transform-tools-panel",
     "#mesh-edit-panel",
     "#geometry-create-panel",
     "#experiment-panel",
@@ -1390,16 +1388,6 @@ export function bindWebInterface({
   uiActions.bindControl($("repeat-duplicate"), "selection.repeat");
   uiActions.bindControl($("delete-selection"), "selection.delete");
 
-  $("transform-tools").addEventListener("click", () => {
-    panelManager.show("#transform-tools-panel");
-    transformToolPanel.refresh();
-  });
-
-  $("close-transform-tools").addEventListener(
-    "click",
-    () => panelManager.hide("#transform-tools-panel")
-  );
-
   const openEditWorkspace = () => {
     panelManager.show("#mesh-edit-panel");
     meshEditPanel.refresh();
@@ -1415,6 +1403,13 @@ export function bindWebInterface({
   $("geometry-create").addEventListener("click", () => {
     panelManager.show("#geometry-create-panel");
   });
+  $("edit-hud-create").addEventListener("click", () => {
+    panelManager.show("#geometry-create-panel");
+  });
+  $("mesh-edit-panel").addEventListener(
+    "spatialseed:open-geometry-create",
+    () => panelManager.show("#geometry-create-panel")
+  );
 
   $("close-geometry-create").addEventListener(
     "click",

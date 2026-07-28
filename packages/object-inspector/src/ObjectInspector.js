@@ -3,13 +3,14 @@ import {
   normalizeHexColor,
   parsePropertyInput,
   propertyComponentCount
-} from "../../property-registry/src/index.js?build=20260720-0028d";
+} from "../../property-registry/src/index.js?build=20260727-0037c";
 
 const GROUP_LABELS = Object.freeze({
   object: "Identificação",
   transform: "Transformação",
   geometry: "Geometria",
   appearance: "Aparência compartilhada",
+  light: "Luz",
   instance: "Instância",
   texture: "Textura"
 });

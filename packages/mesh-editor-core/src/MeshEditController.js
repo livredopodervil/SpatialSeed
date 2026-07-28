@@ -92,11 +92,19 @@ export class MeshEditController {
     }
     const hierarchy = new HierarchyIndex(state.objects);
     const sourceDescriptor = this.geometryRegistry.describeLegacyObject(object);
-    const geometry = this.geometryRegistry.create(sourceDescriptor);
-    const descriptor = this.geometryRegistry.normalize(
-      geometryToBufferDescriptor(geometry)
-    );
-    geometry.dispose?.();
+    const pathSource = editablePathSource(sourceDescriptor);
+    let descriptor;
+    if (pathSource) {
+      descriptor = this.geometryRegistry.normalize(
+        pathControlBufferDescriptor(pathSource)
+      );
+    } else {
+      const geometry = this.geometryRegistry.create(sourceDescriptor);
+      descriptor = this.geometryRegistry.normalize(
+        geometryToBufferDescriptor(geometry)
+      );
+      geometry.dispose?.();
+    }
     const objectWorldMatrix = hierarchy.worldMatrixOf(objectId);
     assertInvertibleWorldMatrix(objectWorldMatrix);
     const localFrame = composeRotationFrame([
@@ -115,6 +123,8 @@ export class MeshEditController {
       objectName: object.name ?? objectId,
       baseRevision: this.sandbox.revision,
       sourceType: sourceDescriptor.type,
+      sourceDescriptor: structuredClone(sourceDescriptor),
+      pathSource,
       sourceGeometryKey: this.geometryRegistry.key(sourceDescriptor),
       initialBufferKey: this.geometryRegistry.key(descriptor),
       descriptor,
@@ -230,11 +240,17 @@ export class MeshEditController {
         vertexCount: session.descriptor.positions.length
       });
     }
-    const geometry = this.geometryRegistry.normalize({
-      ...session.descriptor,
-      type: "buffer",
-      normals: session.topologyOptions.autoNormals ? [] : session.descriptor.normals
-    });
+    const geometry = session.pathSource
+      ? this.geometryRegistry.normalize({
+          ...session.sourceDescriptor,
+          type: "tube",
+          points: session.descriptor.positions.map(point => [...point])
+        })
+      : this.geometryRegistry.normalize({
+          ...session.descriptor,
+          type: "buffer",
+          normals: session.topologyOptions.autoNormals ? [] : session.descriptor.normals
+        });
     const changed = this.sandbox.dispatch({
       type: "object.geometry.replace",
       id: session.objectId,
@@ -247,7 +263,7 @@ export class MeshEditController {
     return Object.freeze({
       changed,
       objectId: session.objectId,
-      vertexCount: geometry.positions.length
+      vertexCount: geometry.points?.length ?? geometry.positions.length
     });
   }
 
@@ -708,6 +724,8 @@ export class MeshEditController {
       objectId: session.objectId,
       objectName: session.objectName,
       sourceType: session.sourceType,
+      pathControlMode: Boolean(session.pathSource),
+      pathCurveType: session.pathSource?.curveType ?? null,
       componentMode: session.componentMode,
       vertexCount: session.descriptor.positions.length,
       uniqueVertexCount: session.groups.groups.length,
@@ -751,6 +769,44 @@ export class MeshEditController {
       pivotWorld: session.pivotWorld
         ? Object.freeze([...session.pivotWorld])
         : null
+    });
+  }
+
+  selectedPathReference() {
+    const session = this.#requireSession();
+    const mode = session.componentMode;
+    const selected = [...session.componentSelections[mode]];
+    if (!selected.length) {
+      throw new Error("Selecione vértices, arestas ou faces para criar um caminho.");
+    }
+    const ordered = orderedPathVertices({
+      topology: session.topology,
+      mode,
+      selected,
+      active: session.activeComponents[mode]
+    });
+    const world = new THREE.Matrix4().fromArray(session.objectWorldMatrix);
+    const points = ordered.indices.map(index =>
+      new THREE.Vector3()
+        .fromArray(session.descriptor.positions[index])
+        .applyMatrix4(world)
+        .toArray()
+    );
+    return Object.freeze({
+      kind: "path",
+      objectId: session.objectId,
+      objectName: session.objectName,
+      extraction: `mesh-${mode}-selection`,
+      points: Object.freeze(points.map(point => Object.freeze(point))),
+      closed: ordered.closed,
+      ordering: ordered.ordering,
+      sourceRevision: session.baseRevision,
+      source: Object.freeze({
+        type: "mesh-selection",
+        objectId: session.objectId,
+        componentMode: mode,
+        componentIds: Object.freeze([...selected])
+      })
     });
   }
 
@@ -876,7 +932,7 @@ export class MeshEditController {
   }
 
   #editAvailability(object) {
-    if (!object || ["camera", "group"].includes(object.kind)) {
+    if (!object || ["camera", "group", "light"].includes(object.kind)) {
       return {
         ok: false,
         message: "O objeto selecionado não possui malha editável."
@@ -1082,6 +1138,156 @@ function matricesNear(left, right, epsilon = 1e-8) {
   return left.every((value, index) =>
     Math.abs(Number(value) - Number(right[index])) <= epsilon
   );
+}
+
+function editablePathSource(descriptor) {
+  if (descriptor?.type !== "tube" || !Array.isArray(descriptor.points)) {
+    return null;
+  }
+  return Object.freeze(structuredClone(descriptor));
+}
+
+function pathControlBufferDescriptor(descriptor) {
+  const positions = descriptor.points.map(point => [...point]);
+  const edges = [];
+  for (let index = 1; index < positions.length; index += 1) {
+    edges.push([index - 1, index]);
+  }
+  if (descriptor.closed && positions.length > 2) {
+    edges.push([positions.length - 1, 0]);
+  }
+  return {
+    type: "buffer",
+    positions,
+    indices: [],
+    normals: [],
+    uvs: [],
+    edges
+  };
+}
+
+function orderedPathVertices({ topology, mode, selected, active = null }) {
+  if (mode === "edge") {
+    return orderSelectedEdges(
+      selected.map(index => topology.edges[index]).filter(Boolean),
+      active === null ? null : topology.edges[active]
+    );
+  }
+  if (mode === "face") {
+    const faceSet = new Set(selected);
+    const boundary = topology.edges.filter(edge =>
+      edge.faces.filter(face => faceSet.has(face)).length === 1
+    );
+    if (!boundary.length) {
+      throw new Error("As faces selecionadas não possuem um contorno extraível.");
+    }
+    return orderSelectedEdges(boundary, null);
+  }
+  const vertices = new Set(selected);
+  const induced = topology.edges.filter(edge =>
+    vertices.has(edge.a) && vertices.has(edge.b)
+  );
+  if (induced.length) {
+    try {
+      return orderSelectedEdges(induced, null);
+    } catch {}
+  }
+  const remaining = [...vertices].sort((a, b) => a - b);
+  const start = active !== null && vertices.has(active)
+    ? active
+    : remaining[0];
+  const ordered = [start];
+  remaining.splice(remaining.indexOf(start), 1);
+  while (remaining.length) {
+    const current = topology.positions[ordered.at(-1)];
+    let best = 0;
+    let distance = Infinity;
+    remaining.forEach((candidate, index) => {
+      const point = topology.positions[candidate];
+      const next = Math.hypot(
+        point[0] - current[0],
+        point[1] - current[1],
+        point[2] - current[2]
+      );
+      if (next < distance) {
+        distance = next;
+        best = index;
+      }
+    });
+    ordered.push(remaining.splice(best, 1)[0]);
+  }
+  return Object.freeze({
+    indices: Object.freeze(ordered),
+    closed: false,
+    ordering: "nearest-neighbor"
+  });
+}
+
+function orderSelectedEdges(edges, activeEdge) {
+  const adjacency = new Map();
+  const unique = new Map();
+  for (const edge of edges) {
+    const a = Number(edge.a);
+    const b = Number(edge.b);
+    if (!Number.isInteger(a) || !Number.isInteger(b) || a === b) continue;
+    const key = a < b ? `${a}:${b}` : `${b}:${a}`;
+    unique.set(key, [a, b]);
+    for (const [left, right] of [[a, b], [b, a]]) {
+      const neighbors = adjacency.get(left) ?? [];
+      neighbors.push(right);
+      adjacency.set(left, neighbors);
+    }
+  }
+  if (!unique.size) throw new Error("A seleção não contém arestas utilizáveis.");
+  for (const [vertex, neighbors] of adjacency) {
+    if (neighbors.length > 2) {
+      throw new Error(
+        `A seleção ramifica no vértice ${vertex}; escolha uma cadeia ou contorno simples.`
+      );
+    }
+  }
+  const endpoints = [...adjacency]
+    .filter(([, neighbors]) => neighbors.length === 1)
+    .map(([vertex]) => vertex)
+    .sort((a, b) => a - b);
+  const closed = endpoints.length === 0;
+  if (!closed && endpoints.length !== 2) {
+    throw new Error("A seleção não forma uma cadeia conectada.");
+  }
+  const preferred = activeEdge
+    ? [activeEdge.a, activeEdge.b].find(vertex => endpoints.includes(vertex))
+    : null;
+  const start = preferred ?? (closed ? Math.min(...adjacency.keys()) : endpoints[0]);
+  const ordered = [start];
+  const visited = new Set();
+  let previous = null;
+  let current = start;
+  while (visited.size < unique.size) {
+    const next = (adjacency.get(current) ?? [])
+      .filter(candidate => candidate !== previous)
+      .find(candidate => {
+        const key = current < candidate
+          ? `${current}:${candidate}`
+          : `${candidate}:${current}`;
+        return !visited.has(key);
+      });
+    if (next === undefined) break;
+    const key = current < next ? `${current}:${next}` : `${next}:${current}`;
+    visited.add(key);
+    ordered.push(next);
+    previous = current;
+    current = next;
+    if (closed && current === start) break;
+  }
+  if (visited.size !== unique.size) {
+    throw new Error("A seleção contém mais de uma cadeia desconectada.");
+  }
+  if (closed && ordered.at(-1) === ordered[0]) ordered.pop();
+  return Object.freeze({
+    indices: Object.freeze(ordered),
+    closed,
+    ordering: "topology-chain"
+  });
 }
 
 function geometryToBufferDescriptor(geometry) {

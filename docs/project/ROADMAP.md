@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 27 de julho de 2026 durante o marco `0035`.
+> Documento vivo. Auditado em 27 de julho de 2026 durante o marco `0037`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -212,6 +212,53 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
   inversão de diagonal, ponte de contornos, soldagem e orientação de faces;
 - histórico interno completo e commit editorial atômico;
 - painel flutuante único, redimensionável e configurável por checkboxes.
+
+### 0036 — Workspace e navegação de edição — implementado
+
+- painel único para seleção, transformação e edição de malha;
+- HUD destacável com estados de alta frequência;
+- eixos independentes e frames mundo, objeto, viewer e plano personalizado;
+- plane lock e point lock locais ao viewer.
+
+### 0037a — Referências espaciais e ferramentas por caminho — implementado
+
+- objetos resolvidos como caminhos, perfis planares e pontos;
+- linha central declarada, maior contorno, arestas soltas e pivôs da seleção;
+- tubo por caminho, varredura de perfil e distribuição hierárquica;
+- frames de transporte paralelo com correção de costura e torção explícita;
+- comandos comuns ao painel e console;
+- referências snapshot, sem dependência procedural implícita.
+
+### 0037b — Workspace adaptativo e curvas editáveis — implementado
+
+- remoção do painel separado de transformação e do menu residual Mais;
+- seções visíveis conforme objeto/malha, ferramenta e componente ativo;
+- HUD destacável configurável em colunas × linhas;
+- contenção de painéis e menus dentro da viewport;
+- desenho livre de caminhos em plano travado, viewer ou plano mundial;
+- polilinha, Catmull–Rom e Bézier cúbica ajustada;
+- edição de âncoras e controles Bézier sem perder o descritor de caminho;
+- criação de caminho a partir de seleção de vértices, arestas ou faces.
+
+### 0037c — HUD contextual, luzes e materiais — implementado
+
+- configuração do HUD rolável, redimensionável e sempre contida na viewport;
+- HUD estritamente icônico, iluminado por estado e filtrado por contexto;
+- seleção, topologia, caminhos, criação e operações frequentes disponíveis no HUD;
+- seções essenciais do workspace visíveis por padrão, sem depender de painéis paralelos;
+- criação comum e avançada usando outro objeto como argumento de transformação;
+- memória local de geometria, cor e parâmetros de material;
+- materiais físicos editáveis por objeto no workspace e Inspector;
+- luzes pontuais, direcionais, spot e ambiente como objetos persistentes editáveis.
+
+### Próximas extensões geométricas
+
+- sanitização configurável com relatório de degenerações, contornos,
+  não-manifold e auto-interseções;
+- booleanos robustos em Worker e limpeza posterior;
+- referências vinculadas por grafo de modificadores;
+- objetos 2D e curvas com atributos por ponto de primeira classe;
+- loft, perfis com furos e variação procedural ao longo do caminho.
 
 ### Próxima extensão do editor topológico
 

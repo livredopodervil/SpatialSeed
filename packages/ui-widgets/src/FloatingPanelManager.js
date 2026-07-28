@@ -5,6 +5,7 @@ export class FloatingPanelManager {
   #panels = new Map();
   #restoreStyles = new Map();
   #toolbarLayoutListener;
+  #viewportResizeListener;
 
   constructor({
     root = document,
@@ -20,6 +21,13 @@ export class FloatingPanelManager {
     this.#root.addEventListener(
       "spatialseed:toolbar-layout",
       this.#toolbarLayoutListener
+    );
+    this.#viewportResizeListener = () => {
+      for (const panel of this.#panels.values()) this.#fitToViewport(panel);
+    };
+    this.#root.defaultView?.addEventListener(
+      "resize",
+      this.#viewportResizeListener
     );
   }
 
@@ -72,6 +80,7 @@ export class FloatingPanelManager {
 
     this.#panels.set(panel.id, panel);
     this.#restore(panel, options.defaultLayout);
+    this.#fitToViewport(panel);
     this.bringToFront(panel);
 
     const observer = new ResizeObserver(() => this.#save(panel));
@@ -84,6 +93,7 @@ export class FloatingPanelManager {
     const panel = this.#resolve(selector);
     if (!panel) return null;
     panel.hidden = false;
+    this.#fitToViewport(panel);
     this.bringToFront(panel);
     return panel;
   }
@@ -140,6 +150,7 @@ export class FloatingPanelManager {
       }
 
       this.#restoreStyles.delete(panel.id);
+      this.#fitToViewport(panel);
       this.#save(panel);
     }
 
@@ -164,6 +175,10 @@ export class FloatingPanelManager {
     this.#root.removeEventListener(
       "spatialseed:toolbar-layout",
       this.#toolbarLayoutListener
+    );
+    this.#root.defaultView?.removeEventListener(
+      "resize",
+      this.#viewportResizeListener
     );
     for (const panel of this.#panels.values()) {
       panel.__ssResizeObserver?.disconnect();
@@ -286,8 +301,16 @@ export class FloatingPanelManager {
       Math.max(0, innerHeight - 48)
     )}px`;
     panel.style.top = `max(var(--ss-toolbar-clearance, 4rem), ${savedTop})`;
-    panel.style.width = `${Math.max(220, saved.width)}px`;
-    panel.style.height = `${Math.max(120, saved.height)}px`;
+    panel.style.width = `${clamp(
+      Math.max(220, saved.width),
+      220,
+      Math.max(220, innerWidth - 8)
+    )}px`;
+    panel.style.height = `${clamp(
+      Math.max(120, saved.height),
+      120,
+      Math.max(120, innerHeight - 8)
+    )}px`;
   }
 
   #applyDefaultLayout(panel, layout) {
@@ -337,7 +360,39 @@ export class FloatingPanelManager {
         panel.style.left =
           `max(var(--ss-toolbar-left-clearance, 0px), ${rectangle.left}px)`;
       }
+      this.#fitToViewport(panel);
     }
+  }
+
+  #fitToViewport(panel) {
+    if (!panel || panel.hidden || panel.classList.contains("ss-panel-maximized")) {
+      return;
+    }
+    const view = this.#root.defaultView ?? globalThis;
+    const computed = view.getComputedStyle?.(this.#root.documentElement);
+    const toolbarTop = parseFloat(
+      computed?.getPropertyValue(
+        "--ss-toolbar-clearance"
+      )
+    ) || 0;
+    const toolbarLeft = parseFloat(
+      computed?.getPropertyValue(
+        "--ss-toolbar-left-clearance"
+      )
+    ) || 0;
+    const maxWidth = Math.max(220, view.innerWidth - toolbarLeft - 8);
+    const maxHeight = Math.max(120, view.innerHeight - toolbarTop - 8);
+    const rect = panel.getBoundingClientRect();
+    const width = Math.min(rect.width || panel.offsetWidth || 220, maxWidth);
+    const height = Math.min(rect.height || panel.offsetHeight || 120, maxHeight);
+    if (rect.width > maxWidth) panel.style.width = `${maxWidth}px`;
+    if (rect.height > maxHeight) panel.style.height = `${maxHeight}px`;
+    const left = clamp(rect.left, toolbarLeft, Math.max(toolbarLeft, view.innerWidth - width - 4));
+    const top = clamp(rect.top, toolbarTop, Math.max(toolbarTop, view.innerHeight - height - 4));
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.left = `${left}px`;
+    panel.style.top = `${top}px`;
   }
 }
 

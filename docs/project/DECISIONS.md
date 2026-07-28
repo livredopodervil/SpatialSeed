@@ -586,6 +586,27 @@ soltas são metadados do descritor. UVs por canto, n-gons persistentes, bevel,
 knife e assets compartilhados continuam extensões posteriores sobre o mesmo
 contrato.
 
+## D-036 — Referências espaciais são snapshots tipados
+
+**Estado:** implementada inicialmente no build 0037a.
+
+Objetos podem ser resolvidos explicitamente como `PathReference`,
+`ProfileReference` ou `PointReference`. A resolução aplica a transformação
+mundial da hierarquia, valida a extração solicitada e entrega dados imutáveis à
+ferramenta. Tubo, varredura e distribuição consomem essas referências pelos
+mesmos comandos usados pelo painel e pelo console.
+
+**Motivação:** aceitar objetos como parâmetros amplia composição geométrica sem
+fazer o renderer interpretar relações procedurais nem introduzir dependências
+ocultas no documento. Um objeto fechado não deve virar caminho por heurística
+ambígua; linha central, contorno e arestas soltas são extrações nomeadas.
+
+**Consequências:** o resultado copia a referência no momento do comando e
+permanece independente da origem. A varredura usa frames de transporte paralelo
+e persiste uma malha triangular. Referências vinculadas, atualizações
+incrementais e detecção de ciclos ficam reservadas a um futuro grafo explícito
+de modificadores; não serão simuladas por IDs informais dentro de descritores.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

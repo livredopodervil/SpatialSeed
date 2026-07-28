@@ -58,7 +58,8 @@ export class SelectionOperations {
     position = [0, 0, 0],
     rotation = [0, 0, 0, 1],
     placement = null,
-    color = "#6699cc"
+    color = "#6699cc",
+    material = null
   } = {}) {
     if (!this.geometryRegistry) {
       throw new Error("Registro de geometrias indisponível.");
@@ -79,7 +80,7 @@ export class SelectionOperations {
       position: [...(frame?.origin ?? position)],
       rotation: [...(frame?.rotation ?? rotation)],
       geometry: descriptor,
-      ...this.#creationAppearance(color)
+      ...this.#creationAppearance(color, material)
     });
 
     if (changed) this.#selectIds([id]);
@@ -192,6 +193,42 @@ export class SelectionOperations {
       createdIds: created.map(object => object.id),
       activeId: created.at(-1).id
     };
+  }
+
+  createLight({
+    name = null,
+    type = "point",
+    position = [0, 3, 0],
+    rotation = [0, 0, 0, 1],
+    color = "#ffffff",
+    intensity = 3,
+    distance = 0,
+    decay = 2,
+    angleDeg = 45,
+    penumbra = 0.2,
+    castShadow = true
+  } = {}) {
+    const id = crypto.randomUUID();
+    const index = this.sandbox.getSnapshot().objects.length + 1;
+    const changed = this.sandbox.dispatch({
+      type: "light.create",
+      id,
+      name: name || `Luz ${index}`,
+      position: [...position],
+      rotation: [...rotation],
+      light: {
+        type,
+        color,
+        intensity,
+        distance,
+        decay,
+        angleDeg,
+        penumbra,
+        castShadow
+      }
+    });
+    if (changed) this.#selectIds([id]);
+    return { changed, id };
   }
 
   duplicate() {
@@ -911,10 +948,14 @@ export class SelectionOperations {
     );
   }
 
-  #creationAppearance(color) {
-    if (!this.appearanceRuntime) return { color };
+  #creationAppearance(color, material = null) {
+    const normalizedMaterial = material
+      ? structuredClone(material)
+      : { color };
+    normalizedMaterial.color ??= color;
+    if (!this.appearanceRuntime) return { material: normalizedMaterial };
 
-    const created = this.appearanceRuntime.internLegacyMaterial({ color });
+    const created = this.appearanceRuntime.internLegacyMaterial(normalizedMaterial);
     return { appearanceId: created.appearanceId };
   }
 

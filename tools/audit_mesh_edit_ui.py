@@ -34,11 +34,40 @@ def audit_toolbar_controls() -> None:
             + ", ".join(duplicates)
         )
 
+    html = (ROOT / "apps/web/index.html").read_text(encoding="utf-8")
+    toolbar_match = re.search(
+        r'<header id="toolbar"[^>]*>(.*?)</header>',
+        html,
+        flags=re.S
+    )
+    if not toolbar_match:
+        raise SystemExit("Barra principal não encontrada no HTML.")
+    toolbar_ids = set(re.findall(
+        r'<(?:button|select)\b[^>]*\bid="([^"]+)"',
+        toolbar_match.group(1)
+    ))
+    unconfigured = sorted(toolbar_ids - set(controls))
+    if unconfigured:
+        raise SystemExit(
+            "Controles cairiam no menu Mais: " + ", ".join(unconfigured)
+        )
+
 
 def require(path: str, needle: str) -> None:
     text = (ROOT / path).read_text(encoding="utf-8")
     if needle not in text:
         raise SystemExit(f"Contrato ausente em {path}: {needle}")
+
+
+for path, needle in [
+    ("packages/region-box/src/reducer.js", 'case "light.create"'),
+    ("packages/renderer-three/src/ThreeRegionRenderer.js", "#upsertLightVisual"),
+    ("packages/property-registry/src/createDefaultPropertyRegistry.js", 'id: "light.intensity"'),
+    ("packages/property-registry/src/createDefaultPropertyRegistry.js", 'id: "appearance.roughness"'),
+    ("packages/edit-hud/src/EditHud.js", "#refreshContextActions"),
+    ("packages/geometry-creation-panel/src/GeometryCreationPanel.js", 'reference-object')
+]:
+    require(path, needle)
 
 
 for needle in [
@@ -60,21 +89,46 @@ for needle in [
     'id="mesh-extrude"',
     'id="mesh-bridge"',
     'id="mesh-flip-normal"',
-    'data-mesh-section-toggle="topology"'
+    'data-mesh-section-toggle="topology"',
+    'data-mesh-section-toggle="paths"',
+    'id="path-reference-object"',
+    'id="path-profile-object"',
+    'id="path-create-tube"',
+    'id="path-create-sweep"',
+    'id="path-create-array"',
+    'id="path-sketch-begin"',
+    'id="path-from-selection-create"',
+    'id="path-convert-bezier"',
+    'id="edit-hud-columns"',
+    'id="edit-hud-rows"',
+    'id="edit-hud-create-light"',
+    'id="edit-hud-material"',
+    'id="edit-hud-extrude"',
+    'id="edit-hud-help"',
+    'id="edit-hud-area-selection"',
+    'id="edit-hud-undo"',
+    'id="edit-hud-tooltip"',
+    'id="edit-hud-tap-hints"',
+    'id="edit-create-reference"',
+    'id="edit-material-apply"',
+    'id="edit-light-apply"'
 ]:
     require("apps/web/index.html", needle)
 
 for needle in [
-    'static apiVersion = "mesh-edit-panel-v4"',
+    'static apiVersion = "mesh-edit-panel-v6"',
     '"mesh.topology.apply"',
     '"mesh.component.mode.set"',
     '"mesh.selection.apply"',
     '"mesh.deform.settings.set"',
-    'spatialseed.mesh.panel.sections.v1',
+    'spatialseed.edit.workspace.sections.v3',
     "activateSelection()",
     'this.#click("mesh-frame-world", "edit.context.frame.set"',
     'this.#click("mesh-frame-local", "edit.context.frame.set"',
-    'this.#click("mesh-frame-viewer", "edit.context.frame.set"'
+    'this.#click("mesh-frame-viewer", "edit.context.frame.set"',
+    '"path.tube.create"',
+    '"path.sweep.create"',
+    '"path.array.create"'
 ]:
     require("packages/mesh-edit-panel/src/MeshEditPanel.js", needle)
 
@@ -109,20 +163,51 @@ for needle in [
     require("apps/web/index.html", needle)
 require("packages/edit-context/src/EditContextController.js", "class EditContextController")
 require("packages/edit-hud/src/EditHud.js", "class EditHud")
+for needle in [
+    "#prepareHints",
+    "#onHintPointerDown",
+    "#onHintClickCapture",
+    "Modo ajuda ativado",
+    "HUD_HINT_DETAILS",
+    'this.#execute(active ? "mesh.edit.undo" : "history.undo")',
+    'this.#execute("selection.area.toggle")'
+]:
+    require("packages/edit-hud/src/EditHud.js", needle)
+for needle in [
+    '.register("history.status"',
+    "const unsubscribeHistory = sandbox.subscribe",
+    "listener(editContext.status())"
+]:
+    require("apps/web/bootstrap/createWebRuntime.js", needle)
 require("packages/mesh-editor-core/src/MeshEditController.js", 'setTransformMode("translate")')
+
+
+for path, needle in [
+    ("packages/region-box/src/reducer.js", 'case "light.create"'),
+    ("packages/renderer-three/src/ThreeRegionRenderer.js", "#upsertLightVisual"),
+    ("packages/property-registry/src/createDefaultPropertyRegistry.js", 'id: "light.intensity"'),
+    ("packages/property-registry/src/createDefaultPropertyRegistry.js", 'id: "appearance.roughness"'),
+    ("packages/edit-hud/src/EditHud.js", "#refreshContextActions"),
+    ("packages/geometry-creation-panel/src/GeometryCreationPanel.js", 'reference-object')
+]:
+    require(path, needle)
 
 html = (ROOT / "apps/web/index.html").read_text(encoding="utf-8")
 ids = set(re.findall(r'id="([^"]+)"', html))
 panel_source = (ROOT / "packages/mesh-edit-panel/src/MeshEditPanel.js").read_text(
     encoding="utf-8"
 )
-referenced = set(re.findall(r'"(mesh-[a-z0-9-]+)"', panel_source))
-allowed_prefixes = {"mesh-create", "mesh-move", "mesh-rotate", "mesh-scale"}
-missing = sorted(reference for reference in referenced
-                 if reference not in ids and reference not in allowed_prefixes
-                 and reference != "mesh-edit-panel-v4")
+referenced = set()
+for method in ["element", "click", "value", "text"]:
+    referenced.update(re.findall(
+        rf'this\.#{method}\("([a-z0-9-]+)"',
+        panel_source
+    ))
+missing = sorted(reference for reference in referenced if reference not in ids)
 if missing:
-    raise SystemExit(f"Controles de malha ausentes no HTML: {', '.join(missing)}")
+    raise SystemExit(
+        "Controles do workspace ausentes no HTML: " + ", ".join(missing)
+    )
 
 runtime_source = (ROOT / "apps/web/bootstrap/createWebRuntime.js").read_text(
     encoding="utf-8"
@@ -139,6 +224,22 @@ if expected_match.group(1) != actual_match.group(1):
         "Contrato do renderer divergente: "
         f"bootstrap espera {expected_match.group(1)}, "
         f"renderer declara {actual_match.group(1)}."
+    )
+
+selection_query = runtime_source.find('.register("selection.snapshot"')
+history_query = runtime_source.find('.register("history.status"')
+edit_hud_construction = runtime_source.find("new EditHud({")
+if selection_query < 0 or history_query < 0 or edit_hud_construction < 0:
+    raise SystemExit(
+        "Não foi possível auditar as queries fundamentais ou a construção do HUD."
+    )
+if selection_query > edit_hud_construction:
+    raise SystemExit(
+        "selection.snapshot deve ser registrada antes da construção do EditHud."
+    )
+if history_query > edit_hud_construction:
+    raise SystemExit(
+        "history.status deve ser registrada antes da construção do EditHud."
     )
 
 audit_toolbar_controls()

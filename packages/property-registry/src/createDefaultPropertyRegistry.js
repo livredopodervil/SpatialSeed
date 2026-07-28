@@ -112,6 +112,189 @@ export function createDefaultPropertyRegistry() {
       read: object => Number(object.camera?.focusDistance ?? 10)
     }))
     .register(property({
+      id: "light.type",
+      label: "Tipo de luz",
+      group: "light",
+      scope: "object",
+      path: ["light", "type"],
+      valueType: "enum",
+      values: ["point", "directional", "spot", "ambient"],
+      normalize: value => enumValue(value, ["point", "directional", "spot", "ambient"]),
+      supports: object => object?.kind === "light",
+      read: object => object.light?.type ?? "point"
+    }))
+    .register(property({
+      id: "light.color",
+      label: "Cor da luz",
+      group: "light",
+      scope: "object",
+      path: ["light", "color"],
+      valueType: "color",
+      normalize: normalizeHexColor,
+      supports: object => object?.kind === "light",
+      read: object => object.light?.color ?? "#ffffff"
+    }))
+    .register(property({
+      id: "light.intensity",
+      label: "Intensidade",
+      group: "light",
+      scope: "object",
+      path: ["light", "intensity"],
+      valueType: "number",
+      normalize: nonNegativeNumber,
+      supports: object => object?.kind === "light",
+      read: object => Number(object.light?.intensity ?? 3)
+    }))
+    .register(property({
+      id: "light.distance",
+      label: "Distância",
+      group: "light",
+      scope: "object",
+      path: ["light", "distance"],
+      valueType: "number",
+      normalize: nonNegativeNumber,
+      supports: object => object?.kind === "light",
+      read: object => Number(object.light?.distance ?? 0)
+    }))
+    .register(property({
+      id: "light.decay",
+      label: "Decaimento",
+      group: "light",
+      scope: "object",
+      path: ["light", "decay"],
+      valueType: "number",
+      normalize: nonNegativeNumber,
+      supports: object => object?.kind === "light",
+      read: object => Number(object.light?.decay ?? 2)
+    }))
+    .register(property({
+      id: "light.angleDeg",
+      label: "Ângulo °",
+      group: "light",
+      scope: "object",
+      path: ["light", "angleDeg"],
+      valueType: "number",
+      normalize: value => boundedNumber(value, 1, 179),
+      supports: object => object?.kind === "light",
+      read: object => Number(object.light?.angleDeg ?? 45)
+    }))
+    .register(property({
+      id: "light.penumbra",
+      label: "Penumbra",
+      group: "light",
+      scope: "object",
+      path: ["light", "penumbra"],
+      valueType: "number",
+      normalize: value => boundedNumber(value, 0, 1),
+      supports: object => object?.kind === "light",
+      read: object => Number(object.light?.penumbra ?? 0.2)
+    }))
+    .register(property({
+      id: "light.castShadow",
+      label: "Projetar sombra",
+      group: "light",
+      scope: "object",
+      path: ["light", "castShadow"],
+      valueType: "boolean",
+      normalize: booleanValue,
+      supports: object => object?.kind === "light",
+      read: object => Boolean(object.light?.castShadow ?? true)
+    }))
+    .register(property({
+      id: "appearance.model",
+      label: "Modelo",
+      group: "appearance",
+      scope: "appearance",
+      path: ["model"],
+      valueType: "enum",
+      values: ["standard", "physical"],
+      normalize: value => enumValue(value, ["standard", "physical"]),
+      read: (object, context) => context.material(object).model ?? "standard"
+    }))
+    .register(property({
+      id: "appearance.roughness",
+      label: "Rugosidade",
+      group: "appearance",
+      scope: "appearance",
+      path: ["parameters", "roughness"],
+      valueType: "number",
+      procedural: true,
+      normalize: value => boundedNumber(value, 0, 1),
+      read: (object, context) => context.material(object).parameters?.roughness ?? 0.55
+    }))
+    .register(property({
+      id: "appearance.metalness",
+      label: "Metallicidade",
+      group: "appearance",
+      scope: "appearance",
+      path: ["parameters", "metalness"],
+      valueType: "number",
+      procedural: true,
+      normalize: value => boundedNumber(value, 0, 1),
+      read: (object, context) => context.material(object).parameters?.metalness ?? 0
+    }))
+    .register(property({
+      id: "appearance.transmission",
+      label: "Transmissão",
+      group: "appearance",
+      scope: "appearance",
+      path: ["parameters", "transmission"],
+      valueType: "number",
+      procedural: true,
+      normalize: value => boundedNumber(value, 0, 1),
+      read: (object, context) => context.material(object).parameters?.transmission ?? 0
+    }))
+    .register(property({
+      id: "appearance.ior",
+      label: "Índice de refração",
+      group: "appearance",
+      scope: "appearance",
+      path: ["parameters", "ior"],
+      valueType: "number",
+      normalize: value => boundedNumber(value, 1, 2.333),
+      read: (object, context) => context.material(object).parameters?.ior ?? 1.5
+    }))
+    .register(property({
+      id: "appearance.thickness",
+      label: "Espessura óptica",
+      group: "appearance",
+      scope: "appearance",
+      path: ["parameters", "thickness"],
+      valueType: "number",
+      normalize: nonNegativeNumber,
+      read: (object, context) => context.material(object).parameters?.thickness ?? 0.5
+    }))
+    .register(property({
+      id: "appearance.dispersion",
+      label: "Dispersão",
+      group: "appearance",
+      scope: "appearance",
+      path: ["parameters", "dispersion"],
+      valueType: "number",
+      normalize: nonNegativeNumber,
+      read: (object, context) => context.material(object).parameters?.dispersion ?? 0
+    }))
+    .register(property({
+      id: "appearance.clearcoat",
+      label: "Verniz",
+      group: "appearance",
+      scope: "appearance",
+      path: ["parameters", "clearcoat"],
+      valueType: "number",
+      normalize: value => boundedNumber(value, 0, 1),
+      read: (object, context) => context.material(object).parameters?.clearcoat ?? 0
+    }))
+    .register(property({
+      id: "appearance.envMapIntensity",
+      label: "Reflexo ambiente",
+      group: "appearance",
+      scope: "appearance",
+      path: ["parameters", "envMapIntensity"],
+      valueType: "number",
+      normalize: nonNegativeNumber,
+      read: (object, context) => context.material(object).parameters?.envMapIntensity ?? 1
+    }))
+    .register(property({
       id: "appearance.color",
       label: "Cor",
       group: "appearance",
@@ -219,7 +402,7 @@ function property(input) {
     editableMany: true,
     supports: ["appearance", "instance"].includes(input.scope)
       ? object => Boolean(object?.id) &&
-          !["group", "camera"].includes(object.kind)
+          !["group", "camera", "light"].includes(object.kind)
       : object => Boolean(object?.id),
     ...input
   };
@@ -248,6 +431,12 @@ function boundedNumber(value, minimum, maximum) {
   if (result < minimum || result > maximum) {
     throw new RangeError(`Número fora do intervalo ${minimum}–${maximum}.`);
   }
+  return result;
+}
+
+function nonNegativeNumber(value) {
+  const result = finiteNumber(value);
+  if (result < 0) throw new RangeError("Número não pode ser negativo.");
   return result;
 }
 

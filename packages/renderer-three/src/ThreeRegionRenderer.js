@@ -66,6 +66,7 @@ export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-navigation-camera-v4";
   #meshes = new Map();
   #cameraVisuals = new Map();
+  #lightVisuals = new Map();
   #selectionSnapshot = null;
   #session = null;
   #tap = null;
@@ -93,6 +94,14 @@ export class ThreeRegionRenderer {
   };
   #objectTransformAxes = { x: true, y: true, z: true };
   #navigationLocks = { plane: null, point: null };
+  #navigationMode = "free";
+  #editPlane = null;
+  #navigationDefaults = {
+    enableRotate: true,
+    enablePan: true,
+    screenSpacePanning: true,
+    cameraUp: [0, 1, 0]
+  };
   #applyingNavigationLocks = false;
   #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
   #batchCapacity = 65536;
@@ -243,6 +252,12 @@ export class ThreeRegionRenderer {
     this.orbit = new OrbitControls(this.camera, canvas);
     this.orbit.enableDamping = true;
     this.orbit.target.set(0, 1, 0);
+    this.#navigationDefaults = {
+      enableRotate: this.orbit.enableRotate,
+      enablePan: this.orbit.enablePan,
+      screenSpacePanning: this.orbit.screenSpacePanning,
+      cameraUp: this.camera.up.toArray()
+    };
     this.orbit.addEventListener(
       "change",
       () => {
@@ -986,7 +1001,13 @@ export class ThreeRegionRenderer {
   }
 
   getNavigationLocks() {
-    return Object.freeze(structuredClone(this.#navigationLocks));
+    return Object.freeze({
+      ...structuredClone(this.#navigationLocks),
+      mode: this.#navigationMode,
+      editPlane: this.#editPlane
+        ? structuredClone(this.#editPlane)
+        : null
+    });
   }
 
   setNavigationPlaneLock(frame = null) {
@@ -1003,6 +1024,7 @@ export class ThreeRegionRenderer {
         )
       };
     }
+    this.#synchronizeNavigationMode();
     this.#enforceNavigationLocks();
     this.#notifyNavigationCamera();
     return this.getNavigationLocks();
@@ -1023,6 +1045,7 @@ export class ThreeRegionRenderer {
         }
       };
     }
+    this.#synchronizeNavigationMode();
     this.#enforceNavigationLocks();
     this.#notifyNavigationCamera();
     return this.getNavigationLocks();
@@ -1030,8 +1053,74 @@ export class ThreeRegionRenderer {
 
   clearNavigationLocks() {
     this.#navigationLocks = { plane: null, point: null };
+    this.#synchronizeNavigationMode();
     this.#notifyNavigationCamera();
     return this.getNavigationLocks();
+  }
+
+  getEditPlane() {
+    return this.#editPlane
+      ? Object.freeze(structuredClone(this.#editPlane))
+      : null;
+  }
+
+  setEditPlane(frame = null) {
+    this.#editPlane = frame ? normalizeNavigationPlane(frame) : null;
+    return this.getEditPlane();
+  }
+
+  resolvePointerPlacement({
+    clientX,
+    clientY,
+    plane = this.#editPlane,
+    surface = true
+  } = {}) {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = Number(clientX);
+    const y = Number(clientY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new TypeError("Coordenadas do ponteiro inválidas.");
+    }
+    this.pointer.set(
+      ((x - rect.left) / rect.width) * 2 - 1,
+      -((y - rect.top) / rect.height) * 2 + 1
+    );
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    if (surface) {
+      const targets = this.#batchManager.batches()
+        .map(batch => batch.mesh)
+        .filter(Boolean);
+      const hit = this.raycaster.intersectObjects(targets, false)[0];
+      if (hit?.point) {
+        const normal = hit.face?.normal
+          ? transformHitNormalToWorld(hit)
+          : null;
+        return Object.freeze({
+          point: Object.freeze(hit.point.toArray()),
+          normal: normal
+            ? Object.freeze(normal.normalize().toArray())
+            : null,
+          source: "surface"
+        });
+      }
+    }
+    const frame = plane ?? this.readViewerReferenceFrame();
+    const normalized = normalizeNavigationPlane(frame);
+    const threePlane = new THREE.Plane(
+      new THREE.Vector3().fromArray(normalized.normal),
+      -new THREE.Vector3().fromArray(normalized.normal)
+        .dot(new THREE.Vector3().fromArray(normalized.origin))
+    );
+    const point = this.raycaster.ray.intersectPlane(
+      threePlane,
+      new THREE.Vector3()
+    );
+    if (!point) return null;
+    return Object.freeze({
+      point: Object.freeze(point.toArray()),
+      normal: Object.freeze([...normalized.normal]),
+      source: plane ? "edit-plane" : "viewer-plane"
+    });
   }
 
   getCameraProjection() {
@@ -1668,6 +1757,21 @@ export class ThreeRegionRenderer {
       applyProjectedWorldMatrix(proxy,worldMatrix);
     }
 
+    if (object.kind === "light") {
+      if (proxy.userData.batchKey) {
+        this.#removeFromBatch(object.id, proxy.userData.batchKey);
+        proxy.userData.batchKey = null;
+      }
+      proxy.userData.logicalOnly = true;
+      proxy.userData.lightVisual = true;
+      this.#upsertLightVisual(object, proxy);
+      return;
+    }
+
+    if (proxy.userData.lightVisual) {
+      this.#removeLightVisual(object.id, proxy);
+    }
+
     if (object.kind === "camera") {
       if (proxy.userData.batchKey) {
         this.#removeFromBatch(object.id, proxy.userData.batchKey);
@@ -1735,14 +1839,16 @@ export class ThreeRegionRenderer {
     if (!proxy) return false;
 
     const cameraVisual = Boolean(this.#cameraVisuals.has(id));
+    const lightVisual = Boolean(this.#lightVisuals.has(id));
     this.#removeCameraVisual(id, proxy);
+    this.#removeLightVisual(id, proxy);
     this.#removeFromBatch(id, proxy.userData.batchKey);
     this.#meshes.delete(id);
     this.#selectedVisualIds.delete(id);
     this.#animationTargetIds.delete(id);
     this.#animationPivotOverrides.delete(id);
     this.#incrementalDiagnostics.objectsDeleted += 1;
-    if (cameraVisual) {
+    if (cameraVisual || lightVisual) {
       const elapsed = performance.now() - startedAt;
       this.#cameraDeletionDiagnostics.count += 1;
       this.#cameraDeletionDiagnostics.lastMs = elapsed;
@@ -1751,6 +1857,87 @@ export class ThreeRegionRenderer {
         elapsed
       );
     }
+    return true;
+  }
+
+  #upsertLightVisual(object, proxy) {
+    const descriptor = object.light ?? {};
+    const type = String(descriptor.type ?? "point");
+    let visual = this.#lightVisuals.get(object.id);
+    if (!visual || visual.type !== type) {
+      if (visual) this.#removeLightVisual(object.id, proxy);
+      const icon = new THREE.Mesh(
+        type === "directional"
+          ? new THREE.OctahedronGeometry(0.28, 0)
+          : new THREE.SphereGeometry(0.24, 12, 8),
+        new THREE.MeshBasicMaterial({
+          color: descriptor.color ?? "#ffffff",
+          depthTest: true,
+          depthWrite: true
+        })
+      );
+      icon.userData.lightObjectId = object.id;
+      const rays = new THREE.LineSegments(
+        lightRayGeometry(type),
+        new THREE.LineBasicMaterial({
+          color: descriptor.color ?? "#ffffff",
+          transparent: true,
+          opacity: 0.8
+        })
+      );
+      rays.userData.lightObjectId = object.id;
+      const target = new THREE.Object3D();
+      target.position.set(0, 0, -1);
+      const light = createThreeLight(type, descriptor);
+      light.userData.lightObjectId = object.id;
+      if (light.target) light.target = target;
+      proxy.add(icon, rays, target, light);
+      this.scene.add(proxy);
+      visual = { type, icon, rays, target, light };
+      this.#lightVisuals.set(object.id, visual);
+    }
+
+    visual.icon.material.color.set(descriptor.color ?? "#ffffff");
+    visual.rays.material.color.set(descriptor.color ?? "#ffffff");
+    visual.light.color?.set?.(descriptor.color ?? "#ffffff");
+    visual.light.intensity = Number(descriptor.intensity ?? 3);
+    if ("distance" in visual.light) {
+      visual.light.distance = Number(descriptor.distance ?? 0);
+    }
+    if ("decay" in visual.light) {
+      visual.light.decay = Number(descriptor.decay ?? 2);
+    }
+    if (visual.light.isSpotLight) {
+      visual.light.angle = Number(descriptor.angleDeg ?? 45) * Math.PI / 180;
+      visual.light.penumbra = Number(descriptor.penumbra ?? 0.2);
+    }
+    visual.light.castShadow = Boolean(
+      descriptor.castShadow && !visual.light.isAmbientLight
+    );
+    if (visual.light.shadow?.mapSize) {
+      visual.light.shadow.mapSize.set(512, 512);
+      visual.light.shadow.bias = -0.0003;
+      visual.light.shadow.normalBias = 0.02;
+    }
+    proxy.userData.localBounds = {
+      min: [-0.42, -0.42, -0.75],
+      max: [0.42, 0.42, 0.42]
+    };
+    proxy.userData.lightProjection = structuredClone(descriptor);
+  }
+
+  #removeLightVisual(id, proxy = this.#meshes.get(id)) {
+    const visual = this.#lightVisuals.get(id);
+    if (!visual) return false;
+    this.scene.remove(proxy);
+    for (const object of [visual.icon, visual.rays]) {
+      object.geometry?.dispose?.();
+      object.material?.dispose?.();
+    }
+    visual.light?.dispose?.();
+    proxy.clear();
+    proxy.userData.lightVisual = false;
+    this.#lightVisuals.delete(id);
     return true;
   }
 
@@ -3796,9 +3983,16 @@ export class ThreeRegionRenderer {
       ),
       false
     );
+    const lightHits = this.raycaster.intersectObjects(
+      [...this.#lightVisuals.values()].flatMap(
+        visual => [visual.icon, visual.rays]
+      ),
+      false
+    );
     const hitIds=[...new Set([
       ...hits.map(hit => this.#batchManager.objectFromHit(hit)),
       ...cameraHits.map(hit => hit.object.userData.cameraObjectId),
+      ...lightHits.map(hit => hit.object.userData.lightObjectId),
       ...this.#cameraScreenHitIds(
         event.clientX,
         event.clientY,
@@ -3851,14 +4045,53 @@ export class ThreeRegionRenderer {
       if (point) {
         desired.fromArray(point.point);
       }
-      const correction = desired.sub(current);
-      if (correction.lengthSq() > 1e-18) {
-        this.camera.position.add(correction);
-        this.orbit.target.add(correction);
+      if (plane) {
+        const normal = new THREE.Vector3().fromArray(plane.normal).normalize();
+        const yAxis = new THREE.Vector3().fromArray(plane.yAxis).normalize();
+        const offset = this.camera.position.clone().sub(current);
+        const distance = Math.max(offset.length(), 1e-6);
+        const side = Math.sign(offset.dot(normal)) || 1;
+        this.orbit.target.copy(desired);
+        this.camera.position.copy(desired).addScaledVector(
+          normal,
+          distance * side
+        );
+        this.camera.up.copy(yAxis);
+        this.camera.lookAt(desired);
+        this.camera.updateMatrixWorld(true);
+      } else {
+        const correction = desired.sub(current);
+        if (correction.lengthSq() > 1e-18) {
+          this.camera.position.add(correction);
+          this.orbit.target.add(correction);
+        }
       }
     } finally {
       this.#applyingNavigationLocks = false;
     }
+  }
+
+  #synchronizeNavigationMode() {
+    const { plane, point } = this.#navigationLocks;
+    this.#navigationMode = plane
+      ? (point ? "plane-point" : "plane-2d")
+      : (point ? "orbit-point" : "free");
+    if (plane) {
+      this.orbit.enableRotate = false;
+      this.orbit.enablePan = !point;
+      this.orbit.screenSpacePanning = true;
+    } else if (point) {
+      this.orbit.enableRotate = true;
+      this.orbit.enablePan = false;
+      this.orbit.screenSpacePanning = this.#navigationDefaults.screenSpacePanning;
+      this.camera.up.fromArray(this.#navigationDefaults.cameraUp);
+    } else {
+      this.orbit.enableRotate = this.#navigationDefaults.enableRotate;
+      this.orbit.enablePan = this.#navigationDefaults.enablePan;
+      this.orbit.screenSpacePanning = this.#navigationDefaults.screenSpacePanning;
+      this.camera.up.fromArray(this.#navigationDefaults.cameraUp);
+    }
+    this.orbit.update();
   }
 
   resize() {
@@ -3906,6 +4139,7 @@ getResourceDiagnostics() {
     instancedMeshes: batches.length,
     logicalInstances: this.#batchManager.stats().objects,
     cameraObjects: this.#cameraVisuals.size,
+    lightObjects: this.#lightVisuals.size,
     uniqueGeometries: geometries.size,
     uniqueMaterials: materials.size,
     uniqueTextures: textures.size,
@@ -4018,6 +4252,16 @@ function meshConstraintAxes(constraint = "free") {
     y: normalized === "free" || normalized.includes("y"),
     z: normalized === "free" || normalized.includes("z")
   };
+}
+
+function transformHitNormalToWorld(hit) {
+  const matrix = hit.object.matrixWorld.clone();
+  if (hit.object.isInstancedMesh && Number.isInteger(hit.instanceId)) {
+    const instanceMatrix = new THREE.Matrix4();
+    hit.object.getMatrixAt(hit.instanceId, instanceMatrix);
+    matrix.multiply(instanceMatrix);
+  }
+  return hit.face.normal.clone().transformDirection(matrix).normalize();
 }
 
 function normalizeNavigationPlane(frame = {}) {
@@ -4204,4 +4448,46 @@ function pointSegmentDistance2D(px, py, ax, ay, bx, by) {
         1
       );
   return Math.hypot(px - (ax + dx * parameter), py - (ay + dy * parameter));
+}
+
+function createThreeLight(type, descriptor = {}) {
+  const color = descriptor.color ?? "#ffffff";
+  const intensity = Number(descriptor.intensity ?? 3);
+  if (type === "ambient") return new THREE.AmbientLight(color, intensity);
+  if (type === "directional") return new THREE.DirectionalLight(color, intensity);
+  if (type === "spot") {
+    return new THREE.SpotLight(
+      color,
+      intensity,
+      Number(descriptor.distance ?? 0),
+      Number(descriptor.angleDeg ?? 45) * Math.PI / 180,
+      Number(descriptor.penumbra ?? 0.2),
+      Number(descriptor.decay ?? 2)
+    );
+  }
+  return new THREE.PointLight(
+    color,
+    intensity,
+    Number(descriptor.distance ?? 0),
+    Number(descriptor.decay ?? 2)
+  );
+}
+
+function lightRayGeometry(type) {
+  const lines = [];
+  if (["directional", "spot"].includes(type)) {
+    const spread = type === "spot" ? 0.45 : 0.2;
+    for (const [x, y] of [[-1,-1],[1,-1],[1,1],[-1,1]]) {
+      lines.push(0, 0, 0, x * spread, y * spread, -0.9);
+    }
+  } else {
+    for (const axis of [[1,0,0],[0,1,0],[0,0,1]]) {
+      for (const sign of [-1, 1]) {
+        lines.push(0, 0, 0, axis[0] * sign * 0.65, axis[1] * sign * 0.65, axis[2] * sign * 0.65);
+      }
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
+  return geometry;
 }

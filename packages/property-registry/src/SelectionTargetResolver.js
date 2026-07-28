@@ -31,7 +31,7 @@ export function resolveSelectionTargetIds({
 
   for (const rootId of roots) {
     for (const id of [rootId, ...hierarchy.descendantsOf(rootId)]) {
-      if (seen.has(id) || hierarchy.node(id)?.kind === "group") continue;
+      if (seen.has(id) || ["group", "camera", "light"].includes(hierarchy.node(id)?.kind)) continue;
       seen.add(id);
       resolved.push(id);
     }

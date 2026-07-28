@@ -140,7 +140,6 @@
     Projetos / viewers
   </button>
   <button id="inspector">Inspector</button>
-  <button id="transform-tools">Transformação</button>
   <button id="mesh-editor">Editar</button>
   <button id="geometry-create">Criar</button>
   <button id="experiment-lab" title="Explorar construções paramétricas">
@@ -178,7 +177,8 @@
 
 <aside id="edit-hud" aria-label="HUD de edição">
   <div id="edit-hud-handle" class="edit-hud-handle">
-    <button id="edit-hud-open" type="button" title="Abrir painel unificado">Editar</button>
+    <button id="edit-hud-open" type="button" title="Abrir painel unificado de edição">✎</button>
+    <button id="edit-hud-help" type="button" title="Ativar modo ajuda dos ícones">?</button>
     <small id="edit-hud-status">Objeto · select · world · XYZ</small>
     <details class="edit-hud-config">
       <summary title="Configurar HUD">⚙</summary>
@@ -187,6 +187,9 @@
         <label>Orientação <select id="edit-hud-orientation"><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>
         <label>Tamanho <select id="edit-hud-size"><option value="compact">Compacto</option><option value="normal">Normal</option><option value="large">Ampliado</option></select></label>
         <label>Opacidade <input id="edit-hud-opacity" type="range" min="0.45" max="1" step="0.05" value="0.96"></label>
+        <label>Colunas <input id="edit-hud-columns" type="number" min="1" max="12" step="1" value="4"></label>
+        <label>Linhas <input id="edit-hud-rows" type="number" min="1" max="8" step="1" value="2"></label>
+        <label><input id="edit-hud-tap-hints" type="checkbox" checked> Mostrar nome após toque</label>
       </div>
       <div class="edit-hud-config-groups">
         <label><input type="checkbox" data-edit-hud-group-toggle="subject" checked> Contexto</label>
@@ -195,18 +198,25 @@
         <label><input type="checkbox" data-edit-hud-group-toggle="axes" checked> Eixos</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
-        <label><input type="checkbox" data-edit-hud-group-toggle="history" checked> Histórico</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="lifecycle" checked> Continuidade</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="actions" checked> Ações contextuais</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="session" checked> Sessão</label>
       </div>
+      <div class="edit-hud-config-defaults">
+        <label>Extrusão <input id="edit-hud-default-extrude" type="number" step="0.1" value="1"></label>
+        <label>Inset <input id="edit-hud-default-inset" type="number" min="0.001" max="0.999" step="0.05" value="0.2"></label>
+        <label>Raio de caminho <input id="edit-hud-default-path-radius" type="number" min="0.001" step="0.01" value="0.08"></label>
+      </div>
+      <p class="edit-hud-help-note">Toque curto executa. Pressione e segure para ver nome e explicação. O botão ? ativa um modo de consulta que não executa as ferramentas.</p>
       <button id="edit-hud-reset" type="button">Restaurar HUD</button>
     </details>
   </div>
   <div class="edit-hud-strip">
     <div class="edit-hud-group" data-edit-hud-group="subject" aria-label="Nível de edição">
-      <button id="edit-hud-object" type="button" data-edit-subject="object">Obj</button>
-      <button type="button" data-edit-subject="vertex">V</button>
-      <button type="button" data-edit-subject="edge">E</button>
-      <button type="button" data-edit-subject="face">F</button>
+      <button id="edit-hud-object" type="button" data-edit-subject="object" title="Editar objetos">◫</button>
+      <button type="button" data-edit-subject="vertex" title="Editar vértices">●</button>
+      <button type="button" data-edit-subject="edge" title="Editar arestas">━</button>
+      <button type="button" data-edit-subject="face" title="Editar faces">▲</button>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="tool" aria-label="Ferramenta">
       <button type="button" data-edit-tool="navigate" title="Navegar">☝</button>
@@ -215,38 +225,82 @@
       <button type="button" data-edit-tool="rotate" title="Girar">↻</button>
       <button type="button" data-edit-tool="scale" title="Escalar">⤢</button>
     </div>
+    <div class="edit-hud-group" data-edit-hud-group="quick" aria-label="Seleção rápida e histórico">
+      <button id="edit-hud-area-selection" type="button" title="Selecionar por área">▧</button>
+      <button id="edit-hud-undo" type="button" title="Desfazer">↶</button>
+      <button id="edit-hud-redo" type="button" title="Refazer">↷</button>
+    </div>
     <div class="edit-hud-group" data-edit-hud-group="frame" aria-label="Referencial">
-      <button type="button" data-edit-frame="world">M</button>
-      <button type="button" data-edit-frame="local">O</button>
-      <button type="button" data-edit-frame="viewer">Vista</button>
-      <button type="button" data-edit-frame="custom-plane">Plano</button>
+      <button type="button" data-edit-frame="world" title="Frame mundial">◎</button>
+      <button type="button" data-edit-frame="local" title="Frame do objeto">◇</button>
+      <button type="button" data-edit-frame="viewer" title="Frame do viewer">▣</button>
+      <button type="button" data-edit-frame="custom-plane" title="Plano personalizado">▱</button>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="axes" aria-label="Eixos permitidos">
-      <label><input id="edit-hud-axis-x" type="checkbox" checked> X</label>
-      <label><input id="edit-hud-axis-y" type="checkbox" checked> Y</label>
-      <label><input id="edit-hud-axis-z" type="checkbox" checked> Z</label>
+      <label title="Permitir eixo X"><input id="edit-hud-axis-x" type="checkbox" checked><span>X</span></label>
+      <label title="Permitir eixo Y"><input id="edit-hud-axis-y" type="checkbox" checked><span>Y</span></label>
+      <label title="Permitir eixo Z"><input id="edit-hud-axis-z" type="checkbox" checked><span>Z</span></label>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="snap" aria-label="Snap">
-      <label title="Ativar snap"><input id="edit-hud-snap-enabled" type="checkbox"> Snap</label>
-      <label><input id="edit-hud-snap-auto" type="checkbox" checked> Auto</label>
-      <label><input id="edit-hud-snap-vertex" type="checkbox" checked> V</label>
-      <label><input id="edit-hud-snap-edge" type="checkbox" checked> E</label>
-      <label><input id="edit-hud-snap-face" type="checkbox" checked> F</label>
-      <label><input id="edit-hud-snap-grid" type="checkbox"> G</label>
-      <label title="Influência proporcional"><input id="edit-hud-proportional" type="checkbox"> ∿</label>
+      <label title="Ativar snap"><input id="edit-hud-snap-enabled" type="checkbox"><span>⌁</span></label>
+      <label title="Snap automático"><input id="edit-hud-snap-auto" type="checkbox" checked><span>A</span></label>
+      <label title="Snap em vértices"><input id="edit-hud-snap-vertex" type="checkbox" checked><span>●</span></label>
+      <label title="Snap em arestas"><input id="edit-hud-snap-edge" type="checkbox" checked><span>━</span></label>
+      <label title="Snap em faces"><input id="edit-hud-snap-face" type="checkbox" checked><span>▲</span></label>
+      <label title="Snap em grade"><input id="edit-hud-snap-grid" type="checkbox"><span>#</span></label>
+      <label title="Influência proporcional"><input id="edit-hud-proportional" type="checkbox"><span>∿</span></label>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="navigation" aria-label="Travas de navegação">
-      <label><input id="edit-hud-plane-lock" type="checkbox"> Plano</label>
-      <label><input id="edit-hud-point-lock" type="checkbox"> Ponto</label>
+      <label title="Travar visualização em plano 2D"><input id="edit-hud-plane-lock" type="checkbox"><span>▱</span></label>
+      <label title="Travar plano de edição"><input id="edit-hud-edit-plane" type="checkbox"><span>⌗</span></label>
+      <label title="Orbitar ponto travado"><input id="edit-hud-point-lock" type="checkbox"><span>⊙</span></label>
     </div>
-    <div class="edit-hud-group" data-edit-hud-group="history">
-      <button id="edit-hud-undo" type="button" title="Desfazer interno">↶</button>
-      <button id="edit-hud-redo" type="button" title="Refazer interno">↷</button>
+    <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="lifecycle" aria-label="Continuidade das ferramentas">
+      <label title="Manter ferramenta ativa"><input id="edit-hud-keep-tool" type="checkbox"><span>📌</span></label>
+      <button id="edit-hud-repeat" type="button" title="Repetir última operação">⟳</button>
+    </div>
+    <div class="edit-hud-group edit-hud-context-actions" data-edit-hud-group="actions" aria-label="Ações contextuais">
+      <button id="edit-hud-create" type="button" data-hud-context="object" title="Criar objeto usando parâmetros e objeto de referência">＋</button>
+      <button id="edit-hud-create-light" type="button" data-hud-context="object" title="Criar luz com os últimos parâmetros memorizados">☀</button>
+      <button id="edit-hud-material" type="button" data-hud-context="object" title="Abrir material, luz e criação no painel Editar">◒</button>
+      <button id="edit-hud-enter-mesh" type="button" data-hud-context="object" title="Entrar na edição da malha selecionada">▦</button>
+      <button id="edit-hud-draw-path" type="button" data-hud-context="object" title="Desenhar spline à mão livre no viewer">〰</button>
+      <button id="edit-hud-group" type="button" data-hud-context="object" title="Agrupar objetos selecionados">⊞</button>
+      <button id="edit-hud-ungroup" type="button" data-hud-context="object" title="Desagrupar seleção">⊟</button>
+      <button id="edit-hud-duplicate" type="button" data-hud-context="object mesh" title="Duplicar objeto ou componentes selecionados">⧉</button>
+      <button id="edit-hud-delete" type="button" data-hud-context="object mesh" title="Excluir objeto ou componentes selecionados">⌫</button>
+      <button id="edit-hud-select-all" type="button" data-hud-context="mesh" title="Selecionar todos os componentes">◉</button>
+      <button id="edit-hud-select-none" type="button" data-hud-context="mesh" title="Limpar seleção de componentes">○</button>
+      <button id="edit-hud-select-invert" type="button" data-hud-context="mesh" title="Inverter seleção de componentes">◐</button>
+      <button id="edit-hud-select-grow" type="button" data-hud-context="mesh" title="Expandir seleção para componentes vizinhos">⊕</button>
+      <button id="edit-hud-select-shrink" type="button" data-hud-context="mesh" title="Contrair seleção">⊖</button>
+      <button id="edit-hud-select-linked" type="button" data-hud-context="mesh" title="Selecionar componentes conectados">⛓</button>
+      <button id="edit-hud-select-boundary" type="button" data-hud-context="edge face" title="Selecionar contorno">□</button>
+      <button id="edit-hud-create-vertex" type="button" data-hud-context="vertex" title="Criar vértice na origem local da malha">•</button>
+      <button id="edit-hud-create-edge" type="button" data-hud-context="vertex" title="Criar aresta entre vértices selecionados">╱</button>
+      <button id="edit-hud-create-face" type="button" data-hud-context="vertex edge" title="Criar face a partir da seleção">△</button>
+      <button id="edit-hud-fill" type="button" data-hud-context="vertex edge" title="Preencher contorno selecionado">▰</button>
+      <button id="edit-hud-weld" type="button" data-hud-context="vertex" title="Soldar vértices selecionados">⋈</button>
+      <button id="edit-hud-extrude" type="button" data-hud-context="vertex edge face" title="Extrudar usando a distância memorizada">⇧</button>
+      <button id="edit-hud-inset" type="button" data-hud-context="face" title="Inset usando o valor memorizado">▣</button>
+      <button id="edit-hud-split" type="button" data-hud-context="edge" title="Dividir aresta ao meio">÷</button>
+      <button id="edit-hud-collapse" type="button" data-hud-context="edge" title="Colapsar aresta selecionada">⌁</button>
+      <button id="edit-hud-flip-edge" type="button" data-hud-context="edge" title="Inverter diagonal entre duas faces">⇄</button>
+      <button id="edit-hud-bridge" type="button" data-hud-context="edge" title="Criar ponte entre contornos compatíveis">∪</button>
+      <button id="edit-hud-subdivide" type="button" data-hud-context="face" title="Subdividir faces selecionadas">⊞</button>
+      <button id="edit-hud-flip-normal" type="button" data-hud-context="face" title="Inverter normal das faces selecionadas">⇵</button>
+      <button id="edit-hud-path-from-selection" type="button" data-hud-context="vertex edge face" title="Criar caminho da seleção de componentes">⌇</button>
+      <button id="edit-hud-recalculate-normals" type="button" data-hud-context="mesh" title="Recalcular normais da malha">N</button>
+      <button id="edit-hud-cleanup" type="button" data-hud-context="mesh" title="Sanitizar a malha: remover órfãos e recalcular normais">✧</button>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="session">
-      <button id="edit-hud-apply" type="button">Aplicar</button>
-      <button id="edit-hud-cancel" type="button">Cancelar</button>
+      <button id="edit-hud-apply" type="button" title="Aplicar sessão de malha">✓</button>
+      <button id="edit-hud-cancel" type="button" title="Cancelar sessão de malha">×</button>
     </div>
+  </div>
+  <div id="edit-hud-tooltip" class="edit-hud-tooltip" role="tooltip" aria-live="polite" hidden>
+    <strong id="edit-hud-tooltip-title"></strong>
+    <span id="edit-hud-tooltip-description"></span>
   </div>
 </aside>
 
@@ -501,52 +555,9 @@
     </details>
   </form>
 </section>
-<section id="transform-tools-panel" hidden>
-  <header>
-    <strong>Ferramentas de transformação</strong>
-    <button id="close-transform-tools">×</button>
-  </header>
-
-  <div class="tt-content">
-    <fieldset>
-      <legend>Gizmo</legend>
-      <label>Tamanho <input id="tt-size" type="number" min="0.2" step="0.1"></label>
-      <div class="tt-checks">
-        <label><input id="tt-show-x" type="checkbox"> X</label>
-        <label><input id="tt-show-y" type="checkbox"> Y</label>
-        <label><input id="tt-show-z" type="checkbox"> Z</label>
-      </div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Snapping</legend>
-      <label>Translação <input id="tt-translate-snap" type="number" min="0" step="0.1"></label>
-      <label>Rotação ° <input id="tt-rotate-snap" type="number" min="0" step="1"></label>
-      <label>Escala <input id="tt-scale-snap" type="number" min="0" step="0.05"></label>
-      <p class="tt-uniform-scale-hint">
-        Escala uniforme XYZ: arraste o cubo branco no centro do gizmo.
-      </p>
-      <label><input id="tt-grid-lock" type="checkbox"> Bloquear posição na grade</label>
-    </fieldset>
-
-    <fieldset>
-      <legend>Visualização</legend>
-      <label><input id="tt-show-vertices" type="checkbox"> Mostrar vértices</label>
-      <label>Tamanho dos vértices <input id="tt-vertex-size" type="number" min="1" max="24" step="1"></label>
-    </fieldset>
-
-    <div class="actions">
-      <button id="tt-apply" type="button">Aplicar</button>
-      <button id="tt-refresh" type="button">Atualizar diagnóstico</button>
-    </div>
-
-    <textarea id="tt-diagnostics" class="component-text" readonly></textarea>
-  </div>
-</section>
-
 <section id="mesh-edit-panel" hidden>
   <header>
-    <strong>Edição: selecionar, transformar e malha</strong>
+    <strong>Editar</strong>
     <button id="close-mesh-edit" type="button">×</button>
   </header>
   <div class="mesh-edit-content">
@@ -566,17 +577,74 @@
 
     <details class="mesh-panel-config">
       <summary>Configurar painel</summary>
+      <label><input id="mesh-panel-adaptive" type="checkbox"> Ocultar ferramentas incompatíveis; por padrão todas permanecem visíveis</label>
       <div class="mesh-checkbox-grid">
+        <label><input type="checkbox" data-mesh-section-toggle="create" checked> Criar, luz e material</label>
         <label><input type="checkbox" data-mesh-section-toggle="context" checked> Contexto</label>
         <label><input type="checkbox" data-mesh-section-toggle="session" checked> Sessão</label>
         <label><input type="checkbox" data-mesh-section-toggle="selection" checked> Seleção</label>
         <label><input type="checkbox" data-mesh-section-toggle="topology" checked> Topologia</label>
+        <label><input type="checkbox" data-mesh-section-toggle="paths" checked> Caminhos</label>
+        <label><input type="checkbox" data-mesh-section-toggle="gizmo" checked> Gizmo</label>
         <label><input type="checkbox" data-mesh-section-toggle="transform" checked> Transformação</label>
         <label><input type="checkbox" data-mesh-section-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-mesh-section-toggle="influence" checked> Influência</label>
         <label><input type="checkbox" data-mesh-section-toggle="diagnostics" checked> Diagnóstico</label>
       </div>
     </details>
+
+    <fieldset data-mesh-section="create">
+      <legend>Criar, objetos de referência, luz e material</legend>
+      <div class="mesh-form-grid">
+        <label><span>Objeto de referência</span><select id="edit-create-reference"><option value="">Nenhum; usar valores abaixo</option></select></label>
+        <label><span>Usar referência</span><select id="edit-create-reference-mode"><option value="position-rotation">Posição e orientação</option><option value="position">Somente posição</option><option value="rotation">Somente orientação</option></select></label>
+        <label><span>Orientação ao posicionar</span><select id="edit-create-orientation"><option value="frame">Plano de edição</option><option value="surface-normal">Normal da superfície</option><option value="reference">Objeto de referência</option></select></label>
+        <label><input id="edit-create-surface" type="checkbox" checked> Preferir superfícies sob o ponteiro</label>
+        <label><span>Geometria</span><select id="edit-create-geometry"></select></label>
+        <label><span>Cor padrão</span><span class="edit-color-pair"><input id="edit-material-color" type="color" value="#6699cc"><input id="edit-material-color-text" type="text" value="#6699cc" spellcheck="false"></span></label>
+      </div>
+      <div class="mesh-operation-grid">
+        <button id="edit-create-object" type="button">Posicionar objeto no viewer</button>
+        <button id="edit-cancel-placement" type="button">Cancelar posicionamento</button>
+        <button id="edit-open-advanced-create" type="button">Criação avançada</button>
+      </div>
+      <details class="edit-material-settings" open>
+        <summary>Material do objeto e valores memorizados</summary>
+        <div class="mesh-form-grid">
+          <label><span>Modelo</span><select id="edit-material-model"><option value="standard">Standard</option><option value="physical">Physical</option></select></label>
+          <label><span>Opacidade</span><input id="edit-material-opacity" type="number" min="0" max="1" step="0.05" value="1"></label>
+          <label><span>Rugosidade</span><input id="edit-material-roughness" type="number" min="0" max="1" step="0.05" value="0.55"></label>
+          <label><span>Metallicidade</span><input id="edit-material-metalness" type="number" min="0" max="1" step="0.05" value="0"></label>
+          <label><span>Transmissão</span><input id="edit-material-transmission" type="number" min="0" max="1" step="0.05" value="0"></label>
+          <label><span>IOR</span><input id="edit-material-ior" type="number" min="1" max="2.333" step="0.01" value="1.5"></label>
+          <label><span>Espessura</span><input id="edit-material-thickness" type="number" min="0" step="0.1" value="0.5"></label>
+          <label><span>Dispersão</span><input id="edit-material-dispersion" type="number" min="0" step="0.01" value="0"></label>
+          <label><span>Verniz</span><input id="edit-material-clearcoat" type="number" min="0" max="1" step="0.05" value="0"></label>
+          <label><span>Reflexo ambiente</span><input id="edit-material-env" type="number" min="0" step="0.1" value="1"></label>
+        </div>
+        <div class="actions">
+          <button id="edit-material-apply" type="button">Aplicar material à seleção</button>
+          <button id="edit-material-read" type="button">Ler material da seleção</button>
+        </div>
+      </details>
+      <details class="edit-light-settings">
+        <summary>Criar luz editável</summary>
+        <div class="mesh-form-grid">
+          <label><span>Tipo</span><select id="edit-light-type"><option value="point">Pontual</option><option value="directional">Direcional</option><option value="spot">Spot</option><option value="ambient">Ambiente</option></select></label>
+          <label><span>Intensidade</span><input id="edit-light-intensity" type="number" min="0" step="0.1" value="3"></label>
+          <label><span>Distância</span><input id="edit-light-distance" type="number" min="0" step="0.5" value="0"></label>
+          <label><span>Decaimento</span><input id="edit-light-decay" type="number" min="0" step="0.1" value="2"></label>
+          <label><span>Ângulo °</span><input id="edit-light-angle" type="number" min="1" max="179" step="1" value="45"></label>
+          <label><span>Penumbra</span><input id="edit-light-penumbra" type="number" min="0" max="1" step="0.05" value="0.2"></label>
+          <label><input id="edit-light-shadow" type="checkbox" checked> Projetar sombra</label>
+        </div>
+        <div class="actions">
+          <button id="edit-create-light" type="button">Criar luz e selecionar</button>
+          <button id="edit-light-apply" type="button">Aplicar à luz selecionada</button>
+          <button id="edit-light-read" type="button">Ler luz selecionada</button>
+        </div>
+      </details>
+    </fieldset>
 
     <fieldset data-mesh-section="context">
       <legend>Contexto, ferramenta e seleção</legend>
@@ -602,17 +670,22 @@
       <div class="mesh-checkbox-grid">
         <label><input id="edit-workspace-area" type="checkbox"> Seleção por área</label>
         <label><input id="edit-workspace-multi" type="checkbox"> Seleção múltipla</label>
+        <label><input id="edit-workspace-keep-tool" type="checkbox"> Manter ferramenta ativa</label>
       </div>
       <div class="mesh-operation-grid">
         <button id="edit-workspace-duplicate" type="button">Duplicar</button>
+        <button id="edit-workspace-repeat" type="button">Repetir</button>
         <button id="edit-workspace-delete" type="button">Excluir</button>
+        <button id="edit-workspace-clear" type="button">Limpar seleção</button>
         <button id="edit-workspace-group" type="button">Agrupar</button>
         <button id="edit-workspace-ungroup" type="button">Desagrupar</button>
         <button id="edit-workspace-pivot" type="button">Editar pivô</button>
+        <button id="edit-workspace-undo-global" type="button">Desfazer projeto</button>
+        <button id="edit-workspace-redo-global" type="button">Refazer projeto</button>
       </div>
     </fieldset>
 
-    <fieldset data-mesh-section="selection">
+    <fieldset data-mesh-section="selection" data-edit-context="mesh">
       <legend>Componentes e seleção</legend>
       <div class="mesh-mode-grid">
         <button id="mesh-mode-vertex" type="button" data-mesh-mode="vertex">Vértices</button>
@@ -642,7 +715,7 @@
       </div>
     </fieldset>
 
-    <fieldset data-mesh-section="topology">
+    <fieldset data-mesh-section="topology" data-edit-context="mesh">
       <legend>Operações topológicas</legend>
       <div class="mesh-checkbox-grid">
         <label><input id="mesh-topology-manifold" type="checkbox" checked> Bloquear não manifold</label>
@@ -658,30 +731,122 @@
         <button id="mesh-create-vertex" type="button">Criar</button>
       </div>
       <div class="mesh-operation-grid">
-        <button id="mesh-create-edge" type="button">Criar aresta</button>
-        <button id="mesh-create-face" type="button">Criar face</button>
-        <button id="mesh-duplicate-component" type="button">Duplicar</button>
-        <button id="mesh-delete-component" type="button">Excluir</button>
-        <button id="mesh-fill" type="button">Preencher</button>
+        <button id="mesh-create-edge" type="button" data-component-modes="vertex">Criar aresta</button>
+        <button id="mesh-create-face" type="button" data-component-modes="vertex edge">Criar face</button>
+        <button id="mesh-duplicate-component" type="button" data-component-modes="vertex edge face">Duplicar</button>
+        <button id="mesh-delete-component" type="button" data-component-modes="vertex edge face">Excluir</button>
+        <button id="mesh-fill" type="button" data-component-modes="vertex edge">Preencher</button>
         <button id="mesh-recalculate-normals" type="button">Recalcular normais</button>
       </div>
       <div class="mesh-form-grid">
         <label><span>Extrusão</span><input id="mesh-extrude-distance" type="number" value="1" step="0.1"></label>
-        <button id="mesh-extrude" type="button">Extrudar</button>
+        <button id="mesh-extrude" type="button" data-component-modes="vertex edge face">Extrudar</button>
         <label><span>Inset</span><input id="mesh-inset-amount" type="number" value="0.2" min="0.001" max="0.999" step="0.05"></label>
-        <button id="mesh-inset" type="button">Inset</button>
+        <button id="mesh-inset" type="button" data-component-modes="face">Inset</button>
         <label><span>Divisão da aresta</span><input id="mesh-split-parameter" type="number" value="0.5" min="0.001" max="0.999" step="0.05"></label>
-        <button id="mesh-split" type="button">Dividir</button>
+        <button id="mesh-split" type="button" data-component-modes="edge">Dividir</button>
       </div>
       <div class="mesh-operation-grid">
-        <button id="mesh-subdivide" type="button">Subdividir</button>
-        <button id="mesh-collapse" type="button">Colapsar aresta</button>
-        <button id="mesh-flip-edge" type="button">Inverter diagonal</button>
-        <button id="mesh-weld-vertices" type="button">Soldar vértices</button>
-        <button id="mesh-flip-normal" type="button">Inverter normal</button>
-        <button id="mesh-bridge" type="button">Ponte de contornos</button>
+        <button id="mesh-subdivide" type="button" data-component-modes="face">Subdividir</button>
+        <button id="mesh-collapse" type="button" data-component-modes="edge">Colapsar aresta</button>
+        <button id="mesh-flip-edge" type="button" data-component-modes="edge">Inverter diagonal</button>
+        <button id="mesh-weld-vertices" type="button" data-component-modes="vertex">Soldar vértices</button>
+        <button id="mesh-flip-normal" type="button" data-component-modes="face">Inverter normal</button>
+        <button id="mesh-bridge" type="button" data-component-modes="edge">Ponte de contornos</button>
         <button id="mesh-cleanup" type="button">Limpar malha</button>
       </div>
+    </fieldset>
+
+    <fieldset data-mesh-section="paths">
+      <legend>Caminhos e curvas</legend>
+      <div class="path-context-group" data-path-context="object">
+        <p class="mesh-section-note">
+          Desenhe no plano travado ou no plano atual do viewer. O traço é simplificado,
+          suavizado e criado como um caminho editável.
+        </p>
+        <div class="mesh-form-grid">
+          <label><span>Plano do desenho</span><select id="path-sketch-plane"><option value="locked-or-viewer">Plano travado ou viewer</option><option value="viewer">Viewer atual</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+          <label><span>Curva</span><select id="path-sketch-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
+          <label><span>Espaçamento px</span><input id="path-sketch-spacing" type="number" min="1" max="64" value="6" step="1"></label>
+          <label><span>Suavização</span><input id="path-sketch-smoothing" type="number" min="0" max="4" value="1" step="1"></label>
+          <label><span>Simplificação relativa</span><input id="path-sketch-simplify" type="number" min="0" max="0.2" value="0.004" step="0.001"></label>
+          <label><span>Raio visual</span><input id="path-sketch-radius" type="number" min="0.001" value="0.08" step="0.01"></label>
+        </div>
+        <div class="actions">
+          <button id="path-sketch-begin" type="button">✎ Desenhar spline à mão livre</button>
+          <button id="path-sketch-cancel" type="button">Cancelar desenho</button>
+        </div>
+        <small id="path-sketch-status">Desenho inativo.</small>
+      </div>
+
+      <div class="path-context-group" data-path-context="mesh">
+        <p class="mesh-section-note">
+          Cria um novo objeto-caminho a partir dos vértices, da cadeia de arestas ou
+          do contorno das faces selecionadas, sem encerrar a edição atual.
+        </p>
+        <div class="mesh-form-grid">
+          <label><span>Interpolação</span><select id="path-from-selection-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
+          <label><span>Raio visual</span><input id="path-from-selection-radius" type="number" min="0.001" value="0.08" step="0.01"></label>
+          <button id="path-from-selection-create" type="button">Criar caminho da seleção</button>
+        </div>
+      </div>
+
+      <div class="path-context-group" data-path-context="object">
+        <div class="mesh-form-grid">
+          <label><span>Objeto de caminho</span><select id="path-reference-object"></select></label>
+          <label><span>Extração</span><select id="path-reference-extraction"><option value="auto">Automática</option><option value="centerline">Linha central declarada</option><option value="boundary">Maior contorno</option><option value="loose-edges">Arestas soltas</option></select></label>
+          <label><span>Objeto de perfil</span><select id="path-profile-object"></select></label>
+          <label><span>Extração do perfil</span><select id="path-profile-extraction"><option value="auto">Automática</option><option value="contour">Contorno declarado</option><option value="boundary">Maior contorno planar</option></select></label>
+        </div>
+        <div class="mesh-checkbox-grid">
+          <label><input id="path-closed" type="checkbox"> Caminho fechado</label>
+          <label><input id="path-caps" type="checkbox" checked> Tampar varredura aberta</label>
+          <label><input id="path-array-align" type="checkbox" checked> Orientar cópias pela tangente</label>
+          <label><input id="path-array-include-reference" type="checkbox"> Incluir objeto-caminho</label>
+        </div>
+        <div class="mesh-form-grid">
+          <label><span>Raio do tubo</span><input id="path-tube-radius" type="number" min="0.001" value="0.25" step="0.05"></label>
+          <label><span>Segmentos do caminho</span><input id="path-segments" type="number" min="2" value="64" step="1"></label>
+          <label><span>Segmentos radiais</span><input id="path-radial-segments" type="number" min="3" value="8" step="1"></label>
+          <button id="path-create-tube" type="button">Criar tubo pelo objeto</button>
+        </div>
+        <div class="mesh-form-grid">
+          <label><span>Torção total °</span><input id="path-sweep-twist" type="number" value="0" step="1"></label>
+          <label><span>Escala inicial</span><input id="path-sweep-scale-start" type="number" value="1" step="0.1"></label>
+          <label><span>Escala final</span><input id="path-sweep-scale-end" type="number" value="1" step="0.1"></label>
+          <button id="path-create-sweep" type="button">Extrudar perfil pelo caminho</button>
+        </div>
+        <div class="mesh-form-grid">
+          <label><span>Quantidade de cópias</span><input id="path-array-count" type="number" min="1" max="10000" value="8" step="1"></label>
+          <button id="path-create-array" type="button">Distribuir seleção no caminho</button>
+          <button id="path-inspect-reference" type="button">Inspecionar referência</button>
+        </div>
+        <div class="actions">
+          <button id="path-convert-bezier" type="button">Converter caminho selecionado em Bézier</button>
+          <button id="path-edit-controls" type="button">Editar pontos e alças</button>
+        </div>
+        <small id="path-reference-status">Escolha um objeto de caminho.</small>
+      </div>
+    </fieldset>
+
+    <fieldset data-mesh-section="gizmo">
+      <legend>Gizmo e precisão</legend>
+      <div class="mesh-form-grid">
+        <label><span>Tamanho do gizmo</span><input id="tt-size" type="number" min="0.2" step="0.1"></label>
+        <label><span>Snap de translação</span><input id="tt-translate-snap" type="number" min="0" step="0.1"></label>
+        <label><span>Snap de rotação °</span><input id="tt-rotate-snap" type="number" min="0" step="1"></label>
+        <label><span>Snap de escala</span><input id="tt-scale-snap" type="number" min="0" step="0.05"></label>
+        <label><span>Tamanho dos vértices</span><input id="tt-vertex-size" type="number" min="1" max="24" step="1"></label>
+      </div>
+      <div class="mesh-checkbox-grid">
+        <label><input id="tt-show-x" type="checkbox"> Mostrar X</label>
+        <label><input id="tt-show-y" type="checkbox"> Mostrar Y</label>
+        <label><input id="tt-show-z" type="checkbox"> Mostrar Z</label>
+        <label><input id="tt-grid-lock" type="checkbox"> Trava de grade</label>
+        <label><input id="tt-show-vertices" type="checkbox"> Vértices da seleção de objeto</label>
+      </div>
+      <button id="tt-apply" type="button">Aplicar precisão</button>
+      <details><summary>Diagnóstico do gizmo</summary><textarea id="tt-diagnostics" class="component-text" readonly></textarea></details>
     </fieldset>
 
     <fieldset data-mesh-section="transform">
@@ -692,8 +857,10 @@
         <button id="mesh-frame-viewer" type="button">Frame do viewer</button>
       </div>
       <div class="mesh-form-grid edit-navigation-locks">
-        <label><span>Plano de navegação</span><select id="edit-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
-        <button id="edit-plane-lock" type="button">Travar/destravar plano</button>
+        <label><span>Plano de visualização</span><select id="edit-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <button id="edit-plane-lock" type="button">Travar/destravar visualização 2D</button>
+        <label><span>Plano de edição</span><select id="edit-work-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <button id="edit-work-plane-lock" type="button">Definir/limpar plano de edição</button>
         <label><span>Ponto de órbita</span><select id="edit-point-source"><option value="component">Componente ativo</option><option value="selection">Pivô da seleção</option><option value="viewer">Alvo atual do viewer</option></select></label>
         <button id="edit-point-lock" type="button">Travar/destravar ponto</button>
         <button id="edit-navigation-clear" type="button">Limpar travas</button>
@@ -727,7 +894,7 @@
       <small id="mesh-snap-diagnostic">Sem alvo de snap.</small>
     </fieldset>
 
-    <fieldset data-mesh-section="influence">
+    <fieldset data-mesh-section="influence" data-edit-context="mesh">
       <legend>Influência proporcional e transformação procedural</legend>
       <label><input id="mesh-deform-live" type="checkbox" checked> Aplicar falloff ao gizmo em tempo real</label>
       <div class="mesh-form-grid">
@@ -765,6 +932,14 @@
     <label class="geometry-field">
       <span>Nome opcional</span>
       <input name="name" type="text" autocomplete="off">
+    </label>
+    <label class="geometry-field">
+      <span>Objeto como argumento</span>
+      <select name="reference-object"><option value="">Nenhum</option></select>
+    </label>
+    <label class="geometry-field">
+      <span>Transformação da referência</span>
+      <select name="reference-mode"><option value="position-rotation">Posição e orientação</option><option value="position">Somente posição</option><option value="rotation">Somente orientação</option></select>
     </label>
     <fieldset>
       <legend>Origem</legend>
@@ -931,6 +1106,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0036d"></script>
+<script type="module" src="./boot.js?build=20260727-0038c"></script>
 </body>
 </html>

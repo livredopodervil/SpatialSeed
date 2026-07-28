@@ -64,13 +64,50 @@ export function composeToolbar({ root = document, configuration }) {
   if (fileInput) toolbar.append(fileInput);
   if (status) toolbar.append(status);
 
+  const positionMenu = menu => {
+    if (!menu?.open) return;
+    const content = menu.querySelector(":scope > .ss-toolbar-menu-content");
+    const summary = menu.querySelector(":scope > summary");
+    if (!content || !summary) return;
+    const view = ownerDocument.defaultView;
+    const margin = 4;
+    content.dataset.viewportPositioned = "true";
+    content.style.visibility = "hidden";
+    content.style.left = "0px";
+    content.style.right = "auto";
+    content.style.bottom = "auto";
+    content.style.top = "0px";
+    const summaryRect = summary.getBoundingClientRect();
+    const contentRect = content.getBoundingClientRect();
+    const width = Math.min(contentRect.width, Math.max(0, view.innerWidth - margin * 2));
+    const height = Math.min(contentRect.height, Math.max(0, view.innerHeight - margin * 2));
+    let left = clamp(summaryRect.left, margin, Math.max(margin, view.innerWidth - width - margin));
+    let top = summaryRect.bottom + 6;
+    if (top + height > view.innerHeight - margin) {
+      const above = summaryRect.top - height - 6;
+      top = above >= margin
+        ? above
+        : clamp(top, margin, Math.max(margin, view.innerHeight - height - margin));
+    }
+    content.style.left = `${left}px`;
+    content.style.top = `${top}px`;
+    content.style.maxWidth = `${Math.max(0, view.innerWidth - margin * 2)}px`;
+    content.style.maxHeight = `${Math.max(0, view.innerHeight - margin * 2)}px`;
+    content.style.visibility = "";
+  };
   const closeOtherMenus = event => {
     const current = event.target.closest(".ss-toolbar-menu");
     for (const menu of createdMenus) {
       if (menu !== current) menu.open = false;
     }
+    if (current?.open) requestAnimationFrame(() => positionMenu(current));
+  };
+  const repositionMenus = () => {
+    for (const menu of createdMenus) positionMenu(menu);
   };
   toolbar.addEventListener("toggle", closeOtherMenus, true);
+  ownerDocument.defaultView.addEventListener("resize", repositionMenus);
+  ownerDocument.defaultView.addEventListener("scroll", repositionMenus, true);
 
   const readToolbarState = () => {
     try {
@@ -198,6 +235,8 @@ export function composeToolbar({ root = document, configuration }) {
       layoutSelect.removeEventListener("change", onLayoutChange);
       dragHandle.removeEventListener("pointerdown", drag);
       toolbar.removeEventListener("toggle", closeOtherMenus, true);
+      ownerDocument.defaultView.removeEventListener("resize", repositionMenus);
+      ownerDocument.defaultView.removeEventListener("scroll", repositionMenus, true);
     }
   });
 }

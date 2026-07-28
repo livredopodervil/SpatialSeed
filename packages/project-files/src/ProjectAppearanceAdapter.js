@@ -5,7 +5,7 @@ export class ProjectAppearanceAdapter {
     const graph = new AppearanceGraph();
 
     const objects = (scene.objects ?? []).map(object => {
-      if (["group", "camera"].includes(object.kind)) {
+      if (["group", "camera", "light"].includes(object.kind)) {
         return structuredClone(object);
       }
       if (!object.material) {

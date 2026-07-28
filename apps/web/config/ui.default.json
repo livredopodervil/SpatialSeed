@@ -14,23 +14,6 @@
     ],
     "menus": [
       {
-        "id": "edit",
-        "label": "Editar",
-        "items": [
-          "multi-select",
-          "area-selection",
-          "pivot-policy",
-          "edit-pivot",
-          "duplicate-selection",
-          "repeat-duplicate",
-          "group-selection",
-          "ungroup-selection",
-          "delete-selection",
-          "undo",
-          "redo"
-        ]
-      },
-      {
         "id": "explore",
         "label": "Explorar",
         "items": [
@@ -68,7 +51,29 @@
       }
     ],
     "hidden": [
-      "add-box"
+      "add-box",
+      "tool-navigate",
+      "tool-select",
+      "tool-translate",
+      "tool-rotate",
+      "tool-scale",
+      "selection-replace",
+      "selection-add",
+      "selection-remove",
+      "selection-toggle",
+      "space",
+      "clear-selection",
+      "multi-select",
+      "area-selection",
+      "pivot-policy",
+      "edit-pivot",
+      "duplicate-selection",
+      "repeat-duplicate",
+      "group-selection",
+      "ungroup-selection",
+      "delete-selection",
+      "undo",
+      "redo"
     ]
   },
   "panels": {
@@ -128,12 +133,6 @@
         "width": 430,
         "height": 620
       },
-      "transform-tools-panel": {
-        "anchor": "left",
-        "top": "toolbar",
-        "width": 410,
-        "height": 540
-      },
       "geometry-create-panel": {
         "anchor": "right",
         "top": "toolbar",
@@ -155,8 +154,8 @@
       "mesh-edit-panel": {
         "anchor": "right",
         "top": "toolbar",
-        "width": 540,
-        "height": 760
+        "width": 460,
+        "height": 640
       }
     }
   },

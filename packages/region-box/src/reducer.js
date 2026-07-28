@@ -59,6 +59,13 @@ function applyObjectPatch(object, patch = {}) {
     });
   }
 
+  if ("light" in patch) {
+    next.light = freezeLight({
+      ...(object.light ?? {}),
+      ...(patch.light ?? {})
+    });
+  }
+
   if ("appearanceId" in patch) {
     next.appearanceId = patch.appearanceId;
     delete next.material;
@@ -242,6 +249,38 @@ export function boxRegionReducer(state, command) {
           objectId: id,
           cameraId: id
         }]
+      };
+    }
+
+    case "light.create": {
+      const id = String(command.id ?? "").trim();
+      if (!id) throw new TypeError("Luz persistente exige id.");
+      if (state.objects.some(object => object.id === id)) {
+        throw new Error(`Duplicate object id: ${id}`);
+      }
+      const object = Object.freeze({
+        id,
+        kind: "light",
+        name: String(command.name ?? id),
+        parentId: command.parentId ?? null,
+        position: freezeVector(
+          command.position ?? [0, 3, 0],
+          3,
+          "Posição de luz inválida."
+        ),
+        rotation: freezeVector(
+          command.rotation ?? [0, 0, 0, 1],
+          4,
+          "Orientação de luz inválida."
+        ),
+        scale: Object.freeze([1, 1, 1]),
+        light: freezeLight(command.light)
+      });
+      const objects = Object.freeze([...state.objects, object]);
+      new HierarchyIndex(objects);
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [{ type: "object-created", objectId: id, object }]
       };
     }
 
@@ -580,6 +619,38 @@ function freezeCamera(value = {}) {
     near,
     far,
     focusDistance
+  });
+}
+
+function freezeLight(value = {}) {
+  const type = String(value.type ?? "point").toLowerCase();
+  if (!["point", "directional", "spot", "ambient"].includes(type)) {
+    throw new RangeError(`Tipo de luz desconhecido: ${type}.`);
+  }
+  const color = normalizeHexColor(value.color ?? "#ffffff");
+  const intensity = finiteNumber(value.intensity ?? 3, "Intensidade da luz");
+  const distance = finiteNumber(value.distance ?? 0, "Distância da luz");
+  const decay = finiteNumber(value.decay ?? 2, "Decaimento da luz");
+  const angleDeg = finiteNumber(value.angleDeg ?? 45, "Ângulo da luz");
+  const penumbra = finiteNumber(value.penumbra ?? 0.2, "Penumbra da luz");
+  if (intensity < 0 || distance < 0 || decay < 0) {
+    throw new RangeError("Intensidade, distância e decaimento não podem ser negativos.");
+  }
+  if (!(angleDeg > 0 && angleDeg < 180)) {
+    throw new RangeError("Ângulo da luz deve estar entre 0 e 180 graus.");
+  }
+  if (!(penumbra >= 0 && penumbra <= 1)) {
+    throw new RangeError("Penumbra da luz deve estar entre 0 e 1.");
+  }
+  return Object.freeze({
+    type,
+    color,
+    intensity,
+    distance,
+    decay,
+    angleDeg,
+    penumbra,
+    castShadow: Boolean(value.castShadow ?? true)
   });
 }
 

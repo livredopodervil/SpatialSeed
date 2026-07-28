@@ -3,7 +3,7 @@ import {
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 export class DevConsole {
-  static apiVersion = "dev-console-v7";
+  static apiVersion = "dev-console-v8";
 
   constructor({
     editor,
@@ -585,6 +585,9 @@ export class DevConsole {
       case "vertices":
         return this.#vertices(tokens);
 
+      case "path":
+        return this.#path(tokens);
+
       case "mesh":
         return this.#mesh(tokens);
 
@@ -641,6 +644,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "mesh") {
         return this.#meshHelp();
       }
+      if (String(topic).toLowerCase() === "path") {
+        return this.#pathHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -658,7 +664,7 @@ export class DevConsole {
         "test help|all|sandbox|reducer|commands|project",
         "runtime test viewer-animation|animation-runtime|animation-commands|" +
         "experiment-contract|experiment-plugin|" +
-        "experiment-panel|placement-frame|mesh-edit-math|" +
+        "experiment-panel|placement-frame|path-references|mesh-edit-math|" +
         "geometry-creation|geometry-registry|" +
         "file-interop|project-files|project-recovery|pwa-status|spatial-planning|" +
         "spatial-plan-commit|procedure-catalog|procedure-editor|all",
@@ -677,6 +683,8 @@ export class DevConsole {
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
         "help create",
+        "help path",
+        "path list|inspect|tube|sweep|array|help",
         "create help",
         "create tipo ... (consulte create help)",
         "position x y z",
@@ -1710,6 +1718,95 @@ export class DevConsole {
     });
   }
 
+  #path(tokens) {
+    const action = String(tokens.shift() ?? "list").toLowerCase();
+    if (["help", "?"].includes(action)) {
+      this.#expectMaximum(tokens, 0, "path help");
+      return this.#pathHelp();
+    }
+    if (action === "list") {
+      this.#expectMaximum(tokens, 0, "path list");
+      return this.queries?.execute("path.references.list") ?? [];
+    }
+    const options = parseNamedOptions(tokens);
+    const path = pathReferenceFromOptions(options, {
+      objectKey: action === "sweep" ? "path" : "object",
+      extractionKey: action === "sweep" ? "pathExtraction" : "extraction"
+    });
+    if (action === "inspect") {
+      return this.commands.execute("path.reference.inspect", {
+        kind: options.kind ?? "path",
+        reference: path
+      });
+    }
+    if (action === "tube") {
+      return this.commands.execute("path.tube.create", {
+        path,
+        name: options.name,
+        radius: optionNumber(options, "radius", 0.25),
+        tubularSegments: optionInteger(options, "segments", 64),
+        radialSegments: optionInteger(options, "radial", 8),
+        closed: optionOptionalBoolean(options, "closed"),
+        curveType: options.curve ?? "centripetal",
+        tension: optionNumber(options, "tension", 0.5),
+        color: options.color ?? "#66aadd"
+      });
+    }
+    if (action === "sweep") {
+      const profile = pathReferenceFromOptions(options, {
+        objectKey: "profile",
+        extractionKey: "profileExtraction"
+      });
+      return this.commands.execute("path.sweep.create", {
+        path,
+        profile,
+        name: options.name,
+        segments: optionInteger(options, "segments", 32),
+        closedPath: optionOptionalBoolean(options, "closed"),
+        curveType: options.curve ?? "centripetal",
+        tension: optionNumber(options, "tension", 0.5),
+        twistDegrees: optionNumber(options, "twist", 0),
+        scaleStart: optionNumber(options, "scaleStart", 1),
+        scaleEnd: optionNumber(options, "scaleEnd", 1),
+        caps: optionBoolean(options, "caps", true),
+        color: options.color ?? "#7f9cff"
+      });
+    }
+    if (action === "array") {
+      return this.commands.execute("path.array.create", {
+        path,
+        count: optionInteger(options, "count", 8),
+        align: optionBoolean(options, "align", true),
+        closed: optionOptionalBoolean(options, "closed"),
+        curveType: options.curve ?? "centripetal",
+        tension: optionNumber(options, "tension", 0.5),
+        twistDegrees: optionNumber(options, "twist", 0),
+        includePathObject: optionBoolean(options, "includePath", false)
+      });
+    }
+    throw new Error("Uso: path list|inspect|tube|sweep|array|help.");
+  }
+
+  #pathHelp() {
+    return {
+      usage: [
+        "path list",
+        "path inspect object=id extraction=auto|centerline|boundary|loose-edges",
+        "path tube object=id radius=0.25 segments=64 radial=8 closed=off",
+        "path sweep path=id profile=id pathExtraction=auto profileExtraction=auto segments=32 twist=0 scaleStart=1 scaleEnd=1 caps=on",
+        "path array object=id count=8 align=on closed=off includePath=off",
+        "path tube object=@selection-origins ..."
+      ],
+      notes: [
+        "object, path e profile aceitam ID; use name:Nome para resolver um nome único.",
+        "@selection-origins usa os pivôs dos objetos selecionados na ordem da seleção.",
+        "As referências são snapshots: alterar depois o objeto de origem não altera o resultado criado.",
+        "A varredura usa frames de transporte paralelo para reduzir torção artificial.",
+        "Perfis com furos e referências vinculadas exigem um futuro grafo de modificadores."
+      ]
+    };
+  }
+
   #mesh(tokens) {
     const action = String(tokens.shift() ?? "status").toLowerCase();
 
@@ -2631,4 +2728,70 @@ function splitStatements(source) {
   if (quote) throw new Error("Texto entre aspas não foi encerrado.");
   if (current.trim()) statements.push(current.trim());
   return statements;
+}
+
+function parseNamedOptions(tokens) {
+  const options = {};
+  for (const token of tokens) {
+    const separator = token.indexOf("=");
+    if (separator < 1) {
+      if (options.object === undefined) options.object = token;
+      else throw new Error(`Opção de caminho inválida: ${token}.`);
+      continue;
+    }
+    options[token.slice(0, separator)] = token.slice(separator + 1);
+  }
+  return options;
+}
+
+function pathReferenceFromOptions(options, { objectKey, extractionKey }) {
+  const value = options[objectKey];
+  if (!value) throw new Error(`Informe ${objectKey}=id.`);
+  if (value === "@selection-origins") {
+    return {
+      source: "selection-origins",
+      extraction: "auto",
+      closed: optionOptionalBoolean(options, "closed")
+    };
+  }
+  if (value.startsWith("name:")) {
+    return {
+      source: "object",
+      objectName: value.slice(5),
+      extraction: options[extractionKey] ?? "auto",
+      closed: optionOptionalBoolean(options, "closed")
+    };
+  }
+  return {
+    source: "object",
+    objectId: value,
+    extraction: options[extractionKey] ?? "auto",
+    closed: optionOptionalBoolean(options, "closed")
+  };
+}
+
+function optionNumber(options, name, fallback) {
+  if (options[name] === undefined) return fallback;
+  const value = Number(options[name]);
+  if (!Number.isFinite(value)) throw new Error(`${name} inválido.`);
+  return value;
+}
+
+function optionInteger(options, name, fallback) {
+  const value = optionNumber(options, name, fallback);
+  if (!Number.isInteger(value)) throw new Error(`${name} deve ser inteiro.`);
+  return value;
+}
+
+function optionOptionalBoolean(options, name) {
+  if (options[name] === undefined) return undefined;
+  return optionBoolean(options, name, false);
+}
+
+function optionBoolean(options, name, fallback) {
+  if (options[name] === undefined) return fallback;
+  const value = String(options[name]).toLowerCase();
+  if (["on", "true", "1", "yes", "sim"].includes(value)) return true;
+  if (["off", "false", "0", "no", "não", "nao"].includes(value)) return false;
+  throw new Error(`${name} exige on|off.`);
 }

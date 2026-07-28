@@ -94,7 +94,7 @@ export class ProjectValidator {
 
         if (
           value.schemaVersion >= 2 &&
-          !["group", "camera"].includes(object.kind) &&
+          !["group", "camera", "light"].includes(object.kind) &&
           !object.appearanceId
         ) {
           throw new Error(
@@ -109,6 +109,13 @@ export class ProjectValidator {
             );
           }
           validateCameraNode(object, id);
+        }
+
+        if (object.kind === "light") {
+          if (value.schemaVersion < 3) {
+            throw new Error(`Objeto luz exige schema 3: ${id}.`);
+          }
+          validateLightNode(object, id);
         }
 
         return structuredClone(object);
@@ -160,6 +167,42 @@ export class ProjectValidator {
       editor: structuredClone(value.editor ?? {}),
       renderer: structuredClone(value.renderer ?? {})
     };
+  }
+}
+
+function validateLightNode(object, id) {
+  vector(object.position ?? [0, 0, 0], 3, `Posição inválida: ${id}.`);
+  vector(object.rotation ?? [0, 0, 0, 1], 4, `Rotação inválida: ${id}.`);
+  const light = object.light;
+  if (!light || !["point", "directional", "spot", "ambient"].includes(light.type)) {
+    throw new Error(`Luz inválida: ${id}.`);
+  }
+  if (!/^#[0-9a-fA-F]{6}$/.test(String(light.color ?? ""))) {
+    throw new Error(`Cor de luz inválida: ${id}.`);
+  }
+  const intensity = Number(light.intensity);
+  const distance = Number(light.distance);
+  const decay = Number(light.decay);
+  const angleDeg = Number(light.angleDeg);
+  const penumbra = Number(light.penumbra);
+  for (const [key, value] of Object.entries({
+    intensity, distance, decay, angleDeg, penumbra
+  })) {
+    if (!Number.isFinite(value)) {
+      throw new Error(`Parâmetro de luz inválido (${key}): ${id}.`);
+    }
+  }
+  if (intensity < 0 || distance < 0 || decay < 0) {
+    throw new Error(`Parâmetros negativos de luz: ${id}.`);
+  }
+  if (!(angleDeg > 0 && angleDeg < 180)) {
+    throw new Error(`Ângulo de luz fora do intervalo: ${id}.`);
+  }
+  if (!(penumbra >= 0 && penumbra <= 1)) {
+    throw new Error(`Penumbra de luz fora do intervalo: ${id}.`);
+  }
+  if (typeof light.castShadow !== "boolean") {
+    throw new Error(`Estado de sombra inválido: ${id}.`);
   }
 }
 

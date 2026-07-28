@@ -91,11 +91,11 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260726-0031a";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260727-0038c";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
-} from "../../project-files/src/ProjectValidator.js?build=20260724-0029f";
+} from "../../project-files/src/ProjectValidator.js?build=20260727-0037c";
 import {
   ProjectSerializer
 } from "../../project-files/src/ProjectSerializer.js?build=20260724-0029f";
@@ -122,7 +122,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260725-0029f1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260727-0035a";
+} from "../../region-box/src/reducer.js?build=20260727-0037c";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -138,7 +138,7 @@ import {
   createDefaultPropertyRegistry,
   resolveSelectionTargetIds,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260724-0029f";
+} from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260727-0035a";
@@ -160,7 +160,7 @@ import {
   renderableSubtreeIds,
   selectionReferenceWorldPosition,
   selectionUnitId
-} from "../../renderer-three/src/WorldTransformProjection.js?build=20260724-0029f";
+} from "../../renderer-three/src/WorldTransformProjection.js?build=20260727-0037c";
 import {
   SelectionOutlineBatch,
   benchmarkSelectionOutlines,
@@ -185,12 +185,22 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260727-0036d";
+} from "../../mesh-editor-core/src/index.js?build=20260727-0037c";
 import {
   EditContextController,
   axesFromConstraint,
   constraintFromAxes
-} from "../../edit-context/src/index.js?build=20260727-0036d";
+} from "../../edit-context/src/index.js?build=20260727-0038c";
+import {
+  ToolLifecycleController
+} from "../../edit-tools/src/index.js?build=20260727-0038c";
+import {
+  PathToolService,
+  SpatialReferenceResolver,
+  createSweepGeometryDescriptor,
+  orderEdgeChain,
+  rotationMinimizingFrames
+} from "../../spatial-references/src/index.js?build=20260727-0038c";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -265,6 +275,87 @@ import {
 
 export function createRuntimeLayerTests() {
   return {
+    "lights-materials": {
+      "luz é criada como objeto persistente editável"() {
+        const state = Object.freeze({ objects: Object.freeze([]) });
+        const result = boxRegionReducer(state, {
+          type: "light.create",
+          id: "light-test",
+          name: "Luz teste",
+          position: [1, 2, 3],
+          rotation: [0, 0, 0, 1],
+          light: {
+            type: "spot",
+            color: "#88ccff",
+            intensity: 4,
+            distance: 20,
+            decay: 2,
+            angleDeg: 35,
+            penumbra: 0.25,
+            castShadow: true
+          }
+        });
+        const light = result.state.objects[0];
+        assertEqual(light.kind, "light");
+        assertEqual(light.light.type, "spot");
+        assertDeepEqual(light.position, [1, 2, 3]);
+        assertEqual(light.light.color, "#88ccff");
+      },
+
+      "criação configurada interna material físico no mesmo objeto"() {
+        const region = new Region(
+          { id: "configured-material-region", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        const appearanceRuntime = new AppearanceRuntime();
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: region.id,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          appearanceRuntime
+        });
+        const result = operations.createGeometry({
+          geometry: { type: "box", size: [1, 1, 1], segments: [1, 1, 1] },
+          material: {
+            model: "physical",
+            color: "#55aaff",
+            opacity: 1,
+            transparent: false,
+            parameters: { roughness: 0.1, transmission: 0.8, ior: 1.45 }
+          }
+        });
+        const object = sandbox.getSnapshot().objects.find(item => item.id === result.id);
+        const material = appearanceRuntime.legacyMaterial(object.appearanceId);
+        assertEqual(result.changed, true);
+        assertEqual(material.model, "physical");
+        assertEqual(material.color, "#55aaff");
+        assertNear(material.parameters.transmission, 0.8);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount, 1);
+      },
+
+      "registro expõe luzes e materiais físicos sem misturar escopos"() {
+        const registry = createDefaultPropertyRegistry();
+        const light = {
+          id: "light-test",
+          kind: "light",
+          light: { type: "point", color: "#ffffff", intensity: 3 }
+        };
+        const mesh = { id: "mesh-test", kind: "box" };
+        assertEqual(registry.require("light.intensity").supports(light), true);
+        assertEqual(registry.require("light.intensity").supports(mesh), false);
+        assertEqual(registry.require("appearance.roughness").supports(mesh), true);
+        assertEqual(registry.require("appearance.roughness").supports(light), false);
+        assertDeepEqual(resolveSelectionTargetIds({
+          selection: { members: [{ objectId: mesh.id }, { objectId: light.id }] },
+          state: { objects: [mesh, light] },
+          targetScope: "renderables"
+        }), [mesh.id]);
+      }
+    },
+
     "edit-context": {
       "checkboxes de eixo produzem restrições ortogonais"() {
         assertEqual(constraintFromAxes({ x: true, y: true, z: true }), "free");
@@ -318,6 +409,413 @@ export function createRuntimeLayerTests() {
         assertEqual(context.status().planeLock, null);
         assertEqual(context.status().pointLock, null);
         context.dispose();
+      },
+
+      "plano de edição permanece independente da visualização"() {
+        const fixture = createEditContextFixture();
+        const context = new EditContextController(fixture);
+        context.togglePlaneLock({ source: "world-xy" });
+        context.setEditPlane({ source: "world-yz" });
+        const status = context.status();
+        assertDeepEqual(status.planeLock.normal, [0, 0, 1]);
+        assertDeepEqual(status.editPlane.normal, [1, 0, 0]);
+        assertEqual(status.navigationMode, "plane-2d");
+        context.clearEditPlane();
+        assertEqual(context.status().editPlane, null);
+        assertDeepEqual(context.status().planeLock.normal, [0, 0, 1]);
+        context.dispose();
+      },
+
+      "ciclo de ferramenta memoriza e repete comando normalizado"() {
+        const fixture = createEditContextFixture();
+        const calls = [];
+        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        lifecycle.attachExecute((id, args) => {
+          calls.push({ id, args: structuredClone(args) });
+          return { changed: true };
+        });
+        lifecycle.observeExecution({
+          id: "selection.translate",
+          args: { delta: [1, 2, 3] },
+          result: { changed: true },
+          metadata: { repeatable: true, label: "Mover seleção" }
+        });
+        assertEqual(lifecycle.status().canRepeat, true);
+        assertEqual(lifecycle.status().lastRepeatable.label, "Mover seleção");
+        const repeated = lifecycle.repeat();
+        assertEqual(repeated.repeated, true);
+        assertDeepEqual(calls, [{
+          id: "selection.translate",
+          args: { delta: [1, 2, 3] }
+        }]);
+        lifecycle.dispose();
+      },
+
+      "persistência é configurada separadamente por ferramenta"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        lifecycle.activateAction("object.place");
+        lifecycle.setKeepActive(false);
+        lifecycle.completeAction("object.place");
+        assertEqual(lifecycle.status().activeAction, null);
+        lifecycle.activateAction("path.sketch");
+        assertEqual(lifecycle.status().keepActive, true);
+        lifecycle.completeAction("path.sketch");
+        assertEqual(lifecycle.status().activeAction, "path.sketch");
+        lifecycle.cancelAction();
+        lifecycle.dispose();
+      }
+    },
+
+    "path-references": {
+      "cadeias de arestas são ordenadas sem perder loops"() {
+        const open = orderEdgeChain([[2, 3], [1, 2], [0, 1]]);
+        assertDeepEqual(open.indices, [0, 1, 2, 3]);
+        assertEqual(open.closed, false);
+        const closed = orderEdgeChain([[0, 1], [2, 0], [1, 2]]);
+        assertEqual(closed.closed, true);
+        assertEqual(closed.indices[0], closed.indices.at(-1));
+        assertThrowsMessage(
+          () => rotationMinimizingFrames({
+            points: [[0, 0, 0], [1, 0, 0]],
+            segments: 8,
+            closed: true
+          }),
+          "Um caminho fechado exige ao menos três pontos distintos."
+        );
+      },
+
+      "frames de transporte permanecem ortonormais"() {
+        const frames = rotationMinimizingFrames({
+          points: [[0, 0, 0], [1, 0.5, 0], [2, 1, 1], [3, 0, 2]],
+          segments: 12
+        });
+        frames.positions.forEach((_, index) => {
+          const tangent = new THREE.Vector3().fromArray(frames.tangents[index]);
+          const normal = new THREE.Vector3().fromArray(frames.normals[index]);
+          const binormal = new THREE.Vector3().fromArray(frames.binormals[index]);
+          assertNear(tangent.length(), 1, 1e-9);
+          assertNear(normal.length(), 1, 1e-9);
+          assertNear(binormal.length(), 1, 1e-9);
+          assertNear(tangent.dot(normal), 0, 1e-9);
+          assertNear(tangent.dot(binormal), 0, 1e-9);
+          assertNear(normal.dot(binormal), 0, 1e-9);
+        });
+      },
+
+      "varredura produz malha triangular fechada nas extremidades"() {
+        const result = createSweepGeometryDescriptor({
+          pathPoints: [[0, 0, 0], [0, 0, 3]],
+          profilePoints: [[-1, -1], [1, -1], [1, 1], [-1, 1]],
+          segments: 3,
+          caps: true
+        });
+        assertEqual(result.diagnostics.rings, 4);
+        assertEqual(result.geometry.positions.length, 16);
+        assertEqual(result.geometry.indices.length % 3, 0);
+        assertEqual(result.diagnostics.triangles, 28);
+        const [ia, ib, ic] = result.geometry.indices.slice(0, 3);
+        const a = new THREE.Vector3().fromArray(result.geometry.positions[ia]);
+        const b = new THREE.Vector3().fromArray(result.geometry.positions[ib]);
+        const c = new THREE.Vector3().fromArray(result.geometry.positions[ic]);
+        const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+        const radial = a.clone().add(b).add(c).multiplyScalar(1 / 3);
+        radial.z = 0;
+        assertEqual(normal.dot(radial) > 0, true);
+      },
+
+      "resolver usa pontos declarados do tubo no espaço mundial"() {
+        const region = new Region(
+          { id: "path-reference-region", name: "Path", type: "box-region" },
+          { schemaVersion: 1, objects: [{
+            id: "tube-path",
+            kind: "tube",
+            name: "Caminho",
+            position: [10, 2, -1],
+            rotation: [0, 0, 0, 1],
+            scale: [2, 1, 1],
+            geometry: {
+              type: "tube",
+              points: [[0, 0, 0], [1, 0, 0], [2, 1, 0]],
+              tubularSegments: 8,
+              radius: 0.2,
+              radialSegments: 6,
+              closed: false,
+              curveType: "centripetal",
+              tension: 0.5
+            }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "path-reference-region",
+          objectId: "tube-path"
+        });
+        const resolver = new SpatialReferenceResolver({
+          sandbox,
+          editor,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        const path = resolver.resolvePath({ objectId: "tube-path" });
+        assertDeepEqual(path.points[0], [10, 2, -1]);
+        assertDeepEqual(path.points[1], [12, 2, -1]);
+        assertEqual(path.closed, false);
+      },
+
+      "provider cria polilinhas e Bézier cúbicas como BufferGeometry"() {
+        const registry = createDefaultGeometryRegistry();
+        for (const descriptor of [
+          {
+            type: "tube",
+            points: [[0,0,0], [1,1,0], [2,0,0]],
+            tubularSegments: 12,
+            radius: 0.1,
+            radialSegments: 5,
+            closed: false,
+            curveType: "polyline",
+            tension: 0.5
+          },
+          {
+            type: "tube",
+            points: [[0,0,0], [1,1,0], [2,1,0], [3,0,0]],
+            tubularSegments: 12,
+            radius: 0.1,
+            radialSegments: 5,
+            closed: false,
+            curveType: "bezier",
+            tension: 0.5
+          }
+        ]) {
+          const normalized = registry.normalize(descriptor);
+          const geometry = registry.create(normalized);
+          assertEqual(geometry.isBufferGeometry, true);
+          assertEqual(geometry.getAttribute("position").count > 0, true);
+          geometry.dispose();
+        }
+      },
+
+      "edição dos controles preserva o objeto caminho e sua interpolação"() {
+        const region = new Region(
+          { id: "path-control-region", name: "Path controls", type: "box-region" },
+          { objects: [{
+            id: "bezier-path",
+            kind: "tube",
+            name: "Bézier",
+            position: [0,0,0],
+            rotation: [0,0,0,1],
+            scale: [1,1,1],
+            geometry: {
+              type: "tube",
+              points: [[0,0,0], [1,1,0], [2,1,0], [3,0,0]],
+              tubularSegments: 16,
+              radius: 0.1,
+              radialSegments: 6,
+              closed: false,
+              curveType: "bezier",
+              tension: 0.5
+            }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "path-control-region",
+          objectId: "bezier-path"
+        });
+        const renderer = createMeshEditorRendererStub();
+        const controller = new MeshEditController({
+          sandbox, editor, renderer,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        controller.enter({ selectAll: true });
+        assertEqual(controller.status().pathControlMode, true);
+        const reference = controller.selectedPathReference();
+        assertEqual(reference.points.length, 4);
+        controller.translate([1, 0, 0]);
+        const result = controller.commit();
+        const object = sandbox.getSnapshot().objects[0];
+        assertEqual(result.vertexCount, 4);
+        assertEqual(object.kind, "tube");
+        assertEqual(object.geometry.type, "tube");
+        assertEqual(object.geometry.curveType, "bezier");
+        assertVectorNear(object.geometry.points[0], [1,0,0]);
+        controller.dispose();
+      },
+
+      "lista de referências não oferece sólidos fechados como caminho"() {
+        const region = new Region(
+          { id: "reference-list-region", name: "References", type: "box-region" },
+          { schemaVersion: 1, objects: [
+            {
+              id: "closed-box",
+              kind: "box",
+              name: "Sólido",
+              position: [0, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              geometry: { type: "box", size: [1, 1, 1], segments: [1, 1, 1] }
+            },
+            {
+              id: "declared-path",
+              kind: "tube",
+              name: "Caminho",
+              position: [0, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              geometry: {
+                type: "tube",
+                points: [[0, 0, 0], [0, 1, 0], [1, 2, 0]],
+                tubularSegments: 8,
+                radius: 0.1,
+                radialSegments: 6,
+                closed: false,
+                curveType: "centripetal",
+                tension: 0.5
+              }
+            },
+            {
+              id: "declared-profile",
+              kind: "shape",
+              name: "Perfil",
+              position: [0, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              geometry: {
+                type: "shape",
+                contour: [[-1, -1], [1, -1], [1, 1], [-1, 1]],
+                holes: [],
+                curveSegments: 1
+              }
+            }
+          ] }
+        );
+        const resolver = new SpatialReferenceResolver({
+          sandbox: new Sandbox(region, boxRegionReducer),
+          editor: new EditorState(),
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        const references = new Map(
+          resolver.listObjects().map(reference => [reference.id, reference])
+        );
+        assertDeepEqual(references.get("closed-box").pathExtractions, []);
+        assertDeepEqual(references.get("closed-box").profileExtractions, []);
+        assertEqual(
+          references.get("declared-path").pathExtractions.includes("centerline"),
+          true
+        );
+        assertEqual(
+          references.get("declared-profile").profileExtractions.includes("contour"),
+          true
+        );
+      },
+
+      "serviço ajusta amostras livres para controles Bézier editáveis"() {
+        const fixture = createPathToolFixture();
+        const created = fixture.service.createPath({
+          points: [[0,0,0], [1,1,0], [2,0,0]],
+          curveType: "bezier",
+          tubularSegments: 12
+        });
+        const object = fixture.sandbox.getSnapshot().objects.find(
+          candidate => candidate.id === created.id
+        );
+        assertEqual(object.geometry.curveType, "bezier");
+        assertEqual(object.geometry.points.length, 7);
+        assertEqual((object.geometry.points.length - 1) % 3, 0);
+      },
+
+      "serviço cria tubo, varredura e distribuição como comandos atômicos"() {
+        const fixture = createPathToolFixture();
+        const tube = fixture.service.createTube({
+          path: { objectId: "path-source" },
+          tubularSegments: 8,
+          radialSegments: 4
+        });
+        const sweep = fixture.service.createSweep({
+          path: { objectId: "path-source" },
+          profile: { objectId: "profile-source" },
+          segments: 4
+        });
+        fixture.editor.selection.replace({
+          kind: "object",
+          regionId: "path-tool-region",
+          objectId: "array-source"
+        });
+        const array = fixture.service.arraySelection({
+          path: { objectId: "path-source" },
+          count: 3
+        });
+        const state = fixture.sandbox.getSnapshot();
+        assertEqual(tube.changed, true);
+        assertEqual(sweep.changed, true);
+        assertEqual(array.changed, true);
+        assertEqual(array.createdIds.length, 3);
+        assertEqual(state.objects.find(object => object.id === tube.id).kind, "tube");
+        assertEqual(state.objects.find(object => object.id === sweep.id).kind, "buffer");
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 3);
+        assertVectorNear(
+          state.objects.find(object => object.id === array.createdIds[0]).position,
+          [0, 0, 0]
+        );
+        assertVectorNear(
+          state.objects.find(object => object.id === array.createdIds.at(-1)).position,
+          [2, 4, 0]
+        );
+      },
+
+      "console converte objetos nomeados sem forçar caminho aberto"() {
+        const calls = [];
+        const console = createPathConsole(calls);
+        const tube = console.execute(
+          "path tube object=name:Caminho radius=0.4 segments=12 radial=6"
+        )[0];
+        const sweep = console.execute(
+          "path sweep path=path-id profile=profile-id twist=30 caps=off"
+        )[0];
+        assertEqual(tube.ok, true);
+        assertEqual(sweep.ok, true);
+        assertEqual(calls[0].id, "path.tube.create");
+        assertEqual(calls[0].args.path.objectName, "Caminho");
+        assertEqual(calls[0].args.closed, undefined);
+        assertEqual(calls[1].id, "path.sweep.create");
+        assertEqual(calls[1].args.closedPath, undefined);
+        assertEqual(calls[1].args.caps, false);
+      },
+
+      "perfil declarado respeita escala e permanece planar"() {
+        const region = new Region(
+          { id: "profile-reference-region", name: "Profile", type: "box-region" },
+          { schemaVersion: 1, objects: [{
+            id: "shape-profile",
+            kind: "shape",
+            name: "Perfil",
+            position: [3, 4, 5],
+            rotation: [0, 0, 0, 1],
+            scale: [2, 3, 1],
+            geometry: {
+              type: "shape",
+              contour: [[-1, -1], [1, -1], [1, 1], [-1, 1]],
+              holes: [],
+              curveSegments: 1
+            }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        const resolver = new SpatialReferenceResolver({
+          sandbox,
+          editor,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        const profile = resolver.resolveProfile({ objectId: "shape-profile" });
+        const xs = profile.points.map(point => point[0]);
+        const ys = profile.points.map(point => point[1]);
+        assertNear(Math.max(...xs) - Math.min(...xs), 4, 1e-9);
+        assertNear(Math.max(...ys) - Math.min(...ys), 6, 1e-9);
+        assertNear(profile.maxDeviation, 0, 1e-9);
       }
     },
 
@@ -6497,6 +6995,49 @@ assets: {
         );
       },
 
+      "schema 3 preserva luz lógica sem aparência"() {
+        const assets = new AppearanceRuntime().exportAssets();
+        const project = new ProjectValidator().validate({
+          format: "spatial-seed",
+          schemaVersion: 3,
+          assets,
+          scene: {
+            schemaVersion: 1,
+            objects: [{
+              id: "light-main",
+              kind: "light",
+              name: "Luz principal",
+              position: [2, 4, 6],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              light: {
+                type: "spot",
+                color: "#88ccff",
+                intensity: 5,
+                distance: 30,
+                decay: 2,
+                angleDeg: 35,
+                penumbra: 0.25,
+                castShadow: true
+              }
+            }]
+          }
+        });
+        const light = project.scene.objects[0];
+        assertEqual(light.kind, "light");
+        assertEqual(light.light.type, "spot");
+        assertEqual("appearanceId" in light, false);
+        assertThrowsMessage(
+          () => new ProjectValidator().validate({
+            format: "spatial-seed",
+            schemaVersion: 2,
+            assets,
+            scene: { schemaVersion: 1, objects: [light] }
+          }),
+          "exige schema 3"
+        );
+      },
+
       "schema 3 rejeita câmera padrão inexistente"() {
         assertThrowsMessage(
           () => new ProjectValidator().validate({
@@ -10440,6 +10981,125 @@ function geometryProviderSamples() {
   ];
 }
 
+function createMeshEditorRendererStub() {
+  return {
+    beginMeshEdit() {},
+    endMeshEdit() {},
+    updateMeshEditGeometry() {},
+    updateMeshEditSelection() {},
+    updateMeshEditOptions() {},
+    updateMeshEditInfluence() {},
+    updateMeshEditDisplay() {},
+    setMeshEditFrame() {},
+    setMeshEditConstraint() {},
+    updateMeshEditSnap() {},
+    setTransformMode() {},
+    readNavigationCamera() { return { quaternion: [0,0,0,1] }; },
+    meshEditStatus() { return {}; }
+  };
+}
+
+function createPathToolFixture() {
+  const objects = [
+    {
+      id: "path-source",
+      kind: "tube",
+      name: "Caminho",
+      position: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      geometry: {
+        type: "tube",
+        points: [[0, 0, 0], [0, 2, 0], [2, 4, 0]],
+        tubularSegments: 8,
+        radius: 0.1,
+        radialSegments: 6,
+        closed: false,
+        curveType: "centripetal",
+        tension: 0.5
+      },
+      instanceState: {}
+    },
+    {
+      id: "profile-source",
+      kind: "shape",
+      name: "Perfil",
+      position: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      geometry: {
+        type: "shape",
+        contour: [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]],
+        holes: [],
+        curveSegments: 1
+      },
+      instanceState: {}
+    },
+    {
+      id: "array-source",
+      kind: "box",
+      name: "Fonte",
+      position: [5, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      geometry: { type: "box", size: [1, 1, 1], segments: [1, 1, 1] },
+      instanceState: {}
+    }
+  ];
+  const region = new Region(
+    { id: "path-tool-region", name: "Path tools", type: "box-region" },
+    { schemaVersion: 1, objects }
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const editor = new EditorState();
+  const geometryRegistry = createDefaultGeometryRegistry();
+  const selectionOperations = new SelectionOperations({
+    editor,
+    sandbox,
+    regionId: "path-tool-region",
+    geometryRegistry,
+    appearanceRuntime: new AppearanceRuntime()
+  });
+  const resolver = new SpatialReferenceResolver({
+    sandbox,
+    editor,
+    geometryRegistry
+  });
+  return {
+    sandbox,
+    editor,
+    service: new PathToolService({
+      resolver,
+      selectionOperations,
+      sandbox,
+      editor
+    })
+  };
+}
+
+function createPathConsole(calls) {
+  return new DevConsole({
+    editor: { selection: new Selection() },
+    sandbox: {},
+    region: {},
+    renderer: {},
+    getDiagnostics: () => ({}),
+    commands: {
+      describe: () => [],
+      execute(id, args) {
+        calls.push({ id, args });
+        return { changed: true };
+      }
+    },
+    queries: {
+      execute(id) {
+        if (id === "path.references.list") return [];
+        throw new Error(`Consulta inesperada: ${id}.`);
+      }
+    }
+  });
+}
+
 function createGeometryConsole(calls) {
   return new DevConsole({
     editor: { selection: new Selection() },
@@ -11253,6 +11913,7 @@ function createEditContextFixture() {
     objectFrame: { mode: "world", quaternion: [0, 0, 0, 1] },
     objectAxes: { x: true, y: true, z: true },
     locks: { plane: null, point: null },
+    editPlane: null,
     transformConfig: {},
     setTransformMode(mode) { editor.setToolMode(mode); },
     setSelectionOperation(operation) {
@@ -11284,7 +11945,22 @@ function createEditContextFixture() {
       return this.getObjectTransformAxes();
     },
     setTransformConfig(patch) { this.transformConfig = { ...this.transformConfig, ...patch }; },
-    getNavigationLocks() { return structuredClone(this.locks); },
+    getNavigationLocks() {
+      return {
+        ...structuredClone(this.locks),
+        mode: this.locks.plane
+          ? (this.locks.point ? "plane-point" : "plane-2d")
+          : (this.locks.point ? "orbit-point" : "free"),
+        editPlane: this.editPlane ? structuredClone(this.editPlane) : null
+      };
+    },
+    getEditPlane() {
+      return this.editPlane ? structuredClone(this.editPlane) : null;
+    },
+    setEditPlane(frame) {
+      this.editPlane = frame ? structuredClone(frame) : null;
+      return this.getEditPlane();
+    },
     setNavigationPlaneLock(frame) {
       this.locks.plane = frame ? structuredClone(frame) : null;
       return this.getNavigationLocks();
