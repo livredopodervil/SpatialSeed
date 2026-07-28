@@ -1755,3 +1755,39 @@ html[data-toolbar-layout="vertical"] #selection-panel{
 #edit-hud{touch-action:auto}
 .edit-hud-handle{touch-action:none}
 .edit-hud-config[open],.edit-hud-strip{touch-action:pan-x pan-y}
+
+/* 0039a — HUD adaptativo, modificadores e redimensionamento direto */
+#edit-hud-resize{
+  cursor:nwse-resize;
+  touch-action:none;
+  user-select:none;
+}
+#edit-hud[data-resizing="true"]{
+  outline:2px solid #78c2ff;
+  box-shadow:0 0 0 3px #07111d,0 14px 38px #000b;
+}
+#edit-hud[data-error="true"]{
+  outline:2px solid #ff8a8a;
+}
+.edit-hud-config-grid label:has(#edit-hud-adaptive-order){
+  display:flex;
+  align-items:center;
+  gap:7px;
+  grid-column:1 / -1;
+}
+.edit-hud-config-grid #edit-hud-adaptive-order{
+  width:auto;
+  flex:0 0 auto;
+}
+#edit-hud-creation-tools button[data-geometry-type][data-active="true"]{
+  color:#f7fbff;
+  background:#1c527e;
+  outline:1px solid #9bd4ff;
+  box-shadow:0 0 12px #4fb3ff70;
+}
+@media (pointer:coarse){
+  #edit-hud-resize{
+    width:36px!important;
+    height:36px!important;
+  }
+}

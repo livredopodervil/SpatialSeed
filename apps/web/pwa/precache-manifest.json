@@ -55,6 +55,7 @@
     "packages/edit-context/src/EditContextController.js",
     "packages/edit-context/src/index.js",
     "packages/edit-hud/src/EditHud.js",
+    "packages/edit-hud/src/HudContextHeuristics.js",
     "packages/edit-hud/src/index.js",
     "packages/edit-tools/src/ToolLifecycleController.js",
     "packages/edit-tools/src/index.js",

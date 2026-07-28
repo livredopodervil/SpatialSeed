@@ -109,6 +109,15 @@ for needle in [
     'id="edit-hud-undo"',
     'id="edit-hud-tooltip"',
     'id="edit-hud-tap-hints"',
+    'id="edit-hud-array-along-path"',
+    'id="edit-hud-sweep-from-objects"',
+    'id="edit-hud-tube-from-object"',
+    'id="edit-hud-resize"',
+    'id="edit-hud-selection-toggle"',
+    'id="edit-hud-selection-remove"',
+    'id="edit-hud-selection-add"',
+    'id="edit-hud-selection-replace"',
+    'id="edit-hud-adaptive-order"',
     'id="edit-create-reference"',
     'id="edit-material-apply"',
     'id="edit-light-apply"'
@@ -162,6 +171,8 @@ for needle in [
 ]:
     require("apps/web/index.html", needle)
 require("packages/edit-context/src/EditContextController.js", "class EditContextController")
+require("packages/edit-context/src/EditContextController.js", "editor.selection?.subscribe")
+require("packages/edit-hud/src/HudContextHeuristics.js", "deriveHudContext")
 require("packages/edit-hud/src/EditHud.js", "class EditHud")
 for needle in [
     "#prepareHints",
@@ -170,7 +181,11 @@ for needle in [
     "Modo ajuda ativado",
     "HUD_HINT_DETAILS",
     'this.#execute(active ? "mesh.edit.undo" : "history.undo")',
-    'this.#execute("selection.area.toggle")'
+    'this.#execute("selection.area.toggle")',
+    "deriveHudContext",
+    "#buildGeometryTools",
+    "#applyAdaptiveLayout",
+    "spatialseed:geometry-default-changed"
 ]:
     require("packages/edit-hud/src/EditHud.js", needle)
 for needle in [

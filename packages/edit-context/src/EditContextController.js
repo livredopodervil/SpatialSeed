@@ -8,6 +8,7 @@ export class EditContextController {
 
   #listeners = new Set();
   #unsubscribeEditor = null;
+  #unsubscribeSelection = null;
   #unsubscribeMesh = null;
   #unsubscribeTools = null;
   #snap = {
@@ -38,6 +39,7 @@ export class EditContextController {
     this.meshEditor = meshEditor;
     this.toolLifecycle = toolLifecycle;
     this.#unsubscribeEditor = editor.subscribe(() => this.#notify());
+    this.#unsubscribeSelection = editor.selection?.subscribe?.(() => this.#notify()) ?? null;
     this.#unsubscribeMesh = meshEditor.subscribe(snapshot => {
       if (snapshot.active && snapshot.snap) {
         this.#snap = mergeSnapState(this.#snap, snapshot.snap);
@@ -49,6 +51,7 @@ export class EditContextController {
 
   dispose() {
     this.#unsubscribeEditor?.();
+    this.#unsubscribeSelection?.();
     this.#unsubscribeMesh?.();
     this.#unsubscribeTools?.();
     this.#listeners.clear();

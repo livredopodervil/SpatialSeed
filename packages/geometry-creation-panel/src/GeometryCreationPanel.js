@@ -32,11 +32,22 @@ export class GeometryCreationPanel {
     this.onSubmit = event => this.create(event);
     this.onFormChange = () => this.#saveDefaults();
     this.onReferenceFocus = () => this.#refreshReferenceObjects();
+    this.onGeometryDefaultChanged = event => {
+      const type = event.detail?.type;
+      if (!this.descriptions.some(item => item.type === type)) return;
+      this.defaults = { ...this.defaults, type };
+      this.type.value = type;
+      this.refresh();
+    };
     this.type.addEventListener("change", this.onTypeChange);
     this.form.addEventListener("submit", this.onSubmit);
     this.form.addEventListener("change", this.onFormChange);
     this.form.elements.namedItem("reference-object")?.addEventListener(
       "focus", this.onReferenceFocus
+    );
+    globalThis.addEventListener?.(
+      "spatialseed:geometry-default-changed",
+      this.onGeometryDefaultChanged
     );
     this.#restoreCommonDefaults();
     this.#refreshReferenceObjects();
@@ -134,6 +145,10 @@ export class GeometryCreationPanel {
     this.form.removeEventListener("change", this.onFormChange);
     this.form.elements.namedItem("reference-object")?.removeEventListener(
       "focus", this.onReferenceFocus
+    );
+    globalThis.removeEventListener?.(
+      "spatialseed:geometry-default-changed",
+      this.onGeometryDefaultChanged
     );
   }
 

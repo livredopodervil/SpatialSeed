@@ -1,5 +1,30 @@
+import {
+  deriveHudContext,
+  geometryToolIcon,
+  geometryToolPriority
+} from "./HudContextHeuristics.js?build=20260728-0039a";
+
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
+const GEOMETRY_CREATION_STORAGE_KEY = "spatialseed.geometry.creation.defaults.v1";
+const STATIC_GROUP_ORDER = Object.freeze([
+  "subject", "tool", "quick", "selection", "frame", "axes",
+  "snap", "navigation", "lifecycle", "creation", "actions", "session"
+]);
+const STATIC_ACTION_ORDER = Object.freeze([
+  "edit-hud-create", "edit-hud-create-light", "edit-hud-material",
+  "edit-hud-enter-mesh", "edit-hud-draw-path", "edit-hud-group",
+  "edit-hud-ungroup", "edit-hud-duplicate", "edit-hud-delete",
+  "edit-hud-select-all", "edit-hud-select-none", "edit-hud-select-invert",
+  "edit-hud-select-grow", "edit-hud-select-shrink", "edit-hud-select-linked",
+  "edit-hud-select-boundary", "edit-hud-create-vertex",
+  "edit-hud-create-edge", "edit-hud-create-face", "edit-hud-fill",
+  "edit-hud-weld", "edit-hud-extrude", "edit-hud-inset",
+  "edit-hud-split", "edit-hud-collapse", "edit-hud-flip-edge",
+  "edit-hud-bridge", "edit-hud-subdivide", "edit-hud-flip-normal",
+  "edit-hud-path-from-selection", "edit-hud-recalculate-normals",
+  "edit-hud-cleanup"
+]);
 const DEFAULT_PREFERENCES = Object.freeze({
   dock: "floating",
   orientation: "horizontal",
@@ -8,6 +33,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
   columns: 4,
   rows: 2,
   tapHints: true,
+  adaptiveOrder: true,
   left: 12,
   defaults: {
     extrude: 1,
@@ -18,11 +44,13 @@ const DEFAULT_PREFERENCES = Object.freeze({
   groups: {
     subject: true,
     tool: true,
+    selection: true,
     frame: true,
     axes: true,
     snap: true,
     navigation: true,
     lifecycle: true,
+    creation: true,
     actions: true,
     session: true
   }
@@ -34,6 +62,9 @@ export class EditHud {
   #unsubscribe = null;
   #preferences = structuredClone(DEFAULT_PREFERENCES);
   #drag = null;
+  #resize = null;
+  #heuristic = null;
+  #geometryCatalog = [];
   #helpMode = false;
   #hintPointer = null;
   #hintTimer = null;
@@ -50,6 +81,7 @@ export class EditHud {
     this.execute = execute;
     this.openWorkspace = openWorkspace;
     this.#loadPreferences();
+    this.#buildGeometryTools();
     this.#prepareHints();
     this.#bind();
     this.#applyPreferences();
@@ -77,6 +109,11 @@ export class EditHud {
     }
     for (const button of this.root.querySelectorAll("[data-edit-tool]")) {
       button.dataset.active = button.dataset.editTool === state.tool
+        ? "true"
+        : "false";
+    }
+    for (const button of this.root.querySelectorAll("[data-edit-selection-operation]")) {
+      button.dataset.active = button.dataset.editSelectionOperation === state.selectionOperation
         ? "true"
         : "false";
     }
@@ -120,7 +157,21 @@ export class EditHud {
     const description = describeState(state);
     this.#element("edit-hud-status").textContent = description;
     this.root.title = description;
-    this.#refreshContextActions(state);
+    const mesh = this.query("mesh.edit.status");
+    const selection = this.query("selection.snapshot");
+    this.#heuristic = deriveHudContext({
+      state,
+      mesh,
+      selection,
+      selectionActions: this.query("selection.actions.describe") ?? {},
+      references: this.query("path.references.list") ?? [],
+      placement: this.query("object.placement.status") ?? {},
+      sketch: this.query("path.sketch.status") ?? {}
+    });
+    this.root.dataset.heuristicContext = this.#heuristic.reason;
+    this.#refreshContextActions(state, this.#heuristic);
+    this.#refreshGeometryTools();
+    this.#applyAdaptiveLayout(this.#heuristic);
     this.#applyPreferences();
   }
 
@@ -152,6 +203,12 @@ export class EditHud {
       button.addEventListener("click", () => this.#execute(
         "edit.context.tool.set",
         { mode: button.dataset.editTool }
+      ));
+    }
+    for (const button of this.root.querySelectorAll("[data-edit-selection-operation]")) {
+      button.addEventListener("click", () => this.#execute(
+        "edit.context.selection-operation.set",
+        { operation: button.dataset.editSelectionOperation }
       ));
     }
     this.#element("edit-hud-area-selection").addEventListener("click", () => {
@@ -243,6 +300,7 @@ export class EditHud {
     this.#element("edit-hud-columns").value = String(this.#preferences.columns);
     this.#element("edit-hud-rows").value = String(this.#preferences.rows);
     this.#element("edit-hud-tap-hints").checked = this.#preferences.tapHints !== false;
+    this.#element("edit-hud-adaptive-order").checked = this.#preferences.adaptiveOrder !== false;
     this.#element("edit-hud-default-extrude").value = String(this.#preferences.defaults.extrude);
     this.#element("edit-hud-default-inset").value = String(this.#preferences.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(this.#preferences.defaults.pathRadius);
@@ -258,7 +316,7 @@ export class EditHud {
     for (const id of [
       "edit-hud-dock", "edit-hud-orientation", "edit-hud-size",
       "edit-hud-opacity", "edit-hud-columns", "edit-hud-rows",
-      "edit-hud-tap-hints", "edit-hud-default-extrude", "edit-hud-default-inset",
+      "edit-hud-tap-hints", "edit-hud-adaptive-order", "edit-hud-default-extrude", "edit-hud-default-inset",
       "edit-hud-default-path-radius"
     ]) {
       this.#element(id).addEventListener("change", () => {
@@ -273,6 +331,7 @@ export class EditHud {
           this.#element("edit-hud-rows").value, 1, 8, 2
         );
         this.#preferences.tapHints = this.#element("edit-hud-tap-hints").checked;
+        this.#preferences.adaptiveOrder = this.#element("edit-hud-adaptive-order").checked;
         this.#preferences.defaults = {
           extrude: finiteOr(this.#element("edit-hud-default-extrude").value, 1),
           inset: clamp(finiteOr(this.#element("edit-hud-default-inset").value, 0.2), 0.001, 0.999),
@@ -304,6 +363,15 @@ export class EditHud {
     }));
     this.#element("edit-hud-create-light").addEventListener("click", () =>
       this.#createRememberedLight()
+    );
+    this.#element("edit-hud-tube-from-object").addEventListener("click", () =>
+      this.#createTubeFromHeuristic()
+    );
+    this.#element("edit-hud-sweep-from-objects").addEventListener("click", () =>
+      this.#createSweepFromHeuristic()
+    );
+    this.#element("edit-hud-array-along-path").addEventListener("click", () =>
+      this.#arrayAlongHeuristicPath()
     );
     this.#element("edit-hud-material").addEventListener("click", () => {
       this.openWorkspace?.();
@@ -370,7 +438,7 @@ export class EditHud {
 
   #prepareHints() {
     const controls = this.root.querySelectorAll(
-      ".edit-hud-strip button, .edit-hud-strip label, #edit-hud-open, #edit-hud-help, .edit-hud-config > summary"
+      ".edit-hud-strip button, .edit-hud-strip label, #edit-hud-open, #edit-hud-help, #edit-hud-resize, .edit-hud-config > summary"
     );
     for (const control of controls) {
       const hint = resolveHudHint(control);
@@ -577,20 +645,17 @@ export class EditHud {
     });
   }
 
-  #beginRememberedObjectPlacement() {
+  #beginRememberedObjectPlacement(type = null) {
     try {
-      let defaults = {};
-      defaults = JSON.parse(localStorage.getItem(CREATION_STORAGE_KEY) ?? "{}");
-      const catalog = this.query("geometry.catalog") ?? [];
-      const description = catalog.find(item => item.type === defaults.geometryType) ?? catalog[0];
+      const defaults = readStorageObject(CREATION_STORAGE_KEY);
+      const catalog = this.#geometryCatalog.length
+        ? this.#geometryCatalog
+        : (this.query("geometry.catalog") ?? []);
+      const requestedType = type ?? defaults.geometryType ?? this.#rememberedGeometryType();
+      const description = catalog.find(item => item.type === requestedType) ?? catalog[0];
       if (!description) throw new Error("Catálogo de geometrias vazio.");
-      const geometry = Object.fromEntries([
-        ["type", description.type],
-        ...(description.parameters ?? []).map(parameter => [
-          parameter.id,
-          structuredClone(parameter.default)
-        ])
-      ]);
+      this.#selectGeometryType(description.type);
+      const geometry = rememberedGeometryDescriptor(description);
       const selection = this.query("selection.snapshot");
       const objectId = selection?.activeMember?.objectId ?? null;
       const reference = objectId
@@ -616,6 +681,7 @@ export class EditHud {
     const handle = this.#element("edit-hud-handle");
     const method = enabled ? "addEventListener" : "removeEventListener";
     handle[method]("pointerdown", this.#onPointerDown);
+    this.#element("edit-hud-resize")[method]("pointerdown", this.#onResizePointerDown);
     this.root[method]("pointerdown", this.#onHintPointerDown, true);
     this.root[method]("click", this.#onHintClickCapture, true);
     this.root[method]("click", this.#onHintClickFeedback);
@@ -624,15 +690,63 @@ export class EditHud {
     this.root[method]("focusin", this.#onHintFocusIn);
     this.root[method]("focusout", this.#onHintFocusOut);
     globalThis[method]("pointermove", this.#onPointerMove);
+    globalThis[method]("pointermove", this.#onResizePointerMove);
     globalThis[method]("pointermove", this.#onHintPointerMove);
     globalThis[method]("pointerup", this.#onPointerUp);
+    globalThis[method]("pointerup", this.#onResizePointerUp);
     globalThis[method]("pointerup", this.#onHintPointerUp);
     globalThis[method]("pointercancel", this.#onPointerUp);
+    globalThis[method]("pointercancel", this.#onResizePointerUp);
     globalThis[method]("pointercancel", this.#onHintPointerUp);
     globalThis[method]("resize", this.#onResize);
     globalThis.document?.[method]("pointerdown", this.#onHintDocumentPointerDown, true);
     globalThis.document?.[method]("keydown", this.#onHintKeyDown);
   }
+
+  #onResizePointerDown = event => {
+    const cell = ({ compact: 26, normal: 32, large: 42 })[this.#preferences.size] ?? 32;
+    this.#resize = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      columns: this.#preferences.columns,
+      rows: this.#preferences.rows,
+      cell: cell + 3
+    };
+    this.root.dataset.resizing = "true";
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    event.stopPropagation();
+    event.preventDefault();
+  };
+
+  #onResizePointerMove = event => {
+    if (!this.#resize || event.pointerId !== this.#resize.pointerId) return;
+    const columns = integerBetween(
+      this.#resize.columns + Math.round((event.clientX - this.#resize.x) / this.#resize.cell),
+      1,
+      12,
+      this.#resize.columns
+    );
+    const rows = integerBetween(
+      this.#resize.rows + Math.round((event.clientY - this.#resize.y) / this.#resize.cell),
+      1,
+      8,
+      this.#resize.rows
+    );
+    this.#preferences.columns = columns;
+    this.#preferences.rows = rows;
+    this.#applyPreferences();
+    event.preventDefault();
+  };
+
+  #onResizePointerUp = event => {
+    if (!this.#resize || event.pointerId !== this.#resize.pointerId) return;
+    this.#resize = null;
+    this.root.dataset.resizing = "false";
+    this.#fitToViewport();
+    this.#savePreferences();
+    event.preventDefault();
+  };
 
   #onPointerDown = event => {
     if (this.#preferences.dock !== "floating") return;
@@ -723,9 +837,11 @@ export class EditHud {
     this.#element("edit-hud-columns").value = String(p.columns);
     this.#element("edit-hud-rows").value = String(p.rows);
     this.#element("edit-hud-tap-hints").checked = p.tapHints !== false;
+    this.#element("edit-hud-adaptive-order").checked = p.adaptiveOrder !== false;
     this.#element("edit-hud-default-extrude").value = String(p.defaults.extrude);
     this.#element("edit-hud-default-inset").value = String(p.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(p.defaults.pathRadius);
+    this.#applyAdaptiveLayout(this.#heuristic);
     requestAnimationFrame(() => this.#fitToViewport());
   }
 
@@ -742,20 +858,16 @@ export class EditHud {
     this.root.style.top = `${top}px`;
   }
 
-  #refreshContextActions(state) {
-    const mode = state.meshActive ? state.subjectLevel : "object";
-    const tokens = new Set(state.meshActive ? ["mesh", mode] : ["object"]);
-    const mesh = this.query("mesh.edit.status");
-    const selection = this.query("selection.snapshot");
-    const selectedObjects = selection?.members?.length ?? 0;
-    const selectedComponents = mesh?.selectedCount ?? 0;
-    const canUngroup = Boolean(this.query("selection.actions.describe")?.canUngroup);
+  #refreshContextActions(state, heuristic) {
+    const mode = heuristic.mode;
+    const tokens = new Set(heuristic.meshActive ? ["mesh", mode] : ["object"]);
+    const selectedComponents = heuristic.selectedComponents;
     const availability = {
-      "edit-hud-enter-mesh": Boolean(mesh?.canEnter),
-      "edit-hud-group": selectedObjects > 0,
-      "edit-hud-ungroup": canUngroup,
-      "edit-hud-duplicate": state.meshActive ? selectedComponents > 0 : selectedObjects > 0,
-      "edit-hud-delete": state.meshActive ? selectedComponents > 0 : selectedObjects > 0,
+      "edit-hud-enter-mesh": heuristic.canEnterMesh,
+      "edit-hud-group": heuristic.canGroup,
+      "edit-hud-ungroup": heuristic.canUngroup,
+      "edit-hud-duplicate": heuristic.canDuplicate,
+      "edit-hud-delete": heuristic.canDelete,
       "edit-hud-select-none": selectedComponents > 0,
       "edit-hud-select-grow": selectedComponents > 0,
       "edit-hud-select-shrink": selectedComponents > 0,
@@ -784,15 +896,178 @@ export class EditHud {
       const enabled = inContext && availability[button.id] !== false;
       button.hidden = !inContext;
       button.disabled = !enabled;
-      button.dataset.active = enabled ? "true" : "false";
+      button.dataset.available = enabled ? "true" : "false";
       if (inContext) visible += 1;
     }
     const group = this.root.querySelector('[data-edit-hud-group="actions"]');
     if (group) group.dataset.contextHidden = visible ? "false" : "true";
+    const creation = this.root.querySelector('[data-edit-hud-group="creation"]');
+    if (creation) creation.dataset.contextHidden = heuristic.meshActive ? "true" : "false";
+    this.#element("edit-hud-tube-from-object").disabled = !heuristic.canTubeFromObject;
+    this.#element("edit-hud-sweep-from-objects").disabled = !heuristic.canSweepFromObjects;
+    this.#element("edit-hud-array-along-path").disabled = !heuristic.canArrayAlongPath;
     this.#element("edit-hud-create").dataset.active =
       state.activeAction === "object.place" ? "true" : "false";
     this.#element("edit-hud-draw-path").dataset.active =
       state.activeAction === "path.sketch" ? "true" : "false";
+  }
+
+  #buildGeometryTools() {
+    const group = this.#element("edit-hud-creation-tools");
+    const anchor = this.#element("edit-hud-tube-from-object");
+    this.#geometryCatalog = [...(this.query("geometry.catalog") ?? [])]
+      .sort((left, right) =>
+        geometryToolPriority(left.type) - geometryToolPriority(right.type) ||
+        left.label.localeCompare(right.label)
+      );
+    for (const description of this.#geometryCatalog) {
+      const button = this.root.ownerDocument.createElement("button");
+      button.type = "button";
+      button.id = `edit-hud-geometry-${safeId(description.type)}`;
+      button.dataset.geometryType = description.type;
+      button.dataset.geometryLabel = description.label;
+      button.textContent = geometryToolIcon(description.type);
+      button.title = `Criar ${description.label}`;
+      button.addEventListener("click", () => {
+        this.#selectGeometryType(description.type);
+        this.#beginRememberedObjectPlacement(description.type);
+      });
+      group.insertBefore(button, anchor);
+    }
+  }
+
+  #refreshGeometryTools() {
+    const selectedType = this.#rememberedGeometryType();
+    for (const button of this.root.querySelectorAll("[data-geometry-type]")) {
+      button.dataset.active = button.dataset.geometryType === selectedType
+        ? "true"
+        : "false";
+      button.disabled = Boolean(this.#heuristic?.meshActive);
+    }
+  }
+
+  #applyAdaptiveLayout(heuristic) {
+    const strip = this.root.querySelector(".edit-hud-strip");
+    if (!strip) return;
+    const groupOrder = heuristic && this.#preferences.adaptiveOrder !== false
+      ? heuristic.groupOrder
+      : STATIC_GROUP_ORDER;
+    for (const name of groupOrder) {
+      const group = strip.querySelector(`[data-edit-hud-group="${name}"]`);
+      if (group) strip.append(group);
+    }
+    const actions = strip.querySelector('[data-edit-hud-group="actions"]');
+    const actionOrder = heuristic && this.#preferences.adaptiveOrder !== false
+      ? heuristic.actionOrder
+      : STATIC_ACTION_ORDER;
+    if (actions) {
+      for (const id of actionOrder) {
+        const button = actions.querySelector(`#${id}`);
+        if (button) actions.append(button);
+      }
+    }
+    this.#applyCreationLayout(heuristic);
+  }
+
+  #applyCreationLayout(heuristic) {
+    const group = this.root.querySelector('[data-edit-hud-group="creation"]');
+    if (!group) return;
+    const geometryButtons = [...group.querySelectorAll("[data-geometry-type]")];
+    const selectedType = this.#rememberedGeometryType();
+    geometryButtons.sort((left, right) => {
+      const leftSelected = left.dataset.geometryType === selectedType ? 0 : 1;
+      const rightSelected = right.dataset.geometryType === selectedType ? 0 : 1;
+      if (leftSelected !== rightSelected) return leftSelected - rightSelected;
+      return geometryToolPriority(left.dataset.geometryType) -
+        geometryToolPriority(right.dataset.geometryType);
+    });
+    const tube = this.#element("edit-hud-tube-from-object");
+    const sweep = this.#element("edit-hud-sweep-from-objects");
+    const array = this.#element("edit-hud-array-along-path");
+    const referenceTools = heuristic?.canSweepFromObjects
+      ? [sweep, tube, array]
+      : heuristic?.canTubeFromObject
+        ? [tube, array, sweep]
+        : [tube, sweep, array];
+    const order = heuristic?.pathReference
+      ? [...referenceTools, ...geometryButtons]
+      : [...geometryButtons, ...referenceTools];
+    for (const button of order) group.append(button);
+  }
+
+  #selectGeometryType(type) {
+    const description = this.#geometryCatalog.find(item => item.type === type);
+    if (!description) throw new Error(`Geometria desconhecida: ${type}.`);
+    const creation = readStorageObject(CREATION_STORAGE_KEY);
+    localStorage.setItem(CREATION_STORAGE_KEY, JSON.stringify({
+      ...creation,
+      geometryType: type
+    }));
+    const geometry = readStorageObject(GEOMETRY_CREATION_STORAGE_KEY);
+    localStorage.setItem(GEOMETRY_CREATION_STORAGE_KEY, JSON.stringify({
+      ...geometry,
+      type
+    }));
+    globalThis.dispatchEvent?.(new CustomEvent("spatialseed:geometry-default-changed", {
+      detail: { type }
+    }));
+    this.#refreshGeometryTools();
+  }
+
+  #rememberedGeometryType() {
+    const defaults = readStorageObject(CREATION_STORAGE_KEY);
+    const advanced = readStorageObject(GEOMETRY_CREATION_STORAGE_KEY);
+    const candidate = defaults.geometryType ?? advanced.type;
+    return this.#geometryCatalog.some(item => item.type === candidate)
+      ? candidate
+      : this.#geometryCatalog[0]?.type ?? null;
+  }
+
+  #createTubeFromHeuristic() {
+    const reference = this.#heuristic?.pathReference;
+    if (!reference) return this.#reportError(
+      "Selecione um objeto que possa fornecer um caminho."
+    );
+    return this.#execute("path.tube.create", {
+      path: { source: "object", objectId: reference.id, extraction: "auto" },
+      radius: this.#preferences.defaults.pathRadius
+    });
+  }
+
+  #createSweepFromHeuristic() {
+    const path = this.#heuristic?.pathReference;
+    const profile = this.#heuristic?.profileReference;
+    if (!path || !profile) {
+      return this.#reportError(
+        "Selecione um objeto-caminho e um objeto-perfil compatível."
+      );
+    }
+    return this.#execute("path.sweep.create", {
+      path: { source: "object", objectId: path.id, extraction: "auto" },
+      profile: { source: "object", objectId: profile.id, extraction: "auto" }
+    });
+  }
+
+  #arrayAlongHeuristicPath() {
+    const path = this.#heuristic?.pathReference;
+    if (!path) return this.#reportError(
+      "Selecione um caminho e os objetos que serão distribuídos."
+    );
+    return this.#execute("path.array.create", {
+      path: { source: "object", objectId: path.id, extraction: "auto" },
+      count: 8,
+      align: true
+    });
+  }
+
+  #reportError(message) {
+    this.#element("edit-hud-status").textContent = String(message);
+    this.root.dataset.error = "true";
+    globalThis.setTimeout?.(() => {
+      this.root.dataset.error = "false";
+      this.refresh();
+    }, 1800);
+    return null;
   }
 
   #loadPreferences() {
@@ -857,6 +1132,14 @@ export class EditHud {
 }
 
 const HUD_HINT_DETAILS = Object.freeze({
+  "edit-hud-resize": ["Redimensionar HUD", "Arraste para ajustar rapidamente o número de colunas e linhas da grade de ferramentas."],
+  "edit-hud-selection-replace": ["Substituir seleção", "A próxima seleção substitui todos os objetos ou componentes atualmente selecionados."],
+  "edit-hud-selection-add": ["Adicionar à seleção", "A próxima seleção acrescenta objetos, vértices, arestas ou faces ao conjunto atual."],
+  "edit-hud-selection-remove": ["Remover da seleção", "A próxima seleção remove os componentes atingidos do conjunto atual."],
+  "edit-hud-selection-toggle": ["Alternar seleção", "Cada componente atingido alterna entre selecionado e não selecionado."],
+  "edit-hud-tube-from-object": ["Tubo por caminho", "Cria um tubo usando o objeto-caminho selecionado e o raio memorizado."],
+  "edit-hud-sweep-from-objects": ["Varredura de perfil", "Cria uma malha varrendo um objeto-perfil ao longo de um objeto-caminho selecionado."],
+  "edit-hud-array-along-path": ["Distribuir no caminho", "Distribui os objetos selecionados ao longo do caminho selecionado e alinha cada cópia à tangente."],
   "edit-hud-open": ["Painel Editar", "Abre o workspace completo com parâmetros numéricos, criação, materiais, luzes, caminhos e operações de malha."],
   "edit-hud-help": ["Ajuda dos ícones", "Ativa o modo de consulta. Nesse modo, tocar numa ferramenta mostra sua explicação sem executá-la."],
   "edit-hud-object": ["Modo objeto", "Seleciona e transforma objetos inteiros. Encerre ou aplique a sessão de malha antes de retornar a este modo."],
@@ -936,6 +1219,14 @@ const FRAME_HINTS = Object.freeze({
 });
 
 function resolveHudHint(control) {
+  const geometryType = control.dataset.geometryType;
+  if (geometryType) {
+    const label = control.dataset.geometryLabel ?? geometryType;
+    return {
+      title: `Criar ${label}`,
+      description: `Memoriza ${label} como geometria ativa e inicia a colocação por clique usando seus últimos parâmetros.`
+    };
+  }
   const idHint = HUD_HINT_DETAILS[control.id];
   if (idHint) return { title: idHint[0], description: idHint[1] };
   const subject = control.dataset.editSubject;
@@ -965,6 +1256,68 @@ function describeState(state) {
     .filter(Boolean)
     .join("+");
   return `${subject} · ${state.tool} · ${state.frameMode} · ${axes}${locks ? ` · ${locks}` : ""}`;
+}
+
+function safeId(value) {
+  return String(value ?? "geometry")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "geometry";
+}
+
+function readStorageObject(key) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key) ?? "{}");
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberedGeometryDescriptor(description) {
+  const stored = readStorageObject(GEOMETRY_CREATION_STORAGE_KEY);
+  const values = stored.parameters?.[description.type] ?? {};
+  const descriptor = { type: description.type };
+  for (const parameter of description.parameters ?? []) {
+    descriptor[parameter.id] = readRememberedGeometryParameter(parameter, values);
+  }
+  return descriptor;
+}
+
+function readRememberedGeometryParameter(parameter, values) {
+  const baseName = `parameter-${parameter.id}`;
+  const fallback = structuredClone(parameter.default);
+  if (["vector2", "vector3", "integer-vector3"].includes(parameter.type)) {
+    const length = parameter.type === "vector2" ? 2 : 3;
+    const result = [];
+    for (let index = 0; index < length; index += 1) {
+      const raw = values[`${baseName}-${index}`];
+      const parsed = parameter.type === "integer-vector3"
+        ? Number.parseInt(raw, 10)
+        : Number(raw);
+      const defaultValue = Array.isArray(fallback) ? fallback[index] : 0;
+      result.push(Number.isFinite(parsed) ? parsed : defaultValue);
+    }
+    return result;
+  }
+  if (!(baseName in values)) return fallback;
+  const raw = values[baseName];
+  if (parameter.type === "boolean") return Boolean(raw);
+  if (parameter.type === "integer") {
+    const value = Number.parseInt(raw, 10);
+    return Number.isFinite(value) ? value : fallback;
+  }
+  if (parameter.type === "number") {
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : fallback;
+  }
+  if (parameter.type === "json") {
+    try { return typeof raw === "string" ? JSON.parse(raw) : structuredClone(raw); }
+    catch { return fallback; }
+  }
+  return raw ?? fallback;
 }
 
 function rememberedMaterialPatch(defaults = {}) {

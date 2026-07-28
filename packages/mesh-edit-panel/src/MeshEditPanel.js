@@ -21,7 +21,23 @@ export class MeshEditPanel {
     this.unsubscribeContext = subscribeContext?.(() => this.refresh()) ?? null;
     this.unsubscribeSketch = subscribeSketch?.(() => this.refresh()) ?? null;
     this.onKeyDown = event => this.#handleShortcut(event);
+    this.onGeometryDefaultChanged = event => {
+      const type = event.detail?.type;
+      const catalog = this.query("geometry.catalog") ?? [];
+      if (!catalog.some(item => item.type === type)) return;
+      this.creationDefaults = { ...this.creationDefaults, geometryType: type };
+      localStorage.setItem(
+        CREATION_STORAGE_KEY,
+        JSON.stringify(this.creationDefaults)
+      );
+      const select = this.root.querySelector("#edit-create-geometry");
+      if (select) select.value = type;
+    };
     document.addEventListener("keydown", this.onKeyDown, true);
+    globalThis.addEventListener?.(
+      "spatialseed:geometry-default-changed",
+      this.onGeometryDefaultChanged
+    );
     this.#bind();
     this.#bindCreationMaterial();
     this.#bindSectionConfiguration();
@@ -535,6 +551,10 @@ export class MeshEditPanel {
     this.unsubscribeContext?.();
     this.unsubscribeSketch?.();
     document.removeEventListener("keydown", this.onKeyDown, true);
+    globalThis.removeEventListener?.(
+      "spatialseed:geometry-default-changed",
+      this.onGeometryDefaultChanged
+    );
   }
 
   #bind() {

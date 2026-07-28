@@ -91,7 +91,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260727-0038c";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260728-0039a";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -190,17 +190,22 @@ import {
   EditContextController,
   axesFromConstraint,
   constraintFromAxes
-} from "../../edit-context/src/index.js?build=20260727-0038c";
+} from "../../edit-context/src/index.js?build=20260728-0039a";
 import {
   ToolLifecycleController
-} from "../../edit-tools/src/index.js?build=20260727-0038c";
+} from "../../edit-tools/src/index.js?build=20260728-0039a";
+import {
+  deriveHudContext,
+  geometryToolIcon,
+  geometryToolPriority
+} from "../../edit-hud/src/index.js?build=20260728-0039a";
 import {
   PathToolService,
   SpatialReferenceResolver,
   createSweepGeometryDescriptor,
   orderEdgeChain,
   rotationMinimizingFrames
-} from "../../spatial-references/src/index.js?build=20260727-0038c";
+} from "../../spatial-references/src/index.js?build=20260728-0039a";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -464,6 +469,83 @@ export function createRuntimeLayerTests() {
         assertEqual(lifecycle.status().activeAction, "path.sketch");
         lifecycle.cancelAction();
         lifecycle.dispose();
+      },
+
+      "mudança da seleção atualiza imediatamente o contexto do HUD"() {
+        const fixture = createEditContextFixture();
+        const context = new EditContextController(fixture);
+        let notifications = 0;
+        const unsubscribe = context.subscribe(() => { notifications += 1; });
+        const baseline = notifications;
+        fixture.editor.selection.replace({
+          kind: "object",
+          regionId: "edit-context",
+          objectId: "selected-object"
+        });
+        assertEqual(notifications > baseline, true);
+        unsubscribe();
+        context.dispose();
+      }
+    },
+
+    "hud-context": {
+      "seleção de objetos promove ações de edição"() {
+        const result = deriveHudContext({
+          state: { meshActive: false },
+          mesh: { active: false, canEnter: true },
+          selection: {
+            members: [{ objectId: "a" }, { objectId: "b" }],
+            activeMember: { objectId: "a" }
+          },
+          selectionActions: { canGroup: true, canUngroup: false }
+        });
+        assertEqual(result.canDuplicate, true);
+        assertEqual(result.canDelete, true);
+        assertEqual(result.canGroup, true);
+        assertEqual(result.groupOrder[0], "selection");
+        assertEqual(result.actionOrder[0], "edit-hud-duplicate");
+      },
+
+      "ausência de seleção promove criação geométrica"() {
+        const result = deriveHudContext({
+          state: { meshActive: false },
+          selection: { members: [] }
+        });
+        assertEqual(result.reason, "object-create");
+        assertEqual(result.groupOrder[0], "creation");
+        assertEqual(geometryToolIcon("lathe"), "↻");
+        assertEqual(geometryToolPriority("extrude") < geometryToolPriority("torus"), true);
+      },
+
+      "modo face promove ferramentas topológicas"() {
+        const result = deriveHudContext({
+          state: { meshActive: true, subjectLevel: "face" },
+          mesh: { active: true, componentMode: "face", selectedCount: 3 },
+          selection: { members: [{ objectId: "mesh" }] }
+        });
+        assertEqual(result.mode, "face");
+        assertEqual(result.selectedComponents, 3);
+        assertEqual(result.actionOrder.includes("edit-hud-extrude"), true);
+        assertEqual(result.actionOrder.includes("edit-hud-inset"), true);
+      },
+
+      "caminho e perfil selecionados habilitam varredura"() {
+        const result = deriveHudContext({
+          state: { meshActive: false },
+          selection: {
+            members: [{ objectId: "path" }, { objectId: "profile" }],
+            activeMember: { objectId: "path" }
+          },
+          references: [
+            { id: "path", selected: true, pathExtractions: ["centerline"], profileExtractions: [] },
+            { id: "profile", selected: true, pathExtractions: [], profileExtractions: ["contour"] }
+          ]
+        });
+        assertEqual(result.canTubeFromObject, true);
+        assertEqual(result.canSweepFromObjects, true);
+        assertEqual(result.canArrayAlongPath, true);
+        assertEqual(result.pathReference.id, "path");
+        assertEqual(result.profileReference.id, "profile");
       }
     },
 

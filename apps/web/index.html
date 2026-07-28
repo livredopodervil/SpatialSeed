@@ -179,6 +179,7 @@
   <div id="edit-hud-handle" class="edit-hud-handle">
     <button id="edit-hud-open" type="button" title="Abrir painel unificado de edição">✎</button>
     <button id="edit-hud-help" type="button" title="Ativar modo ajuda dos ícones">?</button>
+    <button id="edit-hud-resize" type="button" title="Redimensionar grade do HUD">↘</button>
     <small id="edit-hud-status">Objeto · select · world · XYZ</small>
     <details class="edit-hud-config">
       <summary title="Configurar HUD">⚙</summary>
@@ -190,15 +191,18 @@
         <label>Colunas <input id="edit-hud-columns" type="number" min="1" max="12" step="1" value="4"></label>
         <label>Linhas <input id="edit-hud-rows" type="number" min="1" max="8" step="1" value="2"></label>
         <label><input id="edit-hud-tap-hints" type="checkbox" checked> Mostrar nome após toque</label>
+        <label><input id="edit-hud-adaptive-order" type="checkbox" checked> Ordenar grupos pelo contexto</label>
       </div>
       <div class="edit-hud-config-groups">
         <label><input type="checkbox" data-edit-hud-group-toggle="subject" checked> Contexto</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="tool" checked> Ferramenta</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="selection" checked> Modificadores de seleção</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="frame" checked> Frame</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="axes" checked> Eixos</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="lifecycle" checked> Continuidade</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="creation" checked> Criação e procedimentos</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="actions" checked> Ações contextuais</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="session" checked> Sessão</label>
       </div>
@@ -230,6 +234,12 @@
       <button id="edit-hud-undo" type="button" title="Desfazer">↶</button>
       <button id="edit-hud-redo" type="button" title="Refazer">↷</button>
     </div>
+    <div class="edit-hud-group" data-edit-hud-group="selection" aria-label="Modificadores de seleção">
+      <button id="edit-hud-selection-replace" type="button" data-edit-selection-operation="replace" title="Substituir seleção">＝</button>
+      <button id="edit-hud-selection-add" type="button" data-edit-selection-operation="add" title="Adicionar à seleção">＋</button>
+      <button id="edit-hud-selection-remove" type="button" data-edit-selection-operation="remove" title="Remover da seleção">−</button>
+      <button id="edit-hud-selection-toggle" type="button" data-edit-selection-operation="toggle" title="Alternar seleção">±</button>
+    </div>
     <div class="edit-hud-group" data-edit-hud-group="frame" aria-label="Referencial">
       <button type="button" data-edit-frame="world" title="Frame mundial">◎</button>
       <button type="button" data-edit-frame="local" title="Frame do objeto">◇</button>
@@ -258,6 +268,11 @@
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="lifecycle" aria-label="Continuidade das ferramentas">
       <label title="Manter ferramenta ativa"><input id="edit-hud-keep-tool" type="checkbox"><span>📌</span></label>
       <button id="edit-hud-repeat" type="button" title="Repetir última operação">⟳</button>
+    </div>
+    <div id="edit-hud-creation-tools" class="edit-hud-group edit-hud-context-actions" data-edit-hud-group="creation" aria-label="Criação e procedimentos">
+      <button id="edit-hud-tube-from-object" type="button" title="Criar tubo usando objeto selecionado como caminho">⌇</button>
+      <button id="edit-hud-sweep-from-objects" type="button" title="Criar varredura usando perfil e caminho selecionados">⇝</button>
+      <button id="edit-hud-array-along-path" type="button" title="Distribuir seleção ao longo do caminho selecionado">⋯</button>
     </div>
     <div class="edit-hud-group edit-hud-context-actions" data-edit-hud-group="actions" aria-label="Ações contextuais">
       <button id="edit-hud-create" type="button" data-hud-context="object" title="Criar objeto usando parâmetros e objeto de referência">＋</button>
@@ -1106,6 +1121,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0038c"></script>
+<script type="module" src="./boot.js?build=20260728-0039a"></script>
 </body>
 </html>
