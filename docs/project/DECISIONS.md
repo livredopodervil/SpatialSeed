@@ -607,6 +607,26 @@ e persiste uma malha triangular. Referências vinculadas, atualizações
 incrementais e detecção de ciclos ficam reservadas a um futuro grafo explícito
 de modificadores; não serão simuladas por IDs informais dentro de descritores.
 
+## D-037 — Preferências de ferramenta usam identidade semântica versionada
+
+**Estado:** implementada para continuidade da ferramenta.
+
+Preferências locais de ferramenta são indexadas pelo `toolId` semântico e
+persistidas num registro com versão explícita. Uma escrita sem alvo declarado
+resolve uma única ferramenta pelo contexto corrente; não existe atualização
+implícita de várias ferramentas.
+
+**Motivação:** HUD, workspace, console e futuras fichas contextuais precisam
+enxergar o mesmo valor sem que uma opção de posicionamento altere desenho,
+transformação ou outra sessão. Testes também não podem herdar preferências reais
+do navegador.
+
+**Consequências:** armazenamento é uma dependência injetável nos testes;
+migrações leem e preservam registros anteriores; chaves desconhecidas não
+viram mutações de documento. Parâmetros, presets e layouts futuros devem
+reutilizar um armazenamento versionado por identidade semântica, mas permanecem
+separados do estado efêmero da sessão e do arquivo `.spatialseed`.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

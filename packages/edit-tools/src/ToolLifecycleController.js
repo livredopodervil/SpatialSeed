@@ -8,8 +8,12 @@ const TOOL_LIFECYCLES = Object.freeze({
   "path.sketch": "continuous"
 });
 
+export const TOOL_PREFERENCES_SCHEMA_VERSION = 2;
+export const TOOL_PREFERENCES_STORAGE_KEY = "spatialseed.edit.tools.v2";
+export const LEGACY_TOOL_PREFERENCES_STORAGE_KEY = "spatialseed.edit.tools.v1";
+
 export class ToolLifecycleController {
-  static apiVersion = "tool-lifecycle-controller-v1";
+  static apiVersion = "tool-lifecycle-controller-v3";
 
   #listeners = new Set();
   #execute = null;
@@ -22,15 +26,28 @@ export class ToolLifecycleController {
   #lastRepeatable = null;
   #repeating = false;
   #storage = null;
-  #storageKey = "spatialseed.edit.tools.v1";
+  #storageKey = TOOL_PREFERENCES_STORAGE_KEY;
+  #legacyStorageKey = LEGACY_TOOL_PREFERENCES_STORAGE_KEY;
 
-  constructor({ editor, storage = null, storageKey = null }) {
+  constructor({
+    editor,
+    storage = null,
+    storageKey = null,
+    legacyStorageKey = undefined
+  }) {
     if (!editor?.snapshot || !editor?.subscribe) {
       throw new TypeError("ToolLifecycleController exige editor compatível.");
     }
     this.editor = editor;
     this.#storage = storage ?? safeLocalStorage();
-    if (storageKey) this.#storageKey = String(storageKey);
+    if (storageKey) {
+      this.#storageKey = String(storageKey);
+      this.#legacyStorageKey = null;
+    }
+    if (legacyStorageKey !== undefined) {
+      const normalized = String(legacyStorageKey ?? "").trim();
+      this.#legacyStorageKey = normalized || null;
+    }
     this.#loadPreferences();
     this.#unsubscribeEditor = editor.subscribe(() => this.#notify());
   }
@@ -62,13 +79,13 @@ export class ToolLifecycleController {
 
   status() {
     const editorTool = this.editor.snapshot().tool.mode;
-    const toolId = this.#activeAction ?? editorTool;
+    const toolId = this.#resolveToolId();
     return Object.freeze({
       toolId,
       editorTool,
       activeAction: this.#activeAction,
       lifecycle: lifecycleOf(toolId),
-      keepActive: this.keepActive(this.#activeAction),
+      keepActive: this.keepActive(toolId),
       canRepeat: Boolean(this.#lastRepeatable),
       lastRepeatable: this.#lastRepeatable
         ? Object.freeze({
@@ -81,7 +98,7 @@ export class ToolLifecycleController {
   }
 
   keepActive(toolId = null) {
-    const normalized = String(toolId ?? this.#activeAction ?? "").trim();
+    const normalized = this.#resolveToolId(toolId);
     if (!normalized) return this.#defaultKeepActive;
     if (this.#keepByTool.has(normalized)) {
       return Boolean(this.#keepByTool.get(normalized));
@@ -93,14 +110,11 @@ export class ToolLifecycleController {
 
   setKeepActive(enabled, { toolId = null } = {}) {
     const value = Boolean(enabled);
-    const normalized = String(toolId ?? this.#activeAction ?? "").trim();
-    if (normalized) {
-      this.#keepByTool.set(normalized, value);
-    } else {
-      this.#defaultKeepActive = value;
-      this.#keepByTool.set("object.place", value);
-      this.#keepByTool.set("path.sketch", value);
+    const normalized = this.#resolveToolId(toolId);
+    if (!normalized) {
+      throw new Error("Ferramenta ausente para configurar continuidade.");
     }
+    this.#keepByTool.set(normalized, value);
     this.#savePreferences();
     this.#notify();
     return this.status();
@@ -133,8 +147,17 @@ export class ToolLifecycleController {
   }
 
   observeExecution({ id, args, result, metadata = {} }) {
-    if (this.#repeating || metadata.repeatable !== true) return;
+    if (this.#repeating) return;
     if (result?.changed === false) return;
+    if (result?.repeatDeferred === true) {
+      this.clearRepeatable();
+      return;
+    }
+    if (result?.repeatCommand?.id) {
+      this.remember(result.repeatCommand);
+      return;
+    }
+    if (metadata.repeatable !== true) return;
     this.#lastRepeatable = Object.freeze({
       id: String(id),
       args: structuredClone(args ?? {}),
@@ -153,6 +176,22 @@ export class ToolLifecycleController {
       label: String(label ?? commandId),
       timestamp: Date.now()
     });
+    this.#notify();
+    return this.status();
+  }
+
+  clearRepeatable(id = null) {
+    const expected = id === null
+      ? null
+      : String(id).trim();
+    if (
+      expected &&
+      this.#lastRepeatable?.id !== expected
+    ) {
+      return this.status();
+    }
+    if (!this.#lastRepeatable) return this.status();
+    this.#lastRepeatable = null;
     this.#notify();
     return this.status();
   }
@@ -180,28 +219,68 @@ export class ToolLifecycleController {
   }
 
   #loadPreferences() {
-    try {
-      const value = JSON.parse(this.#storage?.getItem?.(this.#storageKey) ?? "{}");
-      if (value.defaultKeepActive !== undefined) {
-        this.#defaultKeepActive = Boolean(value.defaultKeepActive);
+    const current = this.#readPreferences(this.#storageKey);
+    if (current) {
+      if (current.schemaVersion === TOOL_PREFERENCES_SCHEMA_VERSION) {
+        this.#applyPreferences(current);
       }
-      for (const [toolId, enabled] of Object.entries(value.keepByTool ?? {})) {
-        this.#keepByTool.set(toolId, Boolean(enabled));
-      }
-    } catch {
-      // Preferências inválidas não impedem a inicialização do editor.
+      return;
     }
+
+    const legacy = this.#readPreferences(this.#legacyStorageKey);
+    if (!legacy) return;
+    this.#applyPreferences(legacy);
+    this.#savePreferences();
   }
 
   #savePreferences() {
     try {
       this.#storage?.setItem?.(this.#storageKey, JSON.stringify({
+        schemaVersion: TOOL_PREFERENCES_SCHEMA_VERSION,
         defaultKeepActive: this.#defaultKeepActive,
         keepByTool: Object.fromEntries(this.#keepByTool)
       }));
     } catch {
       // Armazenamento indisponível mantém o estado somente na sessão atual.
     }
+  }
+
+  #readPreferences(storageKey) {
+    if (!storageKey) return null;
+    try {
+      const source = this.#storage?.getItem?.(storageKey);
+      if (source === null || source === undefined) return null;
+      const value = JSON.parse(source);
+      return value && typeof value === "object" && !Array.isArray(value)
+        ? value
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  #applyPreferences(value) {
+    if (typeof value.defaultKeepActive === "boolean") {
+      this.#defaultKeepActive = value.defaultKeepActive;
+    }
+    const keepByTool = value.keepByTool;
+    if (!keepByTool || typeof keepByTool !== "object" || Array.isArray(keepByTool)) {
+      return;
+    }
+    for (const [toolId, enabled] of Object.entries(keepByTool)) {
+      const normalized = String(toolId ?? "").trim();
+      if (normalized && typeof enabled === "boolean") {
+        this.#keepByTool.set(normalized, enabled);
+      }
+    }
+  }
+
+  #resolveToolId(toolId = null) {
+    const explicit = String(toolId ?? "").trim();
+    if (explicit) return explicit;
+    const active = String(this.#activeAction ?? "").trim();
+    if (active) return active;
+    return String(this.editor.snapshot().tool?.mode ?? "").trim();
   }
 
   #notify() {

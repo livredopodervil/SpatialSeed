@@ -177,9 +177,9 @@ export function createEditorCommands({
       requireObjectMode("duplicar objetos por programa afim");
       return selectionOperations.duplicateAffine(count, operations);
     })
-    .register("selection.repeat", () => {
+    .register("selection.repeat", ({ count = 1 } = {}) => {
       requireObjectMode("repetir a duplicação");
-      return selectionOperations.repeat();
+      return selectionOperations.repeat(count);
     })
     .register("selection.delete", () => {
       if (meshEditor?.active) {
@@ -269,11 +269,18 @@ export function createEditorCommands({
   if (toolLifecycle) {
     commands
       .register("edit.tool.keep.set", ({ enabled, toolId = null }) => {
+        const targetToolId = String(
+          toolId ?? toolLifecycle.status().toolId ?? ""
+        ).trim();
         const status = toolLifecycle.setKeepActive(enabled, {
-          toolId: toolId ?? undefined
+          toolId: targetToolId || undefined
         });
-        if (objectPlacement?.active) objectPlacement.setContinuous(enabled);
-        if (pathSketch?.status?.().active) pathSketch.setContinuous(enabled);
+        if (targetToolId === "object.place" && objectPlacement?.active) {
+          objectPlacement.setContinuous(enabled);
+        }
+        if (targetToolId === "path.sketch" && pathSketch?.status?.().active) {
+          pathSketch.setContinuous(enabled);
+        }
         return status;
       })
       .register("edit.command.repeat", () => toolLifecycle.repeat());

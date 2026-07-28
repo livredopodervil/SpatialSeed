@@ -484,9 +484,15 @@ duplicate
 move 1 0 0
 rotate 0 15 0
 repeat
+repeat count 5
 ```
 
-A primeira transformação confirmada depois de `duplicate` define a matriz delta. `repeat` cria a próxima fronteira. Se a história ficar obsoleta, o sistema limpa a referência em vez de operar sobre IDs apagados.
+As transformações confirmadas depois de `duplicate` recompõem a matriz delta
+até a primeira repetição. Assim, o exemplo preserva conjuntamente o movimento
+e a rotação. `repeat` cria a próxima fronteira; `repeat count N` cria `N`
+fronteiras numa única operação de undo e seleciona a última. Se a história
+ficar obsoleta, o sistema limpa a referência em vez de operar sobre IDs
+apagados.
 
 ### Programa paramétrico
 
@@ -1418,6 +1424,7 @@ Os apêndices concentram consulta rápida e os programas completos. Os arquivos 
 | `duplicate count N` | N cópias |
 | `duplicate count N op…` | sequência afim constante ou paramétrica |
 | `repeat` | reaplicar matriz delta constante |
+| `repeat count N` | reaplicar a matriz delta N vezes numa transação |
 | `group nome`, `ungroup` | criar ou abrir hierarquia |
 | `delete` | excluir seleção |
 | `undo`, `redo` | histórico local |

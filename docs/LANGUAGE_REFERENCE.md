@@ -158,6 +158,7 @@ Valores de snapping não podem ser negativos. Fora da sessão de malha, `vertice
 duplicate
 duplicate count N
 repeat
+repeat count N
 group [nome]
 ungroup
 delete
@@ -166,7 +167,9 @@ redo
 ```
 
 Duplicar ou excluir um grupo opera sobre a subárvore. `ungroup` remove um nível
-e preserva transforms mundiais dos filhos.
+e preserva transforms mundiais dos filhos. `repeat count N` aplica a matriz
+delta anterior `N` vezes em uma única operação de undo e seleciona a última
+fronteira.
 
 ## 4. Criação geométrica
 

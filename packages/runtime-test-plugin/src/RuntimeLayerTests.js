@@ -91,7 +91,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260728-0039a";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260728-0039b";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -141,7 +141,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260727-0035a";
+} from "../../devtools/src/DevConsole.js?build=20260728-0039b";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -192,8 +192,14 @@ import {
   constraintFromAxes
 } from "../../edit-context/src/index.js?build=20260728-0039a";
 import {
+  createEditorCommands
+} from "../../editor-commands/src/EditorCommands.js?build=20260728-0039c";
+import {
+  LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
+  TOOL_PREFERENCES_SCHEMA_VERSION,
+  TOOL_PREFERENCES_STORAGE_KEY,
   ToolLifecycleController
-} from "../../edit-tools/src/index.js?build=20260728-0039a";
+} from "../../edit-tools/src/index.js?build=20260728-0039c";
 import {
   deriveHudContext,
   geometryToolIcon,
@@ -434,7 +440,10 @@ export function createRuntimeLayerTests() {
       "ciclo de ferramenta memoriza e repete comando normalizado"() {
         const fixture = createEditContextFixture();
         const calls = [];
-        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
         lifecycle.attachExecute((id, args) => {
           calls.push({ id, args: structuredClone(args) });
           return { changed: true };
@@ -456,11 +465,61 @@ export function createRuntimeLayerTests() {
         lifecycle.dispose();
       },
 
-      "persistência é configurada separadamente por ferramenta"() {
+      "ciclo adia duplicate e prioriza a repetição matricial"() {
         const fixture = createEditContextFixture();
-        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        const calls = [];
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
+        lifecycle.attachExecute((id, args) => {
+          calls.push({ id, args: structuredClone(args) });
+          return { changed: true };
+        });
+        lifecycle.observeExecution({
+          id: "selection.duplicate",
+          args: {},
+          result: { changed: true, repeatDeferred: true },
+          metadata: { repeatable: true, label: "Duplicar" }
+        });
+        assertEqual(lifecycle.status().canRepeat, false);
+
+        lifecycle.observeExecution({
+          id: "selection.translate",
+          args: { delta: [1, 0, 0] },
+          result: {
+            changed: true,
+            repeatCommand: {
+              id: "selection.repeat",
+              args: { count: 2 },
+              label: "Repetir transformação"
+            }
+          },
+          metadata: { repeatable: true, label: "Mover seleção" }
+        });
+
+        assertEqual(
+          lifecycle.status().lastRepeatable.id,
+          "selection.repeat"
+        );
+        lifecycle.repeat();
+        assertDeepEqual(calls, [{
+          id: "selection.repeat",
+          args: { count: 2 }
+        }]);
+        lifecycle.dispose();
+      },
+
+      "continuidade é configurada separadamente por ferramenta"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
         lifecycle.activateAction("object.place");
         lifecycle.setKeepActive(false);
+        assertEqual(lifecycle.keepActive("object.place"), false);
+        assertEqual(lifecycle.keepActive("path.sketch"), true);
         lifecycle.completeAction("object.place");
         assertEqual(lifecycle.status().activeAction, null);
         lifecycle.activateAction("path.sketch");
@@ -468,6 +527,177 @@ export function createRuntimeLayerTests() {
         lifecycle.completeAction("path.sketch");
         assertEqual(lifecycle.status().activeAction, "path.sketch");
         lifecycle.cancelAction();
+        lifecycle.dispose();
+      },
+
+      "configuração sem alvo explícito segue a ferramenta corrente"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
+        fixture.renderer.setTransformMode("rotate");
+        lifecycle.setKeepActive(false);
+        assertEqual(lifecycle.status().toolId, "rotate");
+        assertEqual(lifecycle.status().keepActive, false);
+        assertEqual(lifecycle.keepActive("object.place"), true);
+        assertEqual(lifecycle.keepActive("path.sketch"), true);
+        lifecycle.dispose();
+      },
+
+      "preferências de continuidade sobrevivem à recarga"() {
+        const fixture = createEditContextFixture();
+        const storage = createMemoryStorage();
+        const first = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        first.setKeepActive(false, { toolId: "object.place" });
+        first.setKeepActive(true, { toolId: "path.sketch" });
+        first.dispose();
+
+        const restored = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        assertEqual(restored.keepActive("object.place"), false);
+        assertEqual(restored.keepActive("path.sketch"), true);
+        const persisted = JSON.parse(
+          storage.getItem(TOOL_PREFERENCES_STORAGE_KEY)
+        );
+        assertEqual(
+          persisted.schemaVersion,
+          TOOL_PREFERENCES_SCHEMA_VERSION
+        );
+        restored.dispose();
+      },
+
+      "preferências v1 migram sem apagar o registro legado"() {
+        const fixture = createEditContextFixture();
+        const legacyValue = JSON.stringify({
+          defaultKeepActive: false,
+          keepByTool: {
+            "object.place": false,
+            "path.sketch": true
+          }
+        });
+        const storage = createMemoryStorage({
+          [LEGACY_TOOL_PREFERENCES_STORAGE_KEY]: legacyValue
+        });
+        const migrated = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        assertEqual(migrated.keepActive("object.place"), false);
+        assertEqual(migrated.keepActive("path.sketch"), true);
+        assertEqual(
+          JSON.parse(storage.getItem(TOOL_PREFERENCES_STORAGE_KEY)).schemaVersion,
+          TOOL_PREFERENCES_SCHEMA_VERSION
+        );
+        assertEqual(
+          storage.getItem(LEGACY_TOOL_PREFERENCES_STORAGE_KEY),
+          legacyValue
+        );
+        migrated.dispose();
+
+        storage.setItem(LEGACY_TOOL_PREFERENCES_STORAGE_KEY, JSON.stringify({
+          defaultKeepActive: true,
+          keepByTool: {
+            "object.place": true,
+            "path.sketch": false
+          }
+        }));
+        const restored = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        assertEqual(restored.keepActive("object.place"), false);
+        assertEqual(restored.keepActive("path.sketch"), true);
+        restored.dispose();
+      },
+
+      "versão futura permanece intacta e não é interpretada"() {
+        const fixture = createEditContextFixture();
+        const futureValue = JSON.stringify({
+          schemaVersion: TOOL_PREFERENCES_SCHEMA_VERSION + 1,
+          defaultKeepActive: false,
+          keepByTool: {
+            "object.place": false,
+            "path.sketch": false
+          }
+        });
+        const storage = createMemoryStorage({
+          [TOOL_PREFERENCES_STORAGE_KEY]: futureValue,
+          [LEGACY_TOOL_PREFERENCES_STORAGE_KEY]: JSON.stringify({
+            defaultKeepActive: false,
+            keepByTool: {
+              "object.place": false,
+              "path.sketch": false
+            }
+          })
+        });
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        assertEqual(lifecycle.keepActive("object.place"), true);
+        assertEqual(lifecycle.keepActive("path.sketch"), true);
+        assertEqual(
+          storage.getItem(TOOL_PREFERENCES_STORAGE_KEY),
+          futureValue
+        );
+        lifecycle.dispose();
+      },
+
+      "comando de continuidade atualiza somente a sessão alvo"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
+        const placementValues = [];
+        const sketchValues = [];
+        const objectPlacement = {
+          active: true,
+          setContinuous(value) {
+            placementValues.push(Boolean(value));
+          }
+        };
+        const pathSketch = {
+          status() {
+            return { active: true };
+          },
+          setContinuous(value) {
+            sketchValues.push(Boolean(value));
+          }
+        };
+        const commands = createEditorCommands({
+          editor: fixture.editor,
+          renderer: fixture.renderer,
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolLifecycle: lifecycle,
+          objectPlacement,
+          pathSketch
+        });
+
+        lifecycle.activateAction("object.place");
+        commands.execute("edit.tool.keep.set", { enabled: false });
+        assertDeepEqual(placementValues, [false]);
+        assertDeepEqual(sketchValues, []);
+        assertEqual(lifecycle.keepActive("object.place"), false);
+        assertEqual(lifecycle.keepActive("path.sketch"), true);
+
+        commands.execute("edit.tool.keep.set", {
+          enabled: false,
+          toolId: "path.sketch"
+        });
+        assertDeepEqual(placementValues, [false]);
+        assertDeepEqual(sketchValues, [false]);
+        assertEqual(lifecycle.keepActive("object.place"), false);
+        assertEqual(lifecycle.keepActive("path.sketch"), false);
         lifecycle.dispose();
       },
 
@@ -10753,6 +10983,282 @@ assets: {
 
         assertEqual(copies.length, 1000);
         assert(performance.now() - startedAt < 5000);
+      },
+
+      "duplicate captura a matriz composta até repeat"() {
+        const repeatable = [];
+        const fixture = createSelectionRepeatFixture({
+          onRepeatableChanged: descriptor =>
+            repeatable.push(structuredClone(descriptor))
+        });
+        const duplicated = fixture.operations.duplicate();
+        const duplicate = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === duplicated.duplicateIds[0]
+        );
+
+        assertEqual(duplicate.name, "Semente #1");
+        assertEqual(repeatable.at(-1), null);
+
+        fixture.operations.translate([2, 0, 0]);
+        fixture.operations.rotateEuler([0, 0, 30]);
+        fixture.operations.scaleBy([1.5, 1.5, 1.5]);
+
+        const source = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === "seed"
+        );
+        const transformed = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === duplicated.duplicateIds[0]
+        );
+        const expectedDelta = sceneObjectMatrix(transformed)
+          .multiply(sceneObjectMatrix(source).invert())
+          .toArray();
+        const history = fixture.operations.getState();
+
+        assertMatricesNear(
+          history.lastDuplicate.deltaMatrix,
+          expectedDelta
+        );
+        assert(history.pendingDuplicate);
+        assertEqual(
+          repeatable.at(-1).id,
+          "selection.repeat"
+        );
+      },
+
+      "duplicação coordenada seleciona somente após snapshot"() {
+        const fixture = createSelectionRepeatFixture({ delayed: true });
+        const duplicated = fixture.operations.duplicate();
+
+        assertEqual(duplicated.publicationPending, true);
+        assertDeepEqual(
+          fixture.editor.selection.snapshot().members.map(
+            member => member.objectId
+          ),
+          ["seed"]
+        );
+
+        fixture.flush();
+
+        assertEqual(
+          fixture.operations.getState().pendingPublication,
+          null
+        );
+        assertDeepEqual(
+          fixture.editor.selection.snapshot().members.map(
+            member => member.objectId
+          ),
+          duplicated.duplicateIds
+        );
+        assert(
+          duplicated.duplicateIds.every(id =>
+            fixture.sandbox.getSnapshot().objects.some(
+              object => object.id === id
+            )
+          )
+        );
+      },
+
+      "rejeição coordenada restaura o histórico anterior"() {
+        const fixture = createSelectionRepeatFixture({ delayed: true });
+        const duplicated = fixture.operations.duplicate();
+
+        assertEqual(duplicated.publicationPending, true);
+        fixture.reject();
+
+        assertDeepEqual(
+          fixture.operations.getState(),
+          {
+            pendingDuplicate: null,
+            lastDuplicate: null,
+            pendingPublication: null
+          }
+        );
+        assertDeepEqual(
+          fixture.editor.selection.snapshot().members.map(
+            member => member.objectId
+          ),
+          ["seed"]
+        );
+        assertEqual(fixture.sandbox.getSnapshot().objects.length, 1);
+      },
+
+      "repeat count mantém delta e cria uma transação"() {
+        const fixture = createSelectionRepeatFixture();
+        const duplicated = fixture.operations.duplicate();
+        fixture.operations.translate([2, 0, 0]);
+        fixture.operations.rotateEuler([0, 0, 30]);
+        fixture.operations.scaleBy([1.5, 1.5, 1.5]);
+
+        const first = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === duplicated.duplicateIds[0]
+        );
+        const deltaBefore = fixture.operations
+          .getState()
+          .lastDuplicate
+          .deltaMatrix;
+        const historyBefore = fixture.sandbox
+          .getHistoryDiagnostics()
+          .undoDepth;
+        const repeated = fixture.operations.repeat(2);
+
+        assertEqual(repeated.repeatCount, 2);
+        assertEqual(repeated.duplicateIds.length, 2);
+        assertEqual(repeated.selectedIds.length, 1);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().undoDepth,
+          historyBefore + 1
+        );
+        assertMatricesNear(
+          fixture.operations.getState().lastDuplicate.deltaMatrix,
+          deltaBefore
+        );
+
+        const finalObject = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === repeated.selectedIds[0]
+        );
+        const delta = new THREE.Matrix4().fromArray(deltaBefore);
+        const expectedFinal = delta.clone()
+          .multiply(delta)
+          .multiply(sceneObjectMatrix(first))
+          .toArray();
+        assertMatricesNear(
+          sceneObjectMatrix(finalObject).toArray(),
+          expectedFinal,
+          1e-8
+        );
+
+        assertEqual(fixture.sandbox.undo(), true);
+        assertEqual(fixture.sandbox.getSnapshot().objects.length, 2);
+      },
+
+      "repeat preserva delta mundial sob pai transformado"() {
+        const sandbox = createGroupTransformSandbox({
+          groupRotation: eulerQuaternion([0, 0, 35])
+        });
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "group-transform-test",
+          objectId: "child"
+        });
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: "group-transform-test"
+        });
+        const duplicated = operations.duplicate();
+        const firstId = duplicated.duplicateIds[0];
+        const hierarchy = new HierarchyIndex(
+          sandbox.getSnapshot().objects
+        );
+        const worldDelta = composeTransform({
+          position: [2, -1, 0],
+          rotation: eulerQuaternion([0, 0, 20]),
+          scale: [1, 1, 1]
+        });
+        sandbox.dispatch({
+          type: "selection.transform-world",
+          transforms: [{
+            id: firstId,
+            worldMatrix: multiplyMatrices(
+              worldDelta,
+              hierarchy.worldMatrixOf(firstId)
+            )
+          }]
+        });
+
+        assertMatricesNear(
+          operations.getState().lastDuplicate.deltaMatrix,
+          worldDelta,
+          1e-8
+        );
+        const firstWorld = new HierarchyIndex(
+          sandbox.getSnapshot().objects
+        ).worldMatrixOf(firstId);
+        const repeated = operations.repeat();
+        const nextWorld = new HierarchyIndex(
+          sandbox.getSnapshot().objects
+        ).worldMatrixOf(repeated.selectedIds[0]);
+
+        assertMatricesNear(
+          nextWorld,
+          multiplyMatrices(worldDelta,firstWorld),
+          1e-8
+        );
+      },
+
+      "repeat preserva matriz afim local sob pai transformado"() {
+        const sandbox = createGroupTransformSandbox({
+          groupRotation: eulerQuaternion([0, 0, 35])
+        });
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "group-transform-test",
+          objectId: "child"
+        });
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: "group-transform-test"
+        });
+        const delta = new THREE.Matrix4().makeTranslation(2, -1, 0);
+        const duplicated = operations.duplicateAffine(1, [{
+          type: "matrix",
+          value: delta.toArray()
+        }]);
+        const first = sandbox.getSnapshot().objects.find(
+          object => object.id === duplicated.selectedIds[0]
+        );
+        const repeated = operations.repeat();
+        const next = sandbox.getSnapshot().objects.find(
+          object => object.id === repeated.selectedIds[0]
+        );
+
+        assertEqual(
+          operations.getState().lastDuplicate.matrixSpace,
+          "local"
+        );
+        assertMatricesNear(
+          sceneObjectMatrix(next).toArray(),
+          delta.clone().multiply(sceneObjectMatrix(first)).toArray(),
+          1e-8
+        );
+      },
+
+      "console aceita duplicate count e repeat count"() {
+        const calls = [];
+        const console = createGeometryConsole(calls);
+
+        console.execute("duplicate count 4");
+        console.execute("duplicate count 3 move 1 0 0");
+        console.execute("repeat");
+        console.execute("repeat count 5");
+
+        assertDeepEqual(calls, [
+          {
+            id: "selection.duplicateMany",
+            args: { count: 4 }
+          },
+          {
+            id: "selection.duplicateAffine",
+            args: {
+              count: 3,
+              operations: [{
+                type: "move",
+                value: [1, 0, 0]
+              }]
+            }
+          },
+          {
+            id: "selection.repeat",
+            args: undefined
+          },
+          {
+            id: "selection.repeat",
+            args: { count: 5 }
+          }
+        ]);
       }
     },
 
@@ -11341,6 +11847,106 @@ function createAffineDiagnosticSandbox(initialObjects = []) {
       return true;
     }
   };
+}
+
+function createSelectionRepeatFixture({
+  onRepeatableChanged = null,
+  delayed = false
+} = {}) {
+  const region = new Region(
+    {
+      id: "repeat-region",
+      name: "Repeat",
+      type: "box-region"
+    },
+    {
+      schemaVersion: 1,
+      objects: [{
+        id: "seed",
+        name: "Semente",
+        kind: "box",
+        position: [1, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+        size: [1, 1, 1],
+        material: { color: "#ffffff" },
+        instanceState: {}
+      }]
+    }
+  );
+  const baseSandbox = new Sandbox(region, boxRegionReducer);
+  const delayedSandbox = delayed
+    ? createDelayedSandbox(baseSandbox)
+    : null;
+  const sandbox = delayedSandbox ?? baseSandbox;
+  const editor = new EditorState();
+  editor.selection.replace({
+    kind: "object",
+    regionId: region.descriptor.id,
+    objectId: "seed"
+  });
+  const operations = new SelectionOperations({
+    editor,
+    sandbox,
+    regionId: region.descriptor.id,
+    onRepeatableChanged
+  });
+  return {
+    editor,
+    operations,
+    region,
+    sandbox,
+    flush: delayedSandbox?.flush ?? (() => false),
+    reject: delayedSandbox?.reject ?? (() => false)
+  };
+}
+
+function createDelayedSandbox(sandbox) {
+  const queue = [];
+  const coordinationListeners = new Set();
+  return {
+    region: sandbox.region,
+    reducer: sandbox.reducer,
+    getSnapshot: () => sandbox.getSnapshot(),
+    getState: () => sandbox.getState(),
+    getHistoryDiagnostics: () => sandbox.getHistoryDiagnostics(),
+    subscribe: listener => sandbox.subscribe(listener),
+    subscribeCoordination(listener) {
+      coordinationListeners.add(listener);
+      return () => coordinationListeners.delete(listener);
+    },
+    dispatch(command) {
+      queue.push(structuredClone(command));
+      return true;
+    },
+    flush() {
+      const command = queue.shift();
+      return command ? sandbox.dispatch(command) : false;
+    },
+    reject() {
+      const command = queue.shift();
+      if (!command) return false;
+      const snapshot = {
+        pendingIntents: queue.length,
+        lastOutcome: {
+          status: "rejected-test",
+          commandType: command.type
+        }
+      };
+      for (const listener of coordinationListeners) {
+        listener(snapshot);
+      }
+      return true;
+    }
+  };
+}
+
+function sceneObjectMatrix(object) {
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3().fromArray(object.position),
+    new THREE.Quaternion().fromArray(object.rotation),
+    new THREE.Vector3().fromArray(object.scale)
+  );
 }
 
 function roundAffine(value) {
@@ -12108,6 +12714,21 @@ function createEditContextFixture() {
     referenceFrame() { return null; }
   };
   return { editor, renderer, meshEditor };
+}
+
+function createMemoryStorage(initial = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem(key) {
+      return values.get(String(key)) ?? null;
+    },
+    setItem(key, value) {
+      values.set(String(key), String(value));
+    },
+    removeItem(key) {
+      values.delete(String(key));
+    }
+  };
 }
 
 function assertEqual(actual, expected) {

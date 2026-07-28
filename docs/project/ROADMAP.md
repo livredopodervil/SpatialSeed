@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 27 de julho de 2026 durante o marco `0037`.
+> Documento vivo. Auditado em 28 de julho de 2026 durante o marco `0039c`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -250,6 +250,16 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - memória local de geometria, cor e parâmetros de material;
 - materiais físicos editáveis por objeto no workspace e Inspector;
 - luzes pontuais, direcionais, spot e ambiente como objetos persistentes editáveis.
+
+### 0038–0039c — Ciclo de ferramentas e repetição — implementado
+
+- ferramentas persistentes com posicionamento e desenho contínuos;
+- plano de edição independente da trava de visualização;
+- repetição normalizada pela mesma rota do HUD, workspace e console;
+- duplicação seguida de transformação composta e `repeat count`;
+- preferências de continuidade isoladas por identidade semântica;
+- armazenamento versionado e migração sem apagar preferências anteriores;
+- testes do lifecycle isolados do estado real do navegador.
 
 ### Próximas extensões geométricas
 

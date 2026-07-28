@@ -560,8 +560,7 @@ export class DevConsole {
         return this.commands.execute("selection.ungroup");
 
       case "repeat":
-        this.#expectMaximum(tokens, 0, "repeat");
-        return this.commands.execute("selection.repeat");
+        return this.#repeat(tokens);
 
       case "delete":
         this.#expectMaximum(tokens, 0, "delete");
@@ -663,6 +662,7 @@ export class DevConsole {
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
         "runtime test viewer-animation|animation-runtime|animation-commands|" +
+        "affine-repeat|" +
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|path-references|mesh-edit-math|" +
         "geometry-creation|geometry-registry|" +
@@ -700,7 +700,7 @@ export class DevConsole {
         "  pivot median|bounds|active",
         "  pivot absolute x y z",
         "  pivot relative dx dy dz",
-        "repeat",
+        "repeat [count N]",
         "delete",
         "pivot median|bounds|active",
         "pivot absolute x y z",
@@ -2486,6 +2486,25 @@ export class DevConsole {
       count,
       operations
     });
+  }
+
+  #repeat(tokens) {
+    if (!tokens.length) {
+      return this.commands.execute("selection.repeat");
+    }
+
+    const mode = (tokens.shift() ?? "").toLowerCase();
+    if (mode !== "count" || !tokens.length) {
+      throw new Error("Uso: repeat [count N]");
+    }
+
+    const count = this.#positive(tokens.shift());
+    if (!Number.isInteger(count)) {
+      throw new Error("A quantidade deve ser inteira.");
+    }
+    this.#expectMaximum(tokens, 0, "repeat count N");
+
+    return this.commands.execute("selection.repeat", { count });
   }
 
   #tokenize(line) {

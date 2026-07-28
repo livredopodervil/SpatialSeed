@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260728-0039a",
-  "channel": "feature/0039a-adaptive-context-hud"
+  "build": "20260728-0039c",
+  "channel": "fix/0039c-tool-persistence"
 }
