@@ -16,11 +16,11 @@ import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=2
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260728-0039a";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260728-0039b";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260728-0039b";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260728-0039c";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260728-0039b";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260728-0039c";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -91,7 +91,7 @@ import {
 } from "../../../packages/edit-hud/src/index.js?build=20260728-0039a";
 import {
   ToolLifecycleController
-} from "../../../packages/edit-tools/src/index.js?build=20260728-0039b";
+} from "../../../packages/edit-tools/src/index.js?build=20260728-0039c";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260728-0039a";

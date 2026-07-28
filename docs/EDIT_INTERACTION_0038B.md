@@ -13,7 +13,18 @@ viewer e preserva a regra de que somente comandos públicos alteram o projeto.
 ação interativa em curso, como posicionar objetos ou desenhar caminhos. Cada
 ação pode ser mantida ativa separadamente. O HUD e o painel expõem a opção
 **Manter ferramenta**. A preferência é lembrada por ferramenta em
-`localStorage["spatialseed.edit.tools.v1"]`.
+`localStorage["spatialseed.edit.tools.v2"]`.
+
+O registro `v2` possui versão explícita e usa o identificador semântico da
+ferramenta como chave. Quando ele ainda não existe, o controlador importa os
+valores booleanos válidos de `spatialseed.edit.tools.v1`, grava o novo registro
+e conserva o legado intacto. Uma preferência anterior do usuário, inclusive
+`false`, continua sendo respeitada.
+
+Sem `toolId` explícito, a configuração resolve primeiro a ação interativa ativa
+e depois a ferramenta editorial corrente. Ela nunca altera simultaneamente
+posicionamento e desenho. HUD, workspace e console passam pelo mesmo comando e
+somente a sessão correspondente ao alvo recebe a mudança de continuidade.
 
 - `single-shot`: termina depois da execução;
 - `sticky`: permanece ativa quando configurada;

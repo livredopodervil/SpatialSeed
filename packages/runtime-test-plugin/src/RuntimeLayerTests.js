@@ -192,8 +192,14 @@ import {
   constraintFromAxes
 } from "../../edit-context/src/index.js?build=20260728-0039a";
 import {
+  createEditorCommands
+} from "../../editor-commands/src/EditorCommands.js?build=20260728-0039c";
+import {
+  LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
+  TOOL_PREFERENCES_SCHEMA_VERSION,
+  TOOL_PREFERENCES_STORAGE_KEY,
   ToolLifecycleController
-} from "../../edit-tools/src/index.js?build=20260728-0039b";
+} from "../../edit-tools/src/index.js?build=20260728-0039c";
 import {
   deriveHudContext,
   geometryToolIcon,
@@ -434,7 +440,10 @@ export function createRuntimeLayerTests() {
       "ciclo de ferramenta memoriza e repete comando normalizado"() {
         const fixture = createEditContextFixture();
         const calls = [];
-        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
         lifecycle.attachExecute((id, args) => {
           calls.push({ id, args: structuredClone(args) });
           return { changed: true };
@@ -459,7 +468,10 @@ export function createRuntimeLayerTests() {
       "ciclo adia duplicate e prioriza a repetição matricial"() {
         const fixture = createEditContextFixture();
         const calls = [];
-        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
         lifecycle.attachExecute((id, args) => {
           calls.push({ id, args: structuredClone(args) });
           return { changed: true };
@@ -498,11 +510,16 @@ export function createRuntimeLayerTests() {
         lifecycle.dispose();
       },
 
-      "persistência é configurada separadamente por ferramenta"() {
+      "continuidade é configurada separadamente por ferramenta"() {
         const fixture = createEditContextFixture();
-        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
         lifecycle.activateAction("object.place");
         lifecycle.setKeepActive(false);
+        assertEqual(lifecycle.keepActive("object.place"), false);
+        assertEqual(lifecycle.keepActive("path.sketch"), true);
         lifecycle.completeAction("object.place");
         assertEqual(lifecycle.status().activeAction, null);
         lifecycle.activateAction("path.sketch");
@@ -510,6 +527,177 @@ export function createRuntimeLayerTests() {
         lifecycle.completeAction("path.sketch");
         assertEqual(lifecycle.status().activeAction, "path.sketch");
         lifecycle.cancelAction();
+        lifecycle.dispose();
+      },
+
+      "configuração sem alvo explícito segue a ferramenta corrente"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
+        fixture.renderer.setTransformMode("rotate");
+        lifecycle.setKeepActive(false);
+        assertEqual(lifecycle.status().toolId, "rotate");
+        assertEqual(lifecycle.status().keepActive, false);
+        assertEqual(lifecycle.keepActive("object.place"), true);
+        assertEqual(lifecycle.keepActive("path.sketch"), true);
+        lifecycle.dispose();
+      },
+
+      "preferências de continuidade sobrevivem à recarga"() {
+        const fixture = createEditContextFixture();
+        const storage = createMemoryStorage();
+        const first = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        first.setKeepActive(false, { toolId: "object.place" });
+        first.setKeepActive(true, { toolId: "path.sketch" });
+        first.dispose();
+
+        const restored = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        assertEqual(restored.keepActive("object.place"), false);
+        assertEqual(restored.keepActive("path.sketch"), true);
+        const persisted = JSON.parse(
+          storage.getItem(TOOL_PREFERENCES_STORAGE_KEY)
+        );
+        assertEqual(
+          persisted.schemaVersion,
+          TOOL_PREFERENCES_SCHEMA_VERSION
+        );
+        restored.dispose();
+      },
+
+      "preferências v1 migram sem apagar o registro legado"() {
+        const fixture = createEditContextFixture();
+        const legacyValue = JSON.stringify({
+          defaultKeepActive: false,
+          keepByTool: {
+            "object.place": false,
+            "path.sketch": true
+          }
+        });
+        const storage = createMemoryStorage({
+          [LEGACY_TOOL_PREFERENCES_STORAGE_KEY]: legacyValue
+        });
+        const migrated = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        assertEqual(migrated.keepActive("object.place"), false);
+        assertEqual(migrated.keepActive("path.sketch"), true);
+        assertEqual(
+          JSON.parse(storage.getItem(TOOL_PREFERENCES_STORAGE_KEY)).schemaVersion,
+          TOOL_PREFERENCES_SCHEMA_VERSION
+        );
+        assertEqual(
+          storage.getItem(LEGACY_TOOL_PREFERENCES_STORAGE_KEY),
+          legacyValue
+        );
+        migrated.dispose();
+
+        storage.setItem(LEGACY_TOOL_PREFERENCES_STORAGE_KEY, JSON.stringify({
+          defaultKeepActive: true,
+          keepByTool: {
+            "object.place": true,
+            "path.sketch": false
+          }
+        }));
+        const restored = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        assertEqual(restored.keepActive("object.place"), false);
+        assertEqual(restored.keepActive("path.sketch"), true);
+        restored.dispose();
+      },
+
+      "versão futura permanece intacta e não é interpretada"() {
+        const fixture = createEditContextFixture();
+        const futureValue = JSON.stringify({
+          schemaVersion: TOOL_PREFERENCES_SCHEMA_VERSION + 1,
+          defaultKeepActive: false,
+          keepByTool: {
+            "object.place": false,
+            "path.sketch": false
+          }
+        });
+        const storage = createMemoryStorage({
+          [TOOL_PREFERENCES_STORAGE_KEY]: futureValue,
+          [LEGACY_TOOL_PREFERENCES_STORAGE_KEY]: JSON.stringify({
+            defaultKeepActive: false,
+            keepByTool: {
+              "object.place": false,
+              "path.sketch": false
+            }
+          })
+        });
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage
+        });
+        assertEqual(lifecycle.keepActive("object.place"), true);
+        assertEqual(lifecycle.keepActive("path.sketch"), true);
+        assertEqual(
+          storage.getItem(TOOL_PREFERENCES_STORAGE_KEY),
+          futureValue
+        );
+        lifecycle.dispose();
+      },
+
+      "comando de continuidade atualiza somente a sessão alvo"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
+        const placementValues = [];
+        const sketchValues = [];
+        const objectPlacement = {
+          active: true,
+          setContinuous(value) {
+            placementValues.push(Boolean(value));
+          }
+        };
+        const pathSketch = {
+          status() {
+            return { active: true };
+          },
+          setContinuous(value) {
+            sketchValues.push(Boolean(value));
+          }
+        };
+        const commands = createEditorCommands({
+          editor: fixture.editor,
+          renderer: fixture.renderer,
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolLifecycle: lifecycle,
+          objectPlacement,
+          pathSketch
+        });
+
+        lifecycle.activateAction("object.place");
+        commands.execute("edit.tool.keep.set", { enabled: false });
+        assertDeepEqual(placementValues, [false]);
+        assertDeepEqual(sketchValues, []);
+        assertEqual(lifecycle.keepActive("object.place"), false);
+        assertEqual(lifecycle.keepActive("path.sketch"), true);
+
+        commands.execute("edit.tool.keep.set", {
+          enabled: false,
+          toolId: "path.sketch"
+        });
+        assertDeepEqual(placementValues, [false]);
+        assertDeepEqual(sketchValues, [false]);
+        assertEqual(lifecycle.keepActive("object.place"), false);
+        assertEqual(lifecycle.keepActive("path.sketch"), false);
         lifecycle.dispose();
       },
 
@@ -12526,6 +12714,21 @@ function createEditContextFixture() {
     referenceFrame() { return null; }
   };
   return { editor, renderer, meshEditor };
+}
+
+function createMemoryStorage(initial = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem(key) {
+      return values.get(String(key)) ?? null;
+    },
+    setItem(key, value) {
+      values.set(String(key), String(value));
+    },
+    removeItem(key) {
+      values.delete(String(key));
+    }
+  };
 }
 
 function assertEqual(actual, expected) {
