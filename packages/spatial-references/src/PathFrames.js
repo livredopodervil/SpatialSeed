@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import {
+  curveFromDescriptor
+} from "../../geometry-registry/src/index.js?build=20260728-0039d";
+import {
   normalizePointList,
   removeConsecutiveDuplicates,
   stripRepeatedEndpoint
@@ -21,13 +24,36 @@ export function createPathCurve(points, {
     throw new Error("Um caminho fechado exige ao menos três pontos distintos.");
   }
   const vectors = normalized.map(point => new THREE.Vector3().fromArray(point));
+  const normalizedCurveType = String(curveType ?? "centripetal").toLowerCase();
+  if (normalizedCurveType === "bezier") {
+    if (closed) {
+      throw new Error("O caminho Bézier distribuído deve ser aberto.");
+    }
+    if ((normalized.length - 1) % 3 !== 0) {
+      throw new Error("O caminho Bézier exige 3n+1 pontos de controle.");
+    }
+    return curveFromDescriptor({
+      points: normalized,
+      closed: Boolean(closed),
+      curveType: normalizedCurveType,
+      tension: finite(tension, "tension")
+    });
+  }
   if (vectors.length === 2) {
     return new THREE.LineCurve3(vectors[0], vectors[1]);
+  }
+  if (normalizedCurveType === "polyline") {
+    return curveFromDescriptor({
+      points: normalized,
+      closed: Boolean(closed),
+      curveType: normalizedCurveType,
+      tension: finite(tension, "tension")
+    });
   }
   return new THREE.CatmullRomCurve3(
     vectors,
     Boolean(closed),
-    normalizeCurveType(curveType),
+    normalizeCurveType(normalizedCurveType),
     finite(tension, "tension")
   );
 }

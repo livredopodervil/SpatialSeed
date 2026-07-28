@@ -131,7 +131,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260726-0031a";
+} from "../../geometry-registry/src/index.js?build=20260728-0039d";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -141,7 +141,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260728-0039b";
+} from "../../devtools/src/DevConsole.js?build=20260728-0039d";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -193,25 +193,32 @@ import {
 } from "../../edit-context/src/index.js?build=20260728-0039a";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260728-0039c";
+} from "../../editor-commands/src/EditorCommands.js?build=20260728-0039d";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
+  TOOL_PARAMETER_SCHEMA_VERSION,
+  TOOL_PARAMETER_STORAGE_KEY,
   TOOL_PREFERENCES_SCHEMA_VERSION,
   TOOL_PREFERENCES_STORAGE_KEY,
-  ToolLifecycleController
-} from "../../edit-tools/src/index.js?build=20260728-0039c";
+  ToolLifecycleController,
+  ToolParameterStore,
+  createDefaultEditToolRegistry,
+  createLegacyToolParameterMigration
+} from "../../edit-tools/src/index.js?build=20260728-0039d";
 import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
 } from "../../edit-hud/src/index.js?build=20260728-0039a";
 import {
+  PathSketchController,
   PathToolService,
   SpatialReferenceResolver,
   createSweepGeometryDescriptor,
   orderEdgeChain,
-  rotationMinimizingFrames
-} from "../../spatial-references/src/index.js?build=20260728-0039a";
+  rotationMinimizingFrames,
+  samplePathFrames
+} from "../../spatial-references/src/index.js?build=20260728-0039d";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -718,6 +725,262 @@ export function createRuntimeLayerTests() {
       }
     },
 
+    "tool-parameters": {
+      "registro declara defaults, limites e campos condicionais"() {
+        const registry = createDefaultEditToolRegistry();
+        const sketch = registry.definition("path.sketch");
+        const described = registry.describe("path.sketch");
+        const radius = sketch.parameters.find(
+          parameter => parameter.id === "radius"
+        );
+        const count = sketch.parameters.find(
+          parameter => parameter.id === "count"
+        );
+        assertDeepEqual(radius.when, { mode: "tube" });
+        assertDeepEqual(count.when, { mode: "array" });
+        assertEqual(Object.isFrozen(described.parameters), true);
+        assertEqual(Object.isFrozen(described.parameters[0].options), true);
+        assertEqual(registry.defaults("path.array").count, 8);
+        assertThrowsMessage(
+          () => registry.normalizePatch("path.array", { count: 1.5 }),
+          "deve ser inteiro"
+        );
+        assertThrowsMessage(
+          () => registry.normalizePatch("path.tube", { radius: 0 }),
+          "maior ou igual"
+        );
+        assertThrowsMessage(
+          () => registry.normalizePatch("path.tube", { raio: 1 }),
+          "Parâmetro desconhecido"
+        );
+      },
+
+      "última configuração permanece independente por ferramenta e recarga"() {
+        const registry = createDefaultEditToolRegistry();
+        const storage = createMemoryStorage();
+        const first = new ToolParameterStore({ registry, storage });
+        first.set("path.sketch", {
+          mode: "array",
+          count: 17,
+          align: false
+        });
+        first.set("path.tube", {
+          radius: 0.42,
+          radialSegments: 11
+        });
+        first.dispose();
+
+        const restored = new ToolParameterStore({ registry, storage });
+        assertEqual(restored.values("path.sketch").mode, "array");
+        assertEqual(restored.values("path.sketch").count, 17);
+        assertEqual(restored.values("path.sketch").align, false);
+        assertNear(restored.values("path.tube").radius, 0.42);
+        assertEqual(restored.values("path.tube").radialSegments, 11);
+        assertEqual(restored.values("path.array").count, 8);
+        assertEqual(
+          JSON.parse(storage.getItem(TOOL_PARAMETER_STORAGE_KEY)).schemaVersion,
+          TOOL_PARAMETER_SCHEMA_VERSION
+        );
+        restored.dispose();
+      },
+
+      "migração recupera defaults antigos sem apagar suas chaves"() {
+        const hudValue = JSON.stringify({
+          defaults: {
+            extrude: 2.5,
+            inset: 0.35,
+            pathRadius: 0.19
+          }
+        });
+        const geometryValue = JSON.stringify({
+          parameters: {
+            tube: {
+              "parameter-radius": 0.33,
+              "parameter-tubularSegments": 72,
+              "parameter-radialSegments": 9,
+              "parameter-closed": true,
+              "parameter-curveType": "polyline"
+            }
+          }
+        });
+        const storage = createMemoryStorage({
+          "spatialseed.edit.hud.v1": hudValue,
+          "spatialseed.geometry.creation.defaults.v1": geometryValue
+        });
+        const store = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage,
+          migrate: createLegacyToolParameterMigration()
+        });
+        assertNear(store.values("path.sketch").radius, 0.19);
+        assertNear(store.values("path.from-selection").radius, 0.19);
+        assertNear(store.values("path.tube").radius, 0.33);
+        assertEqual(store.values("path.tube").tubularSegments, 72);
+        assertEqual(store.values("path.tube").radialSegments, 9);
+        assertEqual(store.values("path.tube").closed, true);
+        assertEqual(store.values("path.tube").curveType, "polyline");
+        assertNear(store.values("mesh.extrude").distance, 2.5);
+        assertNear(store.values("mesh.inset").amount, 0.35);
+        assertEqual(storage.getItem("spatialseed.edit.hud.v1"), hudValue);
+        assertEqual(
+          storage.getItem("spatialseed.geometry.creation.defaults.v1"),
+          geometryValue
+        );
+        store.dispose();
+
+        const partial = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage: createMemoryStorage(),
+          migrate: () => ({
+            "path.tube": { radius: 0.44 },
+            "path.array": { count: 0 }
+          })
+        });
+        assertNear(partial.values("path.tube").radius, 0.44);
+        assertEqual(partial.values("path.array").count, 8);
+        partial.dispose();
+      },
+
+      "registro de versão futura permanece intacto e somente leitura"() {
+        const futureValue = JSON.stringify({
+          schemaVersion: TOOL_PARAMETER_SCHEMA_VERSION + 1,
+          tools: {
+            "path.tube": { radius: 9 }
+          }
+        });
+        const storage = createMemoryStorage({
+          [TOOL_PARAMETER_STORAGE_KEY]: futureValue
+        });
+        const store = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage
+        });
+        assertEqual(store.status().futureSchema, true);
+        assertNear(store.values("path.tube").radius, 0.25);
+        assertThrowsMessage(
+          () => store.set("path.tube", { radius: 0.4 }),
+          "somente leitura"
+        );
+        let invocation = null;
+        const commands = createEditorCommands({
+          editor: {},
+          renderer: {},
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolParameters: store,
+          pathTools: {
+            createTube(args) {
+              invocation = structuredClone(args);
+              return { changed: true };
+            }
+          }
+        });
+        assertEqual(commands.execute("path.tube.create", {
+          path: { objectId: "future-safe-path" },
+          radius: 0.4
+        }).changed, true);
+        assertNear(invocation.radius, 0.4);
+        assertEqual(storage.getItem(TOOL_PARAMETER_STORAGE_KEY), futureValue);
+        store.dispose();
+      },
+
+      "comando usa valores lembrados quando a superfície os omite"() {
+        const storage = createMemoryStorage();
+        const toolParameters = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage
+        });
+        const calls = [];
+        const commands = createEditorCommands({
+          editor: {},
+          renderer: {},
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolParameters,
+          pathTools: {
+            createTube(args) {
+              calls.push(structuredClone(args));
+              return { changed: true };
+            }
+          }
+        });
+        commands.execute("path.tube.create", {
+          path: { objectId: "curve-a" },
+          radius: 0.61,
+          radialSegments: 12
+        });
+        commands.execute("path.tube.create", {
+          path: { objectId: "curve-b" }
+        });
+        assertNear(calls[1].radius, 0.61);
+        assertEqual(calls[1].radialSegments, 12);
+        assertEqual(calls[1].path.objectId, "curve-b");
+        assertEqual(Object.hasOwn(calls[1], "closed"), false);
+        assertNear(toolParameters.values("path.tube").radius, 0.61);
+        toolParameters.dispose();
+      },
+
+      "ajuste de desenho ativo atualiza o preview sem comando de documento"() {
+        const toolParameters = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage: createMemoryStorage()
+        });
+        const updates = [];
+        const commands = createEditorCommands({
+          editor: {},
+          renderer: {},
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolParameters,
+          pathSketch: {
+            status() {
+              return { active: true };
+            },
+            updateSettings(settings) {
+              updates.push(structuredClone(settings));
+            }
+          }
+        });
+        commands.execute("edit.tool.parameters.set", {
+          toolId: "path.sketch",
+          patch: {
+            mode: "array",
+            count: 21,
+            twistDegrees: 45
+          }
+        });
+        assertEqual(updates.length, 1);
+        assertEqual(updates[0].mode, "array");
+        assertEqual(updates[0].count, 21);
+        assertEqual(updates[0].twistDegrees, 45);
+        toolParameters.dispose();
+      },
+
+      "console omite defaults locais e inicia desenho de tubo ou geometria"() {
+        const calls = [];
+        const console = createPathConsole(calls);
+        console.execute("path tube object=curve-a");
+        console.execute("path draw");
+        console.execute(
+          "path draw mode=array count=13 align=off twist=25 plane=world-xy"
+        );
+        assertEqual(Object.hasOwn(calls[0].args, "radius"), false);
+        assertEqual(calls[1].id, "path.sketch.begin");
+        assertDeepEqual(calls[1].args, {});
+        assertEqual(calls[2].args.mode, "array");
+        assertEqual(calls[2].args.count, 13);
+        assertEqual(calls[2].args.align, false);
+        assertEqual(calls[2].args.twistDegrees, 25);
+        assertEqual(calls[2].args.planeSource, "world-xy");
+      }
+    },
+
     "hud-context": {
       "seleção de objetos promove ações de edição"() {
         const result = deriveHudContext({
@@ -813,6 +1076,32 @@ export function createRuntimeLayerTests() {
           assertNear(tangent.dot(binormal), 0, 1e-9);
           assertNear(normal.dot(binormal), 0, 1e-9);
         });
+      },
+
+      "frames aceitam polilinha e controles Bézier desenhados"() {
+        const polyline = samplePathFrames({
+          points: [[0, 0, 0], [2, 0, 0], [2, 3, 0]],
+          count: 5,
+          curveType: "polyline"
+        });
+        const fixture = createPathToolFixture();
+        const bezierPoints = fixture.service.prepareSketchPoints({
+          points: [[0, 0, 0], [1, 2, 0], [3, 0, 0]],
+          curveType: "bezier",
+          tension: 0.5
+        });
+        const bezier = samplePathFrames({
+          points: bezierPoints,
+          count: 7,
+          curveType: "bezier"
+        });
+        assertEqual(polyline.positions.length, 5);
+        assertVectorNear(polyline.positions[0], [0, 0, 0]);
+        assertVectorNear(polyline.positions.at(-1), [2, 3, 0]);
+        assertEqual((bezierPoints.length - 1) % 3, 0);
+        assertEqual(bezier.positions.length, 7);
+        assertVectorNear(bezier.positions[0], [0, 0, 0]);
+        assertVectorNear(bezier.positions.at(-1), [3, 0, 0]);
       },
 
       "varredura produz malha triangular fechada nas extremidades"() {
@@ -1076,6 +1365,104 @@ export function createRuntimeLayerTests() {
           state.objects.find(object => object.id === array.createdIds.at(-1)).position,
           [2, 4, 0]
         );
+      },
+
+      "traço distribui qualquer geometria ou grupo em uma ação atômica"() {
+        const fixture = createPathToolFixture();
+        fixture.editor.selection.replace({
+          kind: "object",
+          regionId: "path-tool-region",
+          objectId: "array-group"
+        });
+        const sourceIds = fixture.service.captureArraySource();
+        const points = [[0, 0, 0], [2, 1, 0], [4, 0, 0]];
+        const preview = fixture.service.previewArraySelection({
+          points,
+          sourceIds,
+          count: 4,
+          curveType: "polyline"
+        });
+        assertDeepEqual(sourceIds, ["array-group"]);
+        assertEqual(preview.previewCount, 4);
+        assertEqual(preview.entries.length, 1);
+        assertEqual(preview.entries[0].sourceId, "array-group-sphere");
+        assertEqual(preview.entries[0].worldMatrices.length, 4);
+
+        const result = fixture.service.arraySelectionAlongPoints({
+          points,
+          sourceIds,
+          count: 4,
+          curveType: "polyline"
+        });
+        assertEqual(result.changed, true);
+        assertEqual(result.createdIds.length, 8);
+        assertEqual(result.activeIds.length, 1);
+        assertEqual(result.reference.extraction, "drawn-points");
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+        assertEqual(fixture.sandbox.undo(), true);
+        assertEqual(
+          fixture.sandbox.getSnapshot().objects.some(
+            object => result.createdIds.includes(object.id)
+          ),
+          false
+        );
+      },
+
+      "controlador mostra preview sem histórico e confirma ao soltar"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        const fixture = createPathToolFixture();
+        fixture.editor.selection.replace({
+          kind: "object",
+          regionId: "path-tool-region",
+          objectId: "array-group"
+        });
+        const renderer = createPathSketchRendererStub();
+        let completed = null;
+        let ended = null;
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          onCompleted: value => { completed = value; },
+          onEnded: value => { ended = value; }
+        });
+        try {
+          controller.begin({
+            mode: "array",
+            planeSource: "world-xy",
+            curveType: "polyline",
+            spacingPixels: 1,
+            simplify: 0,
+            smoothIterations: 0,
+            count: 4
+          });
+          renderer.canvas.emit("pointerdown", pathPointerEvent(1, 20, 50));
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 80, 50));
+          assertEqual(controller.status().previewCount, 4);
+          assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 0);
+
+          renderer.canvas.emit("pointerup", pathPointerEvent(1, 80, 50));
+          assertEqual(controller.status().active, false);
+          assertEqual(completed.result.createdIds.length, 8);
+          assertEqual(completed.settings.mode, "array");
+          assertEqual(ended.reason, "completed");
+          assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+        }
       },
 
       "console converte objetos nomeados sem forçar caminho aberto"() {
@@ -11632,6 +12019,33 @@ function createPathToolFixture() {
       scale: [1, 1, 1],
       geometry: { type: "box", size: [1, 1, 1], segments: [1, 1, 1] },
       instanceState: {}
+    },
+    {
+      id: "array-group",
+      kind: "group",
+      name: "Grupo fonte",
+      parentId: null,
+      position: [3, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      pivot: [0, 0, 0],
+      instanceState: {}
+    },
+    {
+      id: "array-group-sphere",
+      kind: "sphere",
+      name: "Esfera do grupo",
+      parentId: "array-group",
+      position: [1, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      geometry: {
+        type: "sphere",
+        radius: 0.5,
+        widthSegments: 12,
+        heightSegments: 8
+      },
+      instanceState: {}
     }
   ];
   const region = new Region(
@@ -11662,6 +12076,73 @@ function createPathToolFixture() {
       sandbox,
       editor
     })
+  };
+}
+
+function createPathSketchRendererStub() {
+  const listeners = new Map();
+  const canvas = {
+    addEventListener(type, listener) {
+      const entries = listeners.get(type) ?? new Set();
+      entries.add(listener);
+      listeners.set(type, entries);
+    },
+    removeEventListener(type, listener) {
+      listeners.get(type)?.delete(listener);
+    },
+    emit(type, event) {
+      for (const listener of listeners.get(type) ?? []) listener(event);
+    },
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: 100, height: 100 };
+    },
+    setPointerCapture() {},
+    releasePointerCapture() {}
+  };
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.set(0, 0, 10);
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  let mode = "select";
+  return {
+    canvas,
+    camera,
+    scene: new THREE.Scene(),
+    orbit: { enabled: true },
+    editorState: {
+      snapshot() {
+        return { tool: { mode } };
+      }
+    },
+    setTransformMode(next) {
+      mode = String(next);
+    },
+    getEditPlane() {
+      return null;
+    },
+    getNavigationLocks() {
+      return { plane: null };
+    },
+    readViewerReferenceFrame() {
+      return {
+        origin: [0, 0, 0],
+        normal: [0, 0, 1],
+        xAxis: [1, 0, 0]
+      };
+    }
+  };
+}
+
+function pathPointerEvent(pointerId, clientX, clientY) {
+  return {
+    pointerId,
+    pointerType: "mouse",
+    button: 0,
+    clientX,
+    clientY,
+    preventDefault() {},
+    stopImmediatePropagation() {}
   };
 }
 

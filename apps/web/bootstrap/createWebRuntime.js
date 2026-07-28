@@ -12,15 +12,15 @@ import {
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0037c";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260728-0039a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260728-0039b";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260728-0039d";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260728-0039a";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260728-0039b";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260728-0039c";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260728-0039d";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260728-0039c";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260728-0039d";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -30,7 +30,7 @@ import {
 } from "../../../packages/property-registry/src/index.js?build=20260727-0037c";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260727-0037c";
+} from "../../../packages/geometry-registry/src/index.js?build=20260728-0039d";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -82,16 +82,19 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0037c";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260728-0039a";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260728-0039d";
 import {
   EditContextController
 } from "../../../packages/edit-context/src/index.js?build=20260728-0039a";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260728-0039a";
+} from "../../../packages/edit-hud/src/index.js?build=20260728-0039d";
 import {
-  ToolLifecycleController
-} from "../../../packages/edit-tools/src/index.js?build=20260728-0039c";
+  ToolLifecycleController,
+  ToolParameterStore,
+  createDefaultEditToolRegistry,
+  createLegacyToolParameterMigration
+} from "../../../packages/edit-tools/src/index.js?build=20260728-0039d";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260728-0039a";
@@ -99,7 +102,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260728-0039a";
+} from "../../../packages/spatial-references/src/index.js?build=20260728-0039d";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -386,6 +389,11 @@ export async function createWebRuntime({
         });
       }
     });
+  const toolRegistry = createDefaultEditToolRegistry();
+  const toolParameters = new ToolParameterStore({
+    registry: toolRegistry,
+    migrate: createLegacyToolParameterMigration()
+  });
   const toolLifecycle = new ToolLifecycleController({ editor });
   const selectionOperations = new SelectionOperations({
     editor,
@@ -432,21 +440,42 @@ export async function createWebRuntime({
   const pathSketch = new PathSketchController({
     renderer,
     pathTools,
-    onCompleted: ({ settings, points }) => {
-      toolLifecycle.remember({
-        id: "path.create",
-        args: {
-          points,
-          name: settings.name || "Caminho livre",
-          radius: settings.radius,
-          tubularSegments: Math.max(settings.tubularSegments, points.length * 4),
-          radialSegments: settings.radialSegments,
-          curveType: settings.curveType,
-          tension: settings.tension,
-          color: settings.color
-        },
-        label: "Criar caminho"
-      });
+    geometryRegistry,
+    onCompleted: ({ settings, points, sourceIds }) => {
+      const repeatable = settings.mode === "array"
+        ? {
+            id: "path.array.points.create",
+            args: {
+              points,
+              sourceIds,
+              count: settings.count,
+              align: settings.align,
+              closed: settings.closed,
+              curveType: settings.curveType,
+              tension: settings.tension,
+              twistDegrees: settings.twistDegrees
+            },
+            label: "Distribuir no caminho desenhado"
+          }
+        : {
+            id: "path.create",
+            args: {
+              points,
+              name: settings.name || "Tubo desenhado",
+              radius: settings.radius,
+              tubularSegments: Math.max(
+                settings.tubularSegments,
+                points.length * 4
+              ),
+              radialSegments: settings.radialSegments,
+              closed: settings.closed,
+              curveType: settings.curveType,
+              tension: settings.tension,
+              color: settings.color
+            },
+            label: "Criar tubo desenhado"
+          };
+      toolLifecycle.remember(repeatable);
       toolLifecycle.completeAction("path.sketch");
     },
     onEnded: () => toolLifecycle.cancelAction("path.sketch")
@@ -511,6 +540,7 @@ export async function createWebRuntime({
     meshEditor,
     editContext,
     toolLifecycle,
+    toolParameters,
     pathTools,
     pathSketch,
     objectPlacement,
@@ -961,6 +991,22 @@ export async function createWebRuntime({
     .register("edit.tool.status", () =>
       toolLifecycle.status()
     )
+    .register("edit.tools.describe", ({ toolId = null } = {}) =>
+      toolRegistry.describe(toolId)
+    )
+    .register("edit.tool.parameters.get", ({ toolId = null } = {}) => {
+      const resolvedToolId =
+        toolId ??
+        toolParameters.status().activeToolId ??
+        "path.sketch";
+      return Object.freeze({
+        toolId: resolvedToolId,
+        values: toolParameters.values(resolvedToolId)
+      });
+    })
+    .register("edit.tool.parameters.status", () =>
+      toolParameters.status()
+    )
     .register("viewer.transform.settings", () =>
       renderer.getTransformConfig()
     )
@@ -1020,7 +1066,8 @@ export async function createWebRuntime({
     execute: (id, args) => runtime.execute(id, args),
     subscribe: listener => meshEditor.subscribe(listener),
     subscribeContext: listener => editContext.subscribe(listener),
-    subscribeSketch: listener => pathSketch.subscribe(listener)
+    subscribeSketch: listener => pathSketch.subscribe(listener),
+    subscribeToolParameters: listener => toolParameters.subscribe(listener)
   });
   const editHud = new EditHud({
     root: editHudRoot,
@@ -1031,15 +1078,20 @@ export async function createWebRuntime({
       const unsubscribeHistory = sandbox.subscribe(() =>
         listener(editContext.status())
       );
+      const unsubscribeToolParameters = toolParameters.subscribe(() =>
+        listener(editContext.status())
+      );
       return () => {
         unsubscribeContext();
         unsubscribeHistory();
+        unsubscribeToolParameters();
       };
     }
   });
   runtime.onDispose(() => editHud.dispose());
   runtime.onDispose(() => objectPlacement.dispose());
   runtime.onDispose(() => selectionOperations.dispose());
+  runtime.onDispose(() => toolParameters.dispose());
   runtime.onDispose(() => toolLifecycle.dispose());
   runtime.onDispose(() => pathSketch.dispose());
   runtime.onDispose(() => meshEditPanel.dispose());
@@ -1160,8 +1212,10 @@ export async function createWebRuntime({
     .register("pathReferences", () => ({
       apiVersion: SpatialReferenceResolver.apiVersion,
       toolApiVersion: PathToolService.apiVersion,
+      parameterStoreApiVersion: ToolParameterStore.apiVersion,
       referenceKinds: ["path", "profile", "point"],
-      tools: ["tube", "sweep", "array"],
+      tools: ["tube", "sweep", "array", "draw-tube", "draw-array"],
+      preview: "local-ephemeral",
       persistence: "snapshot"
     }))
     .register("animation", () => ({
@@ -1338,6 +1392,8 @@ export async function createWebRuntime({
       editContext,
       pathTools,
       pathSketch,
+      toolRegistry,
+      toolParameters,
       editHud,
       geometryRegistry,
       propertyRegistry,

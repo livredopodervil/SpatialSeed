@@ -5,7 +5,10 @@ import {
   HierarchyIndex
 } from "../../scene-hierarchy/src/index.js";
 import { createSweepGeometryDescriptor } from "./SweepGeometry.js";
-import { localizedPoints } from "./ReferenceGeometry.js";
+import {
+  localizedPoints,
+  normalizePointList
+} from "./ReferenceGeometry.js";
 import { samplePathFrames } from "./PathFrames.js";
 
 export class PathToolService {
@@ -58,13 +61,11 @@ export class PathToolService {
     preserveSelection = false
   } = {}) {
     const normalizedCurveType = String(curveType ?? "centripetal").toLowerCase();
-    let sourcePoints = ensureTubePoints(points);
-    if (normalizedCurveType === "bezier" && (sourcePoints.length - 1) % 3 !== 0) {
-      sourcePoints = catmullRomToBezierControls(
-        sourcePoints,
-        finite(tension, "tension")
-      );
-    }
+    const sourcePoints = this.prepareSketchPoints({
+      points,
+      curveType: normalizedCurveType,
+      tension
+    });
     const localized = localizedPoints(sourcePoints);
     const previousSelection = preserveSelection
       ? this.editor.selection.snapshot()
@@ -92,6 +93,27 @@ export class PathToolService {
       curveType: normalizedCurveType,
       closed: Boolean(closed)
     });
+  }
+
+  prepareSketchPoints({
+    points,
+    curveType = "centripetal",
+    tension = 0.5
+  } = {}) {
+    const normalizedCurveType = String(curveType ?? "centripetal").toLowerCase();
+    let sourcePoints = ensureTubePoints(
+      normalizePointList(points, 2, "caminho desenhado")
+    );
+    if (normalizedCurveType === "bezier" &&
+        (sourcePoints.length - 1) % 3 !== 0) {
+      sourcePoints = catmullRomToBezierControls(
+        sourcePoints,
+        finite(tension, "tension")
+      );
+    }
+    return Object.freeze(
+      sourcePoints.map(point => Object.freeze([...point]))
+    );
   }
 
   createPathFromMeshSelection({
@@ -267,34 +289,175 @@ export class PathToolService {
     includePathObject = false
   } = {}) {
     this.#assertCanMutate("distribuir objetos ao longo de caminho");
+    const resolvedPath = this.resolver.resolvePath({ ...path, closed });
+    return this.#arraySelectionResolved({
+      resolvedPath,
+      count,
+      align,
+      closed,
+      curveType,
+      tension,
+      twistDegrees,
+      includePathObject
+    });
+  }
+
+  arraySelectionAlongPoints({
+    points,
+    sourceIds = null,
+    count = 8,
+    align = true,
+    closed = false,
+    curveType = "centripetal",
+    tension = 0.5,
+    twistDegrees = 0
+  } = {}) {
+    this.#assertCanMutate("distribuir objetos no caminho desenhado");
+    const resolvedPath = pointsPathReference({
+      points,
+      closed,
+      sourceRevision: this.sandbox.revision
+    });
+    return this.#arraySelectionResolved({
+      resolvedPath,
+      sourceIds,
+      count,
+      align,
+      closed,
+      curveType,
+      tension,
+      twistDegrees,
+      includePathObject: true
+    });
+  }
+
+  captureArraySource({ sourceIds = null, excludeIds = [] } = {}) {
+    const state = this.sandbox.getSnapshot();
+    const hierarchy = new HierarchyIndex(state.objects);
+    return this.#arraySourceIds({ sourceIds, excludeIds, hierarchy });
+  }
+
+  #arraySourceIds({ sourceIds, excludeIds, hierarchy }) {
+    const excluded = new Set(excludeIds.map(String));
+    const requested = Array.isArray(sourceIds)
+      ? sourceIds
+      : this.editor.selection.snapshot().members.map(member => member.objectId);
+    const selectedIds = requested
+      .map(String)
+      .filter(id => hierarchy.has(id) && !excluded.has(id));
+    const rootIds = [...hierarchy.canonicalizeSelection(selectedIds)];
+    if (!rootIds.length) {
+      throw new Error(
+        "Selecione ao menos um objeto ou grupo para distribuir no caminho."
+      );
+    }
+    return Object.freeze(rootIds);
+  }
+
+  previewArraySelection({
+    points,
+    sourceIds = null,
+    count = 8,
+    align = true,
+    closed = false,
+    curveType = "centripetal",
+    tension = 0.5,
+    twistDegrees = 0,
+    maximumCopies = 256
+  } = {}) {
+    const requestedCount = integerAtLeast(count, 1, "count");
+    const previewCount = Math.min(
+      requestedCount,
+      integerAtLeast(maximumCopies, 1, "maximumCopies")
+    );
+    const resolvedPath = pointsPathReference({
+      points,
+      closed,
+      sourceRevision: this.sandbox.revision
+    });
+    const layout = this.#arrayLayout({
+      resolvedPath,
+      sourceIds,
+      count: previewCount,
+      align,
+      closed,
+      curveType,
+      tension,
+      twistDegrees,
+      includePathObject: true
+    });
+    const entries = [];
+    const renderableIds = new Set();
+    for (const rootId of layout.rootIds) {
+      for (const objectId of [rootId, ...layout.hierarchy.descendantsOf(rootId)]) {
+        const object = layout.hierarchy.node(objectId);
+        if (["group", "camera", "light"].includes(object.kind)) continue;
+        renderableIds.add(objectId);
+      }
+    }
+    for (const objectId of renderableIds) {
+      const object = layout.hierarchy.node(objectId);
+      let geometry;
+      try {
+        geometry = this.resolver.geometryRegistry.describeLegacyObject(object);
+      } catch {
+        continue;
+      }
+      const sourceWorld = new THREE.Matrix4().fromArray(
+        layout.hierarchy.worldMatrixOf(objectId)
+      );
+      entries.push(Object.freeze({
+        sourceId: objectId,
+        sourceName: object.name ?? objectId,
+        geometry: Object.freeze(structuredClone(geometry)),
+        color: previewColor(object),
+        worldMatrices: Object.freeze(layout.deltaMatrices.map(delta =>
+          Object.freeze(delta.clone().multiply(sourceWorld).toArray())
+        ))
+      }));
+    }
+    return Object.freeze({
+      tool: "array-along-drawn-path-preview",
+      requestedCount,
+      previewCount,
+      truncated: previewCount !== requestedCount,
+      sourceIds: layout.rootIds,
+      entries: Object.freeze(entries)
+    });
+  }
+
+  #arraySelectionResolved({
+    resolvedPath,
+    sourceIds = null,
+    count,
+    align,
+    closed,
+    curveType,
+    tension,
+    twistDegrees,
+    includePathObject
+  }) {
     const copies = integerAtLeast(count, 1, "count");
     if (copies > 10000) {
       throw new RangeError("A distribuição aceita no máximo 10000 cópias.");
     }
-    const resolvedPath = this.resolver.resolvePath({ ...path, closed });
-    const state = this.sandbox.getSnapshot();
-    const hierarchy = new HierarchyIndex(state.objects);
-    const selectedIds = this.editor.selection.snapshot().members
-      .map(member => member.objectId)
-      .filter(id => hierarchy.has(id))
-      .filter(id => includePathObject || id !== resolvedPath.objectId);
-    const rootIds = [...hierarchy.canonicalizeSelection(selectedIds)];
-    if (!rootIds.length) {
-      throw new Error(
-        "Selecione ao menos um objeto para distribuir; o objeto de caminho é excluído por padrão."
-      );
-    }
-    const frames = samplePathFrames({
-      points: resolvedPath.points,
+    const layout = this.#arrayLayout({
+      resolvedPath,
+      sourceIds,
       count: copies,
-      closed: closed === undefined ? resolvedPath.closed : Boolean(closed),
+      align,
+      closed,
       curveType,
-      tension: finite(tension, "tension"),
-      twistDegrees: finite(twistDegrees, "twistDegrees")
+      tension,
+      twistDegrees,
+      includePathObject
     });
-    const sourcePivot = average(rootIds.map(id => hierarchy.worldPivotOf(id)));
-    const firstFrame = new THREE.Quaternion().fromArray(frames.quaternions[0]);
-    const firstFrameInverse = firstFrame.clone().invert();
+    const {
+      state,
+      hierarchy,
+      rootIds,
+      deltaMatrices
+    } = layout;
     const cloned = cloneHierarchySubtrees(state.objects, {
       rootIds,
       copies,
@@ -303,17 +466,7 @@ export class PathToolService {
     });
     const desired = [];
     cloned.copies.forEach((copy, copyArrayIndex) => {
-      const point = frames.positions[copyArrayIndex];
-      const frame = new THREE.Quaternion().fromArray(frames.quaternions[copyArrayIndex]);
-      const relativeRotation = align
-        ? frame.clone().multiply(firstFrameInverse)
-        : new THREE.Quaternion();
-      const delta = new THREE.Matrix4()
-        .makeTranslation(...point)
-        .multiply(new THREE.Matrix4().makeRotationFromQuaternion(relativeRotation))
-        .multiply(new THREE.Matrix4().makeTranslation(
-          -sourcePivot[0], -sourcePivot[1], -sourcePivot[2]
-        ));
+      const delta = deltaMatrices[copyArrayIndex];
       copy.rootIds.forEach((cloneId, rootIndex) => {
         const sourceId = cloned.sourceRootIds[rootIndex];
         const sourceWorld = new THREE.Matrix4().fromArray(hierarchy.worldMatrixOf(sourceId));
@@ -356,6 +509,59 @@ export class PathToolService {
     });
   }
 
+  #arrayLayout({
+    resolvedPath,
+    sourceIds,
+    count,
+    align,
+    closed,
+    curveType,
+    tension,
+    twistDegrees,
+    includePathObject
+  }) {
+    const state = this.sandbox.getSnapshot();
+    const hierarchy = new HierarchyIndex(state.objects);
+    const excluded = includePathObject || !resolvedPath.objectId
+      ? []
+      : [resolvedPath.objectId];
+    const rootIds = this.#arraySourceIds({
+      sourceIds,
+      excludeIds: excluded,
+      hierarchy
+    });
+    const frames = samplePathFrames({
+      points: resolvedPath.points,
+      count,
+      closed: closed === undefined ? resolvedPath.closed : Boolean(closed),
+      curveType,
+      tension: finite(tension, "tension"),
+      twistDegrees: finite(twistDegrees, "twistDegrees")
+    });
+    const sourcePivot = average(rootIds.map(id => hierarchy.worldPivotOf(id)));
+    const firstFrame = new THREE.Quaternion().fromArray(frames.quaternions[0]);
+    const firstFrameInverse = firstFrame.clone().invert();
+    const deltaMatrices = frames.positions.map((point, index) => {
+      const frame = new THREE.Quaternion().fromArray(frames.quaternions[index]);
+      const relativeRotation = align
+        ? frame.clone().multiply(firstFrameInverse)
+        : new THREE.Quaternion();
+      return new THREE.Matrix4()
+        .makeTranslation(...point)
+        .multiply(new THREE.Matrix4().makeRotationFromQuaternion(relativeRotation))
+        .multiply(new THREE.Matrix4().makeTranslation(
+          -sourcePivot[0], -sourcePivot[1], -sourcePivot[2]
+        ));
+    });
+    return Object.freeze({
+      state,
+      hierarchy,
+      rootIds,
+      frames,
+      deltaMatrices: Object.freeze(deltaMatrices)
+    });
+  }
+
   #assertCanMutate(action) {
     this.requireObjectMode(action);
   }
@@ -371,6 +577,33 @@ function summary(reference) {
     closed: Boolean(reference.closed),
     sourceRevision: reference.sourceRevision
   });
+}
+
+function pointsPathReference({ points, closed, sourceRevision }) {
+  const normalized = normalizePointList(points, 2, "caminho desenhado");
+  return Object.freeze({
+    kind: "path",
+    objectId: null,
+    objectName: "Traço desenhado",
+    extraction: "drawn-points",
+    points: Object.freeze(
+      normalized.map(point => Object.freeze([...point]))
+    ),
+    closed: Boolean(closed),
+    sourceRevision,
+    source: Object.freeze({ type: "drawn-points" })
+  });
+}
+
+function previewColor(object) {
+  const candidate =
+    object.instanceState?.color ??
+    object.material?.color ??
+    object.color ??
+    "#70c8ff";
+  return /^#[0-9a-f]{6}$/i.test(String(candidate))
+    ? String(candidate)
+    : "#70c8ff";
 }
 
 function average(points) {

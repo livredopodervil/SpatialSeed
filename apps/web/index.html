@@ -698,6 +698,20 @@
         <button id="edit-workspace-undo-global" type="button">Desfazer projeto</button>
         <button id="edit-workspace-redo-global" type="button">Refazer projeto</button>
       </div>
+      <details id="edit-tool-parameter-panel" class="edit-tool-parameter-panel">
+        <summary>Parâmetros lembrados por ferramenta</summary>
+        <label class="mesh-tool-parameter-select">
+          <span>Ferramenta</span>
+          <select id="edit-tool-parameter-select"></select>
+        </label>
+        <div id="edit-tool-parameter-fields" class="mesh-form-grid"></div>
+        <div class="actions">
+          <button id="edit-tool-parameter-reset" type="button">Restaurar padrão desta ferramenta</button>
+        </div>
+        <small id="edit-tool-parameter-status">
+          Os valores são locais, versionados e reutilizados pelo HUD, painel e console.
+        </small>
+      </details>
     </fieldset>
 
     <fieldset data-mesh-section="selection" data-edit-context="mesh">
@@ -776,16 +790,22 @@
       <legend>Caminhos e curvas</legend>
       <div class="path-context-group" data-path-context="object">
         <p class="mesh-section-note">
-          Desenhe no plano travado ou no plano atual do viewer. O traço é simplificado,
-          suavizado e criado como um caminho editável.
+          Desenhe no plano travado ou no plano atual do viewer. O resultado pode
+          ser um tubo editável ou cópias da seleção atual distribuídas pelo traço.
+          Qualquer geometria ou grupo pode ser usado como fonte.
         </p>
         <div class="mesh-form-grid">
+          <label><span>Resultado</span><select id="path-sketch-mode"><option value="tube">Tubo / caminho</option><option value="array">Distribuir seleção</option></select></label>
           <label><span>Plano do desenho</span><select id="path-sketch-plane"><option value="locked-or-viewer">Plano travado ou viewer</option><option value="viewer">Viewer atual</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
-          <label><span>Curva</span><select id="path-sketch-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
+          <label><span>Curva</span><select id="path-sketch-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="chordal">Catmull-Rom chordal</option><option value="catmullrom">Catmull-Rom uniforme</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
           <label><span>Espaçamento px</span><input id="path-sketch-spacing" type="number" min="1" max="64" value="6" step="1"></label>
           <label><span>Suavização</span><input id="path-sketch-smoothing" type="number" min="0" max="4" value="1" step="1"></label>
           <label><span>Simplificação relativa</span><input id="path-sketch-simplify" type="number" min="0" max="0.2" value="0.004" step="0.001"></label>
           <label><span>Raio visual</span><input id="path-sketch-radius" type="number" min="0.001" value="0.08" step="0.01"></label>
+          <label><span>Cópias no traço</span><input id="path-sketch-count" type="number" min="1" max="10000" value="8" step="1"></label>
+          <label><span>Torção total °</span><input id="path-sketch-twist" type="number" value="0" step="1"></label>
+          <label><input id="path-sketch-align" type="checkbox" checked> Orientar cópias pela tangente</label>
+          <label><input id="path-sketch-closed" type="checkbox"> Fechar o traço</label>
         </div>
         <div class="actions">
           <button id="path-sketch-begin" type="button">✎ Desenhar spline à mão livre</button>
@@ -800,7 +820,7 @@
           do contorno das faces selecionadas, sem encerrar a edição atual.
         </p>
         <div class="mesh-form-grid">
-          <label><span>Interpolação</span><select id="path-from-selection-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
+          <label><span>Interpolação</span><select id="path-from-selection-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="chordal">Catmull-Rom chordal</option><option value="catmullrom">Catmull-Rom uniforme</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
           <label><span>Raio visual</span><input id="path-from-selection-radius" type="number" min="0.001" value="0.08" step="0.01"></label>
           <button id="path-from-selection-create" type="button">Criar caminho da seleção</button>
         </div>
@@ -814,18 +834,20 @@
           <label><span>Extração do perfil</span><select id="path-profile-extraction"><option value="auto">Automática</option><option value="contour">Contorno declarado</option><option value="boundary">Maior contorno planar</option></select></label>
         </div>
         <div class="mesh-checkbox-grid">
-          <label><input id="path-closed" type="checkbox"> Caminho fechado</label>
           <label><input id="path-caps" type="checkbox" checked> Tampar varredura aberta</label>
           <label><input id="path-array-align" type="checkbox" checked> Orientar cópias pela tangente</label>
           <label><input id="path-array-include-reference" type="checkbox"> Incluir objeto-caminho</label>
         </div>
         <div class="mesh-form-grid">
           <label><span>Raio do tubo</span><input id="path-tube-radius" type="number" min="0.001" value="0.25" step="0.05"></label>
-          <label><span>Segmentos do caminho</span><input id="path-segments" type="number" min="2" value="64" step="1"></label>
+          <label><span>Segmentos do tubo</span><input id="path-tube-segments" type="number" min="2" value="64" step="1"></label>
           <label><span>Segmentos radiais</span><input id="path-radial-segments" type="number" min="3" value="8" step="1"></label>
+          <label><span>Fechamento do tubo</span><select id="path-tube-closed"><option value="auto">Usar caminho</option><option value="false">Aberto</option><option value="true">Fechado</option></select></label>
           <button id="path-create-tube" type="button">Criar tubo pelo objeto</button>
         </div>
         <div class="mesh-form-grid">
+          <label><span>Segmentos da varredura</span><input id="path-sweep-segments" type="number" min="1" value="32" step="1"></label>
+          <label><span>Fechamento da varredura</span><select id="path-sweep-closed"><option value="auto">Usar caminho</option><option value="false">Aberta</option><option value="true">Fechada</option></select></label>
           <label><span>Torção total °</span><input id="path-sweep-twist" type="number" value="0" step="1"></label>
           <label><span>Escala inicial</span><input id="path-sweep-scale-start" type="number" value="1" step="0.1"></label>
           <label><span>Escala final</span><input id="path-sweep-scale-end" type="number" value="1" step="0.1"></label>
@@ -833,6 +855,7 @@
         </div>
         <div class="mesh-form-grid">
           <label><span>Quantidade de cópias</span><input id="path-array-count" type="number" min="1" max="10000" value="8" step="1"></label>
+          <label><span>Fechamento da distribuição</span><select id="path-array-closed"><option value="auto">Usar caminho</option><option value="false">Aberta</option><option value="true">Fechada</option></select></label>
           <button id="path-create-array" type="button">Distribuir seleção no caminho</button>
           <button id="path-inspect-reference" type="button">Inspecionar referência</button>
         </div>
@@ -1121,6 +1144,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260728-0039a"></script>
+<script type="module" src="./boot.js?build=20260728-0039d"></script>
 </body>
 </html>

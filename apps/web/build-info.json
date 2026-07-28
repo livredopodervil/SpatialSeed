@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260728-0039c",
-  "channel": "fix/0039c-tool-persistence"
+  "build": "20260728-0039d",
+  "channel": "feature/0039d-tool-parameters-path-draw"
 }

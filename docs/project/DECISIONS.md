@@ -627,6 +627,25 @@ viram mutações de documento. Parâmetros, presets e layouts futuros devem
 reutilizar um armazenamento versionado por identidade semântica, mas permanecem
 separados do estado efêmero da sessão e do arquivo `.spatialseed`.
 
+## D-038 — Parâmetros são schemas locais; desenho confirma uma operação
+
+**Estado:** implementada inicialmente no build 0039d.
+
+Ferramentas parametrizadas são descritas por um registro declarativo e guardam
+valores locais normalizados por `toolId`. HUD, workspace e console usam a mesma
+resolução: argumentos explícitos prevalecem, argumentos omitidos recuperam a
+última configuração e somente uma execução válida é lembrada.
+
+**Motivação:** defaults próprios em cada superfície produziam resultados
+diferentes e impediam um painel contextual geral. A identidade e o schema
+precisam preceder formulários, presets e futuros previews do Inspector.
+
+**Consequências:** parâmetros não pertencem ao documento nem ao undo; versões
+futuras desconhecidas são preservadas; dados legados são apenas lidos durante a
+migração. O desenho livre mantém preview local e confirma tubo ou distribuição
+hierárquica como um único comando persistente. Outras famílias podem aderir ao
+registro sem criar uma nova chave de armazenamento ou um formulário paralelo.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
 const DEFAULTS = Object.freeze({
+  mode: "tube",
   planeSource: "locked-or-viewer",
   spacingPixels: 6,
   simplify: 0.004,
@@ -10,7 +11,11 @@ const DEFAULTS = Object.freeze({
   radialSegments: 6,
   curveType: "centripetal",
   tension: 0.5,
-  color: "#70c8ff"
+  color: "#70c8ff",
+  closed: false,
+  count: 8,
+  align: true,
+  twistDegrees: 0
 });
 
 export class PathSketchController {
@@ -22,10 +27,15 @@ export class PathSketchController {
   #pointer = new THREE.Vector2();
   #previewLine;
   #previewPoints;
+  #previewTube;
+  #previewArrayGroup;
+  #previewFrame = null;
+  #pendingPreviewPoints = null;
 
   constructor({
     renderer,
     pathTools,
+    geometryRegistry = pathTools?.resolver?.geometryRegistry,
     onCompleted = () => {},
     onEnded = () => {}
   }) {
@@ -35,13 +45,26 @@ export class PathSketchController {
     if (!pathTools?.createPath) {
       throw new TypeError("PathSketchController exige PathToolService.");
     }
+    if (!geometryRegistry?.create) {
+      throw new TypeError("PathSketchController exige GeometryRegistry.");
+    }
     this.renderer = renderer;
     this.pathTools = pathTools;
+    this.geometryRegistry = geometryRegistry;
     this.onCompleted = onCompleted;
     this.onEnded = onEnded;
     this.#previewLine = createPreviewLine();
     this.#previewPoints = createPreviewPoints();
-    renderer.scene.add(this.#previewLine, this.#previewPoints);
+    this.#previewTube = createPreviewTube();
+    this.#previewArrayGroup = new THREE.Group();
+    this.#previewArrayGroup.name = "path-sketch-array-preview";
+    this.#previewArrayGroup.renderOrder = 1499;
+    renderer.scene.add(
+      this.#previewTube,
+      this.#previewArrayGroup,
+      this.#previewLine,
+      this.#previewPoints
+    );
     this.#bind(true);
   }
 
@@ -51,8 +74,12 @@ export class PathSketchController {
     if (this.#active) throw new Error("Já existe um desenho de caminho ativo.");
     const settings = normalizeSettings({ ...DEFAULTS, ...options });
     const frame = resolveFrame(this.renderer, settings.planeSource);
+    const sourceIds = settings.mode === "array"
+      ? this.pathTools.captureArraySource()
+      : Object.freeze([]);
     this.#active = {
       settings,
+      sourceIds,
       frame,
       plane: new THREE.Plane(
         new THREE.Vector3().fromArray(frame.normal).normalize(),
@@ -64,6 +91,8 @@ export class PathSketchController {
       drawing: false,
       screenPoints: [],
       points: [],
+      previewCount: 0,
+      previewTruncated: false,
       previousTool: this.renderer.editorState?.snapshot?.().tool?.mode ?? "select",
       previousOrbitEnabled: this.renderer.orbit.enabled,
       lastResult: null,
@@ -81,6 +110,7 @@ export class PathSketchController {
     this.#finishInteraction({ restoreTool: true });
     this.#active = null;
     this.#updatePreview([]);
+    this.#clearResultPreview();
     this.onEnded({ reason: "cancel" });
     this.#notify();
     return this.status();
@@ -92,6 +122,12 @@ export class PathSketchController {
       active: Boolean(active),
       drawing: Boolean(active?.drawing),
       pointCount: active?.points.length ?? 0,
+      mode: active?.settings.mode ?? null,
+      sourceIds: active
+        ? Object.freeze([...active.sourceIds])
+        : Object.freeze([]),
+      previewCount: active?.previewCount ?? 0,
+      previewTruncated: Boolean(active?.previewTruncated),
       planeSource: active?.settings.planeSource ?? null,
       frame: active ? Object.freeze(structuredClone(active.frame)) : null,
       settings: active
@@ -112,6 +148,25 @@ export class PathSketchController {
     return this.status();
   }
 
+  updateSettings(patch = {}) {
+    if (!this.#active) return this.status();
+    const settings = normalizeSettings({
+      ...this.#active.settings,
+      ...patch
+    });
+    let sourceIds = this.#active.sourceIds;
+    if (settings.mode === "array" && !sourceIds.length) {
+      sourceIds = this.pathTools.captureArraySource();
+    } else if (settings.mode !== "array") {
+      sourceIds = Object.freeze([]);
+    }
+    this.#active.settings = settings;
+    this.#active.sourceIds = sourceIds;
+    this.#scheduleResultPreview(this.#active.points);
+    this.#notify();
+    return this.status();
+  }
+
   subscribe(listener) {
     if (typeof listener !== "function") {
       throw new TypeError("Listener de desenho de caminho deve ser função.");
@@ -124,7 +179,16 @@ export class PathSketchController {
   dispose() {
     this.cancel();
     this.#bind(false);
-    this.renderer.scene.remove(this.#previewLine, this.#previewPoints);
+    this.#cancelPendingPreview();
+    this.#clearArrayPreview();
+    this.renderer.scene.remove(
+      this.#previewTube,
+      this.#previewArrayGroup,
+      this.#previewLine,
+      this.#previewPoints
+    );
+    this.#previewTube.geometry.dispose();
+    this.#previewTube.material.dispose();
     this.#previewLine.geometry.dispose();
     this.#previewLine.material.dispose();
     this.#previewPoints.geometry.dispose();
@@ -142,6 +206,7 @@ export class PathSketchController {
     event.stopImmediatePropagation();
     active.pointerId = event.pointerId;
     active.drawing = true;
+    active.error = null;
     active.points = [point];
     active.screenPoints = [[event.clientX, event.clientY]];
     this.renderer.canvas.setPointerCapture?.(event.pointerId);
@@ -177,25 +242,46 @@ export class PathSketchController {
       if (points.length < 2) {
         throw new Error("O traço é curto demais para formar um caminho.");
       }
-      active.lastResult = this.pathTools.createPath({
-        points,
-        name: active.settings.name || "Caminho livre",
-        radius: active.settings.radius,
-        tubularSegments: Math.max(
-          active.settings.tubularSegments,
-          points.length * 4
-        ),
-        radialSegments: active.settings.radialSegments,
-        curveType: active.settings.curveType,
-        tension: active.settings.tension,
-        color: active.settings.color
-      });
+      const committedPoints = active.settings.mode === "array"
+        ? this.pathTools.prepareSketchPoints({
+            points,
+            curveType: active.settings.curveType,
+            tension: active.settings.tension
+          })
+        : points;
+      active.lastResult = active.settings.mode === "array"
+        ? this.pathTools.arraySelectionAlongPoints({
+            points: committedPoints,
+            sourceIds: active.sourceIds,
+            count: active.settings.count,
+            align: active.settings.align,
+            closed: active.settings.closed,
+            curveType: active.settings.curveType,
+            tension: active.settings.tension,
+            twistDegrees: active.settings.twistDegrees
+          })
+        : this.pathTools.createPath({
+            points: committedPoints,
+            name: active.settings.name || "Tubo desenhado",
+            radius: active.settings.radius,
+            tubularSegments: Math.max(
+              active.settings.tubularSegments,
+              points.length * 4
+            ),
+            radialSegments: active.settings.radialSegments,
+            closed: active.settings.closed,
+            curveType: active.settings.curveType,
+            tension: active.settings.tension,
+            color: active.settings.color
+          });
       this.onCompleted({
         result: active.lastResult,
         settings: structuredClone(active.settings),
-        points: structuredClone(points)
+        points: structuredClone(committedPoints),
+        sourceIds: [...active.sourceIds]
       });
       active.error = null;
+      this.#clearResultPreview();
       if (active.settings.continuous) {
         active.pointerId = null;
         active.points = [];
@@ -205,6 +291,7 @@ export class PathSketchController {
         this.#finishInteraction({ restoreTool: true });
         this.#active = null;
         this.#updatePreview([]);
+        this.#clearResultPreview();
         this.onEnded({ reason: "completed" });
       }
     } catch (error) {
@@ -212,6 +299,7 @@ export class PathSketchController {
       active.points = [];
       active.screenPoints = [];
       this.#updatePreview([]);
+      this.#clearResultPreview();
     }
     this.#notify();
   };
@@ -224,6 +312,7 @@ export class PathSketchController {
     active.points = [];
     active.screenPoints = [];
     this.#updatePreview([]);
+    this.#clearResultPreview();
     this.#notify();
   };
 
@@ -267,6 +356,140 @@ export class PathSketchController {
       object.geometry.computeBoundingSphere();
       object.visible = points.length > 0;
     }
+    this.#scheduleResultPreview(points);
+  }
+
+  #scheduleResultPreview(points) {
+    this.#pendingPreviewPoints = points.map(point => [...point]);
+    if (this.#previewFrame !== null) return;
+    if (typeof globalThis.requestAnimationFrame !== "function") {
+      this.#flushResultPreview();
+      return;
+    }
+    this.#previewFrame = globalThis.requestAnimationFrame(() => {
+      this.#previewFrame = null;
+      this.#flushResultPreview();
+    });
+  }
+
+  #flushResultPreview() {
+    const points = this.#pendingPreviewPoints ?? [];
+    this.#pendingPreviewPoints = null;
+    const active = this.#active;
+    if (!active || points.length < 2) {
+      this.#clearResultPreview();
+      return;
+    }
+    try {
+      const prepared = this.pathTools.prepareSketchPoints({
+        points,
+        curveType: active.settings.curveType,
+        tension: active.settings.tension
+      });
+      if (active.settings.mode === "array") {
+        this.#renderArrayPreview(this.pathTools.previewArraySelection({
+          points: prepared,
+          sourceIds: active.sourceIds,
+          count: active.settings.count,
+          align: active.settings.align,
+          closed: active.settings.closed,
+          curveType: active.settings.curveType,
+          tension: active.settings.tension,
+          twistDegrees: active.settings.twistDegrees
+        }));
+        this.#previewTube.visible = false;
+      } else {
+        this.#clearArrayPreview();
+        const geometry = this.geometryRegistry.create({
+          type: "tube",
+          points: prepared,
+          tubularSegments: Math.min(
+            active.settings.tubularSegments,
+            Math.max(8, prepared.length * 4)
+          ),
+          radius: active.settings.radius,
+          radialSegments: Math.min(active.settings.radialSegments, 12),
+          closed: active.settings.closed,
+          curveType: active.settings.curveType,
+          tension: active.settings.tension
+        });
+        this.#previewTube.geometry.dispose();
+        this.#previewTube.geometry = geometry;
+        this.#previewTube.material.color.set(active.settings.color);
+        this.#previewTube.visible = true;
+        active.previewCount = 1;
+        active.previewTruncated = false;
+      }
+      active.error = null;
+    } catch (error) {
+      active.error = error.message;
+      this.#clearResultPreview();
+    }
+    this.#notify();
+  }
+
+  #renderArrayPreview(plan) {
+    this.#clearArrayPreview();
+    for (const entry of plan.entries) {
+      const geometry = this.geometryRegistry.create(entry.geometry);
+      const material = new THREE.MeshBasicMaterial({
+        color: entry.color,
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.58
+      });
+      const mesh = new THREE.InstancedMesh(
+        geometry,
+        material,
+        entry.worldMatrices.length
+      );
+      entry.worldMatrices.forEach((matrix, index) =>
+        mesh.setMatrixAt(index, new THREE.Matrix4().fromArray(matrix))
+      );
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.frustumCulled = false;
+      mesh.renderOrder = 1499;
+      mesh.userData.pathSketchPreview = true;
+      this.#previewArrayGroup.add(mesh);
+    }
+    this.#previewArrayGroup.visible = true;
+    if (this.#active) {
+      this.#active.previewCount = plan.previewCount;
+      this.#active.previewTruncated = plan.truncated;
+    }
+  }
+
+  #clearArrayPreview() {
+    for (const object of [...this.#previewArrayGroup.children]) {
+      this.#previewArrayGroup.remove(object);
+      object.geometry?.dispose?.();
+      if (Array.isArray(object.material)) {
+        object.material.forEach(material => material.dispose?.());
+      } else {
+        object.material?.dispose?.();
+      }
+    }
+    this.#previewArrayGroup.visible = false;
+  }
+
+  #clearResultPreview() {
+    this.#cancelPendingPreview();
+    this.#previewTube.visible = false;
+    this.#clearArrayPreview();
+    if (this.#active) {
+      this.#active.previewCount = 0;
+      this.#active.previewTruncated = false;
+    }
+  }
+
+  #cancelPendingPreview() {
+    if (this.#previewFrame !== null &&
+        typeof globalThis.cancelAnimationFrame === "function") {
+      globalThis.cancelAnimationFrame(this.#previewFrame);
+    }
+    this.#previewFrame = null;
+    this.#pendingPreviewPoints = null;
   }
 
   #notify() {
@@ -427,6 +650,7 @@ function vector3(value, name) {
 function normalizeSettings(value) {
   const result = {
     ...value,
+    mode: String(value.mode ?? "tube").toLowerCase(),
     planeSource: String(value.planeSource),
     spacingPixels: integerAtLeast(value.spacingPixels, 1, "spacingPixels"),
     simplify: nonNegative(value.simplify, "simplify"),
@@ -437,9 +661,19 @@ function normalizeSettings(value) {
     curveType: String(value.curveType),
     tension: finite(value.tension, "tension"),
     color: String(value.color),
+    closed: Boolean(value.closed),
+    count: integerAtLeast(value.count, 1, "count"),
+    align: Boolean(value.align),
+    twistDegrees: finite(value.twistDegrees, "twistDegrees"),
     continuous: Boolean(value.continuous),
     name: value.name === undefined ? null : String(value.name)
   };
+  if (!["tube", "array"].includes(result.mode)) {
+    throw new RangeError("O desenho aceita resultado tube ou array.");
+  }
+  if (result.count > 10000) {
+    throw new RangeError("A distribuição aceita no máximo 10000 cópias.");
+  }
   if (!["centripetal", "chordal", "catmullrom", "polyline", "bezier"].includes(result.curveType)) {
     throw new RangeError(
       "O desenho livre aceita Catmull-Rom, Bézier ajustada ou polilinha."
@@ -478,6 +712,22 @@ function createPreviewPoints() {
   points.frustumCulled = false;
   points.visible = false;
   return points;
+}
+
+function createPreviewTube() {
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x70c8ff,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.62
+  });
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+  mesh.name = "path-sketch-preview-tube";
+  mesh.renderOrder = 1499;
+  mesh.frustumCulled = false;
+  mesh.visible = false;
+  return mesh;
 }
 
 function positive(value, name) {

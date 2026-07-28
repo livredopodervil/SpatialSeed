@@ -9,7 +9,8 @@ export class MeshEditPanel {
     execute,
     subscribe,
     subscribeContext = null,
-    subscribeSketch = null
+    subscribeSketch = null,
+    subscribeToolParameters = null
   }) {
     if (!root) throw new TypeError("MeshEditPanel exige root.");
     this.root = root;
@@ -17,6 +18,9 @@ export class MeshEditPanel {
     this.execute = execute;
     this.latest = null;
     this.creationDefaults = loadCreationDefaults();
+    this.toolDefinitions = this.query("edit.tools.describe") ?? [];
+    this.parameterToolId = "path.sketch";
+    this.unsubscribeToolParameters = null;
     this.unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
     this.unsubscribeContext = subscribeContext?.(() => this.refresh()) ?? null;
     this.unsubscribeSketch = subscribeSketch?.(() => this.refresh()) ?? null;
@@ -41,6 +45,12 @@ export class MeshEditPanel {
     this.#bind();
     this.#bindCreationMaterial();
     this.#bindSectionConfiguration();
+    this.#bindToolParameterPanel();
+    this.unsubscribeToolParameters = subscribeToolParameters?.(() => {
+      this.#refreshToolParameterPanel();
+      this.#restoreRememberedToolControls();
+    }) ?? null;
+    this.#restoreRememberedToolControls();
     this.refresh();
   }
 
@@ -191,7 +201,11 @@ export class MeshEditPanel {
     this.#text(
       "path-sketch-status",
       sketch.active
-        ? `Desenho ativo: ${sketch.pointCount} pontos; arraste sobre o viewer e solte para criar. Esc cancela.`
+        ? `Desenho ${
+            sketch.mode === "array" ? "com geometria" : "de tubo"
+          }: ${sketch.pointCount} pontos; preview ${
+            sketch.previewCount ?? 0
+          }${sketch.previewTruncated ? " (reduzido)" : ""}; solte para confirmar uma única ação. Esc cancela.`
         : sketch.error
           ? sketch.error
           : "Desenho inativo."
@@ -204,6 +218,7 @@ export class MeshEditPanel {
       active || !selectedPath || selectedReference?.curveType === "bezier";
     this.#element("path-edit-controls").disabled = active || !selectedPath;
     this.#applyAdaptiveVisibility(state, context);
+    this.#refreshToolParameterPanel();
   }
 
   #bindCreationMaterial() {
@@ -550,11 +565,239 @@ export class MeshEditPanel {
     this.unsubscribe?.();
     this.unsubscribeContext?.();
     this.unsubscribeSketch?.();
+    this.unsubscribeToolParameters?.();
     document.removeEventListener("keydown", this.onKeyDown, true);
     globalThis.removeEventListener?.(
       "spatialseed:geometry-default-changed",
       this.onGeometryDefaultChanged
     );
+  }
+
+  #bindToolParameterPanel() {
+    const select = this.#element("edit-tool-parameter-select");
+    select.replaceChildren(...this.toolDefinitions.map(definition => {
+      const option = this.root.ownerDocument.createElement("option");
+      option.value = definition.id;
+      option.textContent = `${definition.label} · ${definition.family}`;
+      return option;
+    }));
+    const status = this.query("edit.tool.parameters.status") ?? {};
+    const preferred = this.toolDefinitions.some(
+      definition => definition.id === status.activeToolId
+    )
+      ? status.activeToolId
+      : this.parameterToolId;
+    if (this.toolDefinitions.some(definition => definition.id === preferred)) {
+      this.parameterToolId = preferred;
+      select.value = preferred;
+    }
+    select.addEventListener("change", () => {
+      this.parameterToolId = select.value;
+      this.#execute("edit.tool.parameters.activate", {
+        toolId: this.parameterToolId
+      });
+      this.#renderToolParameterFields();
+    });
+    this.#element("edit-tool-parameter-reset").addEventListener("click", () => {
+      const values = this.#execute("edit.tool.parameters.reset", {
+        toolId: this.parameterToolId
+      });
+      if (values) {
+        this.#renderToolParameterFields();
+        this.#text(
+          "edit-tool-parameter-status",
+          "Padrões restaurados para esta ferramenta."
+        );
+      }
+    });
+    this.#bindRememberedToolControls();
+    this.#renderToolParameterFields();
+  }
+
+  #refreshToolParameterPanel() {
+    const select = this.#element("edit-tool-parameter-select");
+    const status = this.query("edit.tool.parameters.status") ?? {};
+    const active = status.activeToolId;
+    if (active && this.toolDefinitions.some(definition => definition.id === active) &&
+        active !== this.parameterToolId) {
+      this.parameterToolId = active;
+      select.value = active;
+      this.#element("edit-tool-parameter-panel").open = true;
+      this.#renderToolParameterFields();
+      return;
+    }
+    const result = this.query("edit.tool.parameters.get", {
+      toolId: this.parameterToolId
+    });
+    if (!result?.values) return;
+    for (const control of this.#element("edit-tool-parameter-fields")
+      .querySelectorAll("[data-tool-parameter-id]")) {
+      if (this.root.ownerDocument.activeElement === control) continue;
+      const value = result.values[control.dataset.toolParameterId];
+      setParameterControlValue(control, value);
+    }
+    this.#applyToolParameterVisibility(result.values);
+  }
+
+  #renderToolParameterFields() {
+    const definition = this.toolDefinitions.find(
+      item => item.id === this.parameterToolId
+    );
+    const container = this.#element("edit-tool-parameter-fields");
+    if (!definition) {
+      container.replaceChildren();
+      return;
+    }
+    const result = this.query("edit.tool.parameters.get", {
+      toolId: definition.id
+    });
+    const values = result?.values ?? {};
+    container.replaceChildren(...definition.parameters.map(parameter =>
+      this.#toolParameterField(definition, parameter, values)
+    ));
+    this.#applyToolParameterVisibility(values);
+    const futureSchema = Boolean(
+      this.query("edit.tool.parameters.status")?.futureSchema
+    );
+    for (const control of container.querySelectorAll(
+      "[data-tool-parameter-id]"
+    )) {
+      control.disabled = futureSchema;
+    }
+    this.#element("edit-tool-parameter-reset").disabled = futureSchema;
+    this.#text(
+      "edit-tool-parameter-status",
+      futureSchema
+        ? "Uma versão futura gravou estes parâmetros; este build preserva o registro sem alterá-lo."
+        : `${definition.label}: alterações válidas são lembradas automaticamente.`
+    );
+  }
+
+  #toolParameterField(definition, parameter, values) {
+    const document = this.root.ownerDocument;
+    const label = document.createElement("label");
+    label.dataset.toolParameterField = parameter.id;
+    if (parameter.when) {
+      label.dataset.toolParameterWhen = JSON.stringify(parameter.when);
+    }
+    const text = document.createElement("span");
+    text.textContent = parameter.label;
+    const control = createParameterControl(document, parameter);
+    control.dataset.toolParameterId = parameter.id;
+    control.dataset.toolParameterType = parameter.type;
+    setParameterControlValue(control, values[parameter.id]);
+    control.addEventListener("change", () => {
+      try {
+        const value = readParameterControlValue(control, parameter);
+        const next = this.#execute("edit.tool.parameters.set", {
+          toolId: definition.id,
+          patch: { [parameter.id]: value }
+        });
+        if (!next) {
+          this.#refreshToolParameterPanel();
+          return;
+        }
+        this.#applyToolParameterVisibility(next);
+        this.#restoreRememberedToolControls();
+        this.#text(
+          "edit-tool-parameter-status",
+          `${parameter.label} lembrado para ${definition.label}.`
+        );
+      } catch (error) {
+        this.#text("mesh-edit-error", error.message);
+        this.#refreshToolParameterPanel();
+      }
+    });
+    if (parameter.type === "boolean") {
+      label.classList.add("mesh-tool-parameter-boolean");
+      label.append(control, text);
+    } else {
+      label.append(text, control);
+    }
+    if (parameter.description) label.title = parameter.description;
+    return label;
+  }
+
+  #applyToolParameterVisibility(values) {
+    for (const field of this.#element("edit-tool-parameter-fields")
+      .querySelectorAll("[data-tool-parameter-field]")) {
+      const source = field.dataset.toolParameterWhen;
+      if (!source) {
+        field.hidden = false;
+        continue;
+      }
+      const condition = JSON.parse(source);
+      field.hidden = !Object.entries(condition).every(
+        ([id, expected]) => values[id] === expected
+      );
+    }
+  }
+
+  #bindRememberedToolControls() {
+    for (const mapping of rememberedToolControls()) {
+      const control = this.#element(mapping.controlId);
+      control.addEventListener("change", () => {
+        try {
+          const value = control.type === "checkbox"
+            ? control.checked
+            : mapping.optionalBoolean
+              ? this.#optionalBoolean(mapping.controlId)
+              : mapping.integer
+                ? this.#integer(mapping.controlId)
+                : mapping.number
+                  ? this.#number(mapping.controlId)
+                  : control.value;
+          const result = this.#execute("edit.tool.parameters.set", {
+            toolId: mapping.toolId,
+            patch: { [mapping.parameterId]: value }
+          });
+          if (!result) this.#restoreRememberedToolControls();
+          this.#refreshSketchModeVisibility();
+        } catch (error) {
+          this.#text("mesh-edit-error", error.message);
+          this.#restoreRememberedToolControls();
+        }
+      });
+    }
+  }
+
+  #restoreRememberedToolControls() {
+    const mappings = rememberedToolControls();
+    const valuesByTool = new Map([...new Set(
+      mappings.map(mapping => mapping.toolId)
+    )].map(toolId => [
+      toolId,
+      this.query("edit.tool.parameters.get", { toolId })?.values ?? {}
+    ]));
+    for (const mapping of mappings) {
+      const control = this.#element(mapping.controlId);
+      if (this.root.ownerDocument.activeElement === control) continue;
+      const value = valuesByTool.get(mapping.toolId)?.[mapping.parameterId];
+      if (mapping.optionalBoolean) {
+        control.value = value === null || value === undefined
+          ? "auto"
+          : value ? "true" : "false";
+        continue;
+      }
+      if (value === undefined) continue;
+      if (control.type === "checkbox") control.checked = Boolean(value);
+      else control.value = String(value);
+    }
+    this.#refreshSketchModeVisibility();
+  }
+
+  #refreshSketchModeVisibility() {
+    const arrayMode = this.#element("path-sketch-mode").value === "array";
+    for (const id of [
+      "path-sketch-count",
+      "path-sketch-twist",
+      "path-sketch-align"
+    ]) {
+      (this.#element(id).closest("label") ?? this.#element(id)).hidden =
+        !arrayMode;
+    }
+    (this.#element("path-sketch-radius").closest("label") ??
+      this.#element("path-sketch-radius")).hidden = arrayMode;
   }
 
   #bind() {
@@ -612,12 +855,17 @@ export class MeshEditPanel {
     this.#click("edit-navigation-clear", "edit.navigation.locks.clear");
 
     this.#click("path-sketch-begin", "path.sketch.begin", () => ({
+      mode: this.#element("path-sketch-mode").value,
       planeSource: this.#element("path-sketch-plane").value,
       spacingPixels: this.#integer("path-sketch-spacing"),
       simplify: this.#number("path-sketch-simplify"),
       smoothIterations: this.#integer("path-sketch-smoothing"),
       radius: this.#number("path-sketch-radius"),
-      curveType: this.#element("path-sketch-curve").value
+      curveType: this.#element("path-sketch-curve").value,
+      count: this.#integer("path-sketch-count"),
+      align: this.#element("path-sketch-align").checked,
+      twistDegrees: this.#number("path-sketch-twist"),
+      closed: this.#element("path-sketch-closed").checked
     }));
     this.#click("path-sketch-cancel", "path.sketch.cancel");
     this.#click("path-from-selection-create", "path.from-mesh-selection.create", () => ({
@@ -644,15 +892,15 @@ export class MeshEditPanel {
     this.#click("path-create-tube", "path.tube.create", () => ({
       path: this.#pathReference(),
       radius: this.#number("path-tube-radius"),
-      tubularSegments: this.#integer("path-segments"),
+      tubularSegments: this.#integer("path-tube-segments"),
       radialSegments: this.#integer("path-radial-segments"),
-      closed: this.#element("path-closed").checked
+      closed: this.#optionalBoolean("path-tube-closed")
     }));
     this.#click("path-create-sweep", "path.sweep.create", () => ({
       path: this.#pathReference(),
       profile: this.#profileReference(),
-      segments: this.#integer("path-segments"),
-      closedPath: this.#element("path-closed").checked,
+      segments: this.#integer("path-sweep-segments"),
+      closedPath: this.#optionalBoolean("path-sweep-closed"),
       twistDegrees: this.#number("path-sweep-twist"),
       scaleStart: this.#number("path-sweep-scale-start"),
       scaleEnd: this.#number("path-sweep-scale-end"),
@@ -662,7 +910,7 @@ export class MeshEditPanel {
       path: this.#pathReference(),
       count: this.#integer("path-array-count"),
       align: this.#element("path-array-align").checked,
-      closed: this.#element("path-closed").checked,
+      closed: this.#optionalBoolean("path-array-closed"),
       includePathObject: this.#element("path-array-include-reference").checked
     }));
     this.#element("path-inspect-reference").addEventListener("click", () => {
@@ -971,15 +1219,13 @@ export class MeshEditPanel {
     if (value === "@selection-origins") {
       return {
         source: "selection-origins",
-        extraction: "auto",
-        closed: this.#element("path-closed").checked
+        extraction: "auto"
       };
     }
     return {
       source: "object",
       objectId: value,
-      extraction: this.#element("path-reference-extraction").value,
-      closed: this.#element("path-closed").checked
+      extraction: this.#element("path-reference-extraction").value
     };
   }
 
@@ -997,9 +1243,11 @@ export class MeshEditPanel {
     return [
       "path-reference-object", "path-reference-extraction",
       "path-profile-object", "path-profile-extraction",
-      "path-closed", "path-caps", "path-array-align",
+      "path-tube-closed", "path-sweep-closed", "path-array-closed",
+      "path-caps", "path-array-align",
       "path-array-include-reference", "path-tube-radius",
-      "path-segments", "path-radial-segments", "path-create-tube",
+      "path-tube-segments", "path-radial-segments", "path-create-tube",
+      "path-sweep-segments",
       "path-sweep-twist", "path-sweep-scale-start",
       "path-sweep-scale-end", "path-create-sweep",
       "path-array-count", "path-create-array", "path-inspect-reference",
@@ -1221,6 +1469,12 @@ export class MeshEditPanel {
     return value;
   }
 
+  #optionalBoolean(id) {
+    const value = this.#element(id).value;
+    if (value === "auto") return null;
+    return value === "true";
+  }
+
   #number(id) {
     const value = Number(this.#element(id).value);
     if (!Number.isFinite(value)) throw new Error(`Valor inválido em ${id}.`);
@@ -1239,6 +1493,177 @@ export class MeshEditPanel {
   }
 
   #text(id, value) { this.#element(id).textContent = value; }
+}
+
+function rememberedToolControls() {
+  return [
+    toolControl("path.sketch", "mode", "path-sketch-mode"),
+    toolControl("path.sketch", "planeSource", "path-sketch-plane"),
+    toolControl("path.sketch", "curveType", "path-sketch-curve"),
+    toolControl("path.sketch", "spacingPixels", "path-sketch-spacing", {
+      integer: true
+    }),
+    toolControl("path.sketch", "smoothIterations", "path-sketch-smoothing", {
+      integer: true
+    }),
+    toolControl("path.sketch", "simplify", "path-sketch-simplify", {
+      number: true
+    }),
+    toolControl("path.sketch", "radius", "path-sketch-radius", {
+      number: true
+    }),
+    toolControl("path.sketch", "count", "path-sketch-count", {
+      integer: true
+    }),
+    toolControl("path.sketch", "align", "path-sketch-align"),
+    toolControl("path.sketch", "twistDegrees", "path-sketch-twist", {
+      number: true
+    }),
+    toolControl("path.sketch", "closed", "path-sketch-closed"),
+    toolControl("path.tube", "radius", "path-tube-radius", {
+      number: true
+    }),
+    toolControl("path.tube", "tubularSegments", "path-tube-segments", {
+      integer: true
+    }),
+    toolControl("path.tube", "radialSegments", "path-radial-segments", {
+      integer: true
+    }),
+    toolControl("path.tube", "closed", "path-tube-closed", {
+      optionalBoolean: true
+    }),
+    toolControl("path.sweep", "segments", "path-sweep-segments", {
+      integer: true
+    }),
+    toolControl("path.sweep", "closedPath", "path-sweep-closed", {
+      optionalBoolean: true
+    }),
+    toolControl("path.sweep", "twistDegrees", "path-sweep-twist", {
+      number: true
+    }),
+    toolControl("path.sweep", "scaleStart", "path-sweep-scale-start", {
+      number: true
+    }),
+    toolControl("path.sweep", "scaleEnd", "path-sweep-scale-end", {
+      number: true
+    }),
+    toolControl("path.sweep", "caps", "path-caps"),
+    toolControl("path.array", "count", "path-array-count", {
+      integer: true
+    }),
+    toolControl("path.array", "align", "path-array-align"),
+    toolControl("path.array", "closed", "path-array-closed", {
+      optionalBoolean: true
+    }),
+    toolControl(
+      "path.array",
+      "includePathObject",
+      "path-array-include-reference"
+    ),
+    toolControl(
+      "path.from-selection",
+      "curveType",
+      "path-from-selection-curve"
+    ),
+    toolControl(
+      "path.from-selection",
+      "radius",
+      "path-from-selection-radius",
+      { number: true }
+    ),
+    toolControl("mesh.extrude", "distance", "mesh-extrude-distance", {
+      number: true
+    }),
+    toolControl("mesh.inset", "amount", "mesh-inset-amount", {
+      number: true
+    }),
+    toolControl("mesh.split", "parameter", "mesh-split-parameter", {
+      number: true
+    })
+  ];
+}
+
+function toolControl(toolId, parameterId, controlId, options = {}) {
+  return Object.freeze({
+    toolId,
+    parameterId,
+    controlId,
+    integer: Boolean(options.integer),
+    number: Boolean(options.number),
+    optionalBoolean: Boolean(options.optionalBoolean)
+  });
+}
+
+function createParameterControl(document, parameter) {
+  if (parameter.type === "boolean") {
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    return input;
+  }
+  if (parameter.type === "optional-boolean") {
+    const select = document.createElement("select");
+    for (const [value, label] of [
+      ["auto", "Automático (usar referência)"],
+      ["false", "Aberto"],
+      ["true", "Fechado"]
+    ]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      select.append(option);
+    }
+    return select;
+  }
+  if (parameter.type === "enum") {
+    const select = document.createElement("select");
+    for (const item of parameter.options ?? []) {
+      const option = document.createElement("option");
+      option.value = String(item.value);
+      option.textContent = String(item.label ?? item.value);
+      select.append(option);
+    }
+    return select;
+  }
+  const input = document.createElement("input");
+  input.type = parameter.type === "color" ? "color" :
+    ["number", "integer"].includes(parameter.type) ? "number" : "text";
+  if (parameter.minimum !== null) input.min = String(parameter.minimum);
+  if (parameter.maximum !== null) input.max = String(parameter.maximum);
+  if (input.type === "number") {
+    input.step = parameter.step ?? (parameter.type === "integer" ? "1" : "any");
+  }
+  return input;
+}
+
+function readParameterControlValue(control, parameter) {
+  if (parameter.type === "boolean") return control.checked;
+  if (parameter.type === "optional-boolean") {
+    if (control.value === "auto") return null;
+    return control.value === "true";
+  }
+  if (parameter.type === "number") return Number(control.value);
+  if (parameter.type === "integer") {
+    const value = Number(control.value);
+    if (!Number.isInteger(value)) {
+      throw new Error(`${parameter.label} deve ser inteiro.`);
+    }
+    return value;
+  }
+  return control.value;
+}
+
+function setParameterControlValue(control, value) {
+  if (control.dataset.toolParameterType === "boolean") {
+    control.checked = Boolean(value);
+    return;
+  }
+  if (control.dataset.toolParameterType === "optional-boolean") {
+    control.value = value === null || value === undefined
+      ? "auto"
+      : value ? "true" : "false";
+    return;
+  }
+  control.value = String(value ?? "");
 }
 
 function extractionLabel(value) {

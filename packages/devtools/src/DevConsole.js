@@ -662,7 +662,7 @@ export class DevConsole {
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
         "runtime test viewer-animation|animation-runtime|animation-commands|" +
-        "affine-repeat|" +
+        "affine-repeat|tool-parameters|" +
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|path-references|mesh-edit-math|" +
         "geometry-creation|geometry-registry|" +
@@ -1729,6 +1729,26 @@ export class DevConsole {
       return this.queries?.execute("path.references.list") ?? [];
     }
     const options = parseNamedOptions(tokens);
+    if (["draw", "sketch"].includes(action)) {
+      return this.commands.execute("path.sketch.begin", {
+        ...providedText(options, "mode", "mode"),
+        ...providedText(options, "plane", "planeSource"),
+        ...providedInteger(options, "spacing", "spacingPixels"),
+        ...providedNumber(options, "simplify", "simplify"),
+        ...providedInteger(options, "smoothing", "smoothIterations"),
+        ...providedNumber(options, "radius", "radius"),
+        ...providedInteger(options, "segments", "tubularSegments"),
+        ...providedInteger(options, "radial", "radialSegments"),
+        ...providedText(options, "curve", "curveType"),
+        ...providedNumber(options, "tension", "tension"),
+        ...providedText(options, "color", "color"),
+        ...providedBoolean(options, "closed", "closed"),
+        ...providedInteger(options, "count", "count"),
+        ...providedBoolean(options, "align", "align"),
+        ...providedNumber(options, "twist", "twistDegrees"),
+        ...providedBoolean(options, "continuous", "continuous")
+      });
+    }
     const path = pathReferenceFromOptions(options, {
       objectKey: action === "sweep" ? "path" : "object",
       extractionKey: action === "sweep" ? "pathExtraction" : "extraction"
@@ -1742,14 +1762,14 @@ export class DevConsole {
     if (action === "tube") {
       return this.commands.execute("path.tube.create", {
         path,
-        name: options.name,
-        radius: optionNumber(options, "radius", 0.25),
-        tubularSegments: optionInteger(options, "segments", 64),
-        radialSegments: optionInteger(options, "radial", 8),
-        closed: optionOptionalBoolean(options, "closed"),
-        curveType: options.curve ?? "centripetal",
-        tension: optionNumber(options, "tension", 0.5),
-        color: options.color ?? "#66aadd"
+        ...providedText(options, "name", "name"),
+        ...providedNumber(options, "radius", "radius"),
+        ...providedInteger(options, "segments", "tubularSegments"),
+        ...providedInteger(options, "radial", "radialSegments"),
+        ...providedBoolean(options, "closed", "closed"),
+        ...providedText(options, "curve", "curveType"),
+        ...providedNumber(options, "tension", "tension"),
+        ...providedText(options, "color", "color")
       });
     }
     if (action === "sweep") {
@@ -1760,31 +1780,31 @@ export class DevConsole {
       return this.commands.execute("path.sweep.create", {
         path,
         profile,
-        name: options.name,
-        segments: optionInteger(options, "segments", 32),
-        closedPath: optionOptionalBoolean(options, "closed"),
-        curveType: options.curve ?? "centripetal",
-        tension: optionNumber(options, "tension", 0.5),
-        twistDegrees: optionNumber(options, "twist", 0),
-        scaleStart: optionNumber(options, "scaleStart", 1),
-        scaleEnd: optionNumber(options, "scaleEnd", 1),
-        caps: optionBoolean(options, "caps", true),
-        color: options.color ?? "#7f9cff"
+        ...providedText(options, "name", "name"),
+        ...providedInteger(options, "segments", "segments"),
+        ...providedBoolean(options, "closed", "closedPath"),
+        ...providedText(options, "curve", "curveType"),
+        ...providedNumber(options, "tension", "tension"),
+        ...providedNumber(options, "twist", "twistDegrees"),
+        ...providedNumber(options, "scaleStart", "scaleStart"),
+        ...providedNumber(options, "scaleEnd", "scaleEnd"),
+        ...providedBoolean(options, "caps", "caps"),
+        ...providedText(options, "color", "color")
       });
     }
     if (action === "array") {
       return this.commands.execute("path.array.create", {
         path,
-        count: optionInteger(options, "count", 8),
-        align: optionBoolean(options, "align", true),
-        closed: optionOptionalBoolean(options, "closed"),
-        curveType: options.curve ?? "centripetal",
-        tension: optionNumber(options, "tension", 0.5),
-        twistDegrees: optionNumber(options, "twist", 0),
-        includePathObject: optionBoolean(options, "includePath", false)
+        ...providedInteger(options, "count", "count"),
+        ...providedBoolean(options, "align", "align"),
+        ...providedBoolean(options, "closed", "closed"),
+        ...providedText(options, "curve", "curveType"),
+        ...providedNumber(options, "tension", "tension"),
+        ...providedNumber(options, "twist", "twistDegrees"),
+        ...providedBoolean(options, "includePath", "includePathObject")
       });
     }
-    throw new Error("Uso: path list|inspect|tube|sweep|array|help.");
+    throw new Error("Uso: path list|inspect|draw|tube|sweep|array|help.");
   }
 
   #pathHelp() {
@@ -1792,6 +1812,8 @@ export class DevConsole {
       usage: [
         "path list",
         "path inspect object=id extraction=auto|centerline|boundary|loose-edges",
+        "path draw mode=tube plane=locked-or-viewer radius=0.08 curve=centripetal",
+        "path draw mode=array count=8 align=on twist=0",
         "path tube object=id radius=0.25 segments=64 radial=8 closed=off",
         "path sweep path=id profile=id pathExtraction=auto profileExtraction=auto segments=32 twist=0 scaleStart=1 scaleEnd=1 caps=on",
         "path array object=id count=8 align=on closed=off includePath=off",
@@ -1800,6 +1822,8 @@ export class DevConsole {
       notes: [
         "object, path e profile aceitam ID; use name:Nome para resolver um nome único.",
         "@selection-origins usa os pivôs dos objetos selecionados na ordem da seleção.",
+        "Opções omitidas recuperam a última configuração válida da ferramenta.",
+        "path draw mode=array distribui qualquer geometria ou grupo selecionado pelo traço e confirma em uma única ação.",
         "As referências são snapshots: alterar depois o objeto de origem não altera o resultado criado.",
         "A varredura usa frames de transporte paralelo para reduzir torção artificial.",
         "Perfis com furos e referências vinculadas exigem um futuro grafo de modificadores."
@@ -2338,6 +2362,7 @@ export class DevConsole {
       throw new Error(
         "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
         "resources|test help|animation-runtime|animation-commands|" +
+        "tool-parameters|" +
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|file-interop|" +
@@ -2813,4 +2838,30 @@ function optionBoolean(options, name, fallback) {
   if (["on", "true", "1", "yes", "sim"].includes(value)) return true;
   if (["off", "false", "0", "no", "não", "nao"].includes(value)) return false;
   throw new Error(`${name} exige on|off.`);
+}
+
+function providedText(options, sourceName, targetName) {
+  if (options[sourceName] === undefined) return {};
+  return { [targetName]: String(options[sourceName]) };
+}
+
+function providedNumber(options, sourceName, targetName) {
+  if (options[sourceName] === undefined) return {};
+  return {
+    [targetName]: optionNumber(options, sourceName, undefined)
+  };
+}
+
+function providedInteger(options, sourceName, targetName) {
+  if (options[sourceName] === undefined) return {};
+  return {
+    [targetName]: optionInteger(options, sourceName, undefined)
+  };
+}
+
+function providedBoolean(options, sourceName, targetName) {
+  if (options[sourceName] === undefined) return {};
+  return {
+    [targetName]: optionBoolean(options, sourceName, false)
+  };
 }

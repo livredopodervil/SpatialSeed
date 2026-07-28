@@ -1381,6 +1381,43 @@ html[data-toolbar-layout="vertical"] #selection-panel{
   font-size:.78rem;
   line-height:1.4;
 }
+.edit-tool-parameter-panel{
+  margin-top:.75rem;
+  padding:.55rem;
+  border:1px solid #8bbcff2e;
+  border-radius:.6rem;
+  background:#07152280;
+}
+.edit-tool-parameter-panel>summary{
+  cursor:pointer;
+  color:#d7eaff;
+  font-weight:600;
+}
+.edit-tool-parameter-panel[open]>summary{
+  margin-bottom:.6rem;
+}
+.mesh-tool-parameter-select{
+  display:grid;
+  grid-template-columns:minmax(8rem,.8fr) minmax(0,1.2fr);
+  align-items:center;
+  gap:.5rem;
+  margin-bottom:.55rem;
+}
+.mesh-form-grid .mesh-tool-parameter-boolean{
+  display:flex;
+  align-items:center;
+  gap:.45rem;
+}
+.mesh-tool-parameter-boolean input{
+  width:auto;
+  flex:0 0 auto;
+}
+#edit-tool-parameter-status{
+  display:block;
+  margin-top:.45rem;
+  color:#9fb4ca;
+  line-height:1.35;
+}
 
 #edit-hud{
   --edit-hud-columns:4;

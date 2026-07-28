@@ -1,7 +1,8 @@
 # Referência da linguagem e do console SpatialSeed
 
-> Referência normativa P0. Auditada em 27 de julho de 2026 contra o runtime
-> `0033a`. Consulte `help`, `help create`, `help mesh`, `help animate`, `procedure help` e
+> Referência normativa P0. Auditada em 28 de julho de 2026 contra o runtime
+> `0039d`. Consulte `help`, `help create`, `help mesh`, `help path`,
+> `help animate`, `procedure help` e
 > `runtime test help` para confirmar as capabilities do build carregado.
 
 ## 1. Três linguagens, uma fronteira editorial
@@ -170,6 +171,28 @@ Duplicar ou excluir um grupo opera sobre a subárvore. `ungroup` remove um níve
 e preserva transforms mundiais dos filhos. `repeat count N` aplica a matriz
 delta anterior `N` vezes em uma única operação de undo e seleciona a última
 fronteira.
+
+### 3.7 Caminhos, tubos e distribuição
+
+```text
+path list
+path inspect object=id extraction=auto|centerline|boundary|loose-edges
+path draw
+path draw mode=tube radius=0.08 curve=centripetal plane=locked-or-viewer
+path draw mode=array count=8 align=on twist=0
+path tube object=id [radius=n] [segments=n] [radial=n] [closed=on|off]
+path sweep path=id profile=id [segments=n] [twist=n] [caps=on|off]
+path array object=id [count=n] [align=on|off] [twist=n]
+```
+
+`path draw mode=array` captura qualquer geometria ou grupo selecionado e
+mostra suas cópias sobre o traço antes da confirmação. O preview é local; ao
+soltar, todo o lote entra no histórico como uma única ação.
+
+Opções omitidas recuperam a última configuração válida da ferramenta. O mesmo
+registro atende console, HUD e workspace. `closed` omitido herda o fechamento
+da referência; `path draw` pode usar o plano de edição travado, o viewer ou os
+planos mundiais XY, XZ e YZ.
 
 ## 4. Criação geométrica
 
@@ -676,6 +699,8 @@ runtime test help
 runtime test animation-runtime
 runtime test animation-commands
 runtime test animation-tracks
+runtime test tool-parameters
+runtime test path-references
 runtime test all
 runtime benchmark api [iterações]
 benchmark help
@@ -722,3 +747,7 @@ usados somente quando não dependem de DOM, rede, importação ou assincronismo.
 - `packages/property-registry/src/createDefaultPropertyRegistry.js`
 - `packages/property-registry/src/PropertyBatchProgram.js`
 - `packages/property-registry/src/SelectionTargetResolver.js`
+- `packages/edit-tools/src/EditToolRegistry.js`
+- `packages/edit-tools/src/ToolParameterStore.js`
+- `packages/spatial-references/src/PathSketchController.js`
+- `packages/spatial-references/src/PathToolService.js`
