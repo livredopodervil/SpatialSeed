@@ -147,7 +147,8 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente a fluidez do pincel de caminho `0039e` em mobile e
+Validar visualmente os parâmetros e modificadores afins do pincel `0039f` em
+mobile e
 avançar em incrementos independentes:
 
 1. redefinição paramétrica pelo Inspector, com preview e commit atômico;
@@ -162,6 +163,7 @@ avançar em incrementos independentes:
 Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PATH_REFERENCES_0037A.md`,
 `docs/PATH_BRUSH_AUTHORING_0039E.md`,
+`docs/AFFINE_PATH_BRUSH_0039F.md`,
 `docs/TOOL_PARAMETERS_PATH_DRAW_0039D.md` e
 `docs/EDIT_INTERACTION_0038B.md`.
 

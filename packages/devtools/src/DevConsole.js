@@ -3,7 +3,7 @@ import {
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 export class DevConsole {
-  static apiVersion = "dev-console-v8";
+  static apiVersion = "dev-console-v9";
 
   constructor({
     editor,
@@ -1738,6 +1738,7 @@ export class DevConsole {
       const spacing = pathDrawSpacingOptions(options, value =>
         this.#number(value)
       );
+      const sourceGeometry = pathDrawGeometryOptions(options);
       return this.commands.execute("path.sketch.begin", {
         ...providedText(options, "mode", "mode"),
         ...providedText(options, "plane", "planeSource"),
@@ -1753,11 +1754,20 @@ export class DevConsole {
         ...providedBoolean(options, "closed", "closed"),
         ...providedText(options, "source", "sourceMode"),
         ...providedText(options, "geometry", "geometryType"),
+        ...sourceGeometry,
         ...providedText(options, "brushColor", "sourceColor"),
         ...spacing,
         ...providedNumber(options, "spacingScale", "spacingScale"),
         ...providedBoolean(options, "align", "align"),
         ...providedNumber(options, "twist", "twistDegrees"),
+        ...providedText(options, "orientation", "orientationMode"),
+        ...providedText(options, "moveX", "affineMoveX"),
+        ...providedText(options, "moveY", "affineMoveY"),
+        ...providedText(options, "moveZ", "affineMoveZ"),
+        ...providedText(options, "rotateX", "affineRotateX"),
+        ...providedText(options, "rotateY", "affineRotateY"),
+        ...providedText(options, "rotateZ", "affineRotateZ"),
+        ...providedText(options, "scale", "affineScale"),
         ...providedBoolean(options, "continuous", "continuous")
       });
     }
@@ -1826,7 +1836,8 @@ export class DevConsole {
         "path inspect object=id extraction=auto|centerline|boundary|loose-edges",
         "path draw mode=tube plane=locked-or-viewer radius=0.08 curve=centripetal",
         "path draw mode=array source=selection spacing=auto align=on twist=0",
-        "path draw mode=array source=catalog geometry=sphere spacing=0.75 brushColor=#6699cc",
+        "path draw mode=array source=catalog geometry=sphere params={\"radius\":0.4} spacing=0.75",
+        "path draw mode=array orientation=plane rotateZ=360*u scale=0.5+u",
         "path tube object=id radius=0.25 segments=64 radial=8 closed=off",
         "path sweep path=id profile=id pathExtraction=auto profileExtraction=auto segments=32 twist=0 scaleStart=1 scaleEnd=1 caps=on",
         "path array object=id count=8 align=on closed=off includePath=off",
@@ -1838,6 +1849,10 @@ export class DevConsole {
         "Opções omitidas recuperam a última configuração válida da ferramenta.",
         "path draw mode=array acrescenta instâncias conforme o traço avança; não exige quantidade prévia.",
         "source=selection usa objeto/grupo selecionado; source=catalog aceita qualquer geometry do catálogo.",
+        "params={...} configura o provider do catálogo; geometry deve ser informado na mesma execução.",
+        "orientation=preserve|plane|path escolhe os eixos locais do modificador.",
+        "moveX/Y/Z, rotateX/Y/Z e scale aceitam i, u, count, d, length, spacing, k, x, y e z.",
+        "i começa em 1; u vai de 0 a 1 e é reavaliado enquanto o traço cresce.",
         "As referências são snapshots: alterar depois o objeto de origem não altera o resultado criado.",
         "A varredura usa frames de transporte paralelo para reduzir torção artificial.",
         "Perfis com furos e referências vinculadas exigem um futuro grafo de modificadores."
@@ -2819,6 +2834,27 @@ function pathDrawSpacingOptions(options, parseNumber) {
   result.spacingMode = "world";
   result.spacingWorld = parseNumber(options.spacing);
   return result;
+}
+
+function pathDrawGeometryOptions(options) {
+  const source = options.params ?? options.geometryParams;
+  if (source === undefined) return {};
+  if (options.geometry === undefined) {
+    throw new Error(
+      "params exige geometry=<tipo> na mesma execução de path draw."
+    );
+  }
+  const parameters = parseJson(source, "params");
+  if (!parameters || typeof parameters !== "object" ||
+      Array.isArray(parameters)) {
+    throw new TypeError("params deve ser um objeto JSON.");
+  }
+  return {
+    sourceGeometry: {
+      ...parameters,
+      type: String(options.geometry)
+    }
+  };
 }
 
 function pathReferenceFromOptions(options, { objectKey, extractionKey }) {

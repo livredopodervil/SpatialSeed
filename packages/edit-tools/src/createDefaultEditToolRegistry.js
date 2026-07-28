@@ -75,6 +75,17 @@ export function createDefaultEditToolRegistry({
             when: { mode: "array", sourceMode: "catalog" }
           }
         ),
+        jsonParameter(
+          "sourceGeometry",
+          "Parâmetros completos da geometria",
+          {},
+          {
+            when: { mode: "array", sourceMode: "catalog" },
+            hidden: true,
+            description:
+              "Descritor do provider selecionado. O editor visual mantém este JSON sincronizado."
+          }
+        ),
         colorParameter("sourceColor", "Cor do pincel", "#6699cc", {
           when: { mode: "array", sourceMode: "catalog" }
         }),
@@ -99,7 +110,59 @@ export function createDefaultEditToolRegistry({
         }),
         numberParameter("twistDegrees", "Torção total em graus", 0, {
           when: { mode: "array" }
-        })
+        }),
+        enumParameter("orientationMode", "Referencial da orientação", [
+          { value: "preserve", label: "Preservar orientação da fonte" },
+          { value: "plane", label: "XY no plano; X segue o traço" },
+          { value: "path", label: "Z segue o traço" }
+        ], "preserve", {
+          when: { mode: "array" }
+        }),
+        stringParameter(
+          "affineMoveX",
+          "Mover X local · expressão",
+          "0",
+          affineBrushParameterOptions()
+        ),
+        stringParameter(
+          "affineMoveY",
+          "Mover Y local · expressão",
+          "0",
+          affineBrushParameterOptions()
+        ),
+        stringParameter(
+          "affineMoveZ",
+          "Mover Z local · expressão",
+          "0",
+          affineBrushParameterOptions()
+        ),
+        stringParameter(
+          "affineRotateX",
+          "Girar X local (°) · expressão",
+          "0",
+          affineBrushParameterOptions()
+        ),
+        stringParameter(
+          "affineRotateY",
+          "Girar Y local (°) · expressão",
+          "0",
+          affineBrushParameterOptions()
+        ),
+        stringParameter(
+          "affineRotateZ",
+          "Girar Z local (°) · expressão",
+          "0",
+          affineBrushParameterOptions()
+        ),
+        stringParameter(
+          "affineScale",
+          "Escala uniforme · expressão",
+          "1",
+          affineBrushParameterOptions({
+            description:
+              "A escala precisa permanecer positiva em todas as instâncias."
+          })
+        )
       ]
     })
     .register({
@@ -303,6 +366,38 @@ function colorParameter(id, label, defaultValue, options = {}) {
     type: "color",
     default: defaultValue,
     when: options.when
+  };
+}
+
+function stringParameter(id, label, defaultValue, options = {}) {
+  return {
+    id,
+    label,
+    type: "string",
+    default: defaultValue,
+    when: options.when,
+    description: options.description
+  };
+}
+
+function jsonParameter(id, label, defaultValue, options = {}) {
+  return {
+    id,
+    label,
+    type: "json",
+    default: defaultValue,
+    when: options.when,
+    hidden: Boolean(options.hidden),
+    description: options.description
+  };
+}
+
+function affineBrushParameterOptions(options = {}) {
+  return {
+    when: { mode: "array" },
+    description:
+      options.description ??
+      "Aceita i, u, count, d, length, spacing, k, x, y, z, tangente, normal e binormal."
   };
 }
 

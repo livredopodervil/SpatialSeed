@@ -3,13 +3,14 @@ const PARAMETER_TYPES = new Set([
   "color",
   "enum",
   "integer",
+  "json",
   "number",
   "optional-boolean",
   "string"
 ]);
 
 export class EditToolRegistry {
-  static apiVersion = "edit-tool-registry-v2";
+  static apiVersion = "edit-tool-registry-v3";
 
   #definitions = new Map();
 
@@ -154,6 +155,7 @@ function normalizeParameter(source) {
     description: source.description === undefined
       ? null
       : String(source.description),
+    hidden: Boolean(source.hidden),
     type,
     default: structuredClone(source.default),
     minimum: optionalFinite(source.minimum, `${id}.minimum`),
@@ -214,6 +216,22 @@ function normalizeParameterValue(parameter, value) {
       );
     }
     return normalized;
+  }
+  if (parameter.type === "json") {
+    let normalized = value;
+    if (typeof normalized === "string") {
+      try {
+        normalized = JSON.parse(normalized);
+      } catch (error) {
+        throw new TypeError(`${parameter.label} deve ser JSON válido.`, {
+          cause: error
+        });
+      }
+    }
+    if (normalized === undefined) {
+      throw new TypeError(`${parameter.label} deve ser um valor JSON.`);
+    }
+    return deepFreeze(structuredClone(normalized));
   }
   const normalized = String(value ?? "");
   if (parameter.type === "color" &&

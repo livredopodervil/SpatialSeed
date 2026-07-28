@@ -670,6 +670,28 @@ instâncias selecionáveis, mas o documento ainda repete descritores nas cópias
 Protótipos persistentes, instâncias leves e copy-on-write permanecem uma
 compactação posterior e não devem ser simulados por mutação direta do Three.js.
 
+## D-040 — Variação do pincel usa schema geométrico e programa afim local
+
+**Estado:** implementada inicialmente no build 0039f.
+
+O pincel de catálogo guarda o descritor completo normalizado pelo provider. A
+orientação possui modos explícitos de preservação, plano e caminho. Variações
+por instância reutilizam a AST da linguagem afim e são compostas no frame local
+do caminho; não executam JavaScript fornecido pelo usuário.
+
+**Motivação:** escolher apenas o tipo da geometria impedia controlar dimensões,
+resolução e parâmetros específicos. Misturar a rotação original da fonte com o
+plano de desenho também tornava o resultado ambíguo. Uma linguagem já
+normalizada para `i` e `u` permite variações progressivas sem criar outro
+avaliador ou materializar cópias no caminho quente.
+
+**Consequências:** mudanças de descritor podem reconstruir o lote de preview,
+mas mudanças afins atualizam apenas matrizes no mesmo `InstancedMesh`.
+Expressões são compiladas uma vez por configuração e reavaliadas quando
+`count`, `u` ou o caminho mudam. A escala permanece uniforme e positiva para
+conservar TRS e hierarquias; cisalhamento e escala vetorial exigem uma futura
+representação autoritativa capaz de preservá-los sem perda.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

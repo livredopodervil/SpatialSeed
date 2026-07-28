@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 28 de julho de 2026 durante o marco `0039e`.
+> Documento vivo. Auditado em 28 de julho de 2026 durante o marco `0039f`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -251,7 +251,7 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - materiais físicos editáveis por objeto no workspace e Inspector;
 - luzes pontuais, direcionais, spot e ambiente como objetos persistentes editáveis.
 
-### 0038–0039e — Ciclo, repetição e autoria por caminho — implementado
+### 0038–0039f — Ciclo, repetição e autoria por caminho — implementado
 
 - ferramentas persistentes com posicionamento e desenho contínuos;
 - plano de edição independente da trava de visualização;
@@ -272,6 +272,10 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
   gesto e atualiza somente matrizes;
 - migração não destrutiva do armazenamento de parâmetros para schema 2;
 - lote distribuído confirmado em uma única operação de undo.
+- parâmetros completos de qualquer provider do catálogo no pincel;
+- orientação explícita preservada, relativa ao plano ou à tangente;
+- modificadores afins locais com `i`, `u`, distância, curvatura e frames;
+- reavaliação interativa das matrizes sem recriar recursos do preview.
 
 ### Próximas extensões geométricas
 

@@ -1,7 +1,7 @@
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 
 export class MeshEditPanel {
-  static apiVersion = "mesh-edit-panel-v7";
+  static apiVersion = "mesh-edit-panel-v8";
 
   constructor({
     root,
@@ -18,6 +18,8 @@ export class MeshEditPanel {
     this.execute = execute;
     this.latest = null;
     this.creationDefaults = loadCreationDefaults();
+    this.geometryCatalog = this.query("geometry.catalog") ?? [];
+    this.brushGeometryRenderKey = null;
     this.toolDefinitions = this.query("edit.tools.describe") ?? [];
     this.parameterToolId = "path.sketch";
     this.unsubscribeToolParameters = null;
@@ -48,11 +50,14 @@ export class MeshEditPanel {
     this.#bindCreationMaterial();
     this.#bindSectionConfiguration();
     this.#bindToolParameterPanel();
+    this.#bindBrushGeometryParameters();
     this.unsubscribeToolParameters = subscribeToolParameters?.(() => {
       this.#refreshToolParameterPanel();
       this.#restoreRememberedToolControls();
+      this.#renderBrushGeometryParameters();
     }) ?? null;
     this.#restoreRememberedToolControls();
+    this.#renderBrushGeometryParameters();
     this.refresh();
   }
 
@@ -244,7 +249,7 @@ export class MeshEditPanel {
   }
 
   #bindCreationMaterial() {
-    const catalog = this.query("geometry.catalog") ?? [];
+    const catalog = this.geometryCatalog;
     const geometrySelect = this.#element("edit-create-geometry");
     geometrySelect.replaceChildren(...catalog.map(description => {
       const option = document.createElement("option");
@@ -450,6 +455,96 @@ export class MeshEditPanel {
     if ([...select.options].some(option => option.value === previous)) {
       select.value = previous;
     }
+  }
+
+  #bindBrushGeometryParameters() {
+    const container = this.#element("path-sketch-geometry-parameters");
+    this.#element("path-sketch-geometry").addEventListener("change", () =>
+      this.#renderBrushGeometryParameters()
+    );
+    container.addEventListener("change", () => {
+      const description = this.#brushGeometryDescription();
+      try {
+        const candidate = {
+          type: description.type,
+          ...Object.fromEntries(description.parameters.map(parameter => [
+            parameter.id,
+            readBrushGeometryParameter(container, parameter)
+          ]))
+        };
+        const sourceGeometry = this.query(
+          "geometry.descriptor.normalize",
+          { geometry: candidate }
+        ) ?? candidate;
+        const next = this.#execute("edit.tool.parameters.set", {
+          toolId: "path.sketch",
+          patch: {
+            geometryType: description.type,
+            sourceGeometry
+          }
+        });
+        if (!next) {
+          this.brushGeometryRenderKey = null;
+          this.#renderBrushGeometryParameters();
+          return;
+        }
+        this.#text("mesh-edit-error", "");
+        this.#text(
+          "path-sketch-geometry-status",
+          `${description.label}: parâmetros aplicados ao preview e lembrados.`
+        );
+      } catch (error) {
+        this.#text("mesh-edit-error", error.message);
+        this.brushGeometryRenderKey = null;
+        this.#renderBrushGeometryParameters();
+      }
+    });
+  }
+
+  #renderBrushGeometryParameters() {
+    const container = this.#element("path-sketch-geometry-parameters");
+    const description = this.#brushGeometryDescription();
+    const values = this.query("edit.tool.parameters.get", {
+      toolId: "path.sketch"
+    })?.values ?? {};
+    const remembered = values.sourceGeometry;
+    const descriptor =
+      remembered &&
+      typeof remembered === "object" &&
+      !Array.isArray(remembered) &&
+      remembered.type === description.type
+        ? remembered
+        : defaultBrushGeometryDescriptor(description);
+    const renderKey = JSON.stringify([description.type, descriptor]);
+    if (renderKey === this.brushGeometryRenderKey &&
+        container.childElementCount > 0) {
+      return;
+    }
+    this.brushGeometryRenderKey = renderKey;
+    container.replaceChildren(...description.parameters.map(parameter =>
+      createBrushGeometryParameterField(
+        this.root.ownerDocument,
+        parameter,
+        descriptor[parameter.id] ?? parameter.default
+      )
+    ));
+    this.#text(
+      "path-sketch-geometry-status",
+      `${description.label}: ${description.parameters.length} parâmetro${
+        description.parameters.length === 1 ? "" : "s"
+      } do provider.`
+    );
+  }
+
+  #brushGeometryDescription() {
+    const type = this.#element("path-sketch-geometry").value;
+    const description = this.geometryCatalog.find(item =>
+      item.type === type
+    );
+    if (!description) {
+      throw new Error(`Geometria não registrada para o pincel: ${type}.`);
+    }
+    return description;
   }
 
   #creationReference() {
@@ -681,9 +776,11 @@ export class MeshEditPanel {
       toolId: definition.id
     });
     const values = result?.values ?? {};
-    container.replaceChildren(...definition.parameters.map(parameter =>
-      this.#toolParameterField(definition, parameter, values)
-    ));
+    container.replaceChildren(...definition.parameters
+      .filter(parameter => !parameter.hidden)
+      .map(parameter =>
+        this.#toolParameterField(definition, parameter, values)
+      ));
     this.#applyToolParameterVisibility(values);
     const futureSchema = Boolean(
       this.query("edit.tool.parameters.status")?.futureSchema
@@ -765,7 +862,7 @@ export class MeshEditPanel {
   #bindRememberedToolControls() {
     for (const mapping of rememberedToolControls()) {
       const control = this.#element(mapping.controlId);
-      control.addEventListener("change", () => {
+      control.addEventListener(mapping.live ? "input" : "change", () => {
         try {
           const value = control.type === "checkbox"
             ? control.checked
@@ -781,6 +878,7 @@ export class MeshEditPanel {
             patch: { [mapping.parameterId]: value }
           });
           if (!result) this.#restoreRememberedToolControls();
+          else this.#text("mesh-edit-error", "");
           this.#refreshSketchModeVisibility();
         } catch (error) {
           this.#text("mesh-edit-error", error.message);
@@ -845,6 +943,9 @@ export class MeshEditPanel {
         !arrayMode || spacingMode !== "auto";
     (this.#element("path-sketch-radius").closest("label") ??
       this.#element("path-sketch-radius")).hidden = arrayMode;
+    this.#element("path-sketch-geometry-settings").hidden =
+      !arrayMode || !catalogSource;
+    this.#element("path-sketch-affine-settings").hidden = !arrayMode;
   }
 
   #bind() {
@@ -917,6 +1018,14 @@ export class MeshEditPanel {
       spacingScale: this.#number("path-sketch-spacing-scale"),
       align: this.#element("path-sketch-align").checked,
       twistDegrees: this.#number("path-sketch-twist"),
+      orientationMode: this.#element("path-sketch-orientation").value,
+      affineMoveX: this.#element("path-sketch-affine-move-x").value,
+      affineMoveY: this.#element("path-sketch-affine-move-y").value,
+      affineMoveZ: this.#element("path-sketch-affine-move-z").value,
+      affineRotateX: this.#element("path-sketch-affine-rotate-x").value,
+      affineRotateY: this.#element("path-sketch-affine-rotate-y").value,
+      affineRotateZ: this.#element("path-sketch-affine-rotate-z").value,
+      affineScale: this.#element("path-sketch-affine-scale").value,
       closed: this.#element("path-sketch-closed").checked
     }));
     this.#click("path-sketch-cancel", "path.sketch.cancel");
@@ -1578,6 +1687,28 @@ function rememberedToolControls() {
     toolControl("path.sketch", "twistDegrees", "path-sketch-twist", {
       number: true
     }),
+    toolControl("path.sketch", "orientationMode", "path-sketch-orientation"),
+    toolControl("path.sketch", "affineMoveX", "path-sketch-affine-move-x", {
+      live: true
+    }),
+    toolControl("path.sketch", "affineMoveY", "path-sketch-affine-move-y", {
+      live: true
+    }),
+    toolControl("path.sketch", "affineMoveZ", "path-sketch-affine-move-z", {
+      live: true
+    }),
+    toolControl("path.sketch", "affineRotateX", "path-sketch-affine-rotate-x", {
+      live: true
+    }),
+    toolControl("path.sketch", "affineRotateY", "path-sketch-affine-rotate-y", {
+      live: true
+    }),
+    toolControl("path.sketch", "affineRotateZ", "path-sketch-affine-rotate-z", {
+      live: true
+    }),
+    toolControl("path.sketch", "affineScale", "path-sketch-affine-scale", {
+      live: true
+    }),
     toolControl("path.sketch", "closed", "path-sketch-closed"),
     toolControl("path.tube", "radius", "path-tube-radius", {
       number: true
@@ -1649,7 +1780,8 @@ function toolControl(toolId, parameterId, controlId, options = {}) {
     controlId,
     integer: Boolean(options.integer),
     number: Boolean(options.number),
-    optionalBoolean: Boolean(options.optionalBoolean)
+    optionalBoolean: Boolean(options.optionalBoolean),
+    live: Boolean(options.live)
   });
 }
 
@@ -1683,6 +1815,12 @@ function createParameterControl(document, parameter) {
     }
     return select;
   }
+  if (parameter.type === "json") {
+    const textarea = document.createElement("textarea");
+    textarea.rows = 4;
+    textarea.spellcheck = false;
+    return textarea;
+  }
   const input = document.createElement("input");
   input.type = parameter.type === "color" ? "color" :
     ["number", "integer"].includes(parameter.type) ? "number" : "text";
@@ -1708,6 +1846,15 @@ function readParameterControlValue(control, parameter) {
     }
     return value;
   }
+  if (parameter.type === "json") {
+    try {
+      return JSON.parse(control.value);
+    } catch (error) {
+      throw new TypeError(`${parameter.label} deve ser JSON válido.`, {
+        cause: error
+      });
+    }
+  }
   return control.value;
 }
 
@@ -1722,7 +1869,145 @@ function setParameterControlValue(control, value) {
       : value ? "true" : "false";
     return;
   }
+  if (control.dataset.toolParameterType === "json") {
+    control.value = JSON.stringify(value ?? null, null, 2);
+    return;
+  }
   control.value = String(value ?? "");
+}
+
+function defaultBrushGeometryDescriptor(description) {
+  return {
+    type: description.type,
+    ...Object.fromEntries(description.parameters.map(parameter => [
+      parameter.id,
+      structuredClone(parameter.default)
+    ]))
+  };
+}
+
+function createBrushGeometryParameterField(document, parameter, value) {
+  const label = document.createElement("label");
+  label.className = "geometry-field";
+  const text = document.createElement("span");
+  text.textContent = parameter.label;
+  const editor = document.createElement("span");
+  editor.className = "geometry-field-editor";
+
+  if (["vector3", "integer-vector3"].includes(parameter.type)) {
+    editor.classList.add("geometry-vector");
+    const components = Array.isArray(value)
+      ? value
+      : parameter.default;
+    components.forEach((component, index) => {
+      editor.append(createBrushGeometryNumberInput(
+        document,
+        parameter,
+        component,
+        index
+      ));
+    });
+  } else if (parameter.type === "boolean") {
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = Boolean(value);
+    input.dataset.brushGeometryParameter = parameter.id;
+    editor.append(input);
+  } else if (parameter.type === "enum") {
+    const select = document.createElement("select");
+    select.dataset.brushGeometryParameter = parameter.id;
+    for (const optionValue of parameter.options ?? []) {
+      const option = document.createElement("option");
+      option.value = String(optionValue);
+      option.textContent = String(optionValue);
+      option.selected = optionValue === value;
+      select.append(option);
+    }
+    editor.append(select);
+  } else if (parameter.type === "json") {
+    const textarea = document.createElement("textarea");
+    textarea.dataset.brushGeometryParameter = parameter.id;
+    textarea.rows = Math.min(
+      8,
+      Math.max(3, Math.ceil(JSON.stringify(value).length / 48))
+    );
+    textarea.value = JSON.stringify(value);
+    textarea.spellcheck = false;
+    editor.append(textarea);
+  } else {
+    editor.append(createBrushGeometryNumberInput(
+      document,
+      parameter,
+      value
+    ));
+  }
+
+  label.append(text, editor);
+  return label;
+}
+
+function createBrushGeometryNumberInput(
+  document,
+  parameter,
+  value,
+  component = null
+) {
+  const input = document.createElement("input");
+  input.type = "number";
+  input.value = String(value);
+  input.step = ["integer", "integer-vector3"].includes(parameter.type)
+    ? "1"
+    : "any";
+  input.dataset.brushGeometryParameter = parameter.id;
+  if (component !== null) {
+    input.dataset.brushGeometryComponent = String(component);
+  }
+  if (parameter.minimum != null) input.min = String(parameter.minimum);
+  if (parameter.maximum != null) input.max = String(parameter.maximum);
+  return input;
+}
+
+function readBrushGeometryParameter(container, parameter) {
+  const controls = [...container.querySelectorAll(
+    `[data-brush-geometry-parameter="${parameter.id}"]`
+  )];
+  if (["vector3", "integer-vector3"].includes(parameter.type)) {
+    if (controls.length !== 3) {
+      throw new Error(`${parameter.label}: vetor incompleto.`);
+    }
+    return controls
+      .sort((left, right) =>
+        Number(left.dataset.brushGeometryComponent) -
+        Number(right.dataset.brushGeometryComponent)
+      )
+      .map(control => geometryParameterNumber(control, parameter));
+  }
+  const control = controls[0];
+  if (!control) throw new Error(`${parameter.label}: controle ausente.`);
+  if (parameter.type === "boolean") return control.checked;
+  if (parameter.type === "enum") return control.value;
+  if (parameter.type === "json") {
+    try {
+      return JSON.parse(control.value);
+    } catch (error) {
+      throw new TypeError(`${parameter.label}: JSON inválido.`, {
+        cause: error
+      });
+    }
+  }
+  return geometryParameterNumber(control, parameter);
+}
+
+function geometryParameterNumber(control, parameter) {
+  const value = Number(control.value);
+  if (!Number.isFinite(value)) {
+    throw new TypeError(`${parameter.label}: número inválido.`);
+  }
+  if (["integer", "integer-vector3"].includes(parameter.type) &&
+      !Number.isInteger(value)) {
+    throw new TypeError(`${parameter.label}: use um inteiro.`);
+  }
+  return value;
 }
 
 function extractionLabel(value) {

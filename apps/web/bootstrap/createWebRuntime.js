@@ -12,7 +12,7 @@ import {
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0037c";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260728-0039a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260728-0039e";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260728-0039f";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260728-0039a";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260728-0039e";
@@ -20,7 +20,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260728-0039e";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260728-0039f";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -82,7 +82,7 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0037c";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260728-0039e";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260728-0039f";
 import {
   EditContextController
 } from "../../../packages/edit-context/src/index.js?build=20260728-0039a";
@@ -94,15 +94,16 @@ import {
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../../packages/edit-tools/src/index.js?build=20260728-0039e";
+} from "../../../packages/edit-tools/src/index.js?build=20260728-0039f";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260728-0039a";
 import {
+  PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260728-0039e";
+} from "../../../packages/spatial-references/src/index.js?build=20260728-0039f";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -443,7 +444,7 @@ export async function createWebRuntime({
     renderer,
     pathTools,
     geometryRegistry,
-    onCompleted: ({ settings, points, sourceIds }) => {
+    onCompleted: ({ settings, points, sourceIds, frame }) => {
       const repeatable = settings.mode === "array"
         ? {
             id: "path.array.points.create",
@@ -452,6 +453,7 @@ export async function createWebRuntime({
               sourceIds,
               sourceMode: settings.sourceMode,
               geometryType: settings.geometryType,
+              sourceGeometry: settings.sourceGeometry,
               sourceColor: settings.sourceColor,
               spacingMode: settings.spacingMode,
               spacingWorld: settings.spacingWorld,
@@ -460,7 +462,16 @@ export async function createWebRuntime({
               closed: settings.closed,
               curveType: settings.curveType,
               tension: settings.tension,
-              twistDegrees: settings.twistDegrees
+              twistDegrees: settings.twistDegrees,
+              initialNormal: frame.normal,
+              orientationMode: settings.orientationMode,
+              affineMoveX: settings.affineMoveX,
+              affineMoveY: settings.affineMoveY,
+              affineMoveZ: settings.affineMoveZ,
+              affineRotateX: settings.affineRotateX,
+              affineRotateY: settings.affineRotateY,
+              affineRotateZ: settings.affineRotateZ,
+              affineScale: settings.affineScale
             },
             label: "Distribuir no caminho desenhado"
           }
@@ -983,6 +994,9 @@ export async function createWebRuntime({
     .register("geometry.catalog", () =>
       geometryRegistry.describe()
     )
+    .register("geometry.descriptor.normalize", ({ geometry } = {}) =>
+      geometryRegistry.normalize(geometry)
+    )
     .register("path.references.list", () =>
       pathTools.listReferences()
     )
@@ -1223,6 +1237,8 @@ export async function createWebRuntime({
       referenceKinds: ["path", "profile", "point"],
       tools: ["tube", "sweep", "array", "draw-tube", "draw-array"],
       preview: "local-ephemeral",
+      brushOrientation: ["preserve", "plane", "path"],
+      affineBrushVariables: PATH_BRUSH_AFFINE_VARIABLES,
       persistence: "snapshot"
     }))
     .register("animation", () => ({

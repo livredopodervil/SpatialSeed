@@ -1014,12 +1014,19 @@ html[data-toolbar-layout="vertical"] #selection-panel{
 
 .mesh-form-grid input,
 .mesh-form-grid select,
+.mesh-form-grid textarea,
 .mesh-wide-label input,
 .mesh-wide-label textarea,
 .mesh-expression-row input {
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+}
+
+.mesh-form-grid textarea {
+  resize: vertical;
+  font-family: ui-monospace, monospace;
+  line-height: 1.35;
 }
 
 .mesh-expression-row {

@@ -18,16 +18,25 @@ const DEFAULTS = Object.freeze({
   closed: false,
   sourceMode: "selection",
   geometryType: "box",
+  sourceGeometry: Object.freeze({}),
   sourceColor: "#6699cc",
   spacingMode: "auto",
   spacingWorld: 1,
   spacingScale: 1,
   align: true,
-  twistDegrees: 0
+  twistDegrees: 0,
+  orientationMode: "preserve",
+  affineMoveX: "0",
+  affineMoveY: "0",
+  affineMoveZ: "0",
+  affineRotateX: "0",
+  affineRotateY: "0",
+  affineRotateZ: "0",
+  affineScale: "1"
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v2";
+  static apiVersion = "path-sketch-controller-v3";
 
   #active = null;
   #listeners = new Set();
@@ -93,10 +102,14 @@ export class PathSketchController {
     }
     const settings = normalizeSettings({ ...DEFAULTS, ...requested });
     const frame = resolveFrame(this.renderer, settings.planeSource);
+    const affineModifier = settings.mode === "array"
+      ? this.pathTools.compileArrayBrushModifier(settings)
+      : null;
     const brush = settings.mode === "array"
       ? this.pathTools.captureArrayBrush({
           sourceMode: settings.sourceMode,
           geometryType: settings.geometryType,
+          geometry: settings.sourceGeometry,
           color: settings.sourceColor
         })
       : null;
@@ -107,6 +120,7 @@ export class PathSketchController {
       settings,
       sourceIds,
       brush,
+      affineModifier,
       brushSettingsKey: brushSettingsKey(settings),
       resolvedSpacing: brush
         ? this.pathTools.resolveArrayBrushSpacing({
@@ -194,6 +208,9 @@ export class PathSketchController {
       ...this.#active.settings,
       ...patch
     });
+    const affineModifier = settings.mode === "array"
+      ? this.pathTools.compileArrayBrushModifier(settings)
+      : null;
     let brush = this.#active.brush;
     const nextBrushSettingsKey = brushSettingsKey(settings);
     if (settings.mode === "array" &&
@@ -206,6 +223,7 @@ export class PathSketchController {
           ? this.#active.sourceIds
           : null,
         geometryType: settings.geometryType,
+        geometry: settings.sourceGeometry,
         color: settings.sourceColor
       });
       this.#previewArrayCache.configure(brush);
@@ -215,6 +233,7 @@ export class PathSketchController {
     }
     this.#active.settings = settings;
     this.#active.brush = brush;
+    this.#active.affineModifier = affineModifier;
     this.#active.brushSettingsKey = nextBrushSettingsKey;
     this.#active.sourceIds = brush?.sourceIds ?? Object.freeze([]);
     this.#active.resolvedSpacing = brush
@@ -320,7 +339,10 @@ export class PathSketchController {
             closed: active.settings.closed,
             curveType: active.settings.curveType,
             tension: active.settings.tension,
-            twistDegrees: active.settings.twistDegrees
+            twistDegrees: active.settings.twistDegrees,
+            initialNormal: active.frame.normal,
+            orientationMode: active.settings.orientationMode,
+            affineModifier: active.affineModifier
           })
         : this.pathTools.createPath({
             points: committedPoints,
@@ -340,7 +362,8 @@ export class PathSketchController {
         result: active.lastResult,
         settings: structuredClone(active.settings),
         points: structuredClone(committedPoints),
-        sourceIds: [...active.sourceIds]
+        sourceIds: [...active.sourceIds],
+        frame: structuredClone(active.frame)
       });
       active.error = null;
       this.#clearResultPreview();
@@ -458,6 +481,9 @@ export class PathSketchController {
           curveType: active.settings.curveType,
           tension: active.settings.tension,
           twistDegrees: active.settings.twistDegrees,
+          initialNormal: active.frame.normal,
+          orientationMode: active.settings.orientationMode,
+          affineModifier: active.affineModifier,
           maximumCopies: this.#previewArrayCache.copyCapacity
         }));
         this.#previewTube.visible = false;
@@ -698,12 +724,23 @@ function normalizeSettings(value) {
     closed: Boolean(value.closed),
     sourceMode: String(value.sourceMode ?? "selection").toLowerCase(),
     geometryType: String(value.geometryType ?? "box").toLowerCase(),
+    sourceGeometry: geometryDescriptor(value.sourceGeometry),
     sourceColor: String(value.sourceColor ?? "#6699cc"),
     spacingMode: String(value.spacingMode ?? "auto").toLowerCase(),
     spacingWorld: positive(value.spacingWorld, "spacingWorld"),
     spacingScale: positive(value.spacingScale, "spacingScale"),
     align: Boolean(value.align),
     twistDegrees: finite(value.twistDegrees, "twistDegrees"),
+    orientationMode: String(
+      value.orientationMode ?? "preserve"
+    ).toLowerCase(),
+    affineMoveX: expression(value.affineMoveX, "affineMoveX"),
+    affineMoveY: expression(value.affineMoveY, "affineMoveY"),
+    affineMoveZ: expression(value.affineMoveZ, "affineMoveZ"),
+    affineRotateX: expression(value.affineRotateX, "affineRotateX"),
+    affineRotateY: expression(value.affineRotateY, "affineRotateY"),
+    affineRotateZ: expression(value.affineRotateZ, "affineRotateZ"),
+    affineScale: expression(value.affineScale, "affineScale"),
     continuous: Boolean(value.continuous),
     name: value.name === undefined ? null : String(value.name)
   };
@@ -715,6 +752,11 @@ function normalizeSettings(value) {
   }
   if (!["auto", "world"].includes(result.spacingMode)) {
     throw new RangeError("O espaçamento deve ser auto ou world.");
+  }
+  if (!["preserve", "plane", "path"].includes(result.orientationMode)) {
+    throw new RangeError(
+      "A orientação deve preservar a fonte, seguir o plano ou seguir o caminho."
+    );
   }
   if (!/^#[0-9a-f]{6}$/i.test(result.sourceColor)) {
     throw new TypeError("A cor do pincel deve usar a forma #rrggbb.");
@@ -732,8 +774,45 @@ function brushSettingsKey(settings) {
   return JSON.stringify([
     settings.sourceMode,
     settings.sourceMode === "catalog" ? settings.geometryType : null,
+    settings.sourceMode === "catalog" ? settings.sourceGeometry : null,
     settings.sourceMode === "catalog" ? settings.sourceColor : null
   ]);
+}
+
+function geometryDescriptor(value) {
+  let source = value;
+  if (typeof source === "string") {
+    try {
+      source = JSON.parse(source);
+    } catch (error) {
+      throw new TypeError("sourceGeometry deve ser JSON válido.", {
+        cause: error
+      });
+    }
+  }
+  if (source === null || source === undefined) return Object.freeze({});
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new TypeError("sourceGeometry deve ser um objeto.");
+  }
+  return deepFreeze(structuredClone(source));
+}
+
+function expression(value, name) {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError(`${name} inválido.`);
+    return value;
+  }
+  const text = String(value ?? "").trim();
+  if (!text) throw new TypeError(`${name} exige um valor ou expressão.`);
+  return text;
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
 }
 
 function createPreviewLine() {

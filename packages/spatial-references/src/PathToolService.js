@@ -13,9 +13,13 @@ import {
   samplePathFrames,
   samplePathFramesBySpacing
 } from "./PathFrames.js?build=20260728-0039e";
+import {
+  compilePathBrushAffineModifier,
+  evaluatePathBrushAffineModifier
+} from "./PathBrushAffine.js?build=20260728-0039f";
 
 export class PathToolService {
-  static apiVersion = "path-tool-service-v2";
+  static apiVersion = "path-tool-service-v3";
 
   constructor({
     resolver,
@@ -321,7 +325,17 @@ export class PathToolService {
     closed = false,
     curveType = "centripetal",
     tension = 0.5,
-    twistDegrees = 0
+    twistDegrees = 0,
+    initialNormal = null,
+    orientationMode = "preserve",
+    affineModifier = null,
+    affineMoveX = "0",
+    affineMoveY = "0",
+    affineMoveZ = "0",
+    affineRotateX = "0",
+    affineRotateY = "0",
+    affineRotateZ = "0",
+    affineScale = "1"
   } = {}) {
     this.#assertCanMutate("distribuir objetos no caminho desenhado");
     if (count === null || count === undefined) {
@@ -338,6 +352,16 @@ export class PathToolService {
         spacingWorld,
         spacingScale
       });
+      const modifier = affineModifier ??
+        this.compileArrayBrushModifier({
+          affineMoveX,
+          affineMoveY,
+          affineMoveZ,
+          affineRotateX,
+          affineRotateY,
+          affineRotateZ,
+          affineScale
+        });
       return this.arrayBrushAlongPoints({
         points,
         brush: captured,
@@ -346,7 +370,10 @@ export class PathToolService {
         closed,
         curveType,
         tension,
-        twistDegrees
+        twistDegrees,
+        initialNormal,
+        orientationMode,
+        affineModifier: modifier
       });
     }
     const resolvedPath = pointsPathReference({
@@ -382,12 +409,15 @@ export class PathToolService {
   } = {}) {
     const mode = String(sourceMode ?? "selection").toLowerCase();
     if (mode === "catalog") {
-      const descriptor = geometry
-        ? this.resolver.geometryRegistry.normalize(geometry)
-        : defaultGeometryDescriptor(
-            this.resolver.geometryRegistry,
-            geometryType
-          );
+      const requestedType = String(geometryType ?? "box").toLowerCase();
+      const descriptor =
+        geometry &&
+        String(geometry.type ?? "").toLowerCase() === requestedType
+          ? this.resolver.geometryRegistry.normalize(geometry)
+          : defaultGeometryDescriptor(
+              this.resolver.geometryRegistry,
+              requestedType
+            );
       const normalizedColor = colorValue(color);
       const bounds = geometryBounds(
         this.resolver.geometryRegistry,
@@ -408,6 +438,7 @@ export class PathToolService {
         sourceColor: normalizedColor,
         sourceName: this.resolver.geometryRegistry.label(descriptor.type),
         pivot: Object.freeze([0, 0, 0]),
+        referenceRotation: Object.freeze([0, 0, 0, 1]),
         autoSpacing: boundsSpacing(bounds),
         renderableCount: 1,
         entries: Object.freeze([Object.freeze({
@@ -486,10 +517,14 @@ export class PathToolService {
       sourceWorldMatrices: Object.freeze(entry.sourceWorldMatrices)
     }));
     const pivot = average(rootIds.map(id => hierarchy.worldPivotOf(id)));
+    const referenceRotation = worldRotation(
+      hierarchy.worldMatrixOf(rootIds[0])
+    );
     const key = JSON.stringify([
       "selection",
       rootIds,
       pivot,
+      referenceRotation,
       entries.map(entry => [
         entry.key,
         entry.sourceWorldMatrices
@@ -506,6 +541,7 @@ export class PathToolService {
         ? hierarchy.node(rootIds[0]).name ?? rootIds[0]
         : `${rootIds.length} raízes selecionadas`,
       pivot: Object.freeze(pivot),
+      referenceRotation,
       autoSpacing: boundsSpacing(bounds),
       renderableCount,
       entries: Object.freeze(entries)
@@ -529,6 +565,10 @@ export class PathToolService {
     throw new RangeError("O espaçamento deve ser auto ou world.");
   }
 
+  compileArrayBrushModifier(options = {}) {
+    return compilePathBrushAffineModifier(options);
+  }
+
   previewArrayBrush({
     points,
     brush,
@@ -538,6 +578,9 @@ export class PathToolService {
     curveType = "centripetal",
     tension = 0.5,
     twistDegrees = 0,
+    initialNormal = null,
+    orientationMode = "preserve",
+    affineModifier = null,
     maximumCopies = 4096
   } = {}) {
     const resolvedPath = pointsPathReference({
@@ -554,6 +597,10 @@ export class PathToolService {
       curveType,
       tension,
       twistDegrees,
+      initialNormal,
+      orientationMode,
+      affineModifier: affineModifier ??
+        this.compileArrayBrushModifier(),
       maximumCopies
     });
     return Object.freeze({
@@ -576,7 +623,10 @@ export class PathToolService {
     closed = false,
     curveType = "centripetal",
     tension = 0.5,
-    twistDegrees = 0
+    twistDegrees = 0,
+    initialNormal = null,
+    orientationMode = "preserve",
+    affineModifier = null
   } = {}) {
     this.#assertCanMutate("distribuir um pincel no caminho desenhado");
     const resolvedPath = pointsPathReference({
@@ -593,6 +643,10 @@ export class PathToolService {
       curveType,
       tension,
       twistDegrees,
+      initialNormal,
+      orientationMode,
+      affineModifier: affineModifier ??
+        this.compileArrayBrushModifier(),
       maximumCopies: 10001
     });
     if (layout.frames.requestedCount > 10000) {
@@ -870,9 +924,14 @@ export class PathToolService {
     curveType,
     tension,
     twistDegrees,
+    initialNormal,
+    orientationMode,
+    affineModifier,
     maximumCopies
   }) {
-    if (!brush || !Array.isArray(brush.pivot) || brush.pivot.length !== 3) {
+    if (!brush || !Array.isArray(brush.pivot) || brush.pivot.length !== 3 ||
+        !Array.isArray(brush.referenceRotation) ||
+        brush.referenceRotation.length !== 4) {
       throw new TypeError("Fonte do pincel inválida.");
     }
     const frames = samplePathFramesBySpacing({
@@ -886,23 +945,99 @@ export class PathToolService {
       closed: closed === undefined ? resolvedPath.closed : Boolean(closed),
       curveType,
       tension: finite(tension, "tension"),
+      initialNormal: initialNormal === null || initialNormal === undefined
+        ? null
+        : vector3(initialNormal, "initialNormal"),
       twistDegrees: finite(twistDegrees, "twistDegrees")
     });
-    const firstFrame = new THREE.Quaternion().fromArray(
-      frames.quaternions[0]
+    const mode = normalizeBrushOrientationMode(orientationMode);
+    const modifier = affineModifier ??
+      this.compileArrayBrushModifier();
+    if (mode === "preserve" && modifier.identity) {
+      const firstFrameInverse = new THREE.Quaternion()
+        .fromArray(frames.quaternions[0])
+        .invert();
+      const deltaMatrices = frames.positions.map((point, index) => {
+        const frame = new THREE.Quaternion().fromArray(
+          frames.quaternions[index]
+        );
+        const relativeRotation = align
+          ? frame.clone().multiply(firstFrameInverse)
+          : new THREE.Quaternion();
+        return new THREE.Matrix4()
+          .makeTranslation(...point)
+          .multiply(
+            new THREE.Matrix4().makeRotationFromQuaternion(relativeRotation)
+          )
+          .multiply(new THREE.Matrix4().makeTranslation(
+            -brush.pivot[0],
+            -brush.pivot[1],
+            -brush.pivot[2]
+          ));
+      });
+      return Object.freeze({
+        brush,
+        frames,
+        orientationMode: mode,
+        affineModifier: modifier,
+        deltaMatrices: Object.freeze(deltaMatrices)
+      });
+    }
+    const pathOrientations = frames.quaternions.map(value =>
+      new THREE.Quaternion().fromArray(value)
     );
-    const firstFrameInverse = firstFrame.clone().invert();
+    const orientations = mode === "plane"
+      ? frames.positions.map((_, index) =>
+          planeFrameQuaternion({
+            tangent: frames.tangents[index],
+            normal: frames.normals[index]
+          })
+        )
+      : pathOrientations;
+    const firstOrientation = orientations[0];
+    const baseInverse = mode === "preserve"
+      ? pathOrientations[0].clone().invert()
+      : new THREE.Quaternion()
+          .fromArray(brush.referenceRotation)
+          .normalize()
+          .invert();
+    const contextCount = frames.requestedCount;
     const deltaMatrices = frames.positions.map((point, index) => {
-      const frame = new THREE.Quaternion().fromArray(
-        frames.quaternions[index]
-      );
-      const relativeRotation = align
-        ? frame.clone().multiply(firstFrameInverse)
-        : new THREE.Quaternion();
-      return new THREE.Matrix4()
+      const orientation = align
+        ? orientations[index]
+        : firstOrientation;
+      if (modifier.identity) {
+        const relativeRotation = orientation.clone().multiply(baseInverse);
+        return new THREE.Matrix4()
+          .makeTranslation(...point)
+          .multiply(
+            new THREE.Matrix4().makeRotationFromQuaternion(relativeRotation)
+          )
+          .multiply(new THREE.Matrix4().makeTranslation(
+            -brush.pivot[0],
+            -brush.pivot[1],
+            -brush.pivot[2]
+          ));
+      }
+      const matrix = new THREE.Matrix4()
         .makeTranslation(...point)
         .multiply(
-          new THREE.Matrix4().makeRotationFromQuaternion(relativeRotation)
+          new THREE.Matrix4().makeRotationFromQuaternion(orientation)
+        );
+      const evaluated = evaluatePathBrushAffineModifier(modifier, {
+        index: index + 1,
+        count: contextCount,
+        position: point,
+        rotation: orientation.toArray(),
+        variables: pathBrushVariables({
+          frames,
+          index
+        })
+      });
+      matrix.multiply(new THREE.Matrix4().fromArray(evaluated.matrix));
+      return matrix
+        .multiply(
+          new THREE.Matrix4().makeRotationFromQuaternion(baseInverse)
         )
         .multiply(new THREE.Matrix4().makeTranslation(
           -brush.pivot[0],
@@ -913,6 +1048,8 @@ export class PathToolService {
     return Object.freeze({
       brush,
       frames,
+      orientationMode: mode,
+      affineModifier: modifier,
       deltaMatrices: Object.freeze(deltaMatrices)
     });
   }
@@ -1093,6 +1230,106 @@ function average(points) {
     accumulator[2] + point[2]
   ], [0, 0, 0]);
   return sum.map(value => value / points.length);
+}
+
+function worldRotation(matrix) {
+  const rotation = new THREE.Quaternion();
+  new THREE.Matrix4().fromArray(matrix).decompose(
+    new THREE.Vector3(),
+    rotation,
+    new THREE.Vector3()
+  );
+  return Object.freeze(rotation.normalize().toArray());
+}
+
+function normalizeBrushOrientationMode(value) {
+  const mode = String(value ?? "preserve").toLowerCase();
+  if (!["preserve", "plane", "path"].includes(mode)) {
+    throw new RangeError(
+      "A orientação do pincel deve ser preserve, plane ou path."
+    );
+  }
+  return mode;
+}
+
+function planeFrameQuaternion({ tangent, normal }) {
+  const xAxis = new THREE.Vector3().fromArray(
+    vector3(tangent, "tangent")
+  ).normalize();
+  const zAxis = new THREE.Vector3().fromArray(
+    vector3(normal, "normal")
+  );
+  zAxis.addScaledVector(xAxis, -zAxis.dot(xAxis));
+  if (zAxis.lengthSq() <= 1e-18) {
+    throw new Error(
+      "Não foi possível orientar a geometria no plano do caminho."
+    );
+  }
+  zAxis.normalize();
+  const yAxis = new THREE.Vector3()
+    .crossVectors(zAxis, xAxis)
+    .normalize();
+  zAxis.crossVectors(xAxis, yAxis).normalize();
+  return new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis)
+  );
+}
+
+function pathBrushVariables({ frames, index }) {
+  const tangent = frames.tangents[index];
+  const normal = frames.normals[index];
+  const binormal = frames.binormals[index];
+  const distance = Math.min(
+    frames.length,
+    index * frames.spacing
+  );
+  const curvature = frameCurvature(frames, index);
+  return Object.freeze({
+    d: distance,
+    distance,
+    length: frames.length,
+    pathLength: frames.length,
+    spacing: frames.spacing,
+    k: curvature,
+    curvature,
+    tx: tangent[0],
+    ty: tangent[1],
+    tz: tangent[2],
+    nx: normal[0],
+    ny: normal[1],
+    nz: normal[2],
+    bx: binormal[0],
+    by: binormal[1],
+    bz: binormal[2]
+  });
+}
+
+function frameCurvature(frames, index) {
+  if (frames.tangents.length < 2) return 0;
+  const leftIndex = Math.max(0, index - 1);
+  const rightIndex = Math.min(frames.tangents.length - 1, index + 1);
+  if (leftIndex === rightIndex) return 0;
+  const left = new THREE.Vector3().fromArray(frames.tangents[leftIndex]);
+  const right = new THREE.Vector3().fromArray(frames.tangents[rightIndex]);
+  const angle = Math.acos(
+    THREE.MathUtils.clamp(left.dot(right), -1, 1)
+  );
+  const distance = Math.max(
+    1e-12,
+    (rightIndex - leftIndex) * frames.spacing
+  );
+  return angle / distance;
+}
+
+function vector3(value, name) {
+  if (!Array.isArray(value) || value.length !== 3) {
+    throw new TypeError(`${name} deve conter x, y e z.`);
+  }
+  const result = value.map(Number);
+  if (!result.every(Number.isFinite)) {
+    throw new TypeError(`${name} inválido.`);
+  }
+  return result;
 }
 
 function positive(value, name) {

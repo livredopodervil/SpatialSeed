@@ -69,6 +69,11 @@ for path, needle in [
 ]:
     require(path, needle)
 
+require(
+    "apps/web/bootstrap/createWebRuntime.js",
+    '.register("geometry.descriptor.normalize"'
+)
+
 
 for needle in [
     "#mesh-edit-panel {",
@@ -127,12 +132,19 @@ for needle in [
     'id="path-sketch-source-color"',
     'id="path-sketch-spacing-mode"',
     'id="path-sketch-spacing-world"',
-    'id="path-sketch-spacing-scale"'
+    'id="path-sketch-spacing-scale"',
+    'id="path-sketch-geometry-settings"',
+    'id="path-sketch-geometry-parameters"',
+    'id="path-sketch-affine-settings"',
+    'id="path-sketch-orientation"',
+    'id="path-sketch-affine-scale"',
+    'id="path-sketch-affine-move-x"',
+    'id="path-sketch-affine-rotate-z"'
 ]:
     require("apps/web/index.html", needle)
 
 for needle in [
-    'static apiVersion = "mesh-edit-panel-v7"',
+    'static apiVersion = "mesh-edit-panel-v8"',
     '"mesh.topology.apply"',
     '"mesh.component.mode.set"',
     '"mesh.selection.apply"',
@@ -144,9 +156,19 @@ for needle in [
     'this.#click("mesh-frame-viewer", "edit.context.frame.set"',
     '"path.tube.create"',
     '"path.sweep.create"',
-    '"path.array.create"'
+    '"path.array.create"',
+    "#bindBrushGeometryParameters",
+    '"affineRotateZ", "path-sketch-affine-rotate-z"'
 ]:
     require("packages/mesh-edit-panel/src/MeshEditPanel.js", needle)
+
+for needle in [
+    "compilePathBrushAffineModifier",
+    "evaluatePathBrushAffineModifier",
+    "path-brush-affine-modifier",
+    "identity: isIdentity(expressions)"
+]:
+    require("packages/spatial-references/src/PathBrushAffine.js", needle)
 
 for needle in [
     "applyMeshTopologyOperation",

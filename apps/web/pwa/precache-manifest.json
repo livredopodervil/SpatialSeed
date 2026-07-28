@@ -200,6 +200,7 @@
     "packages/selection-operations/src/AffineProgram.js",
     "packages/selection-operations/src/AffineRepeat.js",
     "packages/selection-operations/src/SelectionOperations.js",
+    "packages/spatial-references/src/PathBrushAffine.js",
     "packages/spatial-references/src/PathFrames.js",
     "packages/spatial-references/src/PathInstancePreviewCache.js",
     "packages/spatial-references/src/PathSketchController.js",

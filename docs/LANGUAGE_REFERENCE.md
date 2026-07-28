@@ -1,7 +1,7 @@
 # Referência da linguagem e do console SpatialSeed
 
 > Referência normativa P0. Auditada em 28 de julho de 2026 contra o runtime
-> `0039e`. Consulte `help`, `help create`, `help mesh`, `help path`,
+> `0039f`. Consulte `help`, `help create`, `help mesh`, `help path`,
 > `help animate`, `procedure help` e
 > `runtime test help` para confirmar as capabilities do build carregado.
 
@@ -180,7 +180,8 @@ path inspect object=id extraction=auto|centerline|boundary|loose-edges
 path draw
 path draw mode=tube radius=0.08 curve=centripetal plane=locked-or-viewer
 path draw mode=array source=selection spacing=auto align=on twist=0
-path draw mode=array source=catalog geometry=torus spacing=0.75 color=#6699cc
+path draw mode=array source=catalog geometry=sphere params={"radius":0.4} spacing=0.75
+path draw mode=array orientation=plane rotateZ=360*u scale=0.5+u
 path tube object=id [radius=n] [segments=n] [radial=n] [closed=on|off]
 path sweep path=id profile=id [segments=n] [twist=n] [caps=on|off]
 path array object=id [count=n] [align=on|off] [twist=n]
@@ -199,6 +200,15 @@ registro atende console, HUD e workspace. `closed` omitido herda o fechamento
 da referência; `path draw` pode usar o plano de edição travado, o viewer ou os
 planos mundiais XY, XZ e YZ. `sample` controla a coleta do gesto em pixels e é
 independente do espaçamento mundial entre instâncias.
+
+`params={...}` configura o descritor do provider escolhido em `geometry`.
+`orientation=preserve|plane|path` define o referencial das expressões:
+`plane` usa X na direção do traço e Z normal ao plano; `path` usa Z na
+tangente. `moveX`, `moveY`, `moveZ`, `rotateX`, `rotateY`, `rotateZ` e `scale`
+aceitam expressões seguras. `i` começa em 1; `u` percorre 0–1 e é recalculado
+quando o número de instâncias muda. Também estão disponíveis `count`, `d`,
+`length`, `spacing`, `k`, posição mundial e componentes da tangente, normal e
+binormal. Consulte `docs/AFFINE_PATH_BRUSH_0039F.md`.
 
 ## 4. Criação geométrica
 

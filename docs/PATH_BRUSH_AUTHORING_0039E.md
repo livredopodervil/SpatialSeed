@@ -1,5 +1,9 @@
 # Pincel progressivo por caminho — 0039e
 
+> O `0039f` acrescenta parâmetros completos do provider, orientação relativa ao
+> plano/caminho e expressões afins interativas. Consulte
+> [Parâmetros geométricos e pincel afim — 0039f](AFFINE_PATH_BRUSH_0039F.md).
+
 ## Objetivo
 
 O `0039e` substitui a quantidade predeterminada do desenho distributivo por
