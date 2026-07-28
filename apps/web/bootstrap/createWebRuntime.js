@@ -10,13 +10,13 @@ import {
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0037c";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260727-0038b";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260727-0038c";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260727-0037a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260727-0037c";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260727-0038b";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260727-0038b";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260727-0038c";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260727-0038c";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
@@ -82,24 +82,24 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0037c";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260727-0038b";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260727-0038c";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260727-0038b";
+} from "../../../packages/edit-context/src/index.js?build=20260727-0038c";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260727-0038b";
+} from "../../../packages/edit-hud/src/index.js?build=20260727-0038c";
 import {
   ToolLifecycleController
-} from "../../../packages/edit-tools/src/index.js?build=20260727-0038b";
+} from "../../../packages/edit-tools/src/index.js?build=20260727-0038c";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260727-0038b";
+} from "../../../packages/object-placement/src/index.js?build=20260727-0038c";
 import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260727-0038b";
+} from "../../../packages/spatial-references/src/index.js?build=20260727-0038c";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -875,6 +875,10 @@ export async function createWebRuntime({
     .register("selection.snapshot", () =>
       editor.selection.snapshot()
     )
+    .register("history.status", () => Object.freeze({
+      canUndo: Boolean(sandbox.canUndo),
+      canRedo: Boolean(sandbox.canRedo)
+    }))
     .register("properties.describe", () =>
       propertyRegistry.describe()
     )
@@ -1018,7 +1022,16 @@ export async function createWebRuntime({
     root: editHudRoot,
     query: (id, args) => runtime.query(id, args),
     execute: (id, args) => runtime.execute(id, args),
-    subscribe: listener => editContext.subscribe(listener)
+    subscribe: listener => {
+      const unsubscribeContext = editContext.subscribe(listener);
+      const unsubscribeHistory = sandbox.subscribe(() =>
+        listener(editContext.status())
+      );
+      return () => {
+        unsubscribeContext();
+        unsubscribeHistory();
+      };
+    }
   });
   runtime.onDispose(() => editHud.dispose());
   runtime.onDispose(() => objectPlacement.dispose());

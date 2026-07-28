@@ -105,6 +105,8 @@ for needle in [
     'id="edit-hud-material"',
     'id="edit-hud-extrude"',
     'id="edit-hud-help"',
+    'id="edit-hud-area-selection"',
+    'id="edit-hud-undo"',
     'id="edit-hud-tooltip"',
     'id="edit-hud-tap-hints"',
     'id="edit-create-reference"',
@@ -166,9 +168,17 @@ for needle in [
     "#onHintPointerDown",
     "#onHintClickCapture",
     "Modo ajuda ativado",
-    "HUD_HINT_DETAILS"
+    "HUD_HINT_DETAILS",
+    'this.#execute(active ? "mesh.edit.undo" : "history.undo")',
+    'this.#execute("selection.area.toggle")'
 ]:
     require("packages/edit-hud/src/EditHud.js", needle)
+for needle in [
+    '.register("history.status"',
+    "const unsubscribeHistory = sandbox.subscribe",
+    "listener(editContext.status())"
+]:
+    require("apps/web/bootstrap/createWebRuntime.js", needle)
 require("packages/mesh-editor-core/src/MeshEditController.js", 'setTransformMode("translate")')
 
 
@@ -217,14 +227,19 @@ if expected_match.group(1) != actual_match.group(1):
     )
 
 selection_query = runtime_source.find('.register("selection.snapshot"')
+history_query = runtime_source.find('.register("history.status"')
 edit_hud_construction = runtime_source.find("new EditHud({")
-if selection_query < 0 or edit_hud_construction < 0:
+if selection_query < 0 or history_query < 0 or edit_hud_construction < 0:
     raise SystemExit(
-        "Não foi possível auditar a query de seleção ou a construção do HUD."
+        "Não foi possível auditar as queries fundamentais ou a construção do HUD."
     )
 if selection_query > edit_hud_construction:
     raise SystemExit(
         "selection.snapshot deve ser registrada antes da construção do EditHud."
+    )
+if history_query > edit_hud_construction:
+    raise SystemExit(
+        "history.status deve ser registrada antes da construção do EditHud."
     )
 
 audit_toolbar_controls()

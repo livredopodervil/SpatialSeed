@@ -199,7 +199,6 @@
         <label><input type="checkbox" data-edit-hud-group-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="lifecycle" checked> Continuidade</label>
-        <label><input type="checkbox" data-edit-hud-group-toggle="history" checked> Histórico</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="actions" checked> Ações contextuais</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="session" checked> Sessão</label>
       </div>
@@ -225,6 +224,11 @@
       <button type="button" data-edit-tool="translate" title="Mover">↔</button>
       <button type="button" data-edit-tool="rotate" title="Girar">↻</button>
       <button type="button" data-edit-tool="scale" title="Escalar">⤢</button>
+    </div>
+    <div class="edit-hud-group" data-edit-hud-group="quick" aria-label="Seleção rápida e histórico">
+      <button id="edit-hud-area-selection" type="button" title="Selecionar por área">▧</button>
+      <button id="edit-hud-undo" type="button" title="Desfazer">↶</button>
+      <button id="edit-hud-redo" type="button" title="Refazer">↷</button>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="frame" aria-label="Referencial">
       <button type="button" data-edit-frame="world" title="Frame mundial">◎</button>
@@ -288,10 +292,6 @@
       <button id="edit-hud-path-from-selection" type="button" data-hud-context="vertex edge face" title="Criar caminho da seleção de componentes">⌇</button>
       <button id="edit-hud-recalculate-normals" type="button" data-hud-context="mesh" title="Recalcular normais da malha">N</button>
       <button id="edit-hud-cleanup" type="button" data-hud-context="mesh" title="Sanitizar a malha: remover órfãos e recalcular normais">✧</button>
-    </div>
-    <div class="edit-hud-group" data-edit-hud-group="history">
-      <button id="edit-hud-undo" type="button" title="Desfazer interno">↶</button>
-      <button id="edit-hud-redo" type="button" title="Refazer interno">↷</button>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="session">
       <button id="edit-hud-apply" type="button" title="Aplicar sessão de malha">✓</button>
@@ -1106,6 +1106,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0038b"></script>
+<script type="module" src="./boot.js?build=20260727-0038c"></script>
 </body>
 </html>

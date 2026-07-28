@@ -91,7 +91,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260727-0038b";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260727-0038c";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -190,17 +190,17 @@ import {
   EditContextController,
   axesFromConstraint,
   constraintFromAxes
-} from "../../edit-context/src/index.js?build=20260727-0038b";
+} from "../../edit-context/src/index.js?build=20260727-0038c";
 import {
   ToolLifecycleController
-} from "../../edit-tools/src/index.js?build=20260727-0038b";
+} from "../../edit-tools/src/index.js?build=20260727-0038c";
 import {
   PathToolService,
   SpatialReferenceResolver,
   createSweepGeometryDescriptor,
   orderEdgeChain,
   rotationMinimizingFrames
-} from "../../spatial-references/src/index.js?build=20260727-0038b";
+} from "../../spatial-references/src/index.js?build=20260727-0038c";
 import {
   formatBuildLabel,
   normalizeBuildInfo

@@ -23,7 +23,6 @@ const DEFAULT_PREFERENCES = Object.freeze({
     snap: true,
     navigation: true,
     lifecycle: true,
-    history: true,
     actions: true,
     session: true
   }
@@ -81,6 +80,8 @@ export class EditHud {
         ? "true"
         : "false";
     }
+    this.#element("edit-hud-area-selection").dataset.active =
+      state.areaSelection ? "true" : "false";
     for (const button of this.root.querySelectorAll("[data-edit-frame]")) {
       button.dataset.active = button.dataset.editFrame === state.frameMode
         ? "true"
@@ -103,13 +104,16 @@ export class EditHud {
     this.#element("edit-hud-keep-tool").checked = Boolean(state.keepToolActive);
     this.#element("edit-hud-repeat").disabled = !state.canRepeat;
     this.#element("edit-hud-repeat").dataset.active = state.canRepeat ? "true" : "false";
-    this.#element("edit-hud-undo").disabled = !state.canUndo;
-    this.#element("edit-hud-redo").disabled = !state.canRedo;
+    const projectHistory = state.meshActive
+      ? { canUndo: state.canUndo, canRedo: state.canRedo }
+      : this.query("history.status");
+    this.#element("edit-hud-undo").disabled = !projectHistory.canUndo;
+    this.#element("edit-hud-redo").disabled = !projectHistory.canRedo;
     this.#element("edit-hud-apply").disabled = !state.meshActive || state.stale;
     this.#element("edit-hud-cancel").disabled = !state.meshActive;
-    for (const groupName of ["history", "session"]) {
-      const group = this.root.querySelector(`[data-edit-hud-group="${groupName}"]`);
-      if (group) group.dataset.contextHidden = state.meshActive ? "false" : "true";
+    const sessionGroup = this.root.querySelector('[data-edit-hud-group="session"]');
+    if (sessionGroup) {
+      sessionGroup.dataset.contextHidden = state.meshActive ? "false" : "true";
     }
     this.#element("edit-hud-object").disabled = state.meshActive;
     this.#element("edit-hud-proportional").disabled = !state.meshActive;
@@ -150,6 +154,15 @@ export class EditHud {
         { mode: button.dataset.editTool }
       ));
     }
+    this.#element("edit-hud-area-selection").addEventListener("click", () => {
+      const status = this.query("edit.context.status");
+      if (status.tool === "select" && status.areaSelection) {
+        this.#execute("selection.area.toggle");
+        return;
+      }
+      this.#execute("edit.context.tool.set", { mode: "select" });
+      if (!status.areaSelection) this.#execute("selection.area.toggle");
+    });
     for (const button of this.root.querySelectorAll("[data-edit-frame]")) {
       button.addEventListener("click", () => this.#execute(
         "edit.context.frame.set",
@@ -208,12 +221,14 @@ export class EditHud {
     this.#element("edit-hud-repeat").addEventListener("click", () =>
       this.#execute("edit.command.repeat")
     );
-    this.#element("edit-hud-undo").addEventListener("click", () =>
-      this.#execute("mesh.edit.undo")
-    );
-    this.#element("edit-hud-redo").addEventListener("click", () =>
-      this.#execute("mesh.edit.redo")
-    );
+    this.#element("edit-hud-undo").addEventListener("click", () => {
+      const active = Boolean(this.query("mesh.edit.status").active);
+      this.#execute(active ? "mesh.edit.undo" : "history.undo");
+    });
+    this.#element("edit-hud-redo").addEventListener("click", () => {
+      const active = Boolean(this.query("mesh.edit.status").active);
+      this.#execute(active ? "mesh.edit.redo" : "history.redo");
+    });
     this.#element("edit-hud-apply").addEventListener("click", () =>
       this.#execute("mesh.edit.commit")
     );
@@ -845,6 +860,7 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-open": ["Painel Editar", "Abre o workspace completo com parâmetros numéricos, criação, materiais, luzes, caminhos e operações de malha."],
   "edit-hud-help": ["Ajuda dos ícones", "Ativa o modo de consulta. Nesse modo, tocar numa ferramenta mostra sua explicação sem executá-la."],
   "edit-hud-object": ["Modo objeto", "Seleciona e transforma objetos inteiros. Encerre ou aplique a sessão de malha antes de retornar a este modo."],
+  "edit-hud-area-selection": ["Selecionar por área", "Ativa a ferramenta de seleção e permite arrastar um retângulo no viewer para selecionar objetos ou componentes do modo atual."],
   "edit-hud-axis-x": ["Eixo X", "Permite ou bloqueia o componente X da transformação no frame ativo."],
   "edit-hud-axis-y": ["Eixo Y", "Permite ou bloqueia o componente Y da transformação no frame ativo."],
   "edit-hud-axis-z": ["Eixo Z", "Permite ou bloqueia o componente Z da transformação no frame ativo."],
@@ -892,8 +908,8 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-path-from-selection": ["Criar caminho", "Cria um novo objeto-caminho a partir de vértices, arestas ou contornos de faces selecionados."],
   "edit-hud-recalculate-normals": ["Recalcular normais", "Reconstrói as normais da malha a partir da orientação atual das faces."],
   "edit-hud-cleanup": ["Sanitizar malha", "Remove vértices órfãos e elementos degenerados básicos, compacta índices e recalcula normais."],
-  "edit-hud-undo": ["Desfazer interno", "Volta uma etapa dentro da sessão de edição de malha sem alterar o histórico do projeto."],
-  "edit-hud-redo": ["Refazer interno", "Reaplica uma etapa desfeita dentro da sessão de edição de malha."],
+  "edit-hud-undo": ["Desfazer", "Durante a edição de malha desfaz uma etapa interna; no modo objeto desfaz a última alteração local do projeto."],
+  "edit-hud-redo": ["Refazer", "Durante a edição de malha refaz uma etapa interna; no modo objeto refaz a última alteração local do projeto."],
   "edit-hud-apply": ["Aplicar", "Confirma toda a sessão de malha como uma única alteração no histórico do projeto."],
   "edit-hud-cancel": ["Cancelar", "Descarta todas as alterações da sessão de malha e restaura o objeto original."]
 });
