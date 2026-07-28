@@ -72,6 +72,10 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 - operações topológicas primitivas e painel flutuante único configurável;
 - objetos resolvíveis como caminhos, perfis e pontos, com tubo, varredura e
   distribuição hierárquica por frames de transporte paralelo.
+- ciclo persistente de ferramentas, repetição de comandos normalizados e
+  posicionamento por clique com prévia local;
+- planos independentes de visualização e edição, visualização 2D autoritativa e
+  órbita em ponto travado.
 
 ## Invariantes
 
@@ -133,8 +137,8 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente o fluxo de referências espaciais `0037a` em mobile e avançar
-em incrementos independentes:
+Validar visualmente o ciclo de ferramentas e as travas `0038b` em mobile e
+avançar em incrementos independentes:
 
 1. analisador e pipeline configurável de sanitização de malhas;
 2. booleanos robustos em Worker, com diagnóstico e limpeza posterior;
@@ -143,8 +147,8 @@ em incrementos independentes:
    invalidação incremental;
 5. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
 
-Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md` e
-`docs/PATH_REFERENCES_0037A.md`.
+Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
+`docs/PATH_REFERENCES_0037A.md` e `docs/EDIT_INTERACTION_0038B.md`.
 
 ## Protocolo para nova LLM
 

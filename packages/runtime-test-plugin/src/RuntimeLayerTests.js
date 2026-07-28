@@ -91,7 +91,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260727-0037c";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260727-0038b";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -190,14 +190,17 @@ import {
   EditContextController,
   axesFromConstraint,
   constraintFromAxes
-} from "../../edit-context/src/index.js?build=20260727-0036d";
+} from "../../edit-context/src/index.js?build=20260727-0038b";
+import {
+  ToolLifecycleController
+} from "../../edit-tools/src/index.js?build=20260727-0038b";
 import {
   PathToolService,
   SpatialReferenceResolver,
   createSweepGeometryDescriptor,
   orderEdgeChain,
   rotationMinimizingFrames
-} from "../../spatial-references/src/index.js?build=20260727-0037c";
+} from "../../spatial-references/src/index.js?build=20260727-0038b";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -299,6 +302,40 @@ export function createRuntimeLayerTests() {
         assertEqual(light.light.color, "#88ccff");
       },
 
+      "criação configurada interna material físico no mesmo objeto"() {
+        const region = new Region(
+          { id: "configured-material-region", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        const appearanceRuntime = new AppearanceRuntime();
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: region.id,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          appearanceRuntime
+        });
+        const result = operations.createGeometry({
+          geometry: { type: "box", size: [1, 1, 1], segments: [1, 1, 1] },
+          material: {
+            model: "physical",
+            color: "#55aaff",
+            opacity: 1,
+            transparent: false,
+            parameters: { roughness: 0.1, transmission: 0.8, ior: 1.45 }
+          }
+        });
+        const object = sandbox.getSnapshot().objects.find(item => item.id === result.id);
+        const material = appearanceRuntime.legacyMaterial(object.appearanceId);
+        assertEqual(result.changed, true);
+        assertEqual(material.model, "physical");
+        assertEqual(material.color, "#55aaff");
+        assertNear(material.parameters.transmission, 0.8);
+        assertEqual(sandbox.getHistoryDiagnostics().commandCount, 1);
+      },
+
       "registro expõe luzes e materiais físicos sem misturar escopos"() {
         const registry = createDefaultPropertyRegistry();
         const light = {
@@ -372,6 +409,61 @@ export function createRuntimeLayerTests() {
         assertEqual(context.status().planeLock, null);
         assertEqual(context.status().pointLock, null);
         context.dispose();
+      },
+
+      "plano de edição permanece independente da visualização"() {
+        const fixture = createEditContextFixture();
+        const context = new EditContextController(fixture);
+        context.togglePlaneLock({ source: "world-xy" });
+        context.setEditPlane({ source: "world-yz" });
+        const status = context.status();
+        assertDeepEqual(status.planeLock.normal, [0, 0, 1]);
+        assertDeepEqual(status.editPlane.normal, [1, 0, 0]);
+        assertEqual(status.navigationMode, "plane-2d");
+        context.clearEditPlane();
+        assertEqual(context.status().editPlane, null);
+        assertDeepEqual(context.status().planeLock.normal, [0, 0, 1]);
+        context.dispose();
+      },
+
+      "ciclo de ferramenta memoriza e repete comando normalizado"() {
+        const fixture = createEditContextFixture();
+        const calls = [];
+        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        lifecycle.attachExecute((id, args) => {
+          calls.push({ id, args: structuredClone(args) });
+          return { changed: true };
+        });
+        lifecycle.observeExecution({
+          id: "selection.translate",
+          args: { delta: [1, 2, 3] },
+          result: { changed: true },
+          metadata: { repeatable: true, label: "Mover seleção" }
+        });
+        assertEqual(lifecycle.status().canRepeat, true);
+        assertEqual(lifecycle.status().lastRepeatable.label, "Mover seleção");
+        const repeated = lifecycle.repeat();
+        assertEqual(repeated.repeated, true);
+        assertDeepEqual(calls, [{
+          id: "selection.translate",
+          args: { delta: [1, 2, 3] }
+        }]);
+        lifecycle.dispose();
+      },
+
+      "persistência é configurada separadamente por ferramenta"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        lifecycle.activateAction("object.place");
+        lifecycle.setKeepActive(false);
+        lifecycle.completeAction("object.place");
+        assertEqual(lifecycle.status().activeAction, null);
+        lifecycle.activateAction("path.sketch");
+        assertEqual(lifecycle.status().keepActive, true);
+        lifecycle.completeAction("path.sketch");
+        assertEqual(lifecycle.status().activeAction, "path.sketch");
+        lifecycle.cancelAction();
+        lifecycle.dispose();
       }
     },
 
@@ -11821,6 +11913,7 @@ function createEditContextFixture() {
     objectFrame: { mode: "world", quaternion: [0, 0, 0, 1] },
     objectAxes: { x: true, y: true, z: true },
     locks: { plane: null, point: null },
+    editPlane: null,
     transformConfig: {},
     setTransformMode(mode) { editor.setToolMode(mode); },
     setSelectionOperation(operation) {
@@ -11852,7 +11945,22 @@ function createEditContextFixture() {
       return this.getObjectTransformAxes();
     },
     setTransformConfig(patch) { this.transformConfig = { ...this.transformConfig, ...patch }; },
-    getNavigationLocks() { return structuredClone(this.locks); },
+    getNavigationLocks() {
+      return {
+        ...structuredClone(this.locks),
+        mode: this.locks.plane
+          ? (this.locks.point ? "plane-point" : "plane-2d")
+          : (this.locks.point ? "orbit-point" : "free"),
+        editPlane: this.editPlane ? structuredClone(this.editPlane) : null
+      };
+    },
+    getEditPlane() {
+      return this.editPlane ? structuredClone(this.editPlane) : null;
+    },
+    setEditPlane(frame) {
+      this.editPlane = frame ? structuredClone(frame) : null;
+      return this.getEditPlane();
+    },
     setNavigationPlaneLock(frame) {
       this.locks.plane = frame ? structuredClone(frame) : null;
       return this.getNavigationLocks();

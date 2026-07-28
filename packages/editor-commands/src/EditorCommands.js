@@ -10,8 +10,10 @@ export function createEditorCommands({
   propertyService = null,
   meshEditor = null,
   editContext = null,
+  toolLifecycle = null,
   pathTools = null,
   pathSketch = null,
+  objectPlacement = null,
   canMutateProject = () => true
 }) {
   const commands = new CommandRegistry();
@@ -21,6 +23,11 @@ export function createEditorCommands({
         `Finalize ou cancele a edição de malha antes de ${action}.`
       );
     }
+  };
+  const cancelInteractiveAction = () => {
+    if (objectPlacement?.active) objectPlacement.cancel();
+    if (pathSketch?.status?.().active) pathSketch.cancel();
+    toolLifecycle?.cancelAction();
   };
 
   commands
@@ -105,7 +112,16 @@ export function createEditorCommands({
     .register("object.create.geometry", args => {
       requireObjectMode("criar objetos");
       return selectionOperations.createGeometry(args);
-    })
+    }, { repeatable: true, label: "Criar objeto" })
+    .register("object.create.configured", ({ materialPatch = null, ...args }) => {
+      requireObjectMode("criar objetos");
+      return selectionOperations.createGeometry({
+        ...args,
+        material: materialPatch
+          ? materialFromAppearancePatch(materialPatch, args.color)
+          : null
+      });
+    }, { repeatable: true, label: "Criar objeto configurado" })
     .register("object.create.geometrySeries", args => {
       requireObjectMode("criar objetos");
       return selectionOperations.createGeometrySeries(args);
@@ -113,7 +129,7 @@ export function createEditorCommands({
     .register("light.create", args => {
       requireObjectMode("criar luzes");
       return selectionOperations.createLight(args);
-    })
+    }, { repeatable: true, label: "Criar luz" })
     .register("selection.position", ({ position }) =>
       meshEditor?.active
         ? meshEditor.setPivotPosition(position)
@@ -123,23 +139,23 @@ export function createEditorCommands({
       meshEditor?.active
         ? meshEditor.translate(delta)
         : selectionOperations.translate(delta)
-    )
+    , { repeatable: true, label: "Mover seleção" })
     .register("selection.rotate", ({ degrees }) =>
       meshEditor?.active
         ? meshEditor.rotate(degrees)
         : selectionOperations.rotateEuler(degrees)
-    )
+    , { repeatable: true, label: "Girar seleção" })
     .register("selection.scale", ({ factors }) =>
       meshEditor?.active
         ? meshEditor.scale(factors)
         : selectionOperations.scaleBy(factors)
-    )
+    , { repeatable: true, label: "Escalar seleção" })
     .register("selection.duplicate", () => {
       if (meshEditor?.active) {
         return meshEditor.applyTopology({ operation: "duplicate" });
       }
       return selectionOperations.duplicate();
-    })
+    }, { repeatable: true, label: "Duplicar" })
     .register("selection.group", (args = {}) => {
       requireObjectMode("agrupar objetos");
       return selectionOperations.group({
@@ -208,10 +224,14 @@ export function createEditorCommands({
 
   if (editContext) {
     commands
-      .register("edit.context.subject.set", ({ level, selectAll = false }) =>
-        editContext.setSubjectLevel(level, { selectAll }))
-      .register("edit.context.tool.set", ({ mode }) =>
-        editContext.setTool(mode))
+      .register("edit.context.subject.set", ({ level, selectAll = false }) => {
+        cancelInteractiveAction();
+        return editContext.setSubjectLevel(level, { selectAll });
+      })
+      .register("edit.context.tool.set", ({ mode }) => {
+        cancelInteractiveAction();
+        return editContext.setTool(mode);
+      })
       .register("edit.context.selection-operation.set", ({ operation }) =>
         editContext.setSelectionOperation(operation))
       .register("edit.context.frame.set", ({ mode }) =>
@@ -239,11 +259,35 @@ export function createEditorCommands({
         return editContext.status();
       })
       .register("edit.navigation.locks.clear", () =>
-        editContext.clearNavigationLocks());
+        editContext.clearNavigationLocks())
+      .register("edit.plane.set", args =>
+        editContext.setEditPlane(args))
+      .register("edit.plane.clear", () =>
+        editContext.clearEditPlane());
+  }
+
+  if (toolLifecycle) {
+    commands
+      .register("edit.tool.keep.set", ({ enabled, toolId = null }) => {
+        const status = toolLifecycle.setKeepActive(enabled, {
+          toolId: toolId ?? undefined
+        });
+        if (objectPlacement?.active) objectPlacement.setContinuous(enabled);
+        if (pathSketch?.status?.().active) pathSketch.setContinuous(enabled);
+        return status;
+      })
+      .register("edit.command.repeat", () => toolLifecycle.repeat());
   }
 
   if (pathTools) {
     commands
+      .register("path.create", args =>
+        pathTools.createPath(args), {
+          category: "path-tools",
+          mutates: true,
+          repeatable: true,
+          label: "Criar caminho"
+        })
       .register("path.reference.inspect", args =>
         pathTools.inspect(args), {
           category: "path-reference",
@@ -252,22 +296,30 @@ export function createEditorCommands({
       .register("path.tube.create", args =>
         pathTools.createTube(args), {
           category: "path-tools",
-          mutates: true
+          mutates: true,
+          repeatable: true,
+          label: "Criar tubo por caminho"
         })
       .register("path.sweep.create", args =>
         pathTools.createSweep(args), {
           category: "path-tools",
-          mutates: true
+          mutates: true,
+          repeatable: true,
+          label: "Criar varredura"
         })
       .register("path.array.create", args =>
         pathTools.arraySelection(args), {
           category: "path-tools",
-          mutates: true
+          mutates: true,
+          repeatable: true,
+          label: "Distribuir por caminho"
         })
       .register("path.from-mesh-selection.create", args =>
         pathTools.createPathFromMeshSelection(args), {
           category: "path-tools",
-          mutates: true
+          mutates: true,
+          repeatable: true,
+          label: "Criar caminho da seleção"
         })
       .register("path.bezier.convert", args =>
         pathTools.convertSelectedPathToBezier(args), {
@@ -278,14 +330,51 @@ export function createEditorCommands({
 
   if (pathSketch) {
     commands
-      .register("path.sketch.begin", args => pathSketch.begin(args), {
+      .register("path.sketch.begin", args => {
+        toolLifecycle?.activateAction("path.sketch");
+        try {
+          return pathSketch.begin({
+            ...args,
+            continuous: args.continuous ?? toolLifecycle?.keepActive("path.sketch")
+          });
+        } catch (error) {
+          toolLifecycle?.cancelAction("path.sketch");
+          throw error;
+        }
+      }, {
         category: "path-sketch",
         mutates: false
       })
-      .register("path.sketch.cancel", () => pathSketch.cancel(), {
+      .register("path.sketch.cancel", () => {
+        const result = pathSketch.cancel();
+        toolLifecycle?.cancelAction("path.sketch");
+        return result;
+      }, {
         category: "path-sketch",
         mutates: false
       });
+  }
+
+  if (objectPlacement) {
+    commands
+      .register("object.placement.begin", args => {
+        requireObjectMode("posicionar objetos");
+        toolLifecycle?.activateAction("object.place");
+        try {
+          return objectPlacement.begin({
+            ...args,
+            continuous: args.continuous ?? toolLifecycle?.keepActive("object.place")
+          });
+        } catch (error) {
+          toolLifecycle?.cancelAction("object.place");
+          throw error;
+        }
+      }, { category: "object-placement", mutates: false })
+      .register("object.placement.cancel", () => {
+        const result = objectPlacement.cancel();
+        toolLifecycle?.cancelAction("object.place");
+        return result;
+      }, { category: "object-placement", mutates: false });
   }
 
   if (meshEditor) {
@@ -320,7 +409,10 @@ export function createEditorCommands({
         meshEditor.setComponentMode(mode))
       .register("mesh.selection.apply", ({ operation, options }) =>
         meshEditor.selectComponents(operation, options))
-      .register("mesh.topology.apply", args => meshEditor.applyTopology(args))
+      .register("mesh.topology.apply", args => meshEditor.applyTopology(args), {
+        repeatable: true,
+        label: "Operação topológica"
+      })
       .register("mesh.topology.options.set", args =>
         meshEditor.setTopologyOptions(args))
       .register("mesh.display.set", args => meshEditor.setDisplayOptions(args))
@@ -407,4 +499,29 @@ export function createEditorCommands({
     );
 
   return commands;
+}
+
+function materialFromAppearancePatch(patch = {}, fallbackColor = "#6699cc") {
+  const opacity = finiteOr(patch["appearance.opacity"], 1);
+  return {
+    model: String(patch["appearance.model"] ?? "standard"),
+    color: String(patch["appearance.color"] ?? fallbackColor),
+    opacity,
+    transparent: Boolean(patch["appearance.transparent"] ?? opacity < 1),
+    parameters: {
+      roughness: finiteOr(patch["appearance.roughness"], 0.55),
+      metalness: finiteOr(patch["appearance.metalness"], 0),
+      transmission: finiteOr(patch["appearance.transmission"], 0),
+      ior: finiteOr(patch["appearance.ior"], 1.5),
+      thickness: finiteOr(patch["appearance.thickness"], 0.5),
+      dispersion: finiteOr(patch["appearance.dispersion"], 0),
+      clearcoat: finiteOr(patch["appearance.clearcoat"], 0),
+      envMapIntensity: finiteOr(patch["appearance.envMapIntensity"], 1)
+    }
+  };
+}
+
+function finiteOr(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }

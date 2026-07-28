@@ -1,6 +1,15 @@
 export class CommandRegistry {
   static apiVersion = "editor-command-registry-v1";
   #commands = new Map();
+  #executionObserver = null;
+
+  setExecutionObserver(observer = null) {
+    if (observer !== null && typeof observer !== "function") {
+      throw new TypeError("Command execution observer must be a function.");
+    }
+    this.#executionObserver = observer;
+    return this;
+  }
 
   register(id, handler, metadata = {}) {
     if (typeof id !== "string" || !id.trim()) {
@@ -23,7 +32,21 @@ export class CommandRegistry {
   execute(id, args = {}) {
     const command = this.#commands.get(id);
     if (!command) throw new Error(`Unknown editor command: ${id}`);
-    return command.handler(structuredClone(args));
+    const clonedArgs = structuredClone(args);
+    const result = command.handler(clonedArgs);
+    if (this.#executionObserver) {
+      try {
+        this.#executionObserver({
+          id: command.id,
+          args: clonedArgs,
+          result,
+          metadata: command.metadata
+        });
+      } catch (error) {
+        console.error("Command execution observer failed", error);
+      }
+    }
+    return result;
   }
 
   describe() {

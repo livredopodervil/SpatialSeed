@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260727-0037e",
-  "channel": "fix/0037e-touch-hints"
+  "build": "20260727-0038b",
+  "channel": "feature/0038b-tool-lifecycle-navigation"
 }

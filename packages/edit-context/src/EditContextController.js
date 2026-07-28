@@ -9,6 +9,7 @@ export class EditContextController {
   #listeners = new Set();
   #unsubscribeEditor = null;
   #unsubscribeMesh = null;
+  #unsubscribeTools = null;
   #snap = {
     enabled: false,
     auto: true,
@@ -22,7 +23,7 @@ export class EditContextController {
     self: false
   };
 
-  constructor({ editor, renderer, meshEditor }) {
+  constructor({ editor, renderer, meshEditor, toolLifecycle = null }) {
     if (!editor?.snapshot || !editor?.subscribe) {
       throw new TypeError("EditContextController exige editor compatível.");
     }
@@ -35,6 +36,7 @@ export class EditContextController {
     this.editor = editor;
     this.renderer = renderer;
     this.meshEditor = meshEditor;
+    this.toolLifecycle = toolLifecycle;
     this.#unsubscribeEditor = editor.subscribe(() => this.#notify());
     this.#unsubscribeMesh = meshEditor.subscribe(snapshot => {
       if (snapshot.active && snapshot.snap) {
@@ -42,11 +44,13 @@ export class EditContextController {
       }
       this.#notify();
     });
+    this.#unsubscribeTools = toolLifecycle?.subscribe?.(() => this.#notify()) ?? null;
   }
 
   dispose() {
     this.#unsubscribeEditor?.();
     this.#unsubscribeMesh?.();
+    this.#unsubscribeTools?.();
     this.#listeners.clear();
   }
 
@@ -73,7 +77,16 @@ export class EditContextController {
     };
     const navigation = this.renderer.getNavigationLocks?.() ?? {
       plane: null,
-      point: null
+      point: null,
+      mode: "free",
+      editPlane: null
+    };
+    const toolLifecycle = this.toolLifecycle?.status?.() ?? {
+      keepActive: true,
+      canRepeat: false,
+      activeAction: null,
+      lifecycle: "sticky",
+      lastRepeatable: null
     };
     const axes = mesh.active
       ? axesFromConstraint(mesh.constraint)
@@ -102,6 +115,15 @@ export class EditContextController {
       pointLock: navigation.point
         ? Object.freeze(structuredClone(navigation.point))
         : null,
+      navigationMode: navigation.mode ?? "free",
+      editPlane: navigation.editPlane
+        ? Object.freeze(structuredClone(navigation.editPlane))
+        : null,
+      keepToolActive: Boolean(toolLifecycle.keepActive),
+      activeAction: toolLifecycle.activeAction,
+      toolLifecycle: toolLifecycle.lifecycle,
+      canRepeat: Boolean(toolLifecycle.canRepeat),
+      lastRepeatable: toolLifecycle.lastRepeatable,
       canUndo: mesh.active ? Boolean(mesh.canUndo) : false,
       canRedo: mesh.active ? Boolean(mesh.canRedo) : false,
       stale: Boolean(mesh.stale),
@@ -147,10 +169,10 @@ export class EditContextController {
     const normalized = normalizeOne(mode, FRAMES, "referencial");
     if (this.meshEditor.active) {
       if (normalized === "custom-plane") {
-        const plane = this.renderer.getNavigationLocks?.().plane;
+        const plane = this.renderer.getEditPlane?.();
         if (!plane?.quaternion) {
           throw new Error(
-            "Trave um plano de navegação antes de usá-lo como referencial."
+            "Defina um plano de edição antes de usá-lo como referencial."
           );
         }
         this.meshEditor.setCustomFrame?.({
@@ -167,10 +189,10 @@ export class EditContextController {
         quaternion: frame.quaternion
       });
     } else if (normalized === "custom-plane") {
-      const plane = this.renderer.getNavigationLocks?.().plane;
+      const plane = this.renderer.getEditPlane?.();
       if (!plane?.quaternion) {
         throw new Error(
-          "Trave um plano de navegação antes de usá-lo como referencial."
+          "Defina um plano de edição antes de usá-lo como referencial."
         );
       }
       this.renderer.setObjectTransformFrame({
@@ -266,6 +288,19 @@ export class EditContextController {
 
   clearNavigationLocks() {
     this.renderer.clearNavigationLocks?.();
+    this.#notify();
+    return this.status();
+  }
+
+  setEditPlane({ source = "viewer", frame = null } = {}) {
+    const resolved = frame ?? this.#resolvePlaneFrame(source);
+    this.renderer.setEditPlane?.(resolved);
+    this.#notify();
+    return this.status();
+  }
+
+  clearEditPlane() {
+    this.renderer.setEditPlane?.(null);
     this.#notify();
     return this.status();
   }

@@ -58,7 +58,8 @@ export class SelectionOperations {
     position = [0, 0, 0],
     rotation = [0, 0, 0, 1],
     placement = null,
-    color = "#6699cc"
+    color = "#6699cc",
+    material = null
   } = {}) {
     if (!this.geometryRegistry) {
       throw new Error("Registro de geometrias indisponível.");
@@ -79,7 +80,7 @@ export class SelectionOperations {
       position: [...(frame?.origin ?? position)],
       rotation: [...(frame?.rotation ?? rotation)],
       geometry: descriptor,
-      ...this.#creationAppearance(color)
+      ...this.#creationAppearance(color, material)
     });
 
     if (changed) this.#selectIds([id]);
@@ -947,10 +948,14 @@ export class SelectionOperations {
     );
   }
 
-  #creationAppearance(color) {
-    if (!this.appearanceRuntime) return { color };
+  #creationAppearance(color, material = null) {
+    const normalizedMaterial = material
+      ? structuredClone(material)
+      : { color };
+    normalizedMaterial.color ??= color;
+    if (!this.appearanceRuntime) return { material: normalizedMaterial };
 
-    const created = this.appearanceRuntime.internLegacyMaterial({ color });
+    const created = this.appearanceRuntime.internLegacyMaterial(normalizedMaterial);
     return { appearanceId: created.appearanceId };
   }
 

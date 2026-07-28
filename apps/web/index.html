@@ -198,6 +198,7 @@
         <label><input type="checkbox" data-edit-hud-group-toggle="axes" checked> Eixos</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="lifecycle" checked> Continuidade</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="history" checked> Histórico</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="actions" checked> Ações contextuais</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="session" checked> Sessão</label>
@@ -246,8 +247,13 @@
       <label title="Influência proporcional"><input id="edit-hud-proportional" type="checkbox"><span>∿</span></label>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="navigation" aria-label="Travas de navegação">
-      <label title="Travar navegação em plano"><input id="edit-hud-plane-lock" type="checkbox"><span>▱</span></label>
+      <label title="Travar visualização em plano 2D"><input id="edit-hud-plane-lock" type="checkbox"><span>▱</span></label>
+      <label title="Travar plano de edição"><input id="edit-hud-edit-plane" type="checkbox"><span>⌗</span></label>
       <label title="Orbitar ponto travado"><input id="edit-hud-point-lock" type="checkbox"><span>⊙</span></label>
+    </div>
+    <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="lifecycle" aria-label="Continuidade das ferramentas">
+      <label title="Manter ferramenta ativa"><input id="edit-hud-keep-tool" type="checkbox"><span>📌</span></label>
+      <button id="edit-hud-repeat" type="button" title="Repetir última operação">⟳</button>
     </div>
     <div class="edit-hud-group edit-hud-context-actions" data-edit-hud-group="actions" aria-label="Ações contextuais">
       <button id="edit-hud-create" type="button" data-hud-context="object" title="Criar objeto usando parâmetros e objeto de referência">＋</button>
@@ -592,11 +598,14 @@
       <div class="mesh-form-grid">
         <label><span>Objeto de referência</span><select id="edit-create-reference"><option value="">Nenhum; usar valores abaixo</option></select></label>
         <label><span>Usar referência</span><select id="edit-create-reference-mode"><option value="position-rotation">Posição e orientação</option><option value="position">Somente posição</option><option value="rotation">Somente orientação</option></select></label>
+        <label><span>Orientação ao posicionar</span><select id="edit-create-orientation"><option value="frame">Plano de edição</option><option value="surface-normal">Normal da superfície</option><option value="reference">Objeto de referência</option></select></label>
+        <label><input id="edit-create-surface" type="checkbox" checked> Preferir superfícies sob o ponteiro</label>
         <label><span>Geometria</span><select id="edit-create-geometry"></select></label>
         <label><span>Cor padrão</span><span class="edit-color-pair"><input id="edit-material-color" type="color" value="#6699cc"><input id="edit-material-color-text" type="text" value="#6699cc" spellcheck="false"></span></label>
       </div>
       <div class="mesh-operation-grid">
-        <button id="edit-create-object" type="button">Criar objeto</button>
+        <button id="edit-create-object" type="button">Posicionar objeto no viewer</button>
+        <button id="edit-cancel-placement" type="button">Cancelar posicionamento</button>
         <button id="edit-open-advanced-create" type="button">Criação avançada</button>
       </div>
       <details class="edit-material-settings" open>
@@ -661,6 +670,7 @@
       <div class="mesh-checkbox-grid">
         <label><input id="edit-workspace-area" type="checkbox"> Seleção por área</label>
         <label><input id="edit-workspace-multi" type="checkbox"> Seleção múltipla</label>
+        <label><input id="edit-workspace-keep-tool" type="checkbox"> Manter ferramenta ativa</label>
       </div>
       <div class="mesh-operation-grid">
         <button id="edit-workspace-duplicate" type="button">Duplicar</button>
@@ -847,8 +857,10 @@
         <button id="mesh-frame-viewer" type="button">Frame do viewer</button>
       </div>
       <div class="mesh-form-grid edit-navigation-locks">
-        <label><span>Plano de navegação</span><select id="edit-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
-        <button id="edit-plane-lock" type="button">Travar/destravar plano</button>
+        <label><span>Plano de visualização</span><select id="edit-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <button id="edit-plane-lock" type="button">Travar/destravar visualização 2D</button>
+        <label><span>Plano de edição</span><select id="edit-work-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <button id="edit-work-plane-lock" type="button">Definir/limpar plano de edição</button>
         <label><span>Ponto de órbita</span><select id="edit-point-source"><option value="component">Componente ativo</option><option value="selection">Pivô da seleção</option><option value="viewer">Alvo atual do viewer</option></select></label>
         <button id="edit-point-lock" type="button">Travar/destravar ponto</button>
         <button id="edit-navigation-clear" type="button">Limpar travas</button>
@@ -1094,6 +1106,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260727-0037e"></script>
+<script type="module" src="./boot.js?build=20260727-0038b"></script>
 </body>
 </html>

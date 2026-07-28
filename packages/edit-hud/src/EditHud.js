@@ -22,6 +22,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
     axes: true,
     snap: true,
     navigation: true,
+    lifecycle: true,
     history: true,
     actions: true,
     session: true
@@ -97,7 +98,11 @@ export class EditHud {
     this.#element("edit-hud-snap-grid").checked = Boolean(snap.grid);
     this.#element("edit-hud-proportional").checked = Boolean(state.proportional);
     this.#element("edit-hud-plane-lock").checked = Boolean(state.planeLock);
+    this.#element("edit-hud-edit-plane").checked = Boolean(state.editPlane);
     this.#element("edit-hud-point-lock").checked = Boolean(state.pointLock);
+    this.#element("edit-hud-keep-tool").checked = Boolean(state.keepToolActive);
+    this.#element("edit-hud-repeat").disabled = !state.canRepeat;
+    this.#element("edit-hud-repeat").dataset.active = state.canRepeat ? "true" : "false";
     this.#element("edit-hud-undo").disabled = !state.canUndo;
     this.#element("edit-hud-redo").disabled = !state.canRedo;
     this.#element("edit-hud-apply").disabled = !state.meshActive || state.stale;
@@ -191,6 +196,18 @@ export class EditHud {
         });
       }
     });
+    this.#element("edit-hud-edit-plane").addEventListener("change", event => {
+      this.#execute(
+        event.target.checked ? "edit.plane.set" : "edit.plane.clear",
+        event.target.checked ? { source: "viewer" } : {}
+      );
+    });
+    this.#element("edit-hud-keep-tool").addEventListener("change", event =>
+      this.#execute("edit.tool.keep.set", { enabled: event.target.checked })
+    );
+    this.#element("edit-hud-repeat").addEventListener("click", () =>
+      this.#execute("edit.command.repeat")
+    );
     this.#element("edit-hud-undo").addEventListener("click", () =>
       this.#execute("mesh.edit.undo")
     );
@@ -258,6 +275,9 @@ export class EditHud {
     const action = (id, command, args = () => ({})) => {
       this.#element(id).addEventListener("click", () => this.#execute(command, args()));
     };
+    this.#element("edit-hud-create").addEventListener("click", () =>
+      this.#beginRememberedObjectPlacement()
+    );
     action("edit-hud-enter-mesh", "mesh.edit.enter");
     action("edit-hud-draw-path", "path.sketch.begin", () => ({
       planeSource: "locked-or-viewer",
@@ -542,6 +562,41 @@ export class EditHud {
     });
   }
 
+  #beginRememberedObjectPlacement() {
+    try {
+      let defaults = {};
+      defaults = JSON.parse(localStorage.getItem(CREATION_STORAGE_KEY) ?? "{}");
+      const catalog = this.query("geometry.catalog") ?? [];
+      const description = catalog.find(item => item.type === defaults.geometryType) ?? catalog[0];
+      if (!description) throw new Error("Catálogo de geometrias vazio.");
+      const geometry = Object.fromEntries([
+        ["type", description.type],
+        ...(description.parameters ?? []).map(parameter => [
+          parameter.id,
+          structuredClone(parameter.default)
+        ])
+      ]);
+      const selection = this.query("selection.snapshot");
+      const objectId = selection?.activeMember?.objectId ?? null;
+      const reference = objectId
+        ? (this.query("scene.objects.list") ?? []).find(object => object.id === objectId)
+        : null;
+      return this.#execute("object.placement.begin", {
+        geometry,
+        color: normalizeRememberedColor(defaults.color),
+        surface: true,
+        orientationMode: reference ? "reference" : "frame",
+        positionMode: "pointer",
+        rotation: reference?.rotation ?? [0, 0, 0, 1],
+        referencePosition: reference?.position ?? [0, 0, 0],
+        materialPatch: rememberedMaterialPatch(defaults)
+      });
+    } catch (error) {
+      this.#element("edit-hud-status").textContent = error.message;
+      return null;
+    }
+  }
+
   #listeners(enabled) {
     const handle = this.#element("edit-hud-handle");
     const method = enabled ? "addEventListener" : "removeEventListener";
@@ -719,6 +774,10 @@ export class EditHud {
     }
     const group = this.root.querySelector('[data-edit-hud-group="actions"]');
     if (group) group.dataset.contextHidden = visible ? "false" : "true";
+    this.#element("edit-hud-create").dataset.active =
+      state.activeAction === "object.place" ? "true" : "false";
+    this.#element("edit-hud-draw-path").dataset.active =
+      state.activeAction === "path.sketch" ? "true" : "false";
   }
 
   #loadPreferences() {
@@ -796,8 +855,11 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-snap-face": ["Snap em face", "Atrai a transformação para a superfície de uma face compatível."],
   "edit-hud-snap-grid": ["Snap em grade", "Quantiza a transformação segundo o espaçamento da grade."],
   "edit-hud-proportional": ["Influência proporcional", "Move também vértices conectados segundo raio, métrica e função de atenuação configurados."],
-  "edit-hud-plane-lock": ["Travar plano", "Restringe a navegação e o frame de trabalho ao plano capturado."],
+  "edit-hud-plane-lock": ["Visualização 2D", "Fixa a câmera perpendicular ao plano capturado, desativa a órbita e mantém o pan dentro desse plano."],
+  "edit-hud-edit-plane": ["Plano de edição", "Captura um plano independente para criação, desenho, snap e frame personalizado."],
   "edit-hud-point-lock": ["Travar ponto", "Mantém o alvo do viewer fixo e orbita ao redor desse ponto."],
+  "edit-hud-keep-tool": ["Manter ferramenta", "Mantém desenho e criação ativos após cada operação para executar várias vezes sem reabrir a ferramenta."],
+  "edit-hud-repeat": ["Repetir", "Reaplica a última operação repetível, com os mesmos parâmetros, sobre a seleção atual."],
   "edit-hud-create": ["Criar objeto", "Abre a criação de geometria usando os parâmetros memorizados e, opcionalmente, outro objeto como referência."],
   "edit-hud-create-light": ["Criar luz", "Cria uma luz com tipo, cor, intensidade e sombras memorizados."],
   "edit-hud-material": ["Materiais e luzes", "Abre no painel Editar os parâmetros do material ou da luz selecionada."],
@@ -879,10 +941,31 @@ function resolveHudHint(control) {
 function describeState(state) {
   const subject = ({ object: "Objeto", vertex: "Vértice", edge: "Aresta", face: "Face" })[state.subjectLevel];
   const axes = ["x", "y", "z"].filter(axis => state.axes[axis]).join("").toUpperCase() || "bloqueado";
-  const locks = [state.planeLock ? "plano" : null, state.pointLock ? "ponto" : null]
+  const locks = [
+    state.planeLock ? "vista-2D" : null,
+    state.editPlane ? "plano-edição" : null,
+    state.pointLock ? "ponto" : null
+  ]
     .filter(Boolean)
     .join("+");
   return `${subject} · ${state.tool} · ${state.frameMode} · ${axes}${locks ? ` · ${locks}` : ""}`;
+}
+
+function rememberedMaterialPatch(defaults = {}) {
+  return {
+    "appearance.model": defaults.model ?? "standard",
+    "appearance.color": normalizeRememberedColor(defaults.color),
+    "appearance.opacity": clamp(finiteOr(defaults.opacity, 1), 0, 1),
+    "appearance.transparent": clamp(finiteOr(defaults.opacity, 1), 0, 1) < 1,
+    "appearance.roughness": clamp(finiteOr(defaults.roughness, 0.55), 0, 1),
+    "appearance.metalness": clamp(finiteOr(defaults.metalness, 0), 0, 1),
+    "appearance.transmission": clamp(finiteOr(defaults.transmission, 0), 0, 1),
+    "appearance.ior": clamp(finiteOr(defaults.ior, 1.5), 1, 2.333),
+    "appearance.thickness": Math.max(0, finiteOr(defaults.thickness, 0.5)),
+    "appearance.dispersion": Math.max(0, finiteOr(defaults.dispersion, 0)),
+    "appearance.clearcoat": clamp(finiteOr(defaults.clearcoat, 0), 0, 1),
+    "appearance.envMapIntensity": Math.max(0, finiteOr(defaults.envMapIntensity, 1))
+  };
 }
 
 function clamp(value, minimum, maximum) {

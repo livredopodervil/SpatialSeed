@@ -94,6 +94,14 @@ export class ThreeRegionRenderer {
   };
   #objectTransformAxes = { x: true, y: true, z: true };
   #navigationLocks = { plane: null, point: null };
+  #navigationMode = "free";
+  #editPlane = null;
+  #navigationDefaults = {
+    enableRotate: true,
+    enablePan: true,
+    screenSpacePanning: true,
+    cameraUp: [0, 1, 0]
+  };
   #applyingNavigationLocks = false;
   #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
   #batchCapacity = 65536;
@@ -244,6 +252,12 @@ export class ThreeRegionRenderer {
     this.orbit = new OrbitControls(this.camera, canvas);
     this.orbit.enableDamping = true;
     this.orbit.target.set(0, 1, 0);
+    this.#navigationDefaults = {
+      enableRotate: this.orbit.enableRotate,
+      enablePan: this.orbit.enablePan,
+      screenSpacePanning: this.orbit.screenSpacePanning,
+      cameraUp: this.camera.up.toArray()
+    };
     this.orbit.addEventListener(
       "change",
       () => {
@@ -987,7 +1001,13 @@ export class ThreeRegionRenderer {
   }
 
   getNavigationLocks() {
-    return Object.freeze(structuredClone(this.#navigationLocks));
+    return Object.freeze({
+      ...structuredClone(this.#navigationLocks),
+      mode: this.#navigationMode,
+      editPlane: this.#editPlane
+        ? structuredClone(this.#editPlane)
+        : null
+    });
   }
 
   setNavigationPlaneLock(frame = null) {
@@ -1004,6 +1024,7 @@ export class ThreeRegionRenderer {
         )
       };
     }
+    this.#synchronizeNavigationMode();
     this.#enforceNavigationLocks();
     this.#notifyNavigationCamera();
     return this.getNavigationLocks();
@@ -1024,6 +1045,7 @@ export class ThreeRegionRenderer {
         }
       };
     }
+    this.#synchronizeNavigationMode();
     this.#enforceNavigationLocks();
     this.#notifyNavigationCamera();
     return this.getNavigationLocks();
@@ -1031,8 +1053,74 @@ export class ThreeRegionRenderer {
 
   clearNavigationLocks() {
     this.#navigationLocks = { plane: null, point: null };
+    this.#synchronizeNavigationMode();
     this.#notifyNavigationCamera();
     return this.getNavigationLocks();
+  }
+
+  getEditPlane() {
+    return this.#editPlane
+      ? Object.freeze(structuredClone(this.#editPlane))
+      : null;
+  }
+
+  setEditPlane(frame = null) {
+    this.#editPlane = frame ? normalizeNavigationPlane(frame) : null;
+    return this.getEditPlane();
+  }
+
+  resolvePointerPlacement({
+    clientX,
+    clientY,
+    plane = this.#editPlane,
+    surface = true
+  } = {}) {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = Number(clientX);
+    const y = Number(clientY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new TypeError("Coordenadas do ponteiro inválidas.");
+    }
+    this.pointer.set(
+      ((x - rect.left) / rect.width) * 2 - 1,
+      -((y - rect.top) / rect.height) * 2 + 1
+    );
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    if (surface) {
+      const targets = this.#batchManager.batches()
+        .map(batch => batch.mesh)
+        .filter(Boolean);
+      const hit = this.raycaster.intersectObjects(targets, false)[0];
+      if (hit?.point) {
+        const normal = hit.face?.normal
+          ? transformHitNormalToWorld(hit)
+          : null;
+        return Object.freeze({
+          point: Object.freeze(hit.point.toArray()),
+          normal: normal
+            ? Object.freeze(normal.normalize().toArray())
+            : null,
+          source: "surface"
+        });
+      }
+    }
+    const frame = plane ?? this.readViewerReferenceFrame();
+    const normalized = normalizeNavigationPlane(frame);
+    const threePlane = new THREE.Plane(
+      new THREE.Vector3().fromArray(normalized.normal),
+      -new THREE.Vector3().fromArray(normalized.normal)
+        .dot(new THREE.Vector3().fromArray(normalized.origin))
+    );
+    const point = this.raycaster.ray.intersectPlane(
+      threePlane,
+      new THREE.Vector3()
+    );
+    if (!point) return null;
+    return Object.freeze({
+      point: Object.freeze(point.toArray()),
+      normal: Object.freeze([...normalized.normal]),
+      source: plane ? "edit-plane" : "viewer-plane"
+    });
   }
 
   getCameraProjection() {
@@ -3957,14 +4045,53 @@ export class ThreeRegionRenderer {
       if (point) {
         desired.fromArray(point.point);
       }
-      const correction = desired.sub(current);
-      if (correction.lengthSq() > 1e-18) {
-        this.camera.position.add(correction);
-        this.orbit.target.add(correction);
+      if (plane) {
+        const normal = new THREE.Vector3().fromArray(plane.normal).normalize();
+        const yAxis = new THREE.Vector3().fromArray(plane.yAxis).normalize();
+        const offset = this.camera.position.clone().sub(current);
+        const distance = Math.max(offset.length(), 1e-6);
+        const side = Math.sign(offset.dot(normal)) || 1;
+        this.orbit.target.copy(desired);
+        this.camera.position.copy(desired).addScaledVector(
+          normal,
+          distance * side
+        );
+        this.camera.up.copy(yAxis);
+        this.camera.lookAt(desired);
+        this.camera.updateMatrixWorld(true);
+      } else {
+        const correction = desired.sub(current);
+        if (correction.lengthSq() > 1e-18) {
+          this.camera.position.add(correction);
+          this.orbit.target.add(correction);
+        }
       }
     } finally {
       this.#applyingNavigationLocks = false;
     }
+  }
+
+  #synchronizeNavigationMode() {
+    const { plane, point } = this.#navigationLocks;
+    this.#navigationMode = plane
+      ? (point ? "plane-point" : "plane-2d")
+      : (point ? "orbit-point" : "free");
+    if (plane) {
+      this.orbit.enableRotate = false;
+      this.orbit.enablePan = !point;
+      this.orbit.screenSpacePanning = true;
+    } else if (point) {
+      this.orbit.enableRotate = true;
+      this.orbit.enablePan = false;
+      this.orbit.screenSpacePanning = this.#navigationDefaults.screenSpacePanning;
+      this.camera.up.fromArray(this.#navigationDefaults.cameraUp);
+    } else {
+      this.orbit.enableRotate = this.#navigationDefaults.enableRotate;
+      this.orbit.enablePan = this.#navigationDefaults.enablePan;
+      this.orbit.screenSpacePanning = this.#navigationDefaults.screenSpacePanning;
+      this.camera.up.fromArray(this.#navigationDefaults.cameraUp);
+    }
+    this.orbit.update();
   }
 
   resize() {
@@ -4125,6 +4252,16 @@ function meshConstraintAxes(constraint = "free") {
     y: normalized === "free" || normalized.includes("y"),
     z: normalized === "free" || normalized.includes("z")
   };
+}
+
+function transformHitNormalToWorld(hit) {
+  const matrix = hit.object.matrixWorld.clone();
+  if (hit.object.isInstancedMesh && Number.isInteger(hit.instanceId)) {
+    const instanceMatrix = new THREE.Matrix4();
+    hit.object.getMatrixAt(hit.instanceId, instanceMatrix);
+    matrix.multiply(instanceMatrix);
+  }
+  return hit.face.normal.clone().transformDirection(matrix).normalize();
 }
 
 function normalizeNavigationPlane(frame = {}) {

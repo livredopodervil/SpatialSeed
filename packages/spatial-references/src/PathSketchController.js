@@ -23,7 +23,12 @@ export class PathSketchController {
   #previewLine;
   #previewPoints;
 
-  constructor({ renderer, pathTools }) {
+  constructor({
+    renderer,
+    pathTools,
+    onCompleted = () => {},
+    onEnded = () => {}
+  }) {
     if (!renderer?.canvas || !renderer?.camera || !renderer?.scene) {
       throw new TypeError("PathSketchController exige renderer Three.js compatível.");
     }
@@ -32,6 +37,8 @@ export class PathSketchController {
     }
     this.renderer = renderer;
     this.pathTools = pathTools;
+    this.onCompleted = onCompleted;
+    this.onEnded = onEnded;
     this.#previewLine = createPreviewLine();
     this.#previewPoints = createPreviewPoints();
     renderer.scene.add(this.#previewLine, this.#previewPoints);
@@ -74,6 +81,7 @@ export class PathSketchController {
     this.#finishInteraction({ restoreTool: true });
     this.#active = null;
     this.#updatePreview([]);
+    this.onEnded({ reason: "cancel" });
     this.#notify();
     return this.status();
   }
@@ -92,6 +100,16 @@ export class PathSketchController {
       lastResult: active?.lastResult ?? null,
       error: active?.error ?? null
     });
+  }
+
+  setContinuous(enabled) {
+    if (!this.#active) return this.status();
+    this.#active.settings = Object.freeze({
+      ...this.#active.settings,
+      continuous: Boolean(enabled)
+    });
+    this.#notify();
+    return this.status();
   }
 
   subscribe(listener) {
@@ -172,10 +190,23 @@ export class PathSketchController {
         tension: active.settings.tension,
         color: active.settings.color
       });
+      this.onCompleted({
+        result: active.lastResult,
+        settings: structuredClone(active.settings),
+        points: structuredClone(points)
+      });
       active.error = null;
-      this.#finishInteraction({ restoreTool: true });
-      this.#active = null;
-      this.#updatePreview([]);
+      if (active.settings.continuous) {
+        active.pointerId = null;
+        active.points = [];
+        active.screenPoints = [];
+        this.#updatePreview([]);
+      } else {
+        this.#finishInteraction({ restoreTool: true });
+        this.#active = null;
+        this.#updatePreview([]);
+        this.onEnded({ reason: "completed" });
+      }
     } catch (error) {
       active.error = error.message;
       active.points = [];
@@ -256,7 +287,8 @@ export class PathSketchController {
 
 function resolveFrame(renderer, source) {
   const normalized = String(source ?? "locked-or-viewer").toLowerCase();
-  const locked = renderer.getNavigationLocks?.().plane;
+  const editPlane = renderer.getEditPlane?.();
+  const locked = editPlane ?? renderer.getNavigationLocks?.().plane;
   if (["locked", "locked-or-viewer", "plane"].includes(normalized) && locked) {
     return normalizeFrame(locked);
   }
@@ -405,6 +437,7 @@ function normalizeSettings(value) {
     curveType: String(value.curveType),
     tension: finite(value.tension, "tension"),
     color: String(value.color),
+    continuous: Boolean(value.continuous),
     name: value.name === undefined ? null : String(value.name)
   };
   if (!["centripetal", "chordal", "catmullrom", "polyline", "bezier"].includes(result.curveType)) {

@@ -33,6 +33,7 @@ export class MeshEditPanel {
     const context = this.query("edit.context.status");
     const references = this.query("path.references.list") ?? [];
     const sketch = this.query("path.sketch.status");
+    const placement = this.query("object.placement.status");
     const transform = this.query("viewer.transform.settings");
     this.latest = state;
     this.latestContext = context;
@@ -60,15 +61,17 @@ export class MeshEditPanel {
     }
     this.#element("edit-workspace-area").checked = Boolean(context.areaSelection);
     this.#element("edit-workspace-multi").checked = Boolean(context.multiSelect);
+    this.#element("edit-workspace-keep-tool").checked = Boolean(context.keepToolActive);
     this.#element("edit-workspace-object").disabled = active;
     for (const id of [
-      "edit-workspace-duplicate", "edit-workspace-repeat",
+      "edit-workspace-duplicate",
       "edit-workspace-group", "edit-workspace-ungroup",
       "edit-workspace-pivot", "edit-workspace-undo-global",
       "edit-workspace-redo-global"
     ]) {
       this.#element(id).disabled = active;
     }
+    this.#element("edit-workspace-repeat").disabled = !context.canRepeat;
     this.#element("edit-workspace-delete").disabled = false;
     const modeLabels = { vertex: "vértices", edge: "arestas", face: "faces" };
     this.#text("mesh-edit-status", active
@@ -106,6 +109,8 @@ export class MeshEditPanel {
       context.frameMode === "local" ? "true" : "false";
     this.#element("edit-plane-lock").dataset.active =
       context.planeLock ? "true" : "false";
+    this.#element("edit-work-plane-lock").dataset.active =
+      context.editPlane ? "true" : "false";
     this.#element("edit-point-lock").dataset.active =
       context.pointLock ? "true" : "false";
 
@@ -175,6 +180,8 @@ export class MeshEditPanel {
           ? sketch.error
           : "Desenho inativo."
     );
+    this.#element("edit-create-object").dataset.active = placement.active ? "true" : "false";
+    this.#element("edit-cancel-placement").disabled = !placement.active;
     const selectedReference = references.find(reference => reference.selected);
     const selectedPath = selectedReference?.geometryType === "tube";
     this.#element("path-convert-bezier").disabled =
@@ -245,7 +252,9 @@ export class MeshEditPanel {
         lightDecay: this.#number("edit-light-decay"),
         lightAngleDeg: this.#number("edit-light-angle"),
         lightPenumbra: this.#number("edit-light-penumbra"),
-        lightCastShadow: this.#element("edit-light-shadow").checked
+        lightCastShadow: this.#element("edit-light-shadow").checked,
+        placementOrientation: this.#element("edit-create-orientation").value,
+        placementSurface: this.#element("edit-create-surface").checked
       };
       localStorage.setItem(CREATION_STORAGE_KEY, JSON.stringify(this.creationDefaults));
     };
@@ -255,6 +264,12 @@ export class MeshEditPanel {
       this.#element(id).addEventListener("change", save);
     }
     geometrySelect.addEventListener("change", save);
+    this.#element("edit-create-orientation").value =
+      this.creationDefaults.placementOrientation ?? "frame";
+    this.#element("edit-create-surface").checked =
+      this.creationDefaults.placementSurface !== false;
+    this.#element("edit-create-orientation").addEventListener("change", save);
+    this.#element("edit-create-surface").addEventListener("change", save);
     this.#element("edit-light-type").addEventListener("change", () => {
       this.#refreshLightParameterVisibility();
       save();
@@ -280,22 +295,29 @@ export class MeshEditPanel {
       if (!description) return;
       const reference = this.#creationReference();
       const mode = this.#element("edit-create-reference-mode").value;
-      const result = this.#execute("object.create.geometry", {
+      const orientation = this.#element("edit-create-orientation").value;
+      this.#execute("object.placement.begin", {
         geometry: Object.fromEntries([
           ["type", description.type],
           ...description.parameters.map(parameter => [parameter.id, structuredClone(parameter.default)])
         ]),
-        position: reference && ["position", "position-rotation"].includes(mode)
-          ? [...reference.position]
-          : [0, 1, 0],
+        positionMode: reference && ["position", "position-rotation"].includes(mode)
+          ? "reference"
+          : "pointer",
+        referencePosition: reference?.position ?? [0, 0, 0],
+        orientationMode: reference && ["rotation", "position-rotation"].includes(mode)
+          ? "reference"
+          : (orientation === "reference" ? "frame" : orientation),
         rotation: reference && ["rotation", "position-rotation"].includes(mode)
           ? [...reference.rotation]
           : [0, 0, 0, 1],
-        color: this.#element("edit-material-color-text").value
+        color: this.#element("edit-material-color-text").value,
+        surface: this.#element("edit-create-surface").checked,
+        materialPatch: this.#materialPatch()
       });
-      if (result?.changed) this.#applyMaterialDefaults();
       save();
     });
+    this.#click("edit-cancel-placement", "object.placement.cancel");
     this.#element("edit-create-light").addEventListener("click", () => {
       const reference = this.#creationReference();
       const mode = this.#element("edit-create-reference-mode").value;
@@ -540,8 +562,11 @@ export class MeshEditPanel {
     this.#element("edit-workspace-multi").addEventListener("change", () =>
       this.#execute("selection.multi.toggle")
     );
+    this.#element("edit-workspace-keep-tool").addEventListener("change", event =>
+      this.#execute("edit.tool.keep.set", { enabled: event.target.checked })
+    );
     this.#click("edit-workspace-duplicate", "selection.duplicate");
-    this.#click("edit-workspace-repeat", "selection.repeat");
+    this.#click("edit-workspace-repeat", "edit.command.repeat");
     this.#click("edit-workspace-delete", "selection.delete");
     this.#click("edit-workspace-clear", "selection.clear");
     this.#click("edit-workspace-undo-global", "history.undo");
@@ -552,6 +577,15 @@ export class MeshEditPanel {
     this.#click("edit-plane-lock", "edit.navigation.plane.toggle", () => ({
       source: this.#element("edit-plane-source").value
     }));
+    this.#element("edit-work-plane-lock").addEventListener("click", () => {
+      const context = this.query("edit.context.status");
+      this.#execute(
+        context.editPlane ? "edit.plane.clear" : "edit.plane.set",
+        context.editPlane
+          ? {}
+          : { source: this.#element("edit-work-plane-source").value }
+      );
+    });
     this.#click("edit-point-lock", "edit.navigation.point.toggle", () => ({
       source: this.#element("edit-point-source").value
     }));
@@ -1228,7 +1262,9 @@ function loadCreationDefaults() {
     lightDecay: 2,
     lightAngleDeg: 45,
     lightPenumbra: 0.2,
-    lightCastShadow: true
+    lightCastShadow: true,
+    placementOrientation: "frame",
+    placementSurface: true
   };
   try {
     return { ...fallback, ...JSON.parse(localStorage.getItem(CREATION_STORAGE_KEY) ?? "{}") };
