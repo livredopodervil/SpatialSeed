@@ -177,9 +177,9 @@ export function createEditorCommands({
       requireObjectMode("duplicar objetos por programa afim");
       return selectionOperations.duplicateAffine(count, operations);
     })
-    .register("selection.repeat", () => {
+    .register("selection.repeat", ({ count = 1 } = {}) => {
       requireObjectMode("repetir a duplicação");
-      return selectionOperations.repeat();
+      return selectionOperations.repeat(count);
     })
     .register("selection.delete", () => {
       if (meshEditor?.active) {

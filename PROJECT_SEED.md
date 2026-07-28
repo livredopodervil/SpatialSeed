@@ -74,6 +74,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   distribuição hierárquica por frames de transporte paralelo.
 - ciclo persistente de ferramentas, repetição de comandos normalizados e
   posicionamento por clique com prévia local;
+- duplicação coordenada com publicação tardia da seleção e `repeat count`,
+  preservando a matriz delta composta numa única transação;
 - planos independentes de visualização e edição, visualização 2D autoritativa e
   órbita em ponto travado.
 

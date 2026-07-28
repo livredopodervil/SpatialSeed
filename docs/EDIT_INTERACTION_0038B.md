@@ -35,6 +35,13 @@ edit.command.repeat
 reexecuta essa operação sobre o contexto atual. Eventos de ponteiro não são
 gravados. Repetir não cria recursivamente uma nova entrada de repetição.
 
+Duplicação de objetos é uma especialização desse contrato. O comando
+`selection.duplicate` não se torna repetível antes de uma transformação: ele
+abre uma sequência e aguarda a matriz delta. Quando a matriz é confirmada, o
+ciclo memoriza `selection.repeat`, e HUD, workspace, botão legado e console
+passam a executar a mesma repetição afim. A duplicação topológica em modo de
+malha continua sendo uma operação repetível normal.
+
 ## Posicionamento de objetos no viewer
 
 `ObjectPlacementController` cria uma malha fantasma local e resolve cada posição

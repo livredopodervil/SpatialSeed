@@ -9,7 +9,7 @@ const TOOL_LIFECYCLES = Object.freeze({
 });
 
 export class ToolLifecycleController {
-  static apiVersion = "tool-lifecycle-controller-v1";
+  static apiVersion = "tool-lifecycle-controller-v2";
 
   #listeners = new Set();
   #execute = null;
@@ -133,8 +133,17 @@ export class ToolLifecycleController {
   }
 
   observeExecution({ id, args, result, metadata = {} }) {
-    if (this.#repeating || metadata.repeatable !== true) return;
+    if (this.#repeating) return;
     if (result?.changed === false) return;
+    if (result?.repeatDeferred === true) {
+      this.clearRepeatable();
+      return;
+    }
+    if (result?.repeatCommand?.id) {
+      this.remember(result.repeatCommand);
+      return;
+    }
+    if (metadata.repeatable !== true) return;
     this.#lastRepeatable = Object.freeze({
       id: String(id),
       args: structuredClone(args ?? {}),
@@ -153,6 +162,22 @@ export class ToolLifecycleController {
       label: String(label ?? commandId),
       timestamp: Date.now()
     });
+    this.#notify();
+    return this.status();
+  }
+
+  clearRepeatable(id = null) {
+    const expected = id === null
+      ? null
+      : String(id).trim();
+    if (
+      expected &&
+      this.#lastRepeatable?.id !== expected
+    ) {
+      return this.status();
+    }
+    if (!this.#lastRepeatable) return this.status();
+    this.#lastRepeatable = null;
     this.#notify();
     return this.status();
   }

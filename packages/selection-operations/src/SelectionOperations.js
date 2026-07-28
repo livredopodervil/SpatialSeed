@@ -15,26 +15,45 @@ import {
 } from "./AffineRepeat.js?build=20260715-0021d";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v2";
+  static apiVersion = "selection-operations-v3";
 
   constructor({
     editor,
     sandbox,
     regionId,
     geometryRegistry = null,
-    appearanceRuntime = null
+    appearanceRuntime = null,
+    onRepeatableChanged = null
   }) {
+    if (
+      onRepeatableChanged !== null &&
+      typeof onRepeatableChanged !== "function"
+    ) {
+      throw new TypeError(
+        "Observador de repetição deve ser função."
+      );
+    }
     this.editor = editor;
     this.sandbox = sandbox;
     this.regionId = regionId;
     this.geometryRegistry = geometryRegistry;
     this.appearanceRuntime = appearanceRuntime;
+    this.onRepeatableChanged = onRepeatableChanged;
     this.pendingDuplicate = null;
+    this.pendingPublication = null;
     this.lastDuplicate = null;
+    this.repeatHistoryRevision = 0;
 
-    this.sandbox.subscribe((state, changes) => {
+    this.unsubscribeSandbox = this.sandbox.subscribe((state, changes) => {
+      this.#resolvePendingPublication(state);
       this.#observeDuplicateTransform(state, changes);
     });
+    this.unsubscribeCoordination =
+      typeof this.sandbox.subscribeCoordination === "function"
+        ? this.sandbox.subscribeCoordination(snapshot =>
+            this.#observeCoordination(snapshot)
+          )
+        : () => {};
   }
 
   createBox({ name = null, position = [0, 1, 0], size = [2, 2, 2], color = "#6699cc" } = {}) {
@@ -337,34 +356,38 @@ export class SelectionOperations {
         rootIds:sourceObjects.map(object => object.id),
         copies,
         createId:() => crypto.randomUUID(),
-        rename:({name,copyIndex}) => copyName(name,copyIndex)
+        rename:({name,copyIndex}) => copyName(name,copyIndex-1)
       }
     );
     const duplicates=[...cloned.objects];
-
-    const changed = this.sandbox.dispatch({
-      type: "selection.duplicate",
-      source: copies === 1 ? "selection-operations" : "selection-duplicate-many",
-      sourceIds: [...cloned.sourceRootIds],
-      copyCount: copies,
-      objects: duplicates
-    });
-
-    if (!changed) return { changed: false, duplicateIds: [] };
-
     const duplicateIds = [...cloned.duplicatedRootIds];
-    this.#selectIds(duplicateIds);
-    const duplicateRoots=this.#objectsByIds(duplicateIds);
-
-    this.pendingDuplicate = {
+    this.#beginPendingPublication({
+      kind: "plain",
+      createdIds: duplicates.map(object => object.id),
+      selectionIds: duplicateIds,
       sourceIds: [...cloned.sourceRootIds],
       duplicateIds,
-      pivotBefore: this.#selectionPivot(sourceObjects),
-      initialTransforms: Object.fromEntries(
-        duplicateRoots.map(object => [object.id, snapshotTransform(object)])
-      ),
-      transformedIds: []
-    };
+      pivotBefore: this.#selectionPivot(sourceObjects)
+    });
+
+    let changed;
+    try {
+      changed = this.sandbox.dispatch({
+        type: "selection.duplicate",
+        source: copies === 1 ? "selection-operations" : "selection-duplicate-many",
+        sourceIds: [...cloned.sourceRootIds],
+        copyCount: copies,
+        objects: duplicates
+      });
+    } catch (error) {
+      this.#cancelPendingPublication();
+      throw error;
+    }
+
+    if (!changed) {
+      this.#cancelPendingPublication();
+      return { changed: false, duplicateIds: [] };
+    }
 
     return {
       changed: true,
@@ -372,7 +395,9 @@ export class SelectionOperations {
       sourceCount: sourceObjects.length,
       createdCount: duplicates.length,
       duplicateIds,
-      createdIds:duplicates.map(object => object.id)
+      createdIds:duplicates.map(object => object.id),
+      repeatDeferred: true,
+      publicationPending: Boolean(this.pendingPublication)
     };
   }
 
@@ -437,7 +462,7 @@ export class SelectionOperations {
         rootIds:sourceObjects.map(object => object.id),
         copies,
         createId:() => crypto.randomUUID(),
-        rename:({name,copyIndex}) => copyName(name,copyIndex),
+        rename:({name,copyIndex}) => copyName(name,copyIndex-1),
         transformRoot:({clone,sourceId,copyIndex}) => {
           const transform=transformsByRootAndCopy.get(
             `${copyIndex}:${sourceId}`
@@ -452,31 +477,9 @@ export class SelectionOperations {
       }
     );
     const duplicates=[...cloned.objects];
-    const frontierIds=[...cloned.copies.at(-1).rootIds];
-
-    const changed = this.sandbox.dispatch({
-      type: "selection.duplicate",
-      source: "selection-affine-duplicate",
-      sourceIds: [...cloned.sourceRootIds],
-      copyCount: copies,
-      affineOperations:
-        structuredClone(resolved.operations),
-      affinePivot:
-        structuredClone(resolved.pivot),
-      affineParametric: parametric,
-      ...(step
-        ? { deltaMatrix: step.toArray() }
-        : {}),
-      objects: duplicates
-    });
-
-    if (!changed) return { changed: false, duplicateIds: [] };
-
     const duplicateIds = [...cloned.duplicatedRootIds];
-    this.#selectIds(frontierIds);
-    this.pendingDuplicate = null;
-
-    this.lastDuplicate = step
+    const frontierIds=[...cloned.copies.at(-1).rootIds];
+    const repeatHistory = step
       ? {
           explicit: true,
           sourceIds:
@@ -484,14 +487,47 @@ export class SelectionOperations {
           duplicateIds: frontierIds,
           repeatSourceIds: frontierIds,
           deltaMatrix: step.toArray(),
+          matrixSpace: "local",
           pivot:
             structuredClone(resolved.pivot),
-          pivotBefore: pivot,
-          pivotAfter: this.#selectionPivot(
-            this.#objectsByIds(frontierIds)
-          )
+          pivotBefore: pivot
         }
       : null;
+    this.#beginPendingPublication({
+      kind: "affine",
+      createdIds: duplicates.map(object => object.id),
+      selectionIds: frontierIds,
+      repeatHistory,
+      repeatCount: 1
+    });
+
+    let changed;
+    try {
+      changed = this.sandbox.dispatch({
+        type: "selection.duplicate",
+        source: "selection-affine-duplicate",
+        sourceIds: [...cloned.sourceRootIds],
+        copyCount: copies,
+        affineOperations:
+          structuredClone(resolved.operations),
+        affinePivot:
+          structuredClone(resolved.pivot),
+        affineParametric: parametric,
+        ...(step
+          ? { deltaMatrix: step.toArray() }
+          : {}),
+        objects: duplicates
+      });
+    } catch (error) {
+      this.#cancelPendingPublication();
+      throw error;
+    }
+
+    if (!changed) {
+      this.#cancelPendingPublication();
+      return { changed: false, duplicateIds: [] };
+    }
+    const publicationPending = Boolean(this.pendingPublication);
 
     return {
       changed: true,
@@ -509,11 +545,25 @@ export class SelectionOperations {
         structuredClone(resolved.operations),
       pivot:
         structuredClone(resolved.pivot),
-      repeatSupported: !parametric
+      repeatSupported: !parametric,
+      ...(step && !publicationPending
+        ? { repeatCommand: this.#repeatCommand() }
+        : { repeatDeferred: true }),
+      publicationPending
     };
   }
 
-  repeat() {
+  repeat(count = 1) {
+    const repeats = Number(count);
+    if (
+      !Number.isInteger(repeats) ||
+      repeats < 1 ||
+      repeats > 100000
+    ) {
+      throw new RangeError(
+        "A quantidade de repetições deve ser inteiro entre 1 e 100000."
+      );
+    }
     if (!this.lastDuplicate?.deltaMatrix) {
       return {
         changed: false,
@@ -537,7 +587,7 @@ export class SelectionOperations {
 
       if (message.includes("Objeto não encontrado")) {
         this.pendingDuplicate = null;
-        this.lastDuplicate = null;
+        this.#setLastDuplicate(null);
         this.editor.selection.clear();
 
         return {
@@ -549,51 +599,99 @@ export class SelectionOperations {
       throw error;
     }
 
-    const delta = new THREE.Matrix4().fromArray(this.lastDuplicate.deltaMatrix);
+    const previousHistory = structuredClone(this.lastDuplicate);
+    const delta = new THREE.Matrix4().fromArray(previousHistory.deltaMatrix);
+    const deltaPowers = [];
+    let accumulated = new THREE.Matrix4().identity();
 
+    for (let index = 0; index < repeats; index += 1) {
+      accumulated = delta.clone().multiply(accumulated);
+      deltaPowers.push(accumulated.clone());
+    }
+
+    const currentState = this.sandbox.getSnapshot();
+    const hierarchy = new HierarchyIndex(currentState.objects);
     const cloned=cloneHierarchySubtrees(
-      this.sandbox.getSnapshot().objects,
+      currentState.objects,
       {
         rootIds:sourceObjects.map(object => object.id),
-        copies:1,
+        copies:repeats,
         createId:() => crypto.randomUUID(),
-        rename:({name}) => `${name} cópia`,
-        transformRoot:({clone,source}) => {
-          const result=delta.clone().multiply(matrixFromObject(source));
-          return {...clone,...decomposeMatrix(result)};
+        rename:({name,copyIndex}) =>
+          repeatCopyName(name,copyIndex,repeats),
+        transformRoot:({clone,source,sourceId,copyIndex}) => {
+          const resultLocal =
+            previousHistory.matrixSpace === "world"
+              ? worldResultToLocal({
+                  resultWorld: deltaPowers[copyIndex-1]
+                    .clone()
+                    .multiply(
+                      new THREE.Matrix4().fromArray(
+                        hierarchy.worldMatrixOf(sourceId)
+                      )
+                    ),
+                  sourceId,
+                  hierarchy
+                })
+              : deltaPowers[copyIndex-1]
+                  .clone()
+                  .multiply(matrixFromObject(source));
+          return {...clone,...decomposeMatrix(resultLocal)};
         }
       }
     );
     const duplicates=[...cloned.objects];
-
-    const changed = this.sandbox.dispatch({
-      type: "selection.duplicate",
-      source: "selection-repeat",
-      sourceIds: [...cloned.sourceRootIds],
-      deltaMatrix: [...this.lastDuplicate.deltaMatrix],
-      objects: duplicates
+    const duplicateIds = [...cloned.duplicatedRootIds];
+    const frontierIds=[...cloned.copies.at(-1).rootIds];
+    this.#beginPendingPublication({
+      kind: "repeat",
+      createdIds: duplicates.map(object => object.id),
+      selectionIds: frontierIds,
+      repeatHistory: {
+        ...previousHistory,
+        sourceIds: sourceObjects.map(object => object.id),
+        duplicateIds: frontierIds,
+        repeatSourceIds: frontierIds,
+        pivotBefore: this.#selectionPivot(sourceObjects)
+      },
+      repeatCount: repeats
     });
 
-    if (!changed) return { changed: false };
+    let changed;
+    try {
+      changed = this.sandbox.dispatch({
+        type: "selection.duplicate",
+        source: "selection-repeat",
+        sourceIds: [...cloned.sourceRootIds],
+        copyCount: repeats,
+        repeatCount: repeats,
+        deltaMatrix: [...previousHistory.deltaMatrix],
+        objects: duplicates
+      });
+    } catch (error) {
+      this.#cancelPendingPublication();
+      throw error;
+    }
 
-    const duplicateIds = [...cloned.duplicatedRootIds];
-    this.#selectIds(duplicateIds);
-
-    this.lastDuplicate = {
-      ...this.lastDuplicate,
-      sourceIds: sourceObjects.map(object => object.id),
-      duplicateIds,
-      repeatSourceIds: duplicateIds,
-      pivotBefore: this.#selectionPivot(sourceObjects),
-      pivotAfter: this.#selectionPivot(
-        this.#objectsByIds(duplicateIds)
-      )
-    };
+    if (!changed) {
+      this.#cancelPendingPublication();
+      return { changed: false };
+    }
+    const publicationPending = Boolean(this.pendingPublication);
 
     return {
       changed: true,
+      copyCount: repeats,
+      repeatCount: repeats,
+      createdCount: duplicates.length,
       duplicateIds,
-      deltaMatrix: [...this.lastDuplicate.deltaMatrix]
+      createdIds: duplicates.map(object => object.id),
+      selectedIds: frontierIds,
+      deltaMatrix: [...previousHistory.deltaMatrix],
+      ...(publicationPending
+        ? { repeatDeferred: true }
+        : { repeatCommand: this.#repeatCommand(repeats) }),
+      publicationPending
     };
   }
 
@@ -704,8 +802,112 @@ export class SelectionOperations {
   getState() {
     return structuredClone({
       pendingDuplicate: this.pendingDuplicate,
-      lastDuplicate: this.lastDuplicate
+      lastDuplicate: this.lastDuplicate,
+      pendingPublication: this.pendingPublication
+        ? {
+            kind: this.pendingPublication.kind,
+            createdIds: this.pendingPublication.createdIds,
+            selectionIds: this.pendingPublication.selectionIds
+          }
+        : null
     });
+  }
+
+  dispose() {
+    this.unsubscribeSandbox?.();
+    this.unsubscribeCoordination?.();
+    this.unsubscribeSandbox = () => {};
+    this.unsubscribeCoordination = () => {};
+    this.pendingPublication = null;
+  }
+
+  #beginPendingPublication(publication) {
+    if (this.pendingPublication) {
+      throw new Error(
+        "Aguarde a duplicação anterior ser confirmada."
+      );
+    }
+    this.pendingPublication = {
+      ...structuredClone(publication),
+      rollback: {
+        pendingDuplicate: structuredClone(this.pendingDuplicate),
+        lastDuplicate: structuredClone(this.lastDuplicate)
+      }
+    };
+    this.pendingDuplicate = null;
+    this.#setLastDuplicate(null);
+  }
+
+  #resolvePendingPublication(state) {
+    const publication = this.pendingPublication;
+    if (!publication) return false;
+    const byId = new Map(
+      state.objects.map(object => [object.id,object])
+    );
+    if (
+      publication.createdIds.some(id => !byId.has(id))
+    ) {
+      return false;
+    }
+
+    const selectedObjects = publication.selectionIds.map(
+      id => byId.get(id)
+    );
+    this.pendingPublication = null;
+    this.#selectIds(publication.selectionIds);
+
+    if (publication.kind === "plain") {
+      const hierarchy = new HierarchyIndex(state.objects);
+      this.pendingDuplicate = {
+        sourceIds: [...publication.sourceIds],
+        duplicateIds: [...publication.duplicateIds],
+        pivotBefore: [...publication.pivotBefore],
+        initialWorldMatrices: Object.fromEntries(
+          publication.duplicateIds.map(id => [
+            id,
+            [...hierarchy.worldMatrixOf(id)]
+          ])
+        ),
+        transformedIds: []
+      };
+      return true;
+    }
+
+    this.pendingDuplicate = null;
+    this.#setLastDuplicate(
+      publication.repeatHistory
+        ? {
+            ...publication.repeatHistory,
+            pivotAfter: this.#selectionPivot(selectedObjects)
+          }
+        : null,
+      { count: publication.repeatCount ?? 1 }
+    );
+    return true;
+  }
+
+  #cancelPendingPublication() {
+    const publication = this.pendingPublication;
+    if (!publication) return false;
+    this.pendingPublication = null;
+    this.pendingDuplicate =
+      structuredClone(publication.rollback.pendingDuplicate);
+    this.#setLastDuplicate(
+      publication.rollback.lastDuplicate
+    );
+    return true;
+  }
+
+  #observeCoordination(snapshot = {}) {
+    if (!this.pendingPublication) return;
+    const outcome = snapshot.lastOutcome;
+    if (
+      Number(snapshot.pendingIntents ?? 0) === 0 &&
+      outcome &&
+      String(outcome.status ?? "").startsWith("rejected")
+    ) {
+      this.#cancelPendingPublication();
+    }
   }
 
   #observeDuplicateTransform(state, changes = []) {
@@ -714,6 +916,7 @@ export class SelectionOperations {
     const transformedIds = new Set(
       this.pendingDuplicate.transformedIds ?? []
     );
+    let relevantTransform = false;
 
     for (const change of changes) {
       if (
@@ -723,8 +926,11 @@ export class SelectionOperations {
         )
       ) {
         transformedIds.add(change.objectId);
+        relevantTransform = true;
       }
     }
+
+    if (!relevantTransform) return;
 
     this.pendingDuplicate.transformedIds = [
       ...transformedIds
@@ -761,26 +967,29 @@ export class SelectionOperations {
       return;
     }
 
-    const referenceId =
-      this.pendingDuplicate.duplicateIds[0];
-
-    const object =
-      byId.get(referenceId);
-
-    const before =
-      this.pendingDuplicate
-        .initialTransforms[referenceId];
-
-    if (!object || !before) return;
-
-    const deltaMatrix =
-      matrixFromObject(object)
+    const hierarchy = new HierarchyIndex(state.objects);
+    const deltaMatrices = this.pendingDuplicate.duplicateIds.map(id => {
+      const before = this.pendingDuplicate.initialWorldMatrices[id];
+      if (!byId.has(id) || !before) return null;
+      return new THREE.Matrix4()
+        .fromArray(hierarchy.worldMatrixOf(id))
         .multiply(
-          matrixFromSnapshot(before)
-            .invert()
+          new THREE.Matrix4().fromArray(before).invert()
         );
+    });
+    if (deltaMatrices.some(matrix => matrix === null)) return;
 
-    this.lastDuplicate = {
+    const [deltaMatrix] = deltaMatrices;
+    if (
+      deltaMatrices.some(candidate =>
+        !matricesNear(candidate,deltaMatrix)
+      )
+    ) {
+      this.#setLastDuplicate(null);
+      return;
+    }
+
+    this.#setLastDuplicate({
       sourceIds: [
         ...this.pendingDuplicate.sourceIds
       ],
@@ -793,10 +1002,9 @@ export class SelectionOperations {
       pivotAfter:
         this.#selectionPivot(duplicates),
       deltaMatrix:
-        deltaMatrix.toArray()
-    };
-
-    this.pendingDuplicate = null;
+        deltaMatrix.toArray(),
+      matrixSpace: "world"
+    });
   }
 
   #applyMatrixToSelection(objects, delta, source) {
@@ -810,6 +1018,8 @@ export class SelectionOperations {
   }
 
   #dispatchTransforms(transforms, source) {
+    const repeatHistoryBefore = this.repeatHistoryRevision;
+    const composingDuplicate = Boolean(this.pendingDuplicate);
     const changed = this.sandbox.dispatch({
       type: "selection.transform",
       source,
@@ -817,7 +1027,21 @@ export class SelectionOperations {
       pivot: this.editor.snapshot().pivot,
       transforms
     });
-    return { changed, transforms: structuredClone(transforms) };
+    const repeatHistoryChanged =
+      this.repeatHistoryRevision !== repeatHistoryBefore;
+    return {
+      changed,
+      transforms: structuredClone(transforms),
+      ...(repeatHistoryChanged && this.lastDuplicate?.deltaMatrix
+        ? { repeatCommand: this.#repeatCommand() }
+        : {}),
+      ...(repeatHistoryChanged && !this.lastDuplicate?.deltaMatrix
+        ? { repeatDeferred: true }
+        : {}),
+      ...(changed && composingDuplicate && !repeatHistoryChanged
+        ? { repeatDeferred: true }
+        : {})
+    };
   }
 
   #selectedObjects({ fallbackIds = [] } = {}) {
@@ -959,6 +1183,36 @@ export class SelectionOperations {
     return { appearanceId: created.appearanceId };
   }
 
+  #setLastDuplicate(history, { count = 1 } = {}) {
+    this.lastDuplicate = history
+      ? structuredClone(history)
+      : null;
+    this.repeatHistoryRevision += 1;
+    if (!this.onRepeatableChanged) return;
+
+    try {
+      this.onRepeatableChanged(
+        this.lastDuplicate?.deltaMatrix
+          ? this.#repeatCommand(count)
+          : null
+      );
+    } catch (error) {
+      console.error(
+        "SelectionOperations repeat observer failed",
+        error
+      );
+    }
+  }
+
+  #repeatCommand(count = 1) {
+    if (!this.lastDuplicate?.deltaMatrix) return null;
+    return Object.freeze({
+      id: "selection.repeat",
+      args: Object.freeze({ count: Number(count) }),
+      label: "Repetir transformação"
+    });
+  }
+
 }
 
 function hasAffineExpressions(operations) {
@@ -977,22 +1231,33 @@ function copyName(name, copyIndex) {
   return `${base} #${copyIndex + 1}`;
 }
 
-
-function snapshotTransform(object) {
-  return {
-    position: [...object.position],
-    rotation: [...object.rotation],
-    scale: [...object.scale]
-  };
+function repeatCopyName(name, copyIndex, count) {
+  return count === 1
+    ? `${name} cópia`
+    : `${name} cópia ${copyIndex}`;
 }
 
-function matrixFromSnapshot(snapshot) {
-  return new THREE.Matrix4().compose(
-    new THREE.Vector3().fromArray(snapshot.position),
-    new THREE.Quaternion().fromArray(snapshot.rotation),
-    new THREE.Vector3().fromArray(snapshot.scale)
+function matricesNear(left, right, epsilon = 1e-8) {
+  return left.elements.every(
+    (value,index) =>
+      Math.abs(value-right.elements[index]) <= epsilon
   );
 }
+
+function worldResultToLocal({
+  resultWorld,
+  sourceId,
+  hierarchy
+}) {
+  const parentId = hierarchy.parentOf(sourceId);
+  return parentId === null
+    ? resultWorld
+    : new THREE.Matrix4()
+        .fromArray(hierarchy.worldMatrixOf(parentId))
+        .invert()
+        .multiply(resultWorld);
+}
+
 
 function aroundPivot(operation, pivot) {
   return new THREE.Matrix4()

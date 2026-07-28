@@ -91,7 +91,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260728-0039a";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260728-0039b";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -141,7 +141,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260727-0035a";
+} from "../../devtools/src/DevConsole.js?build=20260728-0039b";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -193,7 +193,7 @@ import {
 } from "../../edit-context/src/index.js?build=20260728-0039a";
 import {
   ToolLifecycleController
-} from "../../edit-tools/src/index.js?build=20260728-0039a";
+} from "../../edit-tools/src/index.js?build=20260728-0039b";
 import {
   deriveHudContext,
   geometryToolIcon,
@@ -452,6 +452,48 @@ export function createRuntimeLayerTests() {
         assertDeepEqual(calls, [{
           id: "selection.translate",
           args: { delta: [1, 2, 3] }
+        }]);
+        lifecycle.dispose();
+      },
+
+      "ciclo adia duplicate e prioriza a repetição matricial"() {
+        const fixture = createEditContextFixture();
+        const calls = [];
+        const lifecycle = new ToolLifecycleController({ editor: fixture.editor });
+        lifecycle.attachExecute((id, args) => {
+          calls.push({ id, args: structuredClone(args) });
+          return { changed: true };
+        });
+        lifecycle.observeExecution({
+          id: "selection.duplicate",
+          args: {},
+          result: { changed: true, repeatDeferred: true },
+          metadata: { repeatable: true, label: "Duplicar" }
+        });
+        assertEqual(lifecycle.status().canRepeat, false);
+
+        lifecycle.observeExecution({
+          id: "selection.translate",
+          args: { delta: [1, 0, 0] },
+          result: {
+            changed: true,
+            repeatCommand: {
+              id: "selection.repeat",
+              args: { count: 2 },
+              label: "Repetir transformação"
+            }
+          },
+          metadata: { repeatable: true, label: "Mover seleção" }
+        });
+
+        assertEqual(
+          lifecycle.status().lastRepeatable.id,
+          "selection.repeat"
+        );
+        lifecycle.repeat();
+        assertDeepEqual(calls, [{
+          id: "selection.repeat",
+          args: { count: 2 }
         }]);
         lifecycle.dispose();
       },
@@ -10753,6 +10795,282 @@ assets: {
 
         assertEqual(copies.length, 1000);
         assert(performance.now() - startedAt < 5000);
+      },
+
+      "duplicate captura a matriz composta até repeat"() {
+        const repeatable = [];
+        const fixture = createSelectionRepeatFixture({
+          onRepeatableChanged: descriptor =>
+            repeatable.push(structuredClone(descriptor))
+        });
+        const duplicated = fixture.operations.duplicate();
+        const duplicate = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === duplicated.duplicateIds[0]
+        );
+
+        assertEqual(duplicate.name, "Semente #1");
+        assertEqual(repeatable.at(-1), null);
+
+        fixture.operations.translate([2, 0, 0]);
+        fixture.operations.rotateEuler([0, 0, 30]);
+        fixture.operations.scaleBy([1.5, 1.5, 1.5]);
+
+        const source = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === "seed"
+        );
+        const transformed = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === duplicated.duplicateIds[0]
+        );
+        const expectedDelta = sceneObjectMatrix(transformed)
+          .multiply(sceneObjectMatrix(source).invert())
+          .toArray();
+        const history = fixture.operations.getState();
+
+        assertMatricesNear(
+          history.lastDuplicate.deltaMatrix,
+          expectedDelta
+        );
+        assert(history.pendingDuplicate);
+        assertEqual(
+          repeatable.at(-1).id,
+          "selection.repeat"
+        );
+      },
+
+      "duplicação coordenada seleciona somente após snapshot"() {
+        const fixture = createSelectionRepeatFixture({ delayed: true });
+        const duplicated = fixture.operations.duplicate();
+
+        assertEqual(duplicated.publicationPending, true);
+        assertDeepEqual(
+          fixture.editor.selection.snapshot().members.map(
+            member => member.objectId
+          ),
+          ["seed"]
+        );
+
+        fixture.flush();
+
+        assertEqual(
+          fixture.operations.getState().pendingPublication,
+          null
+        );
+        assertDeepEqual(
+          fixture.editor.selection.snapshot().members.map(
+            member => member.objectId
+          ),
+          duplicated.duplicateIds
+        );
+        assert(
+          duplicated.duplicateIds.every(id =>
+            fixture.sandbox.getSnapshot().objects.some(
+              object => object.id === id
+            )
+          )
+        );
+      },
+
+      "rejeição coordenada restaura o histórico anterior"() {
+        const fixture = createSelectionRepeatFixture({ delayed: true });
+        const duplicated = fixture.operations.duplicate();
+
+        assertEqual(duplicated.publicationPending, true);
+        fixture.reject();
+
+        assertDeepEqual(
+          fixture.operations.getState(),
+          {
+            pendingDuplicate: null,
+            lastDuplicate: null,
+            pendingPublication: null
+          }
+        );
+        assertDeepEqual(
+          fixture.editor.selection.snapshot().members.map(
+            member => member.objectId
+          ),
+          ["seed"]
+        );
+        assertEqual(fixture.sandbox.getSnapshot().objects.length, 1);
+      },
+
+      "repeat count mantém delta e cria uma transação"() {
+        const fixture = createSelectionRepeatFixture();
+        const duplicated = fixture.operations.duplicate();
+        fixture.operations.translate([2, 0, 0]);
+        fixture.operations.rotateEuler([0, 0, 30]);
+        fixture.operations.scaleBy([1.5, 1.5, 1.5]);
+
+        const first = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === duplicated.duplicateIds[0]
+        );
+        const deltaBefore = fixture.operations
+          .getState()
+          .lastDuplicate
+          .deltaMatrix;
+        const historyBefore = fixture.sandbox
+          .getHistoryDiagnostics()
+          .undoDepth;
+        const repeated = fixture.operations.repeat(2);
+
+        assertEqual(repeated.repeatCount, 2);
+        assertEqual(repeated.duplicateIds.length, 2);
+        assertEqual(repeated.selectedIds.length, 1);
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().undoDepth,
+          historyBefore + 1
+        );
+        assertMatricesNear(
+          fixture.operations.getState().lastDuplicate.deltaMatrix,
+          deltaBefore
+        );
+
+        const finalObject = fixture.sandbox.getSnapshot().objects.find(
+          object => object.id === repeated.selectedIds[0]
+        );
+        const delta = new THREE.Matrix4().fromArray(deltaBefore);
+        const expectedFinal = delta.clone()
+          .multiply(delta)
+          .multiply(sceneObjectMatrix(first))
+          .toArray();
+        assertMatricesNear(
+          sceneObjectMatrix(finalObject).toArray(),
+          expectedFinal,
+          1e-8
+        );
+
+        assertEqual(fixture.sandbox.undo(), true);
+        assertEqual(fixture.sandbox.getSnapshot().objects.length, 2);
+      },
+
+      "repeat preserva delta mundial sob pai transformado"() {
+        const sandbox = createGroupTransformSandbox({
+          groupRotation: eulerQuaternion([0, 0, 35])
+        });
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "group-transform-test",
+          objectId: "child"
+        });
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: "group-transform-test"
+        });
+        const duplicated = operations.duplicate();
+        const firstId = duplicated.duplicateIds[0];
+        const hierarchy = new HierarchyIndex(
+          sandbox.getSnapshot().objects
+        );
+        const worldDelta = composeTransform({
+          position: [2, -1, 0],
+          rotation: eulerQuaternion([0, 0, 20]),
+          scale: [1, 1, 1]
+        });
+        sandbox.dispatch({
+          type: "selection.transform-world",
+          transforms: [{
+            id: firstId,
+            worldMatrix: multiplyMatrices(
+              worldDelta,
+              hierarchy.worldMatrixOf(firstId)
+            )
+          }]
+        });
+
+        assertMatricesNear(
+          operations.getState().lastDuplicate.deltaMatrix,
+          worldDelta,
+          1e-8
+        );
+        const firstWorld = new HierarchyIndex(
+          sandbox.getSnapshot().objects
+        ).worldMatrixOf(firstId);
+        const repeated = operations.repeat();
+        const nextWorld = new HierarchyIndex(
+          sandbox.getSnapshot().objects
+        ).worldMatrixOf(repeated.selectedIds[0]);
+
+        assertMatricesNear(
+          nextWorld,
+          multiplyMatrices(worldDelta,firstWorld),
+          1e-8
+        );
+      },
+
+      "repeat preserva matriz afim local sob pai transformado"() {
+        const sandbox = createGroupTransformSandbox({
+          groupRotation: eulerQuaternion([0, 0, 35])
+        });
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "group-transform-test",
+          objectId: "child"
+        });
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: "group-transform-test"
+        });
+        const delta = new THREE.Matrix4().makeTranslation(2, -1, 0);
+        const duplicated = operations.duplicateAffine(1, [{
+          type: "matrix",
+          value: delta.toArray()
+        }]);
+        const first = sandbox.getSnapshot().objects.find(
+          object => object.id === duplicated.selectedIds[0]
+        );
+        const repeated = operations.repeat();
+        const next = sandbox.getSnapshot().objects.find(
+          object => object.id === repeated.selectedIds[0]
+        );
+
+        assertEqual(
+          operations.getState().lastDuplicate.matrixSpace,
+          "local"
+        );
+        assertMatricesNear(
+          sceneObjectMatrix(next).toArray(),
+          delta.clone().multiply(sceneObjectMatrix(first)).toArray(),
+          1e-8
+        );
+      },
+
+      "console aceita duplicate count e repeat count"() {
+        const calls = [];
+        const console = createGeometryConsole(calls);
+
+        console.execute("duplicate count 4");
+        console.execute("duplicate count 3 move 1 0 0");
+        console.execute("repeat");
+        console.execute("repeat count 5");
+
+        assertDeepEqual(calls, [
+          {
+            id: "selection.duplicateMany",
+            args: { count: 4 }
+          },
+          {
+            id: "selection.duplicateAffine",
+            args: {
+              count: 3,
+              operations: [{
+                type: "move",
+                value: [1, 0, 0]
+              }]
+            }
+          },
+          {
+            id: "selection.repeat",
+            args: undefined
+          },
+          {
+            id: "selection.repeat",
+            args: { count: 5 }
+          }
+        ]);
       }
     },
 
@@ -11341,6 +11659,106 @@ function createAffineDiagnosticSandbox(initialObjects = []) {
       return true;
     }
   };
+}
+
+function createSelectionRepeatFixture({
+  onRepeatableChanged = null,
+  delayed = false
+} = {}) {
+  const region = new Region(
+    {
+      id: "repeat-region",
+      name: "Repeat",
+      type: "box-region"
+    },
+    {
+      schemaVersion: 1,
+      objects: [{
+        id: "seed",
+        name: "Semente",
+        kind: "box",
+        position: [1, 0, 0],
+        rotation: [0, 0, 0, 1],
+        scale: [1, 1, 1],
+        size: [1, 1, 1],
+        material: { color: "#ffffff" },
+        instanceState: {}
+      }]
+    }
+  );
+  const baseSandbox = new Sandbox(region, boxRegionReducer);
+  const delayedSandbox = delayed
+    ? createDelayedSandbox(baseSandbox)
+    : null;
+  const sandbox = delayedSandbox ?? baseSandbox;
+  const editor = new EditorState();
+  editor.selection.replace({
+    kind: "object",
+    regionId: region.descriptor.id,
+    objectId: "seed"
+  });
+  const operations = new SelectionOperations({
+    editor,
+    sandbox,
+    regionId: region.descriptor.id,
+    onRepeatableChanged
+  });
+  return {
+    editor,
+    operations,
+    region,
+    sandbox,
+    flush: delayedSandbox?.flush ?? (() => false),
+    reject: delayedSandbox?.reject ?? (() => false)
+  };
+}
+
+function createDelayedSandbox(sandbox) {
+  const queue = [];
+  const coordinationListeners = new Set();
+  return {
+    region: sandbox.region,
+    reducer: sandbox.reducer,
+    getSnapshot: () => sandbox.getSnapshot(),
+    getState: () => sandbox.getState(),
+    getHistoryDiagnostics: () => sandbox.getHistoryDiagnostics(),
+    subscribe: listener => sandbox.subscribe(listener),
+    subscribeCoordination(listener) {
+      coordinationListeners.add(listener);
+      return () => coordinationListeners.delete(listener);
+    },
+    dispatch(command) {
+      queue.push(structuredClone(command));
+      return true;
+    },
+    flush() {
+      const command = queue.shift();
+      return command ? sandbox.dispatch(command) : false;
+    },
+    reject() {
+      const command = queue.shift();
+      if (!command) return false;
+      const snapshot = {
+        pendingIntents: queue.length,
+        lastOutcome: {
+          status: "rejected-test",
+          commandType: command.type
+        }
+      };
+      for (const listener of coordinationListeners) {
+        listener(snapshot);
+      }
+      return true;
+    }
+  };
+}
+
+function sceneObjectMatrix(object) {
+  return new THREE.Matrix4().compose(
+    new THREE.Vector3().fromArray(object.position),
+    new THREE.Quaternion().fromArray(object.rotation),
+    new THREE.Vector3().fromArray(object.scale)
+  );
 }
 
 function roundAffine(value) {
