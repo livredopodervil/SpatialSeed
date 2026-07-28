@@ -9,7 +9,7 @@ const PARAMETER_TYPES = new Set([
 ]);
 
 export class EditToolRegistry {
-  static apiVersion = "edit-tool-registry-v1";
+  static apiVersion = "edit-tool-registry-v2";
 
   #definitions = new Map();
 
@@ -242,10 +242,13 @@ function normalizeCondition(value) {
     throw new TypeError("Condição de parâmetro inválida.");
   }
   const entries = Object.entries(value);
-  if (entries.length !== 1) {
-    throw new TypeError("Condição de parâmetro deve conter uma única igualdade.");
+  if (!entries.length) {
+    throw new TypeError("Condição de parâmetro deve conter ao menos uma igualdade.");
   }
-  return Object.freeze({ [normalizeId(entries[0][0])]: entries[0][1] });
+  return Object.freeze(Object.fromEntries(entries.map(([id, expected]) => [
+    normalizeId(id),
+    structuredClone(expected)
+  ])));
 }
 
 function normalizeId(value) {

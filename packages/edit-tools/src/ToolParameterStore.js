@@ -1,9 +1,11 @@
-export const TOOL_PARAMETER_SCHEMA_VERSION = 1;
+export const TOOL_PARAMETER_SCHEMA_VERSION = 2;
 export const TOOL_PARAMETER_STORAGE_KEY =
+  "spatialseed.edit.tool-parameters.v2";
+export const LEGACY_TOOL_PARAMETER_STORAGE_KEY =
   "spatialseed.edit.tool-parameters.v1";
 
 export class ToolParameterStore {
-  static apiVersion = "tool-parameter-store-v1";
+  static apiVersion = "tool-parameter-store-v2";
 
   #values = new Map();
   #listeners = new Set();
@@ -11,6 +13,7 @@ export class ToolParameterStore {
   #storageKey = TOOL_PARAMETER_STORAGE_KEY;
   #futureSchema = false;
   #activeToolId = null;
+  #migratedFrom = null;
 
   constructor({
     registry,
@@ -25,7 +28,10 @@ export class ToolParameterStore {
     this.#storage = storage ?? safeLocalStorage();
     this.#storageKey = String(storageKey);
     const loaded = this.#load();
-    if (!loaded && typeof migrate === "function") {
+    const loadedLegacy = !loaded && !this.#futureSchema
+      ? this.#loadLegacy()
+      : false;
+    if (!loaded && !loadedLegacy && typeof migrate === "function") {
       let migrated = null;
       try {
         migrated = migrate(this.#storage);
@@ -65,6 +71,7 @@ export class ToolParameterStore {
       storageKey: this.#storageKey,
       activeToolId: this.#activeToolId,
       futureSchema: this.#futureSchema,
+      migratedFrom: this.#migratedFrom,
       tools: Object.freeze(Object.fromEntries(
         [...this.#values].map(([toolId, values]) => [
           toolId,
@@ -166,6 +173,49 @@ export class ToolParameterStore {
     return true;
   }
 
+  #loadLegacy() {
+    if (this.#storageKey !== TOOL_PARAMETER_STORAGE_KEY) return false;
+    let parsed = null;
+    try {
+      const source = this.#storage?.getItem?.(
+        LEGACY_TOOL_PARAMETER_STORAGE_KEY
+      );
+      if (source === null || source === undefined) return false;
+      parsed = JSON.parse(source);
+    } catch {
+      return false;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return false;
+    }
+    const version = Number(parsed.schemaVersion);
+    if (version > 1) {
+      this.#futureSchema = true;
+      return true;
+    }
+    if (version !== 1) return false;
+    const tools = parsed.tools;
+    if (tools && typeof tools === "object" && !Array.isArray(tools)) {
+      for (const [toolId, values] of Object.entries(tools)) {
+        if (!this.registry.has(toolId)) continue;
+        try {
+          this.#values.set(
+            toolId,
+            this.registry.normalize(
+              toolId,
+              migrateV1ToolValues(toolId, values)
+            )
+          );
+        } catch {
+          // Uma preferência legada inválida não bloqueia as demais.
+        }
+      }
+    }
+    this.#migratedFrom = LEGACY_TOOL_PARAMETER_STORAGE_KEY;
+    this.#save();
+    return true;
+  }
+
   #save() {
     if (this.#futureSchema) return;
     try {
@@ -203,4 +253,17 @@ function safeLocalStorage() {
   } catch {
     return null;
   }
+}
+
+function migrateV1ToolValues(toolId, values) {
+  const source = values && typeof values === "object" && !Array.isArray(values)
+    ? structuredClone(values)
+    : {};
+  if (toolId !== "path.sketch") return source;
+  if (source.inputSamplePixels === undefined &&
+      source.spacingPixels !== undefined) {
+    source.inputSamplePixels = source.spacingPixels;
+  }
+  delete source.spacingPixels;
+  return source;
 }

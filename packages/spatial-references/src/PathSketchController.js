@@ -1,9 +1,12 @@
 import * as THREE from "three";
+import {
+  PathInstancePreviewCache
+} from "./PathInstancePreviewCache.js?build=20260728-0039e";
 
 const DEFAULTS = Object.freeze({
   mode: "tube",
   planeSource: "locked-or-viewer",
-  spacingPixels: 6,
+  inputSamplePixels: 6,
   simplify: 0.004,
   smoothIterations: 1,
   radius: 0.08,
@@ -13,13 +16,18 @@ const DEFAULTS = Object.freeze({
   tension: 0.5,
   color: "#70c8ff",
   closed: false,
-  count: 8,
+  sourceMode: "selection",
+  geometryType: "box",
+  sourceColor: "#6699cc",
+  spacingMode: "auto",
+  spacingWorld: 1,
+  spacingScale: 1,
   align: true,
   twistDegrees: 0
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v1";
+  static apiVersion = "path-sketch-controller-v2";
 
   #active = null;
   #listeners = new Set();
@@ -29,6 +37,7 @@ export class PathSketchController {
   #previewPoints;
   #previewTube;
   #previewArrayGroup;
+  #previewArrayCache;
   #previewFrame = null;
   #pendingPreviewPoints = null;
 
@@ -59,6 +68,11 @@ export class PathSketchController {
     this.#previewArrayGroup = new THREE.Group();
     this.#previewArrayGroup.name = "path-sketch-array-preview";
     this.#previewArrayGroup.renderOrder = 1499;
+    this.#previewArrayCache = new PathInstancePreviewCache({
+      group: this.#previewArrayGroup,
+      geometryRegistry,
+      maximumInstances: 4096
+    });
     renderer.scene.add(
       this.#previewTube,
       this.#previewArrayGroup,
@@ -72,14 +86,36 @@ export class PathSketchController {
 
   begin(options = {}) {
     if (this.#active) throw new Error("Já existe um desenho de caminho ativo.");
-    const settings = normalizeSettings({ ...DEFAULTS, ...options });
+    const requested = { ...options };
+    if (requested.inputSamplePixels === undefined &&
+        requested.spacingPixels !== undefined) {
+      requested.inputSamplePixels = requested.spacingPixels;
+    }
+    const settings = normalizeSettings({ ...DEFAULTS, ...requested });
     const frame = resolveFrame(this.renderer, settings.planeSource);
-    const sourceIds = settings.mode === "array"
-      ? this.pathTools.captureArraySource()
-      : Object.freeze([]);
+    const brush = settings.mode === "array"
+      ? this.pathTools.captureArrayBrush({
+          sourceMode: settings.sourceMode,
+          geometryType: settings.geometryType,
+          color: settings.sourceColor
+        })
+      : null;
+    if (brush) this.#previewArrayCache.configure(brush);
+    else this.#previewArrayCache.clear();
+    const sourceIds = brush?.sourceIds ?? Object.freeze([]);
     this.#active = {
       settings,
       sourceIds,
+      brush,
+      brushSettingsKey: brushSettingsKey(settings),
+      resolvedSpacing: brush
+        ? this.pathTools.resolveArrayBrushSpacing({
+            brush,
+            spacingMode: settings.spacingMode,
+            spacingWorld: settings.spacingWorld,
+            spacingScale: settings.spacingScale
+          })
+        : null,
       frame,
       plane: new THREE.Plane(
         new THREE.Vector3().fromArray(frame.normal).normalize(),
@@ -128,6 +164,10 @@ export class PathSketchController {
         : Object.freeze([]),
       previewCount: active?.previewCount ?? 0,
       previewTruncated: Boolean(active?.previewTruncated),
+      sourceMode: active?.brush?.sourceMode ?? null,
+      sourceName: active?.brush?.sourceName ?? null,
+      resolvedSpacing: active?.resolvedSpacing ?? null,
+      previewResources: this.#previewArrayCache.status(),
       planeSource: active?.settings.planeSource ?? null,
       frame: active ? Object.freeze(structuredClone(active.frame)) : null,
       settings: active
@@ -154,14 +194,37 @@ export class PathSketchController {
       ...this.#active.settings,
       ...patch
     });
-    let sourceIds = this.#active.sourceIds;
-    if (settings.mode === "array" && !sourceIds.length) {
-      sourceIds = this.pathTools.captureArraySource();
+    let brush = this.#active.brush;
+    const nextBrushSettingsKey = brushSettingsKey(settings);
+    if (settings.mode === "array" &&
+        (!brush ||
+         nextBrushSettingsKey !== this.#active.brushSettingsKey)) {
+      brush = this.pathTools.captureArrayBrush({
+        sourceMode: settings.sourceMode,
+        sourceIds: settings.sourceMode === "selection" &&
+          this.#active.sourceIds.length
+          ? this.#active.sourceIds
+          : null,
+        geometryType: settings.geometryType,
+        color: settings.sourceColor
+      });
+      this.#previewArrayCache.configure(brush);
     } else if (settings.mode !== "array") {
-      sourceIds = Object.freeze([]);
+      brush = null;
+      this.#previewArrayCache.clear();
     }
     this.#active.settings = settings;
-    this.#active.sourceIds = sourceIds;
+    this.#active.brush = brush;
+    this.#active.brushSettingsKey = nextBrushSettingsKey;
+    this.#active.sourceIds = brush?.sourceIds ?? Object.freeze([]);
+    this.#active.resolvedSpacing = brush
+      ? this.pathTools.resolveArrayBrushSpacing({
+          brush,
+          spacingMode: settings.spacingMode,
+          spacingWorld: settings.spacingWorld,
+          spacingScale: settings.spacingScale
+        })
+      : null;
     this.#scheduleResultPreview(this.#active.points);
     this.#notify();
     return this.status();
@@ -180,7 +243,7 @@ export class PathSketchController {
     this.cancel();
     this.#bind(false);
     this.#cancelPendingPreview();
-    this.#clearArrayPreview();
+    this.#previewArrayCache.dispose();
     this.renderer.scene.remove(
       this.#previewTube,
       this.#previewArrayGroup,
@@ -221,13 +284,12 @@ export class PathSketchController {
     event.stopImmediatePropagation();
     const previous = active.screenPoints.at(-1);
     if (Math.hypot(event.clientX - previous[0], event.clientY - previous[1]) <
-        active.settings.spacingPixels) return;
+        active.settings.inputSamplePixels) return;
     const point = this.#worldPoint(event);
     if (!point || near3(point, active.points.at(-1))) return;
     active.points.push(point);
     active.screenPoints.push([event.clientX, event.clientY]);
     this.#updatePreview(active.points);
-    this.#notify();
   };
 
   #onPointerUp = event => {
@@ -250,10 +312,10 @@ export class PathSketchController {
           })
         : points;
       active.lastResult = active.settings.mode === "array"
-        ? this.pathTools.arraySelectionAlongPoints({
+        ? this.pathTools.arrayBrushAlongPoints({
             points: committedPoints,
-            sourceIds: active.sourceIds,
-            count: active.settings.count,
+            brush: active.brush,
+            spacing: active.resolvedSpacing,
             align: active.settings.align,
             closed: active.settings.closed,
             curveType: active.settings.curveType,
@@ -387,15 +449,16 @@ export class PathSketchController {
         tension: active.settings.tension
       });
       if (active.settings.mode === "array") {
-        this.#renderArrayPreview(this.pathTools.previewArraySelection({
+        this.#renderArrayPreview(this.pathTools.previewArrayBrush({
           points: prepared,
-          sourceIds: active.sourceIds,
-          count: active.settings.count,
+          brush: active.brush,
+          spacing: active.resolvedSpacing,
           align: active.settings.align,
           closed: active.settings.closed,
           curveType: active.settings.curveType,
           tension: active.settings.tension,
-          twistDegrees: active.settings.twistDegrees
+          twistDegrees: active.settings.twistDegrees,
+          maximumCopies: this.#previewArrayCache.copyCapacity
         }));
         this.#previewTube.visible = false;
       } else {
@@ -429,48 +492,15 @@ export class PathSketchController {
   }
 
   #renderArrayPreview(plan) {
-    this.#clearArrayPreview();
-    for (const entry of plan.entries) {
-      const geometry = this.geometryRegistry.create(entry.geometry);
-      const material = new THREE.MeshBasicMaterial({
-        color: entry.color,
-        depthTest: false,
-        depthWrite: false,
-        transparent: true,
-        opacity: 0.58
-      });
-      const mesh = new THREE.InstancedMesh(
-        geometry,
-        material,
-        entry.worldMatrices.length
-      );
-      entry.worldMatrices.forEach((matrix, index) =>
-        mesh.setMatrixAt(index, new THREE.Matrix4().fromArray(matrix))
-      );
-      mesh.instanceMatrix.needsUpdate = true;
-      mesh.frustumCulled = false;
-      mesh.renderOrder = 1499;
-      mesh.userData.pathSketchPreview = true;
-      this.#previewArrayGroup.add(mesh);
-    }
-    this.#previewArrayGroup.visible = true;
+    const rendered = this.#previewArrayCache.update(plan);
     if (this.#active) {
-      this.#active.previewCount = plan.previewCount;
-      this.#active.previewTruncated = plan.truncated;
+      this.#active.previewCount = rendered.previewCount;
+      this.#active.previewTruncated = rendered.truncated;
     }
   }
 
   #clearArrayPreview() {
-    for (const object of [...this.#previewArrayGroup.children]) {
-      this.#previewArrayGroup.remove(object);
-      object.geometry?.dispose?.();
-      if (Array.isArray(object.material)) {
-        object.material.forEach(material => material.dispose?.());
-      } else {
-        object.material?.dispose?.();
-      }
-    }
-    this.#previewArrayGroup.visible = false;
+    this.#previewArrayCache.clear();
   }
 
   #clearResultPreview() {
@@ -652,7 +682,11 @@ function normalizeSettings(value) {
     ...value,
     mode: String(value.mode ?? "tube").toLowerCase(),
     planeSource: String(value.planeSource),
-    spacingPixels: integerAtLeast(value.spacingPixels, 1, "spacingPixels"),
+    inputSamplePixels: integerAtLeast(
+      value.inputSamplePixels,
+      1,
+      "inputSamplePixels"
+    ),
     simplify: nonNegative(value.simplify, "simplify"),
     smoothIterations: integerAtLeast(value.smoothIterations, 0, "smoothIterations"),
     radius: positive(value.radius, "radius"),
@@ -662,7 +696,12 @@ function normalizeSettings(value) {
     tension: finite(value.tension, "tension"),
     color: String(value.color),
     closed: Boolean(value.closed),
-    count: integerAtLeast(value.count, 1, "count"),
+    sourceMode: String(value.sourceMode ?? "selection").toLowerCase(),
+    geometryType: String(value.geometryType ?? "box").toLowerCase(),
+    sourceColor: String(value.sourceColor ?? "#6699cc"),
+    spacingMode: String(value.spacingMode ?? "auto").toLowerCase(),
+    spacingWorld: positive(value.spacingWorld, "spacingWorld"),
+    spacingScale: positive(value.spacingScale, "spacingScale"),
     align: Boolean(value.align),
     twistDegrees: finite(value.twistDegrees, "twistDegrees"),
     continuous: Boolean(value.continuous),
@@ -671,8 +710,14 @@ function normalizeSettings(value) {
   if (!["tube", "array"].includes(result.mode)) {
     throw new RangeError("O desenho aceita resultado tube ou array.");
   }
-  if (result.count > 10000) {
-    throw new RangeError("A distribuição aceita no máximo 10000 cópias.");
+  if (!["selection", "catalog"].includes(result.sourceMode)) {
+    throw new RangeError("A fonte do pincel deve ser selection ou catalog.");
+  }
+  if (!["auto", "world"].includes(result.spacingMode)) {
+    throw new RangeError("O espaçamento deve ser auto ou world.");
+  }
+  if (!/^#[0-9a-f]{6}$/i.test(result.sourceColor)) {
+    throw new TypeError("A cor do pincel deve usar a forma #rrggbb.");
   }
   if (!["centripetal", "chordal", "catmullrom", "polyline", "bezier"].includes(result.curveType)) {
     throw new RangeError(
@@ -680,6 +725,15 @@ function normalizeSettings(value) {
     );
   }
   return Object.freeze(result);
+}
+
+function brushSettingsKey(settings) {
+  if (settings.mode !== "array") return "tube";
+  return JSON.stringify([
+    settings.sourceMode,
+    settings.sourceMode === "catalog" ? settings.geometryType : null,
+    settings.sourceMode === "catalog" ? settings.sourceColor : null
+  ]);
 }
 
 function createPreviewLine() {

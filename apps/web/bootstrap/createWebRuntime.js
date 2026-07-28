@@ -12,15 +12,15 @@ import {
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0037c";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260728-0039a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260728-0039d";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260728-0039e";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260728-0039a";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260728-0039b";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260728-0039e";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260728-0039d";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260728-0039d";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260728-0039e";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -82,7 +82,7 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0037c";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260728-0039d";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260728-0039e";
 import {
   EditContextController
 } from "../../../packages/edit-context/src/index.js?build=20260728-0039a";
@@ -94,7 +94,7 @@ import {
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../../packages/edit-tools/src/index.js?build=20260728-0039d";
+} from "../../../packages/edit-tools/src/index.js?build=20260728-0039e";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260728-0039a";
@@ -102,7 +102,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260728-0039d";
+} from "../../../packages/spatial-references/src/index.js?build=20260728-0039e";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -389,7 +389,9 @@ export async function createWebRuntime({
         });
       }
     });
-  const toolRegistry = createDefaultEditToolRegistry();
+  const toolRegistry = createDefaultEditToolRegistry({
+    geometryCatalog: geometryRegistry.describe()
+  });
   const toolParameters = new ToolParameterStore({
     registry: toolRegistry,
     migrate: createLegacyToolParameterMigration()
@@ -448,7 +450,12 @@ export async function createWebRuntime({
             args: {
               points,
               sourceIds,
-              count: settings.count,
+              sourceMode: settings.sourceMode,
+              geometryType: settings.geometryType,
+              sourceColor: settings.sourceColor,
+              spacingMode: settings.spacingMode,
+              spacingWorld: settings.spacingWorld,
+              spacingScale: settings.spacingScale,
               align: settings.align,
               closed: settings.closed,
               curveType: settings.curveType,

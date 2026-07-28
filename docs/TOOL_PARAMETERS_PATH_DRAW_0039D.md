@@ -1,5 +1,9 @@
 # Parâmetros de ferramenta e desenho distributivo — 0039d
 
+> Marco histórico. O `0039e` substitui `count` no desenho distributivo por
+> espaçamento progressivo e cacheia os recursos do preview. Consulte
+> [`PATH_BRUSH_AUTHORING_0039E.md`](PATH_BRUSH_AUTHORING_0039E.md).
+
 ## Objetivo
 
 Este incremento cria a primeira projeção do registro declarativo de

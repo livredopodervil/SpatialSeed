@@ -15,7 +15,7 @@ import {
 } from "./AffineRepeat.js?build=20260715-0021d";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v3";
+  static apiVersion = "selection-operations-v4";
 
   constructor({
     editor,
@@ -212,6 +212,69 @@ export class SelectionOperations {
       createdIds: created.map(object => object.id),
       activeId: created.at(-1).id
     };
+  }
+
+  createGeometryInstances({
+    name = null,
+    geometry,
+    worldMatrices,
+    color = "#6699cc",
+    material = null,
+    source = "geometry-instances"
+  } = {}) {
+    if (!this.geometryRegistry) {
+      throw new Error("Registro de geometrias indisponível.");
+    }
+    if (!Array.isArray(worldMatrices) ||
+        worldMatrices.length < 1 ||
+        worldMatrices.length > 10000) {
+      throw new RangeError(
+        "A criação instanciada exige entre 1 e 10000 matrizes."
+      );
+    }
+    const descriptor = this.geometryRegistry.normalize(geometry);
+    const appearance = this.#creationAppearance(color, material);
+    const index = this.sandbox.getSnapshot().objects.length + 1;
+    const label = this.geometryRegistry.label(descriptor.type);
+    const baseName = name || `${label} ${index}`;
+    const created = worldMatrices.map((matrix, copyIndex) => {
+      if (!Array.isArray(matrix) || matrix.length !== 16 ||
+          !matrix.every(value => Number.isFinite(Number(value)))) {
+        throw new TypeError(`Matriz mundial inválida na cópia ${copyIndex + 1}.`);
+      }
+      const transform = decomposeMatrix(
+        new THREE.Matrix4().fromArray(matrix.map(Number))
+      );
+      return {
+        id: crypto.randomUUID(),
+        kind: descriptor.type,
+        name: copyIndex === 0
+          ? baseName
+          : copyName(baseName, copyIndex - 1),
+        ...transform,
+        geometry: descriptor,
+        ...(appearance.appearanceId
+          ? { appearanceId: appearance.appearanceId }
+          : { material: { color: appearance.color } }),
+        instanceState: {}
+      };
+    });
+    const changed = this.sandbox.dispatch({
+      type: "selection.duplicate",
+      source: String(source),
+      sourceIds: [],
+      copyCount: created.length,
+      objects: created
+    });
+    if (changed) this.#selectIds([created.at(-1).id]);
+    return Object.freeze({
+      changed,
+      tool: "geometry-instances",
+      geometry: descriptor,
+      count: created.length,
+      createdIds: Object.freeze(created.map(object => object.id)),
+      activeIds: Object.freeze([created.at(-1).id])
+    });
   }
 
   createLight({

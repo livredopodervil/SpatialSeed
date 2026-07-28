@@ -646,6 +646,30 @@ migração. O desenho livre mantém preview local e confirma tubo ou distribuiç
 hierárquica como um único comando persistente. Outras famílias podem aderir ao
 registro sem criar uma nova chave de armazenamento ou um formulário paralelo.
 
+## D-039 — Distribuição desenhada é um pincel progressivo e cacheado
+
+**Estado:** implementada inicialmente no build 0039e.
+
+Ao desenhar uma distribuição, a quantidade não é declarada antes do gesto.
+Novas cópias aparecem nos múltiplos do espaçamento acumulado sobre o caminho.
+A fonte — seleção hierárquica ou geometria do catálogo — é capturada uma vez,
+e o preview conserva os mesmos lotes `InstancedMesh` até confirmar ou cancelar.
+Distribuição sobre um caminho já existente continua podendo usar quantidade
+explícita.
+
+**Motivação:** reconstruir descritores, geometrias, materiais e meshes a cada
+movimento tornava o desenho menos responsivo e confundia a amostragem do dedo
+com a distância entre objetos. Um pincel precisa responder ao comprimento já
+percorrido, sem exigir que o usuário adivinhe previamente quantos elementos
+caberão.
+
+**Consequências:** durante o gesto somente pontos, frames e matrizes novas são
+atualizados; a interface recebe um estado leve por quadro; soltar produz um
+único comando e um único undo. O renderer já agrupa objetos compatíveis como
+instâncias selecionáveis, mas o documento ainda repete descritores nas cópias.
+Protótipos persistentes, instâncias leves e copy-on-write permanecem uma
+compactação posterior e não devem ser simulados por mutação direta do Three.js.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

@@ -82,6 +82,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   workspace e console, com migração não destrutiva;
 - desenho livre com preview local de tubo ou distribuição de qualquer
   geometria/grupo selecionado pelo traço, confirmado em uma única ação;
+- pincel de caminho progressivo por espaçamento, usando seleção ou qualquer
+  provider do catálogo e conservando os mesmos lotes instanciados no preview;
 - planos independentes de visualização e edição, visualização 2D autoritativa e
   órbita em ponto travado.
 
@@ -145,19 +147,21 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente parâmetros e desenho distributivo `0039d` em mobile e
+Validar visualmente a fluidez do pincel de caminho `0039e` em mobile e
 avançar em incrementos independentes:
 
 1. redefinição paramétrica pelo Inspector, com preview e commit atômico;
 2. pivô/origem no HUD e grid configurável por plano;
-3. núcleo de objetos e ferramentas 2D em planos travados;
-4. régua, transferidor e compasso como referências transformadoras;
-5. referências vinculadas por grafo de modificadores, sem ciclos e com
+3. núcleo planar, estilos de caminho e ferramentas 2D fundamentais;
+4. seleção por laço, pincel e borracha com commit atômico;
+5. régua, transferidor e compasso como referências transformadoras;
+6. referências vinculadas por grafo de modificadores, sem ciclos e com
    invalidação incremental;
-6. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
+7. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
 
 Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PATH_REFERENCES_0037A.md`,
+`docs/PATH_BRUSH_AUTHORING_0039E.md`,
 `docs/TOOL_PARAMETERS_PATH_DRAW_0039D.md` e
 `docs/EDIT_INTERACTION_0038B.md`.
 

@@ -8,18 +8,21 @@ const CURVES = Object.freeze([
   { value: "polyline", label: "Polilinha" }
 ]);
 
-export function createDefaultEditToolRegistry() {
+export function createDefaultEditToolRegistry({
+  geometryCatalog = []
+} = {}) {
+  const geometryOptions = geometryCatalogOptions(geometryCatalog);
   return new EditToolRegistry()
     .register({
       id: "path.sketch",
-      label: "Desenhar tubo ou distribuir",
+      label: "Desenhar com estilo de caminho",
       family: "path",
       command: "path.sketch.begin",
       lifecycle: "continuous",
       parameters: [
         enumParameter("mode", "Resultado", [
-          { value: "tube", label: "Tubo / caminho" },
-          { value: "array", label: "Distribuir seleção" }
+          { value: "tube", label: "Tubo contínuo" },
+          { value: "array", label: "Pincel de geometrias" }
         ], "tube"),
         enumParameter("planeSource", "Plano do desenho", [
           { value: "locked-or-viewer", label: "Plano travado ou viewer" },
@@ -29,9 +32,14 @@ export function createDefaultEditToolRegistry() {
           { value: "world-yz", label: "Mundo YZ" }
         ], "locked-or-viewer"),
         enumParameter("curveType", "Interpolação", CURVES, "centripetal"),
-        numberParameter("spacingPixels", "Espaçamento em pixels", 6, {
-          integer: true, minimum: 1, maximum: 64
-        }),
+        numberParameter(
+          "inputSamplePixels",
+          "Amostragem do gesto (px)",
+          6,
+          {
+            integer: true, minimum: 1, maximum: 64
+          }
+        ),
         numberParameter("simplify", "Simplificação relativa", 0.004, {
           minimum: 0, maximum: 0.2, step: 0.001
         }),
@@ -52,9 +60,39 @@ export function createDefaultEditToolRegistry() {
         colorParameter("color", "Cor do tubo", "#70c8ff", {
           when: { mode: "tube" }
         }),
-        numberParameter("count", "Quantidade de cópias", 8, {
-          integer: true, minimum: 1, maximum: 10000,
+        enumParameter("sourceMode", "Fonte do pincel", [
+          { value: "selection", label: "Seleção atual" },
+          { value: "catalog", label: "Geometria do catálogo" }
+        ], "selection", {
           when: { mode: "array" }
+        }),
+        enumParameter(
+          "geometryType",
+          "Geometria do pincel",
+          geometryOptions,
+          geometryOptions[0].value,
+          {
+            when: { mode: "array", sourceMode: "catalog" }
+          }
+        ),
+        colorParameter("sourceColor", "Cor do pincel", "#6699cc", {
+          when: { mode: "array", sourceMode: "catalog" }
+        }),
+        enumParameter("spacingMode", "Distribuição do pincel", [
+          { value: "auto", label: "Automática pelo tamanho" },
+          { value: "world", label: "Distância no mundo" }
+        ], "auto", {
+          when: { mode: "array" }
+        }),
+        numberParameter("spacingWorld", "Distância entre instâncias", 1, {
+          minimum: 0.001,
+          step: 0.05,
+          when: { mode: "array", spacingMode: "world" }
+        }),
+        numberParameter("spacingScale", "Fator do espaçamento automático", 1, {
+          minimum: 0.01,
+          step: 0.05,
+          when: { mode: "array", spacingMode: "auto" }
         }),
         booleanParameter("align", "Orientar pela tangente", true, {
           when: { mode: "array" }
@@ -209,8 +247,21 @@ export function createLegacyToolParameterMigration() {
   };
 }
 
-function enumParameter(id, label, options, defaultValue) {
-  return { id, label, type: "enum", options, default: defaultValue };
+function enumParameter(
+  id,
+  label,
+  options,
+  defaultValue,
+  configuration = {}
+) {
+  return {
+    id,
+    label,
+    type: "enum",
+    options,
+    default: defaultValue,
+    when: configuration.when
+  };
 }
 
 function numberParameter(id, label, defaultValue, options = {}) {
@@ -294,4 +345,25 @@ function compact(value) {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined)
   );
+}
+
+function geometryCatalogOptions(catalog) {
+  const normalized = Array.isArray(catalog)
+    ? catalog.map(entry =>
+        typeof entry === "string"
+          ? { value: entry, label: entry }
+          : {
+              value: String(entry?.type ?? ""),
+              label: String(entry?.label ?? entry?.type ?? "")
+            }
+      ).filter(entry => entry.value)
+    : [];
+  if (!normalized.length) {
+    return Object.freeze([
+      Object.freeze({ value: "box", label: "Caixa" }),
+      Object.freeze({ value: "sphere", label: "Esfera" }),
+      Object.freeze({ value: "cylinder", label: "Cilindro" })
+    ]);
+  }
+  return Object.freeze(normalized.map(entry => Object.freeze(entry)));
 }

@@ -37,18 +37,19 @@ cancela a ação em curso sem modificar o histórico.
 
 Continuidade e parâmetros permanecem registros distintos. O
 `ToolParameterStore` indexa valores normalizados por `toolId` em
-`spatialseed.edit.tool-parameters.v1`. Argumentos explícitos prevalecem; campos
-omitidos recuperam a última configuração da ferramenta.
+`spatialseed.edit.tool-parameters.v2`. O registro `v1` é migrado sem ser
+apagado. Argumentos explícitos prevalecem; campos omitidos recuperam a última
+configuração da ferramenta.
 
 O workspace projeta os schemas de `EditToolRegistry` num painel contextual. Os
 controles rápidos de caminhos e topologia e o HUD funcionam como aliases da
 mesma origem. Alterações válidas feitas durante um desenho ativo atualizam o
 preview sem criar comando de documento.
 
-O desenho livre pode confirmar um tubo ou distribuir a geometria/grupo
-selecionado diretamente pelo traço. Nos dois modos, a prévia é local e somente
-o resultado final ocupa uma entrada de undo. Consulte
-`TOOL_PARAMETERS_PATH_DRAW_0039D.md`.
+O desenho livre pode confirmar um tubo ou usar a seleção, um grupo ou qualquer
+geometria do catálogo como pincel progressivo por espaçamento. Nos dois modos,
+a prévia é local e somente o resultado final ocupa uma entrada de undo.
+Consulte `PATH_BRUSH_AUTHORING_0039E.md`.
 
 ## Repetição
 

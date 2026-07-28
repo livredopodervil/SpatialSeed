@@ -1,7 +1,7 @@
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 
 export class MeshEditPanel {
-  static apiVersion = "mesh-edit-panel-v6";
+  static apiVersion = "mesh-edit-panel-v7";
 
   constructor({
     root,
@@ -23,7 +23,9 @@ export class MeshEditPanel {
     this.unsubscribeToolParameters = null;
     this.unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
     this.unsubscribeContext = subscribeContext?.(() => this.refresh()) ?? null;
-    this.unsubscribeSketch = subscribeSketch?.(() => this.refresh()) ?? null;
+    this.unsubscribeSketch = subscribeSketch?.(snapshot =>
+      this.#receiveSketchSnapshot(snapshot)
+    ) ?? null;
     this.onKeyDown = event => this.#handleShortcut(event);
     this.onGeometryDefaultChanged = event => {
       const type = event.detail?.type;
@@ -198,18 +200,7 @@ export class MeshEditPanel {
       );
     }
     this.#refreshTransformSettings(transform);
-    this.#text(
-      "path-sketch-status",
-      sketch.active
-        ? `Desenho ${
-            sketch.mode === "array" ? "com geometria" : "de tubo"
-          }: ${sketch.pointCount} pontos; preview ${
-            sketch.previewCount ?? 0
-          }${sketch.previewTruncated ? " (reduzido)" : ""}; solte para confirmar uma única ação. Esc cancela.`
-        : sketch.error
-          ? sketch.error
-          : "Desenho inativo."
-    );
+    this.#refreshSketchStatus(sketch);
     this.#element("edit-create-object").dataset.active = placement.active ? "true" : "false";
     this.#element("edit-cancel-placement").disabled = !placement.active;
     const selectedReference = references.find(reference => reference.selected);
@@ -221,10 +212,48 @@ export class MeshEditPanel {
     this.#refreshToolParameterPanel();
   }
 
+  #receiveSketchSnapshot(sketch) {
+    const activeChanged =
+      Boolean(this.latestSketch?.active) !== Boolean(sketch?.active);
+    this.latestSketch = sketch;
+    this.#refreshSketchStatus(sketch);
+    if (activeChanged) this.refresh();
+  }
+
+  #refreshSketchStatus(sketch = {}) {
+    const source = sketch.sourceName
+      ? `; fonte: ${sketch.sourceName}`
+      : "";
+    const spacing = Number.isFinite(sketch.resolvedSpacing)
+      ? `; distância: ${Number(sketch.resolvedSpacing).toFixed(3)}`
+      : "";
+    this.#text(
+      "path-sketch-status",
+      sketch.active
+        ? `Desenho ${
+            sketch.mode === "array" ? "com pincel geométrico" : "de tubo"
+          }: ${sketch.pointCount} pontos; preview ${
+            sketch.previewCount ?? 0
+          }${sketch.previewTruncated ? " (limite visual)" : ""}${
+            source
+          }${spacing}; solte para confirmar uma única ação. Esc cancela.`
+        : sketch.error
+          ? sketch.error
+          : "Desenho inativo."
+    );
+  }
+
   #bindCreationMaterial() {
     const catalog = this.query("geometry.catalog") ?? [];
     const geometrySelect = this.#element("edit-create-geometry");
     geometrySelect.replaceChildren(...catalog.map(description => {
+      const option = document.createElement("option");
+      option.value = description.type;
+      option.textContent = description.label;
+      return option;
+    }));
+    const brushGeometrySelect = this.#element("path-sketch-geometry");
+    brushGeometrySelect.replaceChildren(...catalog.map(description => {
       const option = document.createElement("option");
       option.value = description.type;
       option.textContent = description.label;
@@ -788,14 +817,32 @@ export class MeshEditPanel {
 
   #refreshSketchModeVisibility() {
     const arrayMode = this.#element("path-sketch-mode").value === "array";
+    const catalogSource =
+      this.#element("path-sketch-source").value === "catalog";
+    const spacingMode =
+      this.#element("path-sketch-spacing-mode").value;
     for (const id of [
-      "path-sketch-count",
+      "path-sketch-source",
+      "path-sketch-spacing-mode",
       "path-sketch-twist",
       "path-sketch-align"
     ]) {
       (this.#element(id).closest("label") ?? this.#element(id)).hidden =
         !arrayMode;
     }
+    for (const id of [
+      "path-sketch-geometry",
+      "path-sketch-source-color"
+    ]) {
+      (this.#element(id).closest("label") ?? this.#element(id)).hidden =
+        !arrayMode || !catalogSource;
+    }
+    (this.#element("path-sketch-spacing-world").closest("label") ??
+      this.#element("path-sketch-spacing-world")).hidden =
+        !arrayMode || spacingMode !== "world";
+    (this.#element("path-sketch-spacing-scale").closest("label") ??
+      this.#element("path-sketch-spacing-scale")).hidden =
+        !arrayMode || spacingMode !== "auto";
     (this.#element("path-sketch-radius").closest("label") ??
       this.#element("path-sketch-radius")).hidden = arrayMode;
   }
@@ -857,12 +904,17 @@ export class MeshEditPanel {
     this.#click("path-sketch-begin", "path.sketch.begin", () => ({
       mode: this.#element("path-sketch-mode").value,
       planeSource: this.#element("path-sketch-plane").value,
-      spacingPixels: this.#integer("path-sketch-spacing"),
+      inputSamplePixels: this.#integer("path-sketch-sample"),
       simplify: this.#number("path-sketch-simplify"),
       smoothIterations: this.#integer("path-sketch-smoothing"),
       radius: this.#number("path-sketch-radius"),
       curveType: this.#element("path-sketch-curve").value,
-      count: this.#integer("path-sketch-count"),
+      sourceMode: this.#element("path-sketch-source").value,
+      geometryType: this.#element("path-sketch-geometry").value,
+      sourceColor: this.#element("path-sketch-source-color").value,
+      spacingMode: this.#element("path-sketch-spacing-mode").value,
+      spacingWorld: this.#number("path-sketch-spacing-world"),
+      spacingScale: this.#number("path-sketch-spacing-scale"),
       align: this.#element("path-sketch-align").checked,
       twistDegrees: this.#number("path-sketch-twist"),
       closed: this.#element("path-sketch-closed").checked
@@ -1500,7 +1552,7 @@ function rememberedToolControls() {
     toolControl("path.sketch", "mode", "path-sketch-mode"),
     toolControl("path.sketch", "planeSource", "path-sketch-plane"),
     toolControl("path.sketch", "curveType", "path-sketch-curve"),
-    toolControl("path.sketch", "spacingPixels", "path-sketch-spacing", {
+    toolControl("path.sketch", "inputSamplePixels", "path-sketch-sample", {
       integer: true
     }),
     toolControl("path.sketch", "smoothIterations", "path-sketch-smoothing", {
@@ -1512,8 +1564,15 @@ function rememberedToolControls() {
     toolControl("path.sketch", "radius", "path-sketch-radius", {
       number: true
     }),
-    toolControl("path.sketch", "count", "path-sketch-count", {
-      integer: true
+    toolControl("path.sketch", "sourceMode", "path-sketch-source"),
+    toolControl("path.sketch", "geometryType", "path-sketch-geometry"),
+    toolControl("path.sketch", "sourceColor", "path-sketch-source-color"),
+    toolControl("path.sketch", "spacingMode", "path-sketch-spacing-mode"),
+    toolControl("path.sketch", "spacingWorld", "path-sketch-spacing-world", {
+      number: true
+    }),
+    toolControl("path.sketch", "spacingScale", "path-sketch-spacing-scale", {
+      number: true
     }),
     toolControl("path.sketch", "align", "path-sketch-align"),
     toolControl("path.sketch", "twistDegrees", "path-sketch-twist", {

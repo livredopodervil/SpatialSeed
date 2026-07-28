@@ -1,7 +1,7 @@
 # Referência da linguagem e do console SpatialSeed
 
 > Referência normativa P0. Auditada em 28 de julho de 2026 contra o runtime
-> `0039d`. Consulte `help`, `help create`, `help mesh`, `help path`,
+> `0039e`. Consulte `help`, `help create`, `help mesh`, `help path`,
 > `help animate`, `procedure help` e
 > `runtime test help` para confirmar as capabilities do build carregado.
 
@@ -179,20 +179,26 @@ path list
 path inspect object=id extraction=auto|centerline|boundary|loose-edges
 path draw
 path draw mode=tube radius=0.08 curve=centripetal plane=locked-or-viewer
-path draw mode=array count=8 align=on twist=0
+path draw mode=array source=selection spacing=auto align=on twist=0
+path draw mode=array source=catalog geometry=torus spacing=0.75 color=#6699cc
 path tube object=id [radius=n] [segments=n] [radial=n] [closed=on|off]
 path sweep path=id profile=id [segments=n] [twist=n] [caps=on|off]
 path array object=id [count=n] [align=on|off] [twist=n]
 ```
 
-`path draw mode=array` captura qualquer geometria ou grupo selecionado e
-mostra suas cópias sobre o traço antes da confirmação. O preview é local; ao
-soltar, todo o lote entra no histórico como uma única ação.
+`path draw mode=array` usa a seleção ou uma geometria do catálogo como pincel.
+Novas instâncias aparecem sempre que o traço acumula outro intervalo de
+`spacing`; `spacing=auto` deriva o intervalo do tamanho da fonte e
+`spacingScale` ajusta esse valor. Não se informa `count` antes de desenhar.
+O preview conserva seus recursos durante o gesto; ao soltar, todo o lote entra
+no histórico como uma única ação. `path array` continua aceitando `count`
+quando distribui sobre um caminho já existente.
 
 Opções omitidas recuperam a última configuração válida da ferramenta. O mesmo
 registro atende console, HUD e workspace. `closed` omitido herda o fechamento
 da referência; `path draw` pode usar o plano de edição travado, o viewer ou os
-planos mundiais XY, XZ e YZ.
+planos mundiais XY, XZ e YZ. `sample` controla a coleta do gesto em pixels e é
+independente do espaçamento mundial entre instâncias.
 
 ## 4. Criação geométrica
 

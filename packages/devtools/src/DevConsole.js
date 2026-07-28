@@ -1730,10 +1730,18 @@ export class DevConsole {
     }
     const options = parseNamedOptions(tokens);
     if (["draw", "sketch"].includes(action)) {
+      if (options.count !== undefined) {
+        throw new Error(
+          "path draw não usa count; escolha spacing=auto ou spacing=<distância>."
+        );
+      }
+      const spacing = pathDrawSpacingOptions(options, value =>
+        this.#number(value)
+      );
       return this.commands.execute("path.sketch.begin", {
         ...providedText(options, "mode", "mode"),
         ...providedText(options, "plane", "planeSource"),
-        ...providedInteger(options, "spacing", "spacingPixels"),
+        ...providedInteger(options, "sample", "inputSamplePixels"),
         ...providedNumber(options, "simplify", "simplify"),
         ...providedInteger(options, "smoothing", "smoothIterations"),
         ...providedNumber(options, "radius", "radius"),
@@ -1743,7 +1751,11 @@ export class DevConsole {
         ...providedNumber(options, "tension", "tension"),
         ...providedText(options, "color", "color"),
         ...providedBoolean(options, "closed", "closed"),
-        ...providedInteger(options, "count", "count"),
+        ...providedText(options, "source", "sourceMode"),
+        ...providedText(options, "geometry", "geometryType"),
+        ...providedText(options, "brushColor", "sourceColor"),
+        ...spacing,
+        ...providedNumber(options, "spacingScale", "spacingScale"),
         ...providedBoolean(options, "align", "align"),
         ...providedNumber(options, "twist", "twistDegrees"),
         ...providedBoolean(options, "continuous", "continuous")
@@ -1813,7 +1825,8 @@ export class DevConsole {
         "path list",
         "path inspect object=id extraction=auto|centerline|boundary|loose-edges",
         "path draw mode=tube plane=locked-or-viewer radius=0.08 curve=centripetal",
-        "path draw mode=array count=8 align=on twist=0",
+        "path draw mode=array source=selection spacing=auto align=on twist=0",
+        "path draw mode=array source=catalog geometry=sphere spacing=0.75 brushColor=#6699cc",
         "path tube object=id radius=0.25 segments=64 radial=8 closed=off",
         "path sweep path=id profile=id pathExtraction=auto profileExtraction=auto segments=32 twist=0 scaleStart=1 scaleEnd=1 caps=on",
         "path array object=id count=8 align=on closed=off includePath=off",
@@ -1823,7 +1836,8 @@ export class DevConsole {
         "object, path e profile aceitam ID; use name:Nome para resolver um nome único.",
         "@selection-origins usa os pivôs dos objetos selecionados na ordem da seleção.",
         "Opções omitidas recuperam a última configuração válida da ferramenta.",
-        "path draw mode=array distribui qualquer geometria ou grupo selecionado pelo traço e confirma em uma única ação.",
+        "path draw mode=array acrescenta instâncias conforme o traço avança; não exige quantidade prévia.",
+        "source=selection usa objeto/grupo selecionado; source=catalog aceita qualquer geometry do catálogo.",
         "As referências são snapshots: alterar depois o objeto de origem não altera o resultado criado.",
         "A varredura usa frames de transporte paralelo para reduzir torção artificial.",
         "Perfis com furos e referências vinculadas exigem um futuro grafo de modificadores."
@@ -2786,6 +2800,25 @@ function parseNamedOptions(tokens) {
     options[token.slice(0, separator)] = token.slice(separator + 1);
   }
   return options;
+}
+
+function pathDrawSpacingOptions(options, parseNumber) {
+  const result = {};
+  if (options.spacingMode !== undefined) {
+    result.spacingMode = String(options.spacingMode);
+  }
+  if (options.spacingWorld !== undefined) {
+    result.spacingWorld = parseNumber(options.spacingWorld);
+  }
+  if (options.spacing === undefined) return result;
+  const value = String(options.spacing).toLowerCase();
+  if (value === "auto") {
+    result.spacingMode = "auto";
+    return result;
+  }
+  result.spacingMode = "world";
+  result.spacingWorld = parseNumber(options.spacing);
+  return result;
 }
 
 function pathReferenceFromOptions(options, { objectKey, extractionKey }) {

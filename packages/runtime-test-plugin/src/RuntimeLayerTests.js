@@ -91,7 +91,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260728-0039b";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260728-0039e";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -196,6 +196,7 @@ import {
 } from "../../editor-commands/src/EditorCommands.js?build=20260728-0039d";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
+  LEGACY_TOOL_PARAMETER_STORAGE_KEY,
   TOOL_PARAMETER_SCHEMA_VERSION,
   TOOL_PARAMETER_STORAGE_KEY,
   TOOL_PREFERENCES_SCHEMA_VERSION,
@@ -204,7 +205,7 @@ import {
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../edit-tools/src/index.js?build=20260728-0039d";
+} from "../../edit-tools/src/index.js?build=20260728-0039e";
 import {
   deriveHudContext,
   geometryToolIcon,
@@ -217,8 +218,9 @@ import {
   createSweepGeometryDescriptor,
   orderEdgeChain,
   rotationMinimizingFrames,
-  samplePathFrames
-} from "../../spatial-references/src/index.js?build=20260728-0039d";
+  samplePathFrames,
+  samplePathFramesBySpacing
+} from "../../spatial-references/src/index.js?build=20260728-0039e";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -733,13 +735,24 @@ export function createRuntimeLayerTests() {
         const radius = sketch.parameters.find(
           parameter => parameter.id === "radius"
         );
-        const count = sketch.parameters.find(
-          parameter => parameter.id === "count"
+        const spacingWorld = sketch.parameters.find(
+          parameter => parameter.id === "spacingWorld"
+        );
+        const geometryType = sketch.parameters.find(
+          parameter => parameter.id === "geometryType"
         );
         assertDeepEqual(radius.when, { mode: "tube" });
-        assertDeepEqual(count.when, { mode: "array" });
+        assertDeepEqual(spacingWorld.when, {
+          mode: "array",
+          spacingMode: "world"
+        });
+        assertDeepEqual(geometryType.when, {
+          mode: "array",
+          sourceMode: "catalog"
+        });
         assertEqual(Object.isFrozen(described.parameters), true);
         assertEqual(Object.isFrozen(described.parameters[0].options), true);
+        assertEqual(registry.defaults("path.sketch").spacingMode, "auto");
         assertEqual(registry.defaults("path.array").count, 8);
         assertThrowsMessage(
           () => registry.normalizePatch("path.array", { count: 1.5 }),
@@ -761,7 +774,10 @@ export function createRuntimeLayerTests() {
         const first = new ToolParameterStore({ registry, storage });
         first.set("path.sketch", {
           mode: "array",
-          count: 17,
+          sourceMode: "catalog",
+          geometryType: "sphere",
+          spacingMode: "world",
+          spacingWorld: 0.75,
           align: false
         });
         first.set("path.tube", {
@@ -772,7 +788,10 @@ export function createRuntimeLayerTests() {
 
         const restored = new ToolParameterStore({ registry, storage });
         assertEqual(restored.values("path.sketch").mode, "array");
-        assertEqual(restored.values("path.sketch").count, 17);
+        assertEqual(restored.values("path.sketch").sourceMode, "catalog");
+        assertEqual(restored.values("path.sketch").geometryType, "sphere");
+        assertEqual(restored.values("path.sketch").spacingMode, "world");
+        assertNear(restored.values("path.sketch").spacingWorld, 0.75);
         assertEqual(restored.values("path.sketch").align, false);
         assertNear(restored.values("path.tube").radius, 0.42);
         assertEqual(restored.values("path.tube").radialSegments, 11);
@@ -782,6 +801,53 @@ export function createRuntimeLayerTests() {
           TOOL_PARAMETER_SCHEMA_VERSION
         );
         restored.dispose();
+      },
+
+      "registro v1 migra amostragem e preserva preferências anteriores"() {
+        const legacyValue = JSON.stringify({
+          schemaVersion: 1,
+          tools: {
+            "path.sketch": {
+              mode: "tube",
+              spacingPixels: 11,
+              radius: 0.27,
+              tubularSegments: 120,
+              radialSegments: 9,
+              color: "#123456",
+              count: 23
+            },
+            "path.tube": {
+              radius: 0.44
+            }
+          }
+        });
+        const storage = createMemoryStorage({
+          [LEGACY_TOOL_PARAMETER_STORAGE_KEY]: legacyValue
+        });
+        const store = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage
+        });
+        assertEqual(store.values("path.sketch").inputSamplePixels, 11);
+        assertNear(store.values("path.sketch").radius, 0.27);
+        assertEqual(store.values("path.sketch").tubularSegments, 120);
+        assertEqual(store.values("path.sketch").radialSegments, 9);
+        assertEqual(store.values("path.sketch").color, "#123456");
+        assertEqual(store.values("path.sketch").spacingMode, "auto");
+        assertNear(store.values("path.tube").radius, 0.44);
+        assertEqual(
+          store.status().migratedFrom,
+          LEGACY_TOOL_PARAMETER_STORAGE_KEY
+        );
+        assertEqual(
+          JSON.parse(storage.getItem(TOOL_PARAMETER_STORAGE_KEY)).schemaVersion,
+          TOOL_PARAMETER_SCHEMA_VERSION
+        );
+        assertEqual(
+          storage.getItem(LEGACY_TOOL_PARAMETER_STORAGE_KEY),
+          legacyValue
+        );
+        store.dispose();
       },
 
       "migração recupera defaults antigos sem apagar suas chaves"() {
@@ -951,13 +1017,15 @@ export function createRuntimeLayerTests() {
           toolId: "path.sketch",
           patch: {
             mode: "array",
-            count: 21,
+            spacingMode: "world",
+            spacingWorld: 0.35,
             twistDegrees: 45
           }
         });
         assertEqual(updates.length, 1);
         assertEqual(updates[0].mode, "array");
-        assertEqual(updates[0].count, 21);
+        assertEqual(updates[0].spacingMode, "world");
+        assertNear(updates[0].spacingWorld, 0.35);
         assertEqual(updates[0].twistDegrees, 45);
         toolParameters.dispose();
       },
@@ -968,13 +1036,17 @@ export function createRuntimeLayerTests() {
         console.execute("path tube object=curve-a");
         console.execute("path draw");
         console.execute(
-          "path draw mode=array count=13 align=off twist=25 plane=world-xy"
+          "path draw mode=array source=catalog geometry=sphere " +
+          "spacing=0.75 align=off twist=25 plane=world-xy"
         );
         assertEqual(Object.hasOwn(calls[0].args, "radius"), false);
         assertEqual(calls[1].id, "path.sketch.begin");
         assertDeepEqual(calls[1].args, {});
         assertEqual(calls[2].args.mode, "array");
-        assertEqual(calls[2].args.count, 13);
+        assertEqual(calls[2].args.sourceMode, "catalog");
+        assertEqual(calls[2].args.geometryType, "sphere");
+        assertEqual(calls[2].args.spacingMode, "world");
+        assertNear(calls[2].args.spacingWorld, 0.75);
         assertEqual(calls[2].args.align, false);
         assertEqual(calls[2].args.twistDegrees, 25);
         assertEqual(calls[2].args.planeSource, "world-xy");
@@ -1076,6 +1148,23 @@ export function createRuntimeLayerTests() {
           assertNear(tangent.dot(binormal), 0, 1e-9);
           assertNear(normal.dot(binormal), 0, 1e-9);
         });
+      },
+
+      "amostragem por distância mantém posições anteriores ao ampliar o traço"() {
+        const short = samplePathFramesBySpacing({
+          points: [[0, 0, 0], [2.4, 0, 0]],
+          spacing: 1,
+          curveType: "polyline"
+        });
+        const extended = samplePathFramesBySpacing({
+          points: [[0, 0, 0], [5.2, 0, 0]],
+          spacing: 1,
+          curveType: "polyline"
+        });
+        assertEqual(short.requestedCount, 3);
+        assertEqual(extended.requestedCount, 6);
+        assertDeepEqual(short.positions, extended.positions.slice(0, 3));
+        assertVectorNear(extended.positions.at(-1), [5, 0, 0]);
       },
 
       "frames aceitam polilinha e controles Bézier desenhados"() {
@@ -1408,7 +1497,91 @@ export function createRuntimeLayerTests() {
         );
       },
 
-      "controlador mostra preview sem histórico e confirma ao soltar"() {
+      "pincel selecionado cresce por distância e preserva a hierarquia"() {
+        const fixture = createPathToolFixture();
+        fixture.editor.selection.replace({
+          kind: "object",
+          regionId: "path-tool-region",
+          objectId: "array-group"
+        });
+        const brush = fixture.service.captureArrayBrush();
+        const short = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [2.4, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          maximumCopies: 100
+        });
+        const extended = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [5.2, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          maximumCopies: 100
+        });
+        assertEqual(brush.renderableCount, 1);
+        assertNear(brush.autoSpacing, 1);
+        assertEqual(short.previewCount, 3);
+        assertEqual(extended.previewCount, 6);
+        assertDeepEqual(
+          short.deltaMatrices,
+          extended.deltaMatrices.slice(0, short.previewCount)
+        );
+        const result = fixture.service.arrayBrushAlongPoints({
+          points: [[0, 0, 0], [5.2, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline"
+        });
+        assertEqual(result.count, 6);
+        assertEqual(result.createdIds.length, 12);
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+        assertEqual(fixture.sandbox.undo(), true);
+      },
+
+      "catálogo fornece qualquer geometria como pincel instanciado"() {
+        const fixture = createPathToolFixture();
+        for (const description of
+          fixture.service.resolver.geometryRegistry.describe()) {
+          const candidate = fixture.service.captureArrayBrush({
+            sourceMode: "catalog",
+            geometryType: description.type
+          });
+          assertEqual(candidate.entries.length, 1);
+          assertEqual(candidate.sourceGeometry.type, description.type);
+        }
+        const brush = fixture.service.captureArrayBrush({
+          sourceMode: "catalog",
+          geometryType: "sphere",
+          color: "#224466"
+        });
+        const result = fixture.service.arrayBrushAlongPoints({
+          points: [[0, 0, 0], [2.2, 0, 0]],
+          brush,
+          spacing: 0.5,
+          curveType: "polyline"
+        });
+        const created = fixture.sandbox.getSnapshot().objects.filter(
+          object => result.createdIds.includes(object.id)
+        );
+        assertEqual(brush.sourceMode, "catalog");
+        assertEqual(result.count, 5);
+        assertEqual(created.length, 5);
+        assertEqual(created.every(object =>
+          object.geometry.type === "sphere"
+        ), true);
+        assertEqual(brush.sourceColor, "#224466");
+        assertEqual(created.every(object =>
+          typeof object.appearanceId === "string"
+        ), true);
+        assertEqual(
+          new Set(created.map(object => object.appearanceId)).size,
+          1
+        );
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+      },
+
+      "controlador acrescenta instâncias sem recriar o preview e confirma ao soltar"() {
         const previousAddEventListener = globalThis.addEventListener;
         const previousRemoveEventListener = globalThis.removeEventListener;
         globalThis.addEventListener = () => {};
@@ -1422,6 +1595,8 @@ export function createRuntimeLayerTests() {
         const renderer = createPathSketchRendererStub();
         let completed = null;
         let ended = null;
+        let notifications = 0;
+        let unsubscribe = () => {};
         const controller = new PathSketchController({
           renderer,
           pathTools: fixture.service,
@@ -1431,26 +1606,60 @@ export function createRuntimeLayerTests() {
         });
         try {
           controller.begin({
+            mode: "tube",
+            planeSource: "world-xy"
+          });
+          controller.updateSettings({
+            mode: "array",
+            sourceMode: "selection",
+            spacingMode: "world",
+            spacingWorld: 1
+          });
+          assertDeepEqual(controller.status().sourceIds, ["array-group"]);
+          controller.cancel();
+          controller.begin({
             mode: "array",
             planeSource: "world-xy",
             curveType: "polyline",
-            spacingPixels: 1,
+            inputSamplePixels: 1,
             simplify: 0,
             smoothIterations: 0,
-            count: 4
+            spacingMode: "world",
+            spacingWorld: 1
           });
+          unsubscribe = controller.subscribe(() => {
+            notifications += 1;
+          });
+          const meshIds = controller.status().previewResources.meshIds;
           renderer.canvas.emit("pointerdown", pathPointerEvent(1, 20, 50));
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 50, 50));
+          const firstPreviewCount = controller.status().previewCount;
           renderer.canvas.emit("pointermove", pathPointerEvent(1, 80, 50));
-          assertEqual(controller.status().previewCount, 4);
+          const secondStatus = controller.status();
+          assertEqual(secondStatus.previewCount > firstPreviewCount, true);
+          assertDeepEqual(secondStatus.previewResources.meshIds, meshIds);
+          assertEqual(
+            secondStatus.previewResources.diagnostics.meshBuilds,
+            1
+          );
+          assertEqual(
+            secondStatus.previewResources.diagnostics.matrixSkips > 0,
+            true
+          );
+          assertEqual(notifications, 4);
           assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 0);
 
           renderer.canvas.emit("pointerup", pathPointerEvent(1, 80, 50));
           assertEqual(controller.status().active, false);
-          assertEqual(completed.result.createdIds.length, 8);
+          assertEqual(
+            completed.result.createdIds.length,
+            completed.result.count * 2
+          );
           assertEqual(completed.settings.mode, "array");
           assertEqual(ended.reason, "completed");
           assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
         } finally {
+          unsubscribe();
           controller.dispose();
           if (previousAddEventListener === undefined) {
             delete globalThis.addEventListener;

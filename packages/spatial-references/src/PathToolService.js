@@ -9,10 +9,13 @@ import {
   localizedPoints,
   normalizePointList
 } from "./ReferenceGeometry.js";
-import { samplePathFrames } from "./PathFrames.js";
+import {
+  samplePathFrames,
+  samplePathFramesBySpacing
+} from "./PathFrames.js?build=20260728-0039e";
 
 export class PathToolService {
-  static apiVersion = "path-tool-service-v1";
+  static apiVersion = "path-tool-service-v2";
 
   constructor({
     resolver,
@@ -305,7 +308,15 @@ export class PathToolService {
   arraySelectionAlongPoints({
     points,
     sourceIds = null,
-    count = 8,
+    count = null,
+    brush = null,
+    sourceMode = "selection",
+    geometryType = "box",
+    sourceGeometry = null,
+    sourceColor = "#6699cc",
+    spacingMode = "auto",
+    spacingWorld = 1,
+    spacingScale = 1,
     align = true,
     closed = false,
     curveType = "centripetal",
@@ -313,6 +324,31 @@ export class PathToolService {
     twistDegrees = 0
   } = {}) {
     this.#assertCanMutate("distribuir objetos no caminho desenhado");
+    if (count === null || count === undefined) {
+      const captured = brush ?? this.captureArrayBrush({
+        sourceMode,
+        sourceIds,
+        geometryType,
+        geometry: sourceGeometry,
+        color: sourceColor
+      });
+      const spacing = this.resolveArrayBrushSpacing({
+        brush: captured,
+        spacingMode,
+        spacingWorld,
+        spacingScale
+      });
+      return this.arrayBrushAlongPoints({
+        points,
+        brush: captured,
+        spacing,
+        align,
+        closed,
+        curveType,
+        tension,
+        twistDegrees
+      });
+    }
     const resolvedPath = pointsPathReference({
       points,
       closed,
@@ -335,6 +371,266 @@ export class PathToolService {
     const state = this.sandbox.getSnapshot();
     const hierarchy = new HierarchyIndex(state.objects);
     return this.#arraySourceIds({ sourceIds, excludeIds, hierarchy });
+  }
+
+  captureArrayBrush({
+    sourceMode = "selection",
+    sourceIds = null,
+    geometryType = "box",
+    geometry = null,
+    color = "#6699cc"
+  } = {}) {
+    const mode = String(sourceMode ?? "selection").toLowerCase();
+    if (mode === "catalog") {
+      const descriptor = geometry
+        ? this.resolver.geometryRegistry.normalize(geometry)
+        : defaultGeometryDescriptor(
+            this.resolver.geometryRegistry,
+            geometryType
+          );
+      const normalizedColor = colorValue(color);
+      const bounds = geometryBounds(
+        this.resolver.geometryRegistry,
+        descriptor,
+        new THREE.Matrix4()
+      );
+      const key = JSON.stringify([
+        "catalog",
+        this.resolver.geometryRegistry.key(descriptor),
+        normalizedColor
+      ]);
+      return Object.freeze({
+        key,
+        sourceMode: "catalog",
+        sourceRevision: this.sandbox.revision,
+        sourceIds: Object.freeze([]),
+        sourceGeometry: descriptor,
+        sourceColor: normalizedColor,
+        sourceName: this.resolver.geometryRegistry.label(descriptor.type),
+        pivot: Object.freeze([0, 0, 0]),
+        autoSpacing: boundsSpacing(bounds),
+        renderableCount: 1,
+        entries: Object.freeze([Object.freeze({
+          key,
+          geometry: descriptor,
+          color: normalizedColor,
+          sourceWorldMatrices: Object.freeze([
+            Object.freeze(new THREE.Matrix4().toArray())
+          ])
+        })])
+      });
+    }
+    if (mode !== "selection") {
+      throw new RangeError(
+        "A fonte do pincel deve ser selection ou catalog."
+      );
+    }
+    const state = this.sandbox.getSnapshot();
+    const hierarchy = new HierarchyIndex(state.objects);
+    const rootIds = this.#arraySourceIds({
+      sourceIds,
+      excludeIds: [],
+      hierarchy
+    });
+    const batches = new Map();
+    const bounds = new THREE.Box3();
+    let renderableCount = 0;
+    for (const rootId of rootIds) {
+      for (const objectId of [rootId, ...hierarchy.descendantsOf(rootId)]) {
+        const object = hierarchy.node(objectId);
+        if (["group", "camera", "light"].includes(object.kind)) continue;
+        let descriptor;
+        try {
+          descriptor =
+            this.resolver.geometryRegistry.describeLegacyObject(object);
+        } catch {
+          continue;
+        }
+        const objectColor = previewColor(
+          object,
+          this.selectionOperations.appearanceRuntime
+        );
+        const batchKey = JSON.stringify([
+          this.resolver.geometryRegistry.key(descriptor),
+          objectColor
+        ]);
+        const worldMatrix = new THREE.Matrix4().fromArray(
+          hierarchy.worldMatrixOf(objectId)
+        );
+        const batch = batches.get(batchKey) ?? {
+          key: batchKey,
+          geometry: descriptor,
+          color: objectColor,
+          sourceWorldMatrices: []
+        };
+        batch.sourceWorldMatrices.push(
+          Object.freeze(worldMatrix.toArray())
+        );
+        batches.set(batchKey, batch);
+        bounds.union(geometryBounds(
+          this.resolver.geometryRegistry,
+          descriptor,
+          worldMatrix
+        ));
+        renderableCount += 1;
+      }
+    }
+    if (!renderableCount) {
+      throw new Error(
+        "A seleção não possui geometria renderizável para usar como pincel."
+      );
+    }
+    const entries = [...batches.values()].map(entry => Object.freeze({
+      ...entry,
+      geometry: Object.freeze(structuredClone(entry.geometry)),
+      sourceWorldMatrices: Object.freeze(entry.sourceWorldMatrices)
+    }));
+    const pivot = average(rootIds.map(id => hierarchy.worldPivotOf(id)));
+    const key = JSON.stringify([
+      "selection",
+      rootIds,
+      pivot,
+      entries.map(entry => [
+        entry.key,
+        entry.sourceWorldMatrices
+      ])
+    ]);
+    return Object.freeze({
+      key,
+      sourceMode: "selection",
+      sourceRevision: this.sandbox.revision,
+      sourceIds: rootIds,
+      sourceGeometry: null,
+      sourceColor: null,
+      sourceName: rootIds.length === 1
+        ? hierarchy.node(rootIds[0]).name ?? rootIds[0]
+        : `${rootIds.length} raízes selecionadas`,
+      pivot: Object.freeze(pivot),
+      autoSpacing: boundsSpacing(bounds),
+      renderableCount,
+      entries: Object.freeze(entries)
+    });
+  }
+
+  resolveArrayBrushSpacing({
+    brush,
+    spacingMode = "auto",
+    spacingWorld = 1,
+    spacingScale = 1
+  } = {}) {
+    const mode = String(spacingMode ?? "auto").toLowerCase();
+    if (mode === "auto") {
+      return positive(brush?.autoSpacing, "autoSpacing") *
+        positive(spacingScale, "spacingScale");
+    }
+    if (mode === "world") {
+      return positive(spacingWorld, "spacingWorld");
+    }
+    throw new RangeError("O espaçamento deve ser auto ou world.");
+  }
+
+  previewArrayBrush({
+    points,
+    brush,
+    spacing,
+    align = true,
+    closed = false,
+    curveType = "centripetal",
+    tension = 0.5,
+    twistDegrees = 0,
+    maximumCopies = 4096
+  } = {}) {
+    const resolvedPath = pointsPathReference({
+      points,
+      closed,
+      sourceRevision: this.sandbox.revision
+    });
+    const layout = this.#arrayBrushLayout({
+      resolvedPath,
+      brush,
+      spacing,
+      align,
+      closed,
+      curveType,
+      tension,
+      twistDegrees,
+      maximumCopies
+    });
+    return Object.freeze({
+      tool: "array-brush-preview",
+      spacing: layout.frames.spacing,
+      requestedCount: layout.frames.requestedCount,
+      previewCount: layout.deltaMatrices.length,
+      truncated: layout.frames.truncated,
+      deltaMatrices: Object.freeze(layout.deltaMatrices.map(matrix =>
+        Object.freeze(matrix.toArray())
+      ))
+    });
+  }
+
+  arrayBrushAlongPoints({
+    points,
+    brush,
+    spacing,
+    align = true,
+    closed = false,
+    curveType = "centripetal",
+    tension = 0.5,
+    twistDegrees = 0
+  } = {}) {
+    this.#assertCanMutate("distribuir um pincel no caminho desenhado");
+    const resolvedPath = pointsPathReference({
+      points,
+      closed,
+      sourceRevision: this.sandbox.revision
+    });
+    const layout = this.#arrayBrushLayout({
+      resolvedPath,
+      brush,
+      spacing,
+      align,
+      closed,
+      curveType,
+      tension,
+      twistDegrees,
+      maximumCopies: 10001
+    });
+    if (layout.frames.requestedCount > 10000) {
+      throw new RangeError(
+        "O traço produziria mais de 10000 instâncias; aumente o espaçamento."
+      );
+    }
+    if (brush.sourceMode === "catalog") {
+      const result = this.selectionOperations.createGeometryInstances({
+        name: `${brush.sourceName} · pincel`,
+        geometry: brush.sourceGeometry,
+        worldMatrices: layout.deltaMatrices.map(matrix => matrix.toArray()),
+        color: brush.sourceColor,
+        source: "path-brush-catalog"
+      });
+      return Object.freeze({
+        ...result,
+        tool: "array-brush-along-drawn-path",
+        sourceMode: "catalog",
+        spacing: layout.frames.spacing,
+        reference: summary(resolvedPath)
+      });
+    }
+    const currentBrush = this.captureArrayBrush({
+      sourceMode: "selection",
+      sourceIds: brush.sourceIds
+    });
+    if (currentBrush.key !== brush.key) {
+      throw new Error(
+        "A fonte do pincel mudou durante o desenho; arme a ferramenta novamente."
+      );
+    }
+    return this.#commitSelectionBrush({
+      resolvedPath,
+      brush,
+      deltaMatrices: layout.deltaMatrices,
+      spacing: layout.frames.spacing
+    });
   }
 
   #arraySourceIds({ sourceIds, excludeIds, hierarchy }) {
@@ -410,7 +706,10 @@ export class PathToolService {
         sourceId: objectId,
         sourceName: object.name ?? objectId,
         geometry: Object.freeze(structuredClone(geometry)),
-        color: previewColor(object),
+        color: previewColor(
+          object,
+          this.selectionOperations.appearanceRuntime
+        ),
         worldMatrices: Object.freeze(layout.deltaMatrices.map(delta =>
           Object.freeze(delta.clone().multiply(sourceWorld).toArray())
         ))
@@ -562,6 +861,139 @@ export class PathToolService {
     });
   }
 
+  #arrayBrushLayout({
+    resolvedPath,
+    brush,
+    spacing,
+    align,
+    closed,
+    curveType,
+    tension,
+    twistDegrees,
+    maximumCopies
+  }) {
+    if (!brush || !Array.isArray(brush.pivot) || brush.pivot.length !== 3) {
+      throw new TypeError("Fonte do pincel inválida.");
+    }
+    const frames = samplePathFramesBySpacing({
+      points: resolvedPath.points,
+      spacing: positive(spacing, "spacing"),
+      maximumSamples: integerAtLeast(
+        maximumCopies,
+        1,
+        "maximumCopies"
+      ),
+      closed: closed === undefined ? resolvedPath.closed : Boolean(closed),
+      curveType,
+      tension: finite(tension, "tension"),
+      twistDegrees: finite(twistDegrees, "twistDegrees")
+    });
+    const firstFrame = new THREE.Quaternion().fromArray(
+      frames.quaternions[0]
+    );
+    const firstFrameInverse = firstFrame.clone().invert();
+    const deltaMatrices = frames.positions.map((point, index) => {
+      const frame = new THREE.Quaternion().fromArray(
+        frames.quaternions[index]
+      );
+      const relativeRotation = align
+        ? frame.clone().multiply(firstFrameInverse)
+        : new THREE.Quaternion();
+      return new THREE.Matrix4()
+        .makeTranslation(...point)
+        .multiply(
+          new THREE.Matrix4().makeRotationFromQuaternion(relativeRotation)
+        )
+        .multiply(new THREE.Matrix4().makeTranslation(
+          -brush.pivot[0],
+          -brush.pivot[1],
+          -brush.pivot[2]
+        ));
+    });
+    return Object.freeze({
+      brush,
+      frames,
+      deltaMatrices: Object.freeze(deltaMatrices)
+    });
+  }
+
+  #commitSelectionBrush({
+    resolvedPath,
+    brush,
+    deltaMatrices,
+    spacing
+  }) {
+    const copies = deltaMatrices.length;
+    const state = this.sandbox.getSnapshot();
+    const hierarchy = new HierarchyIndex(state.objects);
+    const rootIds = this.#arraySourceIds({
+      sourceIds: brush.sourceIds,
+      excludeIds: [],
+      hierarchy
+    });
+    const cloned = cloneHierarchySubtrees(state.objects, {
+      rootIds,
+      copies,
+      createId: () => crypto.randomUUID(),
+      rename: ({ name, copyIndex }) =>
+        `${name ?? "Objeto"} · pincel ${copyIndex}`
+    });
+    const desired = [];
+    cloned.copies.forEach((copy, copyArrayIndex) => {
+      const delta = deltaMatrices[copyArrayIndex];
+      copy.rootIds.forEach((cloneId, rootIndex) => {
+        const sourceId = cloned.sourceRootIds[rootIndex];
+        const sourceWorld = new THREE.Matrix4().fromArray(
+          hierarchy.worldMatrixOf(sourceId)
+        );
+        desired.push({
+          id: cloneId,
+          worldMatrix: delta.clone().multiply(sourceWorld).toArray()
+        });
+      });
+    });
+    const combined = applyWorldTransforms(
+      [...state.objects, ...cloned.objects],
+      desired
+    );
+    const cloneIds = new Set(cloned.objects.map(object => object.id));
+    const transformedClones = combined.filter(object =>
+      cloneIds.has(object.id)
+    );
+    const changed = this.sandbox.dispatch({
+      type: "selection.duplicate",
+      source: "path-brush-selection",
+      sourceIds: cloned.sourceRootIds,
+      copyCount: copies,
+      spacing,
+      pathReference: summary(resolvedPath),
+      objects: transformedClones
+    });
+    if (changed) {
+      const lastRoots = cloned.copies.at(-1).rootIds;
+      this.editor.selection.replaceMany(lastRoots.map(objectId => ({
+        kind: "object",
+        regionId: this.selectionOperations.regionId,
+        objectId
+      })));
+    }
+    return Object.freeze({
+      changed,
+      tool: "array-brush-along-drawn-path",
+      sourceMode: "selection",
+      spacing,
+      count: copies,
+      sourceIds: Object.freeze(rootIds),
+      createdIds: Object.freeze(
+        transformedClones.map(object => object.id)
+      ),
+      activeIds: Object.freeze([
+        ...(cloned.copies.at(-1)?.rootIds ?? [])
+      ]),
+      reference: summary(resolvedPath)
+    });
+  }
+
   #assertCanMutate(action) {
     this.requireObjectMode(action);
   }
@@ -595,15 +1027,63 @@ function pointsPathReference({ points, closed, sourceRevision }) {
   });
 }
 
-function previewColor(object) {
+function previewColor(object, appearanceRuntime = null) {
+  let projected = object;
+  if (object.appearanceId && appearanceRuntime?.projectObject) {
+    try {
+      projected = appearanceRuntime.projectObject(object);
+    } catch {
+      projected = object;
+    }
+  }
   const candidate =
     object.instanceState?.color ??
-    object.material?.color ??
-    object.color ??
+    projected.material?.color ??
+    projected.color ??
     "#70c8ff";
   return /^#[0-9a-f]{6}$/i.test(String(candidate))
     ? String(candidate)
     : "#70c8ff";
+}
+
+function defaultGeometryDescriptor(registry, geometryType) {
+  const type = String(geometryType ?? "box").toLowerCase();
+  const description = registry.describe().find(entry => entry.type === type);
+  if (!description) {
+    throw new Error(`Geometria não registrada para o pincel: ${type}.`);
+  }
+  return registry.normalize(Object.fromEntries([
+    ["type", type],
+    ...description.parameters.map(parameter => [
+      parameter.id,
+      structuredClone(parameter.default)
+    ])
+  ]));
+}
+
+function geometryBounds(registry, descriptor, worldMatrix) {
+  const geometry = registry.create(descriptor);
+  try {
+    if (!geometry.boundingBox) geometry.computeBoundingBox();
+    if (!geometry.boundingBox) return new THREE.Box3();
+    return geometry.boundingBox.clone().applyMatrix4(worldMatrix);
+  } finally {
+    geometry.dispose();
+  }
+}
+
+function boundsSpacing(bounds) {
+  if (!bounds || bounds.isEmpty()) return 0.1;
+  const size = bounds.getSize(new THREE.Vector3());
+  return Math.max(0.01, size.x, size.y, size.z);
+}
+
+function colorValue(value) {
+  const color = String(value ?? "#6699cc");
+  if (!/^#[0-9a-f]{6}$/i.test(color)) {
+    throw new TypeError("A cor do pincel deve usar a forma #rrggbb.");
+  }
+  return color.toLowerCase();
 }
 
 function average(points) {

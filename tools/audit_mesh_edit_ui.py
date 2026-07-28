@@ -120,12 +120,19 @@ for needle in [
     'id="edit-hud-adaptive-order"',
     'id="edit-create-reference"',
     'id="edit-material-apply"',
-    'id="edit-light-apply"'
+    'id="edit-light-apply"',
+    'id="path-sketch-sample"',
+    'id="path-sketch-source"',
+    'id="path-sketch-geometry"',
+    'id="path-sketch-source-color"',
+    'id="path-sketch-spacing-mode"',
+    'id="path-sketch-spacing-world"',
+    'id="path-sketch-spacing-scale"'
 ]:
     require("apps/web/index.html", needle)
 
 for needle in [
-    'static apiVersion = "mesh-edit-panel-v6"',
+    'static apiVersion = "mesh-edit-panel-v7"',
     '"mesh.topology.apply"',
     '"mesh.component.mode.set"',
     '"mesh.selection.apply"',
