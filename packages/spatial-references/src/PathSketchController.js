@@ -38,7 +38,7 @@ const DEFAULTS = Object.freeze({
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v4";
+  static apiVersion = "path-sketch-controller-v5";
 
   #active = null;
   #listeners = new Set();
@@ -52,6 +52,8 @@ export class PathSketchController {
   #previewFrame = null;
   #pendingPreviewPoints = null;
   #handoffFrames = [];
+  #pendingCommit = null;
+  #commitObservers = [];
 
   constructor({
     renderer,
@@ -148,6 +150,8 @@ export class PathSketchController {
       ),
       pointerId: null,
       drawing: false,
+      committing: false,
+      commitRequestId: null,
       screenPoints: [],
       points: [],
       previewCount: 0,
@@ -166,6 +170,13 @@ export class PathSketchController {
 
   cancel() {
     if (!this.#active) return this.status();
+    if (this.#active.committing) {
+      this.#active.error =
+        "A publicação do traço ainda está pendente; aguarde a confirmação.";
+      this.#notify();
+      return this.status();
+    }
+    this.#clearCommitObservation();
     this.#finishInteraction({ restoreTool: true });
     this.#active = null;
     this.#updatePreview([]);
@@ -180,6 +191,8 @@ export class PathSketchController {
     return Object.freeze({
       active: Boolean(active),
       drawing: Boolean(active?.drawing),
+      committing: Boolean(active?.committing),
+      commitRequestId: active?.commitRequestId ?? null,
       pointCount: active?.points.length ?? 0,
       mode: active?.settings.mode ?? null,
       sourceIds: active
@@ -276,7 +289,13 @@ export class PathSketchController {
   }
 
   dispose() {
-    this.cancel();
+    this.#clearCommitObservation();
+    if (this.#active) {
+      this.#finishInteraction({ restoreTool: true });
+      this.#active = null;
+      this.#updatePreview([]);
+      this.#clearResultPreview();
+    }
     this.#bind(false);
     this.#cancelPreviewHandoff({ clear: true });
     this.#cancelPendingPreview();
@@ -298,7 +317,7 @@ export class PathSketchController {
 
   #onPointerDown = event => {
     const active = this.#active;
-    if (!active || active.drawing) return;
+    if (!active || active.drawing || active.committing) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const point = this.#worldPoint(event);
     if (!point) return;
@@ -369,27 +388,14 @@ export class PathSketchController {
             tension: active.settings.tension,
             color: active.settings.color
           });
-      this.onCompleted({
+      const completion = {
         result: active.lastResult,
         settings: structuredClone(active.settings),
         points: structuredClone(committedPoints),
         sourceIds: [...active.sourceIds],
         frame: structuredClone(active.frame)
-      });
-      active.error = null;
-      this.#clearInputPreview();
-      if (active.settings.continuous) {
-        active.pointerId = null;
-        active.points = [];
-        active.screenPoints = [];
-        active.arrayPlan = null;
-        this.#deferResultPreviewClear();
-      } else {
-        this.#finishInteraction({ restoreTool: true });
-        this.#active = null;
-        this.#deferResultPreviewClear();
-        this.onEnded({ reason: "completed" });
-      }
+      };
+      this.#beginCommitHandoff(completion);
     } catch (error) {
       active.error = error.message;
       active.points = [];
@@ -478,7 +484,7 @@ export class PathSketchController {
     }
     try {
       const previewPoints = active.settings.mode === "array"
-        ? prepareFreehandPoints(points, active.settings)
+        ? points
         : points;
       const prepared = this.pathTools.prepareSketchPoints({
         points: previewPoints,
@@ -596,6 +602,160 @@ export class PathSketchController {
       this.#handoffFrames.push(second);
     });
     this.#handoffFrames.push(first);
+  }
+
+  #beginCommitHandoff(completion) {
+    const active = this.#active;
+    if (!active) return;
+    const createdIds = resultCreatedIds(completion?.result);
+    if (!completion?.result?.changed || !createdIds.length) {
+      throw new Error("O comando do traço não publicou objetos.");
+    }
+    if (this.#committedObjectsVisible(createdIds)) {
+      this.#completeCommittedStroke(completion);
+      return;
+    }
+
+    const coordination = this.pathTools.sandbox?.coordinationStatus?.();
+    const outcome = coordination?.lastOutcome;
+    const requestId = outcome?.status === "queued"
+      ? outcome.requestId ?? null
+      : null;
+    active.committing = true;
+    active.commitRequestId = requestId;
+    active.pointerId = null;
+    active.error = null;
+    this.#pendingCommit = {
+      active,
+      completion,
+      createdIds,
+      requestId
+    };
+    const sandbox = this.pathTools.sandbox;
+    if (typeof sandbox?.subscribe === "function") {
+      this.#commitObservers.push(
+        sandbox.subscribe(() => this.#observePendingCommit())
+      );
+    }
+    if (typeof sandbox?.subscribeCoordination === "function") {
+      this.#commitObservers.push(
+        sandbox.subscribeCoordination(
+          status => this.#observePendingCoordination(status)
+        )
+      );
+    }
+    this.#observePendingCommit();
+  }
+
+  #observePendingCommit() {
+    const pending = this.#pendingCommit;
+    if (!pending) return;
+    if (!this.#committedObjectsVisible(pending.createdIds)) return;
+    this.#completeCommittedStroke(pending.completion);
+  }
+
+  #observePendingCoordination(status) {
+    const pending = this.#pendingCommit;
+    if (!pending || !status?.lastOutcome) return;
+    const outcome = status.lastOutcome;
+    if (pending.requestId && outcome.requestId !== pending.requestId) return;
+    if (outcome.status === "accepted") {
+      this.#observePendingCommit();
+      return;
+    }
+    if (!String(outcome.status).startsWith("rejected")) return;
+    const detail = outcome.error ? `: ${outcome.error}` : "";
+    this.#failPendingCommit(
+      `A publicação do traço foi rejeitada (${outcome.status})${detail}.`
+    );
+  }
+
+  #committedObjectsVisible(createdIds) {
+    const getObject = this.pathTools.sandbox?.getObject;
+    if (typeof getObject === "function") {
+      return createdIds.every(id =>
+        Boolean(getObject.call(this.pathTools.sandbox, id))
+      );
+    }
+    const objects = this.pathTools.sandbox?.getSnapshot?.().objects;
+    if (!Array.isArray(objects)) return false;
+    const available = new Set(objects.map(object => String(object.id)));
+    return createdIds.every(id => available.has(String(id)));
+  }
+
+  #completeCommittedStroke(completion) {
+    const active = this.#pendingCommit?.active ?? this.#active;
+    if (!active || active !== this.#active) return;
+    const observedAsynchronously = Boolean(this.#pendingCommit);
+    this.#clearCommitObservation();
+    active.committing = false;
+    active.commitRequestId = null;
+    active.error = null;
+    let completionError = null;
+    try {
+      this.onCompleted(completion);
+    } catch (error) {
+      completionError = error;
+    }
+    this.#clearInputPreview();
+    if (active.settings.continuous) {
+      if (active.settings.mode === "array") {
+        const previousBrush = active.brush;
+        const nextBrush = this.pathTools.rebaseArrayBrush({
+          brush: previousBrush,
+          createdIds: resultCreatedIds(completion?.result)
+        });
+        active.brush = nextBrush;
+        active.sourceIds = nextBrush.sourceIds ?? Object.freeze([]);
+        active.resolvedSpacing = this.pathTools.resolveArrayBrushSpacing({
+          brush: nextBrush,
+          spacingMode: active.settings.spacingMode,
+          spacingWorld: active.settings.spacingWorld,
+          spacingScale: active.settings.spacingScale
+        });
+        if (nextBrush.key !== previousBrush?.key) {
+          this.#previewArrayCache.configure(nextBrush);
+        }
+      }
+      active.pointerId = null;
+      active.points = [];
+      active.screenPoints = [];
+      active.arrayPlan = null;
+      active.error = completionError
+        ? `Traço publicado; falha ao registrar repetição: ${
+            completionError?.message ?? String(completionError)
+          }`
+        : null;
+      this.#deferResultPreviewClear();
+    } else {
+      this.#finishInteraction({ restoreTool: true });
+      this.#active = null;
+      this.#deferResultPreviewClear();
+      this.onEnded({ reason: "completed" });
+    }
+    if (observedAsynchronously) this.#notify();
+  }
+
+  #failPendingCommit(message) {
+    const pending = this.#pendingCommit;
+    if (!pending || pending.active !== this.#active) return;
+    const active = pending.active;
+    this.#clearCommitObservation();
+    active.committing = false;
+    active.commitRequestId = null;
+    active.error = String(message);
+    this.#notify();
+  }
+
+  #clearCommitObservation() {
+    for (const unsubscribe of this.#commitObservers.splice(0)) {
+      try {
+        unsubscribe?.();
+      } catch {
+        // A observação é auxiliar; a publicação já possui sua própria autoridade.
+      }
+    }
+    this.#pendingCommit = null;
   }
 
   #cancelPreviewHandoff({ clear = false } = {}) {
@@ -851,6 +1011,17 @@ function brushSettingsKey(settings) {
     settings.sourceMode === "catalog" ? settings.sourceGeometry : null,
     settings.sourceMode === "catalog" ? settings.sourceColor : null
   ]);
+}
+
+function resultCreatedIds(result) {
+  const ids = Array.isArray(result?.createdIds)
+    ? result.createdIds
+    : result?.id !== undefined && result?.id !== null
+      ? [result.id]
+      : Array.isArray(result?.activeIds)
+        ? result.activeIds
+        : [];
+  return [...new Set(ids.map(String).filter(Boolean))];
 }
 
 function geometryDescriptor(value) {

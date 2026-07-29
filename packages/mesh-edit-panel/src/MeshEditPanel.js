@@ -2,6 +2,9 @@ const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 
 export class MeshEditPanel {
   static apiVersion = "mesh-edit-panel-v9";
+  #creationReferencesSource = null;
+  #referenceOptionsSource = null;
+  #referenceById = new Map();
 
   constructor({
     root,
@@ -64,17 +67,29 @@ export class MeshEditPanel {
   refresh(snapshot = null) {
     const state = snapshot ?? this.query("mesh.edit.status");
     const context = this.query("edit.context.status");
-    const references = this.query("path.references.list") ?? [];
+    const references = this.query("path.references.list", {
+      includeSelection: false
+    }) ?? [];
+    const selection = this.query("selection.snapshot");
+    const activeObjectId = selection.activeMember?.objectId ?? null;
+    const selectedReference = activeObjectId
+      ? this.query("path.references.list", {
+          includeSelection: false,
+          ids: [activeObjectId]
+        })?.[0] ?? null
+      : null;
     const sketch = this.query("path.sketch.status");
     const placement = this.query("object.placement.status");
     const transform = this.query("viewer.transform.settings");
     this.latest = state;
     this.latestContext = context;
     this.latestReferences = references;
+    this.latestSelection = selection;
+    this.latestActiveReference = selectedReference;
     this.latestSketch = sketch;
     this.#refreshCreationReferences();
     const active = Boolean(state.active);
-    this.#refreshReferenceSelects(references);
+    this.#refreshReferenceSelects(references, selectedReference);
     this.root.dataset.active = active ? "true" : "false";
     this.root.dataset.subjectLevel = context.subjectLevel;
     for (const button of this.root.querySelectorAll("[data-edit-workspace-subject]")) {
@@ -208,7 +223,6 @@ export class MeshEditPanel {
     this.#refreshSketchStatus(sketch);
     this.#element("edit-create-object").dataset.active = placement.active ? "true" : "false";
     this.#element("edit-cancel-placement").disabled = !placement.active;
-    const selectedReference = references.find(reference => reference.selected);
     const selectedPath = selectedReference?.geometryType === "tube";
     this.#element("path-convert-bezier").disabled =
       active || !selectedPath || selectedReference?.curveType === "bezier";
@@ -439,22 +453,33 @@ export class MeshEditPanel {
 
   #refreshCreationReferences() {
     const select = this.#element("edit-create-reference");
-    const previous = select.value;
     const objects = this.query("scene.objects.list") ?? [];
+    if (objects === this.#creationReferencesSource) return;
+    const previous = select.value;
+    if (isAppendOnlyList(this.#creationReferencesSource, objects)) {
+      select.append(...objects
+        .slice(this.#creationReferencesSource.length)
+        .map(object => this.#sceneObjectOption(object)));
+      this.#creationReferencesSource = objects;
+      return;
+    }
     select.replaceChildren(...[
       { id: "", name: "Nenhum; usar valores padrão", kind: "" },
       ...objects
-    ].map(object => {
-      const option = document.createElement("option");
-      option.value = object.id;
-      option.textContent = object.id
-        ? `${object.name} · ${object.kind}`
-        : object.name;
-      return option;
-    }));
+    ].map(object => this.#sceneObjectOption(object)));
     if ([...select.options].some(option => option.value === previous)) {
       select.value = previous;
     }
+    this.#creationReferencesSource = objects;
+  }
+
+  #sceneObjectOption(object) {
+    const option = this.root.ownerDocument.createElement("option");
+    option.value = object.id;
+    option.textContent = object.id
+      ? `${object.name ?? object.id} · ${object.kind}`
+      : object.name;
+    return option;
   }
 
   #bindBrushGeometryParameters() {
@@ -550,7 +575,7 @@ export class MeshEditPanel {
   #creationReference() {
     const id = this.#element("edit-create-reference").value;
     if (!id) return null;
-    return (this.query("scene.objects.list") ?? []).find(object => object.id === id) ?? null;
+    return this.query("scene.object.get", { id }) ?? null;
   }
 
   #syncMaterialColor(value) {
@@ -1322,29 +1347,62 @@ export class MeshEditPanel {
     });
   }
 
-  #refreshReferenceSelects(references) {
+  #refreshReferenceSelects(references, activeReference = null) {
     const pathSelect = this.#element("path-reference-object");
     const profileSelect = this.#element("path-profile-object");
     const previousPath = pathSelect.value;
     const previousProfile = profileSelect.value;
-    const pathOptions = [
-      { value: "@selection-origins", label: "Origens dos objetos selecionados" },
-      ...references
-        .filter(reference => reference.pathExtractions?.length)
-        .map(reference => ({
-          value: reference.id,
-          label: `${reference.name} · ${reference.kind}`
-        }))
-    ];
-    const profileOptions = references
-      .filter(reference => reference.profileExtractions?.length)
-      .map(reference => ({
-        value: reference.id,
-        label: `${reference.name} · ${reference.kind}`
-      }));
-    fillSelect(pathSelect, pathOptions, previousPath);
-    fillSelect(profileSelect, profileOptions, previousProfile);
-    const activeReference = references.find(reference => reference.selected);
+    if (references !== this.#referenceOptionsSource) {
+      if (isAppendOnlyList(this.#referenceOptionsSource, references)) {
+        const appended = references.slice(this.#referenceOptionsSource.length);
+        for (const reference of appended) {
+          this.#referenceById.set(String(reference.id), reference);
+        }
+        appendSelectOptions(
+          pathSelect,
+          appended
+            .filter(reference => reference.pathExtractions?.length)
+            .map(reference => ({
+              value: reference.id,
+              label: `${reference.name} · ${reference.kind}`
+            }))
+        );
+        appendSelectOptions(
+          profileSelect,
+          appended
+            .filter(reference => reference.profileExtractions?.length)
+            .map(reference => ({
+              value: reference.id,
+              label: `${reference.name} · ${reference.kind}`
+            }))
+        );
+      } else {
+        const pathOptions = [
+          {
+            value: "@selection-origins",
+            label: "Origens dos objetos selecionados"
+          },
+          ...references
+            .filter(reference => reference.pathExtractions?.length)
+            .map(reference => ({
+              value: reference.id,
+              label: `${reference.name} · ${reference.kind}`
+            }))
+        ];
+        const profileOptions = references
+          .filter(reference => reference.profileExtractions?.length)
+          .map(reference => ({
+            value: reference.id,
+            label: `${reference.name} · ${reference.kind}`
+          }));
+        fillSelect(pathSelect, pathOptions, previousPath);
+        fillSelect(profileSelect, profileOptions, previousProfile);
+        this.#referenceById = new Map(
+          references.map(reference => [String(reference.id), reference])
+        );
+      }
+      this.#referenceOptionsSource = references;
+    }
     if (!previousPath && activeReference?.pathExtractions?.length) {
       pathSelect.value = activeReference.id;
     }
@@ -1355,11 +1413,10 @@ export class MeshEditPanel {
   }
 
   #refreshExtractionSelects() {
-    const references = this.latestReferences ?? [];
     const pathValue = this.#element("path-reference-object").value;
     const profileValue = this.#element("path-profile-object").value;
-    const pathReference = references.find(reference => reference.id === pathValue);
-    const profileReference = references.find(reference => reference.id === profileValue);
+    const pathReference = this.#referenceById.get(String(pathValue));
+    const profileReference = this.#referenceById.get(String(profileValue));
     fillSelect(
       this.#element("path-reference-extraction"),
       (pathValue === "@selection-origins"
@@ -2040,6 +2097,24 @@ function fillSelect(select, options, preferred) {
     return element;
   }));
   if (preferred && available.has(preferred)) select.value = preferred;
+}
+
+function appendSelectOptions(select, options) {
+  const document = select.ownerDocument;
+  select.append(...options.map(option => {
+    const element = document.createElement("option");
+    element.value = option.value;
+    element.textContent = option.label;
+    return element;
+  }));
+}
+
+function isAppendOnlyList(previous, current) {
+  if (!Array.isArray(previous) || !Array.isArray(current)) return false;
+  if (current.length <= previous.length) return false;
+  if (!previous.length) return true;
+  return current[0] === previous[0] &&
+    current[previous.length - 1] === previous[previous.length - 1];
 }
 
 function loadCreationDefaults() {

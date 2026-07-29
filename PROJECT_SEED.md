@@ -149,7 +149,8 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente o handoff e o prefixo causal do pincel `0039g` em mobile e
+Validar visualmente a correção `0039g1` — dois traços persistentes consecutivos,
+handoff observável e custo constante de seleção/ferramentas — em mobile e
 avançar em incrementos independentes:
 
 1. redefinição paramétrica pelo Inspector, com preview e commit atômico;

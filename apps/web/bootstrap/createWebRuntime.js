@@ -1,6 +1,6 @@
 import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-0020b-a";
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260725-0029f1";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260729-0039g1";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
 import {
@@ -9,18 +9,18 @@ import {
   ViewerCameraController,
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0037c";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260729-0039g1";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260728-0039a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260729-0039g";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
-import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260728-0039a";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260729-0039g";
+import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260729-0039g1";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260728-0039d";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0039g";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0039g1";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -79,16 +79,16 @@ import {
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0037c";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260729-0039g1";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0039g";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0039g1";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260728-0039a";
+} from "../../../packages/edit-context/src/index.js?build=20260729-0039g1";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260728-0039d";
+} from "../../../packages/edit-hud/src/index.js?build=20260729-0039g1";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -103,7 +103,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260729-0039g";
+} from "../../../packages/spatial-references/src/index.js?build=20260729-0039g1";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -120,7 +120,7 @@ import {
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260725-0029f1";
+} from "../../../packages/local-viewers/src/index.js?build=20260729-0039g1";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v4";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -398,6 +398,19 @@ export async function createWebRuntime({
     migrate: createLegacyToolParameterMigration()
   });
   const toolLifecycle = new ToolLifecycleController({ editor });
+  const spatialReferences = new SpatialReferenceResolver({
+    sandbox,
+    editor,
+    geometryRegistry
+  });
+  /*
+   * Este observador precisa preceder consumidores que possam selecionar
+   * objetos durante a própria notificação do sandbox. Assim nenhum HUD cai
+   * na reconstrução integral por ter observado o snapshot antes do cache.
+   */
+  const unsubscribeSpatialReferences = sandbox.subscribe(
+    (state, changes) => spatialReferences.applyChanges(state, changes)
+  );
   const selectionOperations = new SelectionOperations({
     editor,
     sandbox,
@@ -420,11 +433,6 @@ export async function createWebRuntime({
     renderer,
     meshEditor,
     toolLifecycle
-  });
-  const spatialReferences = new SpatialReferenceResolver({
-    sandbox,
-    editor,
-    geometryRegistry
   });
   const pathTools = new PathToolService({
     resolver: spatialReferences,
@@ -985,13 +993,16 @@ export async function createWebRuntime({
       meshEditor.status()
     )
     .register("scene.objects.list", () =>
-      Object.freeze(sandbox.getSnapshot().objects.map(object => Object.freeze({
-        id: object.id,
-        name: object.name ?? object.id,
-        kind: object.kind,
-        position: Object.freeze([...(object.position ?? [0, 0, 0])]),
-        rotation: Object.freeze([...(object.rotation ?? [0, 0, 0, 1])])
-      })))
+      sandbox.getSnapshot().objects
+    )
+    .register("scene.object.get", ({ id } = {}) =>
+      id === undefined || id === null
+        ? null
+        : sandbox.getObject?.(id) ??
+          sandbox.getSnapshot().objects.find(
+            object => String(object.id) === String(id)
+          ) ??
+          null
     )
     .register("geometry.catalog", () =>
       geometryRegistry.describe()
@@ -999,8 +1010,8 @@ export async function createWebRuntime({
     .register("geometry.descriptor.normalize", ({ geometry } = {}) =>
       geometryRegistry.normalize(geometry)
     )
-    .register("path.references.list", () =>
-      pathTools.listReferences()
+    .register("path.references.list", args =>
+      pathTools.listReferences(args)
     )
     .register("path.reference.inspect", args =>
       pathTools.inspect(args)
@@ -1387,6 +1398,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeEditContext)
     .onDispose(unsubscribeMeshEdit)
     .onDispose(unsubscribeSelection)
+    .onDispose(unsubscribeSpatialReferences)
     .onDispose(unsubscribeSandbox);
 
   return Object.freeze({

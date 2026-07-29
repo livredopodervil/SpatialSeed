@@ -27,7 +27,7 @@ const ARRAY_BRUSH_PLAN_TYPE = "array-brush-stroke-plan";
 const ARRAY_BRUSH_PLAN_VERSION = 1;
 
 export class PathToolService {
-  static apiVersion = "path-tool-service-v4";
+  static apiVersion = "path-tool-service-v5";
   #issuedArrayBrushPlans = new WeakSet();
 
   constructor({
@@ -52,8 +52,8 @@ export class PathToolService {
     this.requireObjectMode = requireObjectMode;
   }
 
-  listReferences() {
-    return this.resolver.listObjects();
+  listReferences(options = {}) {
+    return this.resolver.listObjects(options);
   }
 
   inspect({ kind = "path", reference = {} } = {}) {
@@ -571,6 +571,62 @@ export class PathToolService {
       autoSpacing: boundsSpacing(bounds),
       renderableCount,
       entries: Object.freeze(entries)
+    });
+  }
+
+  rebaseArrayBrush({
+    brush,
+    createdIds = []
+  } = {}) {
+    if (!brush?.key || !Array.isArray(brush.entries)) {
+      throw new TypeError("Pincel geométrico inválido para rearmamento.");
+    }
+    const previousRevision = Number(brush.sourceRevision);
+    const currentRevision = Number(this.sandbox.revision);
+    if (
+      !Number.isInteger(previousRevision) ||
+      previousRevision < 0 ||
+      !Number.isInteger(currentRevision) ||
+      currentRevision < previousRevision
+    ) {
+      throw new Error("Revisão inválida ao rearmar o pincel geométrico.");
+    }
+    if (currentRevision === previousRevision) return brush;
+
+    const created = new Set(
+      (Array.isArray(createdIds) ? createdIds : [])
+        .map(String)
+    );
+    const sourceNodes = new Set(
+      (brush.sourceNodeIds ?? brush.sourceIds ?? [])
+        .map(String)
+    );
+    const ownAppendOnlyCommit =
+      currentRevision === previousRevision + 1 &&
+      created.size > 0 &&
+      [...created].every(id => !sourceNodes.has(id));
+
+    /*
+     * O catálogo independe da cena. Para uma fonte selecionada, a publicação
+     * do próprio traço só acrescenta novos IDs e não altera a captura. Nesses
+     * dois caminhos avançamos apenas a revisão e conservamos descritores,
+     * matrizes, geometrias e lotes pela mesma referência.
+     */
+    if (brush.sourceMode === "catalog" || ownAppendOnlyCommit) {
+      return Object.freeze({
+        ...brush,
+        sourceRevision: currentRevision
+      });
+    }
+
+    /*
+     * Se outra edição ocorreu entre captura e rearmamento, recapture somente
+     * a subárvore-fonte explícita. O novo key força a reconstrução visual
+     * apenas quando a própria fonte realmente mudou.
+     */
+    return this.captureArrayBrush({
+      sourceMode: "selection",
+      sourceIds: brush.sourceIds
     });
   }
 

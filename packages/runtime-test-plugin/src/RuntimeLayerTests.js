@@ -25,7 +25,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260725-0029f1";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260729-0039g1";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -91,7 +91,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260729-0039g";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260729-0039g1";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -119,10 +119,10 @@ import {
   LocalViewerSessionDirectory,
   createIndependentProjectUrl,
   createSharedViewerUrl
-} from "../../local-viewers/src/index.js?build=20260725-0029f1";
+} from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260727-0037c";
+} from "../../region-box/src/reducer.js?build=20260729-0039g1";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -185,12 +185,12 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260727-0037c";
+} from "../../mesh-editor-core/src/index.js?build=20260729-0039g1";
 import {
   EditContextController,
   axesFromConstraint,
   constraintFromAxes
-} from "../../edit-context/src/index.js?build=20260728-0039a";
+} from "../../edit-context/src/index.js?build=20260729-0039g1";
 import {
   createEditorCommands
 } from "../../editor-commands/src/EditorCommands.js?build=20260728-0039d";
@@ -210,7 +210,7 @@ import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
-} from "../../edit-hud/src/index.js?build=20260728-0039a";
+} from "../../edit-hud/src/index.js?build=20260729-0039g1";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -227,7 +227,7 @@ import {
   samplePathFrames,
   samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "../../spatial-references/src/index.js?build=20260729-0039g";
+} from "../../spatial-references/src/index.js?build=20260729-0039g1";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -731,6 +731,28 @@ export function createRuntimeLayerTests() {
         assertEqual(notifications > baseline, true);
         unsubscribe();
         context.dispose();
+      },
+
+      "mudança de ferramenta emite um único contexto observável"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
+        const context = new EditContextController({
+          ...fixture,
+          toolLifecycle: lifecycle
+        });
+        let notifications = 0;
+        const unsubscribe = context.subscribe(() => {
+          notifications += 1;
+        });
+        context.setTool("rotate");
+        assertEqual(notifications, 2);
+        assertEqual(context.status().tool, "rotate");
+        unsubscribe();
+        context.dispose();
+        lifecycle.dispose();
       }
     },
 
@@ -1219,8 +1241,8 @@ export function createRuntimeLayerTests() {
             activeMember: { objectId: "path" }
           },
           references: [
-            { id: "path", selected: true, pathExtractions: ["centerline"], profileExtractions: [] },
-            { id: "profile", selected: true, pathExtractions: [], profileExtractions: ["contour"] }
+            { id: "path", pathExtractions: ["centerline"], profileExtractions: [] },
+            { id: "profile", pathExtractions: [], profileExtractions: ["contour"] }
           ]
         });
         assertEqual(result.canTubeFromObject, true);
@@ -1545,6 +1567,109 @@ export function createRuntimeLayerTests() {
           references.get("declared-profile").profileExtractions.includes("contour"),
           true
         );
+      },
+
+      "catálogo de referências reutiliza cache em ferramentas e cresce incrementalmente"() {
+        const objects = Array.from({ length: 256 }, (_, index) => ({
+          id: `passive-${index}`,
+          kind: "box",
+          name: `Passivo ${index}`,
+          position: [index, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+          geometry: {
+            type: "box",
+            size: [1, 1, 1],
+            segments: [1, 1, 1]
+          }
+        }));
+        const region = new Region(
+          {
+            id: "reference-cache-region",
+            name: "Reference cache",
+            type: "box-region"
+          },
+          { schemaVersion: 1, objects }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        const geometryRegistry = createDefaultGeometryRegistry();
+        const describeLegacyObject =
+          geometryRegistry.describeLegacyObject.bind(geometryRegistry);
+        let descriptorReads = 0;
+        geometryRegistry.describeLegacyObject = object => {
+          descriptorReads += 1;
+          return describeLegacyObject(object);
+        };
+        const resolver = new SpatialReferenceResolver({
+          sandbox,
+          editor,
+          geometryRegistry
+        });
+        let latestState = null;
+        let latestChanges = null;
+        const unsubscribe = sandbox.subscribe((state, changes) => {
+          latestState = state;
+          latestChanges = changes;
+        });
+        try {
+          const first = resolver.listObjects({
+            includeSelection: false
+          });
+          const firstDescriptorReads = descriptorReads;
+          editor.setToolMode("rotate");
+          editor.selection.replace({
+            kind: "object",
+            regionId: region.descriptor.id,
+            objectId: "passive-255"
+          });
+          const afterToolChange = resolver.listObjects({
+            includeSelection: false
+          });
+          assertEqual(afterToolChange === first, true);
+          assertEqual(descriptorReads, firstDescriptorReads);
+          const selectedOnly = resolver.listObjects({
+            includeSelection: false,
+            ids: ["passive-255"]
+          });
+          assertEqual(selectedOnly.length, 1);
+          assertEqual(selectedOnly[0] === first[255], true);
+
+          sandbox.dispatch({
+            type: "object.create",
+            id: "new-path",
+            kind: "tube",
+            name: "Novo caminho",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            geometry: {
+              type: "tube",
+              points: [[0, 0, 0], [1, 0, 0]],
+              tubularSegments: 8,
+              radius: 0.1,
+              radialSegments: 6,
+              closed: false,
+              curveType: "polyline",
+              tension: 0.5
+            }
+          });
+          resolver.applyChanges(latestState, latestChanges);
+          const extended = resolver.listObjects({
+            includeSelection: false
+          });
+          assertEqual(extended.length, first.length + 1);
+          assertEqual(extended[0] === first[0], true);
+          assertEqual(
+            extended.at(-1).pathExtractions.includes("centerline"),
+            true
+          );
+          assertEqual(
+            descriptorReads - firstDescriptorReads <= 1,
+            true
+          );
+        } finally {
+          unsubscribe();
+        }
       },
 
       "serviço ajusta amostras livres para controles Bézier editáveis"() {
@@ -2300,6 +2425,461 @@ export function createRuntimeLayerTests() {
         } finally {
           unsubscribe();
           controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      "controlador persistente confirma traços consecutivos sem recapturar o lote"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        delete globalThis.requestAnimationFrame;
+        delete globalThis.cancelAnimationFrame;
+        const fixture = createPathToolFixture();
+        const renderer = createPathSketchRendererStub();
+        const completions = [];
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          onCompleted: value => {
+            completions.push(value);
+            if (completions.length === 1) {
+              throw new Error("falha de pós-commit simulada");
+            }
+          }
+        });
+        const draw = (pointerId, y) => {
+          renderer.canvas.emit(
+            "pointerdown",
+            pathPointerEvent(pointerId, 20, y)
+          );
+          renderer.canvas.emit(
+            "pointermove",
+            pathPointerEvent(pointerId, 80, y)
+          );
+          renderer.canvas.emit(
+            "pointerup",
+            pathPointerEvent(pointerId, 80, y)
+          );
+        };
+        try {
+          controller.begin({
+            mode: "array",
+            sourceMode: "catalog",
+            geometryType: "sphere",
+            sourceGeometry: {
+              type: "sphere",
+              radius: 0.25,
+              widthSegments: 12,
+              heightSegments: 8
+            },
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0,
+            spacingMode: "world",
+            spacingWorld: 0.5,
+            continuous: true
+          });
+          const meshIds = controller.status().previewResources.meshIds;
+
+          draw(1, 45);
+          const afterFirst = controller.status();
+          assertEqual(afterFirst.active, true);
+          assertEqual(afterFirst.drawing, false);
+          assertEqual(afterFirst.committing, false);
+          assertEqual(
+            afterFirst.error.includes("falha ao registrar repetição"),
+            true
+          );
+          assertEqual(completions.length, 1);
+          assertEqual(
+            fixture.sandbox.getHistoryDiagnostics().commandCount,
+            1
+          );
+
+          draw(2, 55);
+          const afterSecond = controller.status();
+          assertEqual(afterSecond.active, true);
+          assertEqual(afterSecond.drawing, false);
+          assertEqual(afterSecond.committing, false);
+          assertEqual(afterSecond.error, null);
+          assertEqual(completions.length, 2);
+          assertEqual(
+            fixture.sandbox.getHistoryDiagnostics().commandCount,
+            2
+          );
+          assertDeepEqual(
+            afterSecond.previewResources.meshIds,
+            meshIds
+          );
+          assertEqual(
+            afterSecond.previewResources.diagnostics.meshBuilds,
+            1
+          );
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      "controlador observa a publicação de tubo pelo id criado"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        delete globalThis.requestAnimationFrame;
+        delete globalThis.cancelAnimationFrame;
+        const fixture = createPathToolFixture();
+        const renderer = createPathSketchRendererStub();
+        let completed = null;
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          onCompleted: value => { completed = value; }
+        });
+        try {
+          controller.begin({
+            mode: "tube",
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0
+          });
+          renderer.canvas.emit(
+            "pointerdown",
+            pathPointerEvent(1, 20, 50)
+          );
+          renderer.canvas.emit(
+            "pointermove",
+            pathPointerEvent(1, 80, 50)
+          );
+          renderer.canvas.emit(
+            "pointerup",
+            pathPointerEvent(1, 80, 50)
+          );
+          assert(completed);
+          assertEqual(completed.result.changed, true);
+          assertEqual(typeof completed.result.id, "string");
+          assertEqual(controller.status().active, false);
+          assertEqual(
+            fixture.sandbox.getHistoryDiagnostics().commandCount,
+            1
+          );
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      "controlador envia ao pincel somente pontos causais aceitos"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        delete globalThis.requestAnimationFrame;
+        delete globalThis.cancelAnimationFrame;
+        const fixture = createPathToolFixture();
+        const previewInputs = [];
+        const prepareSketchPoints =
+          fixture.service.prepareSketchPoints.bind(fixture.service);
+        fixture.service.prepareSketchPoints = options => {
+          previewInputs.push(structuredClone(options.points));
+          return prepareSketchPoints(options);
+        };
+        const renderer = createPathSketchRendererStub();
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        try {
+          controller.begin({
+            mode: "array",
+            sourceMode: "catalog",
+            geometryType: "box",
+            planeSource: "world-xy",
+            curveType: "centripetal",
+            inputSamplePixels: 1,
+            spacingMode: "world",
+            spacingWorld: 0.5
+          });
+          renderer.canvas.emit("pointerdown", pathPointerEvent(1, 20, 60));
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 50, 40));
+          const first = previewInputs.at(-1);
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 80, 60));
+          const extended = previewInputs.at(-1);
+
+          assertEqual(first.length, 2);
+          assertEqual(extended.length, 3);
+          assertDeepEqual(extended.slice(0, first.length), first);
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      async "controlador mantém o preview até a réplica observar o commit"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        const pendingFrames = new Map();
+        let nextFrameId = 1;
+        globalThis.requestAnimationFrame = callback => {
+          const id = nextFrameId;
+          nextFrameId += 1;
+          pendingFrames.set(id, callback);
+          return id;
+        };
+        globalThis.cancelAnimationFrame = id => {
+          pendingFrames.delete(id);
+        };
+        const runNextFrame = () => {
+          const entry = pendingFrames.entries().next().value;
+          if (!entry) throw new Error("Frame visual esperado ausente.");
+          const [id, callback] = entry;
+          pendingFrames.delete(id);
+          callback(0);
+        };
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        const editor = new EditorState();
+        const geometryRegistry = createDefaultGeometryRegistry();
+        const appearanceRuntime = new AppearanceRuntime();
+        const selectionOperations = new SelectionOperations({
+          editor,
+          sandbox: pair.replica.coordinated,
+          regionId: pair.replica.region.id,
+          geometryRegistry,
+          appearanceRuntime
+        });
+        const resolver = new SpatialReferenceResolver({
+          sandbox: pair.replica.coordinated,
+          editor,
+          geometryRegistry
+        });
+        const service = new PathToolService({
+          resolver,
+          selectionOperations,
+          sandbox: pair.replica.coordinated,
+          editor
+        });
+        let commitObservers = 0;
+        const subscribe =
+          pair.replica.coordinated.subscribe.bind(
+            pair.replica.coordinated
+          );
+        const subscribeCoordination =
+          pair.replica.coordinated.subscribeCoordination.bind(
+            pair.replica.coordinated
+          );
+        pair.replica.coordinated.subscribe = listener => {
+          commitObservers += 1;
+          const unsubscribe = subscribe(listener);
+          return () => {
+            commitObservers -= 1;
+            unsubscribe();
+          };
+        };
+        pair.replica.coordinated.subscribeCoordination = listener => {
+          commitObservers += 1;
+          const unsubscribe = subscribeCoordination(listener);
+          return () => {
+            commitObservers -= 1;
+            unsubscribe();
+          };
+        };
+        const renderer = createPathSketchRendererStub();
+        const completions = [];
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: service,
+          geometryRegistry,
+          onCompleted: value => completions.push(value)
+        });
+        const observedStatuses = [];
+        const unsubscribeController = controller.subscribe(
+          status => observedStatuses.push(status)
+        );
+        try {
+          controller.begin({
+            mode: "array",
+            sourceMode: "catalog",
+            geometryType: "sphere",
+            sourceGeometry: {
+              type: "sphere",
+              radius: 0.25,
+              widthSegments: 12,
+              heightSegments: 8
+            },
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0,
+            spacingMode: "world",
+            spacingWorld: 0.5,
+            continuous: true
+          });
+          renderer.canvas.emit("pointerdown", pathPointerEvent(1, 20, 50));
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 80, 50));
+          renderer.canvas.emit("pointerup", pathPointerEvent(1, 80, 50));
+          const previewGroup = renderer.scene.getObjectByName(
+            "path-sketch-array-preview"
+          );
+          assertEqual(completions.length, 0);
+          assertEqual(pair.replica.sandbox.objectCount, 0);
+          assertEqual(pendingFrames.size, 0);
+          assertEqual(previewGroup.visible, true);
+          assertEqual(commitObservers, 2);
+          assertEqual(observedStatuses.at(-1).committing, true);
+
+          await settleLocalViewers(20);
+
+          assertEqual(completions.length, 1);
+          assertEqual(commitObservers, 0);
+          assertEqual(observedStatuses.at(-1).active, true);
+          assertEqual(observedStatuses.at(-1).committing, false);
+          assertEqual(
+            pair.replica.sandbox.objectCount,
+            completions[0].result.createdIds.length
+          );
+          runNextFrame();
+          runNextFrame();
+          assertEqual(previewGroup.visible, false);
+
+          renderer.canvas.emit("pointerdown", pathPointerEvent(2, 20, 60));
+          renderer.canvas.emit("pointermove", pathPointerEvent(2, 80, 60));
+          renderer.canvas.emit("pointerup", pathPointerEvent(2, 80, 60));
+          assertEqual(completions.length, 1);
+          assertEqual(commitObservers, 2);
+          assertEqual(previewGroup.visible, true);
+          await settleLocalViewers(20);
+          assertEqual(completions.length, 2);
+          assertEqual(commitObservers, 0);
+          assertEqual(observedStatuses.at(-1).active, true);
+          assertEqual(observedStatuses.at(-1).committing, false);
+          assertEqual(
+            pair.replica.sandbox.objectCount,
+            completions.reduce(
+              (total, completion) =>
+                total + completion.result.createdIds.length,
+              0
+            )
+          );
+          runNextFrame();
+          runNextFrame();
+          assertEqual(previewGroup.visible, false);
+        } finally {
+          unsubscribeController();
+          controller.dispose();
+          pair.dispose();
           if (previousAddEventListener === undefined) {
             delete globalThis.addEventListener;
           } else {
@@ -7279,6 +7859,66 @@ assets: {
       "mudança desconhecida usa fallback integral"() {
         const result = classifyChanges([{ type: "future-change" }]);
         assertEqual(result.mode, "full");
+      },
+
+      "índice do sandbox acompanha criação transformação e histórico"() {
+        const region = new Region(
+          {
+            id: "sandbox-index-region",
+            name: "Sandbox index",
+            type: "box-region"
+          },
+          {
+            schemaVersion: 1,
+            objects: [{
+              id: "indexed-a",
+              kind: "box",
+              name: "A",
+              position: [0, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              size: [1, 1, 1]
+            }]
+          }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        assertEqual(sandbox.getObject("indexed-a").name, "A");
+        sandbox.dispatch({
+          type: "object.create",
+          id: "indexed-b",
+          name: "B",
+          position: [1, 0, 0],
+          size: [1, 1, 1]
+        });
+        assertEqual(sandbox.getObject("indexed-b").name, "B");
+        sandbox.dispatch({
+          type: "object.transform",
+          id: "indexed-b",
+          position: [3, 4, 5],
+          rotation: [0, 0, 0, 1],
+          scale: [2, 2, 2]
+        });
+        assertDeepEqual(
+          sandbox.getObject("indexed-b").position,
+          [3, 4, 5]
+        );
+        sandbox.undo();
+        assertDeepEqual(
+          sandbox.getObject("indexed-b").position,
+          [1, 0, 0]
+        );
+        sandbox.redo();
+        assertDeepEqual(
+          sandbox.getObject("indexed-b").position,
+          [3, 4, 5]
+        );
+        sandbox.dispatch({
+          type: "selection.delete",
+          ids: ["indexed-b"]
+        });
+        assertEqual(sandbox.getObject("indexed-b"), null);
+        sandbox.undo();
+        assertEqual(sandbox.getObject("indexed-b").name, "B");
       }
     },
 

@@ -1,4 +1,4 @@
-# Pincel causal, commit incremental e cor paramétrica — 0039g
+# Pincel causal, commit incremental e cor paramétrica — 0039g/0039g1
 
 ## Objetivo
 
@@ -12,6 +12,48 @@ movimento. Soltar o ponteiro publica esse plano em um único comando e um único
 undo, sem reconstruir a trajetória, reavaliar todas as expressões ou clonar
 novamente toda a fonte. O preview permanece visível por dois quadros durante a
 passagem para o renderer autoritativo.
+
+## Correção de integração e custo passivo — 0039g1
+
+O `0039g1` corrige uma regressão que aparecia principalmente com **Persistir
+ferramenta** habilitado. Depois do primeiro gesto, o pincel ainda guardava a
+revisão anterior da cena. O preview conseguia continuar usando o lote
+capturado, mas o commit seguinte era rejeitado como obsoleto; editar um
+parâmetro recapturava a fonte e parecia “destravar” a ferramenta.
+
+Ao concluir uma publicação própria e aditiva, o controlador agora avança
+somente a revisão da captura. Geometria, matrizes-fonte, materiais e
+`InstancedMesh` conservam as mesmas referências. Se outra edição tiver alterado
+a cena ou a fonte selecionada, a captura é refeita de forma explícita.
+
+O encerramento também passa a distinguir pedido enfileirado de publicação
+observável. Em uma réplica coordenada, o preview permanece visível e o
+controlador fica em estado `committing` até todos os IDs criados aparecerem no
+sandbox local. Rejeições são exibidas sem ocultar silenciosamente o traço.
+Observadores de sandbox e coordenação são removidos ao aceitar, rejeitar,
+cancelar ou descartar o controlador.
+
+O caminho de entrada do modo `array` não executa simplificação ou Chaikin
+globais em cada movimento. Os pontos aceitos chegam causalmente ao plano
+incremental; somente a cauda definida pela curva pode ser reparada.
+
+Para impedir que objetos passivos encareçam ferramentas e seleção:
+
+- o `Sandbox` mantém índices por ID atualizados em create, update, histórico,
+  rebase e recuperação;
+- validação de IDs preparados e hierarquia nova consulta o índice e somente o
+  lote entrante;
+- referências espaciais são descritas uma vez e atualizadas pelas mudanças do
+  sandbox antes de qualquer HUD;
+- HUD e workspace consultam apenas os IDs selecionados no caminho quente;
+- listas DOM de referência são preservadas na troca de ferramenta e recebem
+  somente as opções acrescentadas;
+- notificações equivalentes de editor e lifecycle são coalescidas;
+- pedidos repetidos de ajuste do HUD compartilham um único frame pendente.
+
+O trabalho de confirmar continua proporcional à quantidade **nova** de
+objetos, como deve ser. Ele deixa de ser proporcional também à quantidade de
+objetos passivos já presentes.
 
 ## Progresso causal
 
@@ -130,6 +172,11 @@ cauda, reutilização do rascunho lógico, rejeição de planos forjados, cor no
 preview e no documento, escala negativa, identidade dos meshes, ausência de
 novo cálculo no `pointerup`, handoff visual de dois quadros e um único undo.
 
+O `0039g1` acrescenta provas de dois traços consecutivos com a ferramenta
+persistente, publicação local e coordenada, handoff de tubo pelo ID criado,
+remoção de observadores, cache incremental de referências, índice do sandbox e
+uma única notificação observável por troca de ferramenta.
+
 Uma microprova sintética em Node.js 24 comparou oito previews crescentes até
 512 esferas, com rotação, escala sinalizada e cor HSL, após aquecimento e em 21
 amostras. Em três repetições finais, o plano incremental ficou entre `2,54×` e
@@ -139,6 +186,14 @@ publicar no mesmo passo; com 256 cópias de uma subárvore selecionada de dois
 nós, o ganho ficou entre `2,89×` e `3,02×`. A medição demonstra a diferença
 algorítmica nesses cenários; não substitui o teste de percepção e de frame time
 no Chrome Android.
+
+Uma segunda microprova comparou o `0039g` e o `0039g1` no mesmo executor. O
+ciclo sintético de ferramenta + consulta de seleção + referências mediu
+`6,910 ms` com 512 objetos e `54,233 ms` com 4.096 objetos no `0039g`; no
+`0039g1`, mediu respectivamente `0,480 µs` e `0,582 µs`. A publicação de 64
+cópias já preparadas mediu `2,095 ms` e `15,754 ms` no `0039g`, contra
+`1,311 ms` e `1,655 ms` no `0039g1`. Esses números isolam CPU e complexidade
+algorítmica em Node.js; DOM, GPU e percepção ainda exigem validação no aparelho.
 
 ## Roteiro visual
 
@@ -151,3 +206,7 @@ no Chrome Android.
 4. Solte sobre um traço longo e confirme que o preview não desaparece antes do
    resultado persistente.
 5. Desfaça uma vez e confirme que todo o gesto é removido.
+6. Ative **Persistir ferramenta**, produza dois traços seguidos sem alterar
+   parâmetros e confirme que ambos permanecem, cada um com um único undo.
+7. Com milhares de objetos passivos, alterne seleção, rotação e escala e
+   confirme que a troca de ferramenta não acompanha o tamanho da cena.

@@ -11,6 +11,7 @@ export class EditContextController {
   #unsubscribeSelection = null;
   #unsubscribeMesh = null;
   #unsubscribeTools = null;
+  #lastNotificationKey = null;
   #snap = {
     enabled: false,
     auto: true,
@@ -39,7 +40,8 @@ export class EditContextController {
     this.meshEditor = meshEditor;
     this.toolLifecycle = toolLifecycle;
     this.#unsubscribeEditor = editor.subscribe(() => this.#notify());
-    this.#unsubscribeSelection = editor.selection?.subscribe?.(() => this.#notify()) ?? null;
+    this.#unsubscribeSelection =
+      editor.selection?.subscribe?.(() => this.#notify()) ?? null;
     this.#unsubscribeMesh = meshEditor.subscribe(snapshot => {
       if (snapshot.active && snapshot.snap) {
         this.#snap = mergeSnapState(this.#snap, snapshot.snap);
@@ -62,7 +64,12 @@ export class EditContextController {
       throw new TypeError("Listener do contexto de edição deve ser função.");
     }
     this.#listeners.add(listener);
-    listener(this.status());
+    const snapshot = this.status();
+    this.#lastNotificationKey = contextNotificationKey(
+      snapshot,
+      this.editor.selection?.snapshot?.()
+    );
+    listener(snapshot);
     return () => this.#listeners.delete(listener);
   }
 
@@ -365,6 +372,12 @@ export class EditContextController {
   #notify() {
     if (!this.#listeners.size) return;
     const snapshot = this.status();
+    const key = contextNotificationKey(
+      snapshot,
+      this.editor.selection?.snapshot?.()
+    );
+    if (key === this.#lastNotificationKey) return;
+    this.#lastNotificationKey = key;
     for (const listener of [...this.#listeners]) {
       try {
         listener(snapshot);
@@ -373,6 +386,20 @@ export class EditContextController {
       }
     }
   }
+}
+
+function contextNotificationKey(snapshot, selection = null) {
+  return JSON.stringify([
+    snapshot,
+    selection?.members?.map(member => [
+      member.kind,
+      member.regionId,
+      member.objectId,
+      member.componentType ?? null,
+      member.componentIndex ?? null
+    ]) ?? [],
+    selection?.activeMember?.objectId ?? null
+  ]);
 }
 
 export function constraintFromAxes({ x, y, z }) {

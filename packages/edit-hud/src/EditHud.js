@@ -70,6 +70,7 @@ export class EditHud {
   #hintTimer = null;
   #hintHideTimer = null;
   #suppressedClick = null;
+  #fitFrame = null;
 
   constructor({ root, query, execute, subscribe, openWorkspace = null }) {
     if (!root) throw new TypeError("EditHud exige root.");
@@ -94,6 +95,14 @@ export class EditHud {
     this.#listeners(false);
     this.#clearHintTimer();
     this.#clearHintHideTimer();
+    if (this.#fitFrame !== null) {
+      if (typeof globalThis.cancelAnimationFrame === "function") {
+        globalThis.cancelAnimationFrame(this.#fitFrame);
+      } else {
+        globalThis.clearTimeout?.(this.#fitFrame);
+      }
+      this.#fitFrame = null;
+    }
   }
 
   refresh(snapshot = null) {
@@ -159,12 +168,18 @@ export class EditHud {
     this.root.title = description;
     const mesh = this.query("mesh.edit.status");
     const selection = this.query("selection.snapshot");
+    const selectedObjectIds = selection.members?.map(
+      member => member.objectId
+    ) ?? [];
     this.#heuristic = deriveHudContext({
       state,
       mesh,
       selection,
       selectionActions: this.query("selection.actions.describe") ?? {},
-      references: this.query("path.references.list") ?? [],
+      references: this.query("path.references.list", {
+        includeSelection: false,
+        ids: selectedObjectIds
+      }) ?? [],
       placement: this.query("object.placement.status") ?? {},
       sketch: this.query("path.sketch.status") ?? {}
     });
@@ -645,12 +660,16 @@ export class EditHud {
     const selection = this.query("selection.snapshot");
     const objectId = selection?.activeMember?.objectId ?? null;
     const reference = objectId
-      ? (this.query("scene.objects.list") ?? []).find(object => object.id === objectId)
+      ? this.query("scene.object.get", { id: objectId })
       : null;
     return this.#execute("light.create", {
       type: defaults.lightType ?? "point",
-      position: reference ? [...reference.position] : [0, 3, 0],
-      rotation: reference ? [...reference.rotation] : [0, 0, 0, 1],
+      position: reference
+        ? [...(reference.position ?? [0, 0, 0])]
+        : [0, 3, 0],
+      rotation: reference
+        ? [...(reference.rotation ?? [0, 0, 0, 1])]
+        : [0, 0, 0, 1],
       color: normalizeRememberedColor(defaults.color),
       intensity: finiteOr(defaults.lightIntensity, 3),
       distance: Math.max(0, finiteOr(defaults.lightDistance, 0)),
@@ -675,7 +694,7 @@ export class EditHud {
       const selection = this.query("selection.snapshot");
       const objectId = selection?.activeMember?.objectId ?? null;
       const reference = objectId
-        ? (this.query("scene.objects.list") ?? []).find(object => object.id === objectId)
+        ? this.query("scene.object.get", { id: objectId })
         : null;
       return this.#execute("object.placement.begin", {
         geometry,
@@ -858,7 +877,19 @@ export class EditHud {
     this.#element("edit-hud-default-inset").value = String(p.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(p.defaults.pathRadius);
     this.#applyAdaptiveLayout(this.#heuristic);
-    requestAnimationFrame(() => this.#fitToViewport());
+    this.#scheduleFitToViewport();
+  }
+
+  #scheduleFitToViewport() {
+    if (this.#fitFrame !== null) return;
+    const callback = () => {
+      this.#fitFrame = null;
+      this.#fitToViewport();
+    };
+    this.#fitFrame =
+      typeof globalThis.requestAnimationFrame === "function"
+        ? globalThis.requestAnimationFrame(callback)
+        : globalThis.setTimeout?.(callback, 0) ?? null;
   }
 
   #fitToViewport() {

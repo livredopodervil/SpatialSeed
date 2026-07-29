@@ -1,5 +1,5 @@
-export { SpatialReferenceResolver } from "./SpatialReferenceResolver.js?build=20260727-0037c";
-export { PathToolService } from "./PathToolService.js?build=20260729-0039g";
+export { SpatialReferenceResolver } from "./SpatialReferenceResolver.js?build=20260729-0039g1";
+export { PathToolService } from "./PathToolService.js?build=20260729-0039g1";
 export {
   createPathCurve,
   rotationMinimizingFrames,
@@ -18,7 +18,7 @@ export {
   stripRepeatedEndpoint,
   transformPoints
 } from "./ReferenceGeometry.js";
-export { PathSketchController } from "./PathSketchController.js?build=20260729-0039g";
+export { PathSketchController } from "./PathSketchController.js?build=20260729-0039g1";
 export {
   PathInstancePreviewCache
 } from "./PathInstancePreviewCache.js?build=20260729-0039g";

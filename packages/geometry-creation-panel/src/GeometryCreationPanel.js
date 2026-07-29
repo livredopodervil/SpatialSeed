@@ -95,10 +95,10 @@ export class GeometryCreationPanel {
       const referenceMode = this.form.elements.namedItem("reference-mode")?.value ?? "position-rotation";
       const reference = this.#referenceObject(referenceId);
       if (reference && ["position", "position-rotation"].includes(referenceMode)) {
-        origin = [...reference.position];
+        origin = [...(reference.position ?? [0, 0, 0])];
       }
       if (reference && ["rotation", "position-rotation"].includes(referenceMode)) {
-        rotation = [...reference.rotation];
+        rotation = [...(reference.rotation ?? [0, 0, 0, 1])];
       }
       const plane = this.form.elements.namedItem("plane").value;
       const placement = plane === "native" || reference
@@ -220,7 +220,7 @@ export class GeometryCreationPanel {
       { value: "", label: "Nenhum" },
       ...objects.map(object => ({
         value: object.id,
-        label: `${object.name} · ${object.kind}`
+        label: `${object.name ?? object.id} · ${object.kind}`
       }))
     ].map(item => {
       const option = this.root.ownerDocument.createElement("option");
@@ -235,7 +235,7 @@ export class GeometryCreationPanel {
 
   #referenceObject(id) {
     if (!id || !this.query) return null;
-    return (this.query("scene.objects.list") ?? []).find(object => object.id === id) ?? null;
+    return this.query("scene.object.get", { id }) ?? null;
   }
 
   #description() {

@@ -245,7 +245,9 @@ export class SelectionOperations {
     const instances = usesPrepared
       ? normalizePreparedInstances(
           sourceInstances,
-          this.sandbox.getSnapshot().objects
+          typeof this.sandbox.getObject === "function"
+            ? id => Boolean(this.sandbox.getObject(id))
+            : this.sandbox.getSnapshot().objects
         )
       : transformsFromWorldMatrices(sourceInstances);
     const descriptor = this.geometryRegistry.normalize(geometry);
@@ -412,13 +414,11 @@ export class SelectionOperations {
   }
 
   canUngroup() {
-    const selectedIds=new Set(
-      this.editor.selection.snapshot().members.map(member => member.objectId)
-    );
-    if (!selectedIds.size) return false;
-
-    return this.sandbox.getSnapshot().objects.some(object =>
-      object.kind === "group" && selectedIds.has(object.id)
+    const selectedIds =
+      this.editor.selection.snapshot().members
+        .map(member => member.objectId);
+    return selectedIds.some(id =>
+      this.#objectById(id)?.kind === "group"
     );
   }
 
@@ -920,17 +920,12 @@ export class SelectionOperations {
   #resolvePendingPublication(state) {
     const publication = this.pendingPublication;
     if (!publication) return false;
-    const byId = new Map(
-      state.objects.map(object => [object.id,object])
-    );
-    if (
-      publication.createdIds.some(id => !byId.has(id))
-    ) {
+    if (publication.createdIds.some(id => !this.#objectById(id))) {
       return false;
     }
 
     const selectedObjects = publication.selectionIds.map(
-      id => byId.get(id)
+      id => this.#objectById(id)
     );
     this.pendingPublication = null;
     this.#selectIds(publication.selectionIds);
@@ -1129,23 +1124,16 @@ export class SelectionOperations {
     const ids = selectedIds.length ? selectedIds : fallbackIds;
     if (!ids.length) throw new Error("A seleção está vazia.");
 
-    const byId = new Map(
-      this.sandbox.getSnapshot().objects.map(object => [object.id, object])
-    );
-
     return ids.map(id => {
-      const object = byId.get(id);
+      const object = this.#objectById(id);
       if (!object) throw new Error(`Objeto não encontrado: ${id}`);
       return object;
     });
   }
 
   #objectsByIds(ids) {
-    const byId = new Map(
-      this.sandbox.getSnapshot().objects.map(object => [object.id, object])
-    );
     return ids.map(id => {
-      const object = byId.get(id);
+      const object = this.#objectById(id);
       if (!object) throw new Error(`Objeto não encontrado: ${id}`);
       return object;
     });
@@ -1154,9 +1142,18 @@ export class SelectionOperations {
   #activeObject() {
     const id = this.editor.selection.snapshot().activeMember?.objectId;
     if (!id) throw new Error("A seleção está vazia.");
-    const object = this.sandbox.getSnapshot().objects.find(candidate => candidate.id === id);
+    const object = this.#objectById(id);
     if (!object) throw new Error(`Objeto ativo não encontrado: ${id}`);
     return object;
+  }
+
+  #objectById(id) {
+    if (typeof this.sandbox.getObject === "function") {
+      return this.sandbox.getObject(id);
+    }
+    return this.sandbox.getSnapshot().objects.find(
+      object => String(object.id) === String(id)
+    ) ?? null;
   }
 
   #selectionPivot(objects) {
@@ -1321,12 +1318,18 @@ function transformsFromWorldMatrices(worldMatrices) {
 }
 
 function normalizePreparedInstances(instances, existingObjects) {
-  const reserved = new Set(
-    existingObjects.map(object => String(object.id))
-  );
+  const existingHas = typeof existingObjects === "function"
+    ? existingObjects
+    : (() => {
+        const ids = new Set(
+          existingObjects.map(object => String(object.id))
+        );
+        return id => ids.has(String(id));
+      })();
+  const reserved = new Set();
   return instances.map((instance, copyIndex) => {
     const id = String(instance?.id ?? "").trim();
-    if (!id || reserved.has(id)) {
+    if (!id || existingHas(id) || reserved.has(id)) {
       throw new Error(
         `ID preparado inválido ou duplicado na cópia ${copyIndex + 1}.`
       );

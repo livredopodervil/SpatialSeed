@@ -719,6 +719,31 @@ inverte a cor. Parâmetros de provider que alteram topologia continuam comuns ao
 lote, porque variantes por cópia exigiriam protótipos ou lotes geométricos
 distintos.
 
+## D-042 — Interação passiva usa índices e o handoff exige publicação observável
+
+**Estado:** implementada inicialmente no build 0039g1.
+
+Consultas de ferramenta, seleção e referência resolvem IDs em índices mantidos
+pelo sandbox e em metadados incrementais. Um commit interativo coordenado só é
+considerado concluído quando os IDs criados são observáveis no sandbox local;
+enfileirar uma intenção não autoriza ocultar o preview ou rearmar a ferramenta.
+
+**Motivação:** o primeiro traço persistente avançava a revisão da cena sem
+avançar a captura do pincel, fazendo o segundo commit falhar até alguma mudança
+de parâmetro recapturar a fonte. Paralelamente, HUD e workspace reconstruíam
+descritores e listas DOM de todos os objetos em mudanças de ferramenta. Esses
+custos e estados incompletos cresciam com objetos que não participavam da ação.
+
+**Consequências:** uma publicação própria e estritamente aditiva pode rebasear
+a revisão do pincel conservando recursos por referência; qualquer mudança
+externa ou da fonte força recaptura. Observadores de commit possuem encerramento
+explícito em aceitação, rejeição, cancelamento e descarte. O cache de referências
+é atualizado antes dos consumidores visuais; painéis consultam os IDs
+selecionados e acrescentam apenas novas opções. Criar continua custando o número
+de objetos novos e renderizá-los continua sujeito ao renderer, mas selecionar
+ferramentas não deve percorrer objetos passivos. A compactação persistente em
+protótipo + instâncias leves continua uma decisão posterior.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

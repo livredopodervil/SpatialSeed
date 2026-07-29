@@ -1,5 +1,5 @@
 export class CoordinatedSandbox {
-  static apiVersion = "coordinated-sandbox-v2";
+  static apiVersion = "coordinated-sandbox-v3";
 
   constructor({ sandbox, coordinator } = {}) {
     if (!sandbox?.dispatch || !sandbox?.subscribe) {
@@ -30,6 +30,24 @@ export class CoordinatedSandbox {
   getSnapshot() { return this.sandbox.getSnapshot(); }
   getState() { return this.sandbox.getState(); }
   getBaseState() { return this.sandbox.getBaseState(); }
+  getObject(id) {
+    if (typeof this.sandbox.getObject === "function") {
+      return this.sandbox.getObject(id);
+    }
+    return this.sandbox.getSnapshot().objects.find(
+      object => String(object.id) === String(id)
+    ) ?? null;
+  }
+  getObjects(ids) {
+    if (typeof this.sandbox.getObjects === "function") {
+      return this.sandbox.getObjects(ids);
+    }
+    return (ids ?? []).map(id =>
+      this.sandbox.getSnapshot().objects.find(
+        object => String(object.id) === String(id)
+      ) ?? null
+    );
+  }
   getHistoryDiagnostics() {
     return this.sandbox.getHistoryDiagnostics();
   }

@@ -22,7 +22,14 @@ const PROFILE_EXTRACTIONS = Object.freeze([
 ]);
 
 export class SpatialReferenceResolver {
-  static apiVersion = "spatial-reference-resolver-v1";
+  static apiVersion = "spatial-reference-resolver-v2";
+  #referenceState = null;
+  #references = Object.freeze([]);
+  #referenceById = new Map();
+  #referenceIndexById = new Map();
+  #selectedReferenceState = null;
+  #selectedReferenceKey = null;
+  #selectedReferences = null;
 
   constructor({ sandbox, editor, geometryRegistry }) {
     if (!sandbox?.getSnapshot) {
@@ -39,32 +46,130 @@ export class SpatialReferenceResolver {
     this.geometryRegistry = geometryRegistry;
   }
 
-  listObjects() {
+  listObjects({ includeSelection = true, ids = null } = {}) {
     const state = this.sandbox.getSnapshot();
+    if (state !== this.#referenceState) {
+      this.#rebuildReferenceCache(state);
+    }
+    if (Array.isArray(ids)) {
+      const references = Object.freeze(
+        [...new Set(ids.map(String))]
+          .map(id => this.#referenceById.get(id))
+          .filter(Boolean)
+      );
+      if (!includeSelection) return references;
+      const selected = new Set(
+        this.editor.selection.snapshot().members.map(
+          member => String(member.objectId)
+        )
+      );
+      return Object.freeze(references.map(reference => Object.freeze({
+        ...reference,
+        selected: selected.has(String(reference.id))
+      })));
+    }
+    if (!includeSelection) return this.#references;
+
+    const selection = this.editor.selection.snapshot();
+    const selectionKey = selection.members
+      .map(member => String(member.objectId))
+      .join("\u0000");
+    if (
+      this.#selectedReferenceState === this.#references &&
+      this.#selectedReferenceKey === selectionKey &&
+      this.#selectedReferences
+    ) {
+      return this.#selectedReferences;
+    }
     const selected = new Set(
-      this.editor.selection.snapshot().members.map(member => member.objectId)
+      selection.members.map(member => String(member.objectId))
     );
-    return Object.freeze(state.objects
-      .filter(object => !["group", "camera", "light"].includes(object.kind))
-      .map(object => {
-        let geometryType = null;
-        let curveType = null;
-        try {
-          const descriptor = this.geometryRegistry.describeLegacyObject(object);
-          geometryType = descriptor.type;
-          curveType = descriptor.curveType ?? null;
-        } catch {}
-        return Object.freeze({
-          id: object.id,
-          name: object.name ?? object.id,
-          kind: object.kind,
-          geometryType,
-          curveType,
-          selected: selected.has(object.id),
-          pathExtractions: Object.freeze(this.#pathExtractions(object)),
-          profileExtractions: Object.freeze(this.#profileExtractions(object))
+    this.#selectedReferenceState = this.#references;
+    this.#selectedReferenceKey = selectionKey;
+    this.#selectedReferences = Object.freeze(
+      this.#references.map(reference => Object.freeze({
+        ...reference,
+        selected: selected.has(String(reference.id))
+      }))
+    );
+    return this.#selectedReferences;
+  }
+
+  applyChanges(state, changes = []) {
+    if (!state || !Array.isArray(state.objects)) {
+      throw new TypeError(
+        "O cache de referências exige um snapshot com objetos."
+      );
+    }
+    if (state === this.#referenceState) return this.#references;
+    if (!this.#referenceState) {
+      return this.#rebuildReferenceCache(state);
+    }
+    const list = Array.isArray(changes) ? changes : [];
+    const supported = new Set([
+      "object-created",
+      "object-deleted",
+      "object-transform",
+      "object-updated"
+    ]);
+    if (
+      !list.length ||
+      list.some(change => !supported.has(change?.type))
+    ) {
+      return this.#rebuildReferenceCache(state);
+    }
+    if (list.some(change => change.type === "object-deleted")) {
+      return this.#rebuildReferenceCache(state);
+    }
+    if (list.every(change => change.type === "object-transform")) {
+      this.#referenceState = state;
+      return this.#references;
+    }
+
+    let references = null;
+    const changedReferences = [];
+    for (const change of list) {
+      const id = String(change.objectId ?? "");
+      if (!id) return this.#rebuildReferenceCache(state);
+      if (change.type === "object-transform") continue;
+
+      const object =
+        change.object ??
+        this.sandbox.getObject?.(id) ??
+        state.objects.find(candidate => String(candidate.id) === id);
+      if (!object) return this.#rebuildReferenceCache(state);
+      const reference = this.#referenceMetadata(object);
+      const index = this.#referenceIndexById.get(id);
+      if (Number.isInteger(index)) {
+        if (reference) {
+          references ??= [...this.#references];
+          references[index] = reference;
+          changedReferences.push({ id, index, reference });
+        }
+        else {
+          return this.#rebuildReferenceCache(state);
+        }
+      } else if (reference) {
+        references ??= [...this.#references];
+        const appendedIndex = references.length;
+        references.push(reference);
+        changedReferences.push({
+          id,
+          index: appendedIndex,
+          reference
         });
-      }));
+      }
+    }
+
+    this.#referenceState = state;
+    if (!references) return this.#references;
+    this.#references = Object.freeze(references);
+    for (const { id, index, reference } of changedReferences) {
+      this.#referenceById.set(id, reference);
+      this.#referenceIndexById.set(id, index);
+    }
+    this.#invalidateSelectedReferenceCache();
+    return this.#references;
   }
 
   resolvePath(reference = {}) {
@@ -262,33 +367,64 @@ export class SpatialReferenceResolver {
     );
   }
 
-  #pathExtractions(object) {
+  #referenceMetadata(object) {
+    if (["group", "camera", "light"].includes(object.kind)) return null;
+    let geometryType = null;
+    let curveType = null;
+    let topology = null;
     try {
       const descriptor = this.geometryRegistry.describeLegacyObject(object);
-      if (descriptor.type === "tube") {
-        return ["auto", "centerline", "boundary"];
-      }
-      if (this.geometryRegistry.renderProfile(descriptor).topology === "open-surface") {
-        return ["auto", "boundary", "loose-edges"];
-      }
-      return [];
-    } catch {
-      return [];
+      geometryType = descriptor.type;
+      curveType = descriptor.curveType ?? null;
+      topology = this.geometryRegistry.renderProfile(descriptor).topology;
+    } catch {}
+    const pathExtractions = geometryType === "tube"
+      ? ["auto", "centerline", "boundary"]
+      : topology === "open-surface"
+        ? ["auto", "boundary", "loose-edges"]
+        : [];
+    const profileExtractions = ["shape", "extrude"].includes(geometryType)
+      ? ["auto", "contour", "boundary"]
+      : topology === "open-surface"
+        ? ["auto", "boundary"]
+        : [];
+    return Object.freeze({
+      id: object.id,
+      name: object.name ?? object.id,
+      kind: object.kind,
+      geometryType,
+      curveType,
+      pathExtractions: Object.freeze(pathExtractions),
+      profileExtractions: Object.freeze(profileExtractions)
+    });
+  }
+
+  #rebuildReferenceCache(state) {
+    this.#referenceState = state;
+    this.#references = Object.freeze(
+      state.objects
+        .map(object => this.#referenceMetadata(object))
+        .filter(Boolean)
+    );
+    this.#rebuildReferenceMaps();
+    this.#invalidateSelectedReferenceCache();
+    return this.#references;
+  }
+
+  #rebuildReferenceMaps() {
+    this.#referenceById.clear();
+    this.#referenceIndexById.clear();
+    for (const [index, reference] of this.#references.entries()) {
+      const id = String(reference.id);
+      this.#referenceById.set(id, reference);
+      this.#referenceIndexById.set(id, index);
     }
   }
 
-  #profileExtractions(object) {
-    try {
-      const descriptor = this.geometryRegistry.describeLegacyObject(object);
-      if (["shape", "extrude"].includes(descriptor.type)) {
-        return ["auto", "contour", "boundary"];
-      }
-      return this.geometryRegistry.renderProfile(descriptor).topology === "open-surface"
-        ? ["auto", "boundary"]
-        : [];
-    } catch {
-      return [];
-    }
+  #invalidateSelectedReferenceCache() {
+    this.#selectedReferenceState = null;
+    this.#selectedReferenceKey = null;
+    this.#selectedReferences = null;
   }
 }
 

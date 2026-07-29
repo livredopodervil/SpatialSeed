@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0039g`.
+> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0039g1`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -251,7 +251,7 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - materiais físicos editáveis por objeto no workspace e Inspector;
 - luzes pontuais, direcionais, spot e ambiente como objetos persistentes editáveis.
 
-### 0038–0039g — Ciclo, repetição e autoria por caminho — implementado
+### 0038–0039g1 — Ciclo, repetição e autoria por caminho — implementado
 
 - ferramentas persistentes com posicionamento e desenho contínuos;
 - plano de edição independente da trava de visualização;
@@ -280,6 +280,11 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - plano lógico de commit preparado incrementalmente durante o gesto;
 - cor paramétrica instanciada e escala negativa por inversão cromática;
 - handoff visual sem ocultar e recriar o traço no encerramento.
+- rearmamento da ferramenta persistente sem recapturar recursos invariantes;
+- confirmação coordenada somente após os IDs criados serem observáveis;
+- índices por ID e cache incremental para seleção, referências e painéis;
+- listas visuais atualizadas pelo diferencial criado, sem reconstrução por
+  troca de ferramenta.
 
 ### Próximas extensões geométricas
 
