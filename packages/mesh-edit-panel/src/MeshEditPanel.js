@@ -13,6 +13,7 @@ export class MeshEditPanel {
     subscribe,
     subscribeContext = null,
     subscribeSketch = null,
+    subscribePlanarSketch = null,
     subscribeToolParameters = null
   }) {
     if (!root) throw new TypeError("MeshEditPanel exige root.");
@@ -30,6 +31,9 @@ export class MeshEditPanel {
     this.unsubscribeContext = subscribeContext?.(() => this.refresh()) ?? null;
     this.unsubscribeSketch = subscribeSketch?.(snapshot =>
       this.#receiveSketchSnapshot(snapshot)
+    ) ?? null;
+    this.unsubscribePlanarSketch = subscribePlanarSketch?.(snapshot =>
+      this.#receivePlanarSketchSnapshot(snapshot)
     ) ?? null;
     this.onKeyDown = event => this.#handleShortcut(event);
     this.onGeometryDefaultChanged = event => {
@@ -79,6 +83,7 @@ export class MeshEditPanel {
         })?.[0] ?? null
       : null;
     const sketch = this.query("path.sketch.status");
+    const planar = this.query("planar.sketch.status");
     const placement = this.query("object.placement.status");
     const transform = this.query("viewer.transform.settings");
     this.latest = state;
@@ -87,6 +92,7 @@ export class MeshEditPanel {
     this.latestSelection = selection;
     this.latestActiveReference = selectedReference;
     this.latestSketch = sketch;
+    this.latestPlanarSketch = planar;
     this.#refreshCreationReferences();
     const active = Boolean(state.active);
     this.#refreshReferenceSelects(references, selectedReference);
@@ -171,6 +177,8 @@ export class MeshEditPanel {
       context.planeLock ? "true" : "false";
     this.#element("edit-work-plane-lock").dataset.active =
       context.editPlane ? "true" : "false";
+    this.#element("drawing-plane-lock").dataset.active =
+      context.drawingPlane ? "true" : "false";
     this.#element("edit-point-lock").dataset.active =
       context.pointLock ? "true" : "false";
 
@@ -233,6 +241,7 @@ export class MeshEditPanel {
     }
     this.#refreshTransformSettings(transform);
     this.#refreshSketchStatus(sketch);
+    this.#refreshPlanarSketchStatus(planar);
     this.#element("edit-create-object").dataset.active = placement.active ? "true" : "false";
     this.#element("edit-cancel-placement").disabled = !placement.active;
     const selectedPath = selectedReference?.geometryType === "tube";
@@ -249,6 +258,51 @@ export class MeshEditPanel {
     this.latestSketch = sketch;
     this.#refreshSketchStatus(sketch);
     if (activeChanged) this.refresh();
+  }
+
+  #receivePlanarSketchSnapshot(planar) {
+    const activeChanged =
+      Boolean(this.latestPlanarSketch?.active) !== Boolean(planar?.active);
+    this.latestPlanarSketch = planar;
+    this.#refreshPlanarSketchStatus(planar);
+    if (activeChanged) this.refresh();
+  }
+
+  #refreshPlanarSketchStatus(planar = {}) {
+    for (const button of this.root.querySelectorAll(
+      "[data-planar-workspace-tool]"
+    )) {
+      button.dataset.active =
+        planar.active &&
+        button.dataset.planarWorkspaceTool === planar.mode
+          ? "true"
+          : "false";
+      button.disabled = Boolean(this.latest?.active || planar.committing);
+    }
+    this.#element("planar-sketch-finish").disabled =
+      !planar.active || !planar.canFinish || planar.committing;
+    this.#element("planar-sketch-back").disabled =
+      !planar.active || planar.mode !== "polyline" ||
+      planar.pointCount < 1 || planar.committing;
+    this.#element("planar-sketch-cancel").disabled = !planar.active;
+    this.#element("planar-edit-selected").disabled =
+      Boolean(planar.active || this.latest?.active);
+    this.#text(
+      "planar-sketch-status",
+      planar.active
+        ? `${
+            planar.mode === "polyline"
+              ? `Polilinha: ${planar.pointCount} ponto(s)`
+              : `Ferramenta ${planar.mode}`
+          } no plano ${
+            planar.frame?.source?.type ??
+            planar.frame?.source ??
+            "ativo"
+          }${planar.committing ? "; publicando…" : ""}${
+            planar.error ? `; ${planar.error}` : ""
+          }.`
+        : "Escolha uma ferramenta e desenhe no plano ativo."
+    );
   }
 
   #refreshSketchStatus(sketch = {}) {
@@ -726,6 +780,7 @@ export class MeshEditPanel {
     this.unsubscribe?.();
     this.unsubscribeContext?.();
     this.unsubscribeSketch?.();
+    this.unsubscribePlanarSketch?.();
     this.unsubscribeToolParameters?.();
     document.removeEventListener("keydown", this.onKeyDown, true);
     globalThis.removeEventListener?.(
@@ -1047,22 +1102,48 @@ export class MeshEditPanel {
     this.#click("edit-workspace-group", "selection.group");
     this.#click("edit-workspace-ungroup", "selection.ungroup");
     this.#click("edit-workspace-pivot", "pivot.edit.toggle");
-    this.#click("edit-plane-lock", "edit.navigation.plane.toggle", () => ({
-      source: this.#element("edit-plane-source").value
-    }));
+    this.#click("edit-plane-lock", "edit.navigation.plane.toggle", () =>
+      this.#planeArguments("edit-plane-source")
+    );
     this.#element("edit-work-plane-lock").addEventListener("click", () => {
       const context = this.query("edit.context.status");
       this.#execute(
         context.editPlane ? "edit.plane.clear" : "edit.plane.set",
         context.editPlane
           ? {}
-          : { source: this.#element("edit-work-plane-source").value }
+          : this.#planeArguments("edit-work-plane-source")
+      );
+    });
+    this.#element("drawing-plane-lock").addEventListener("click", () => {
+      const context = this.query("edit.context.status");
+      this.#execute(
+        context.drawingPlane
+          ? "drawing.plane.clear"
+          : "drawing.plane.set",
+        context.drawingPlane
+          ? {}
+          : this.#planeArguments("drawing-plane-source")
       );
     });
     this.#click("edit-point-lock", "edit.navigation.point.toggle", () => ({
       source: this.#element("edit-point-source").value
     }));
     this.#click("edit-navigation-clear", "edit.navigation.locks.clear");
+
+    for (const button of this.root.querySelectorAll(
+      "[data-planar-workspace-tool]"
+    )) {
+      button.addEventListener("click", () => this.#execute(
+        "planar.sketch.begin",
+        this.#planarSketchArguments(
+          button.dataset.planarWorkspaceTool
+        )
+      ));
+    }
+    this.#click("planar-sketch-finish", "planar.sketch.finish");
+    this.#click("planar-sketch-back", "planar.sketch.point.remove");
+    this.#click("planar-sketch-cancel", "planar.sketch.cancel");
+    this.#click("planar-edit-selected", "planar.edit.begin");
 
     this.#click("path-sketch-begin", "path.sketch.begin", () => ({
       mode: this.#element("path-sketch-mode").value,
@@ -1496,6 +1577,47 @@ export class MeshEditPanel {
     };
   }
 
+  #planeArguments(sourceControlId) {
+    const source = this.#element(sourceControlId).value;
+    const pointsSource = this.#element("edit-plane-points").value.trim();
+    let points = null;
+    if (source === "three-points" && pointsSource) {
+      points = JSON.parse(pointsSource);
+      if (!Array.isArray(points) || points.length !== 3 ||
+          points.some(point =>
+            !Array.isArray(point) ||
+            point.length !== 3 ||
+            point.some(value => !Number.isFinite(Number(value)))
+          )) {
+        throw new Error(
+          "Os pontos do plano devem formar [[x,y,z],[x,y,z],[x,y,z]]."
+        );
+      }
+      points = points.map(point => point.map(Number));
+    }
+    return {
+      source,
+      inclinationDegrees: this.#number("edit-plane-inclination"),
+      azimuthDegrees: this.#number("edit-plane-azimuth"),
+      ...(points ? { points } : {})
+    };
+  }
+
+  #planarSketchArguments(mode) {
+    return {
+      mode,
+      planeSource: this.#element("planar-sketch-plane").value,
+      style: this.#element("planar-sketch-style").value,
+      color: this.#element("planar-sketch-color").value,
+      strokeWidth: this.#number("planar-sketch-width"),
+      segments: this.#integer("planar-sketch-segments"),
+      radialSegments: this.#integer("planar-sketch-radial"),
+      sides: this.#integer("planar-sketch-sides"),
+      arcAngleDegrees: this.#number("planar-sketch-arc-angle"),
+      closed: this.#element("planar-sketch-closed").checked
+    };
+  }
+
   #objectPathControlIds() {
     return [
       "path-reference-object", "path-reference-extraction",
@@ -1565,6 +1687,7 @@ export class MeshEditPanel {
         paths: mesh ? tool === "select" : !transforming,
         gizmo: transforming,
         transform: transforming,
+        planar: !mesh || transforming,
         snap: transforming || tool === "select",
         influence: mesh && transforming,
         diagnostics: true

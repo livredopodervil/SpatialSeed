@@ -199,11 +199,14 @@
       <div class="edit-hud-config-groups">
         <label><input type="checkbox" data-edit-hud-group-toggle="subject" checked> Contexto</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="tool" checked> Ferramenta</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="quick" checked> Seleção rápida e histórico</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="selection" checked> Modificadores de seleção</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="frame" checked> Frame</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="axes" checked> Eixos</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="reference" checked> Pivô e planos</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="planar" checked> Ferramentas 2D</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="lifecycle" checked> Continuidade</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="creation" checked> Criação e procedimentos</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="actions" checked> Ações contextuais</label>
@@ -268,8 +271,25 @@
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="navigation" aria-label="Travas de navegação">
       <label title="Travar visualização em plano 2D"><input id="edit-hud-plane-lock" type="checkbox"><span>▱</span></label>
-      <label title="Travar plano de edição"><input id="edit-hud-edit-plane" type="checkbox"><span>⌗</span></label>
       <label title="Orbitar ponto travado"><input id="edit-hud-point-lock" type="checkbox"><span>⊙</span></label>
+    </div>
+    <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="reference" aria-label="Pivô e planos">
+      <button id="edit-hud-pivot-edit" type="button" title="Editar pivô da seleção">⊕</button>
+      <label title="Definir plano de edição pela seleção ou viewer"><input id="edit-hud-edit-plane" type="checkbox"><span>⌗</span></label>
+      <label title="Definir plano de desenho pela seleção ou viewer"><input id="edit-hud-drawing-plane" type="checkbox"><span>✎</span></label>
+    </div>
+    <div class="edit-hud-group" data-edit-hud-group="planar" aria-label="Ferramentas de desenho e edição 2D">
+      <button type="button" data-planar-tool="point" title="Ponto 2D">·</button>
+      <button type="button" data-planar-tool="line" title="Segmento 2D">╱</button>
+      <button type="button" data-planar-tool="polyline" title="Polilinha 2D">⌁</button>
+      <button type="button" data-planar-tool="rectangle" title="Retângulo 2D">□</button>
+      <button type="button" data-planar-tool="circle" title="Círculo 2D">○</button>
+      <button type="button" data-planar-tool="arc" title="Arco 2D">◜</button>
+      <button type="button" data-planar-tool="polygon" title="Polígono 2D">⬡</button>
+      <button id="edit-hud-planar-finish" type="button" title="Concluir polilinha">✓</button>
+      <button id="edit-hud-planar-back" type="button" title="Remover último ponto 2D">↤</button>
+      <button id="edit-hud-planar-edit" type="button" title="Editar vértices da geometria 2D selecionada">✥</button>
+      <button id="edit-hud-planar-cancel" type="button" title="Cancelar ferramenta 2D">×</button>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="lifecycle" aria-label="Continuidade das ferramentas">
       <label title="Manter ferramenta ativa"><input id="edit-hud-keep-tool" type="checkbox"><span>📌</span></label>
@@ -613,6 +633,7 @@
         <label><input type="checkbox" data-mesh-section-toggle="paths" checked> Caminhos</label>
         <label><input type="checkbox" data-mesh-section-toggle="gizmo" checked> Gizmo</label>
         <label><input type="checkbox" data-mesh-section-toggle="transform" checked> Transformação</label>
+        <label><input type="checkbox" data-mesh-section-toggle="planar" checked> Desenho 2D</label>
         <label><input type="checkbox" data-mesh-section-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-mesh-section-toggle="influence" checked> Influência</label>
         <label><input type="checkbox" data-mesh-section-toggle="diagnostics" checked> Diagnóstico</label>
@@ -817,7 +838,7 @@
         </p>
         <div class="mesh-form-grid">
           <label><span>Resultado</span><select id="path-sketch-mode"><option value="tube">Tubo contínuo</option><option value="array">Pincel de geometrias</option></select></label>
-          <label><span>Plano do desenho</span><select id="path-sketch-plane"><option value="locked-or-viewer">Plano travado ou viewer</option><option value="viewer">Viewer atual</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+          <label><span>Plano do desenho</span><select id="path-sketch-plane"><option value="locked-or-viewer">Desenho → edição → visualização → viewer</option><option value="drawing">Plano de desenho</option><option value="edit">Plano de edição</option><option value="viewer">Viewer atual</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
           <label><span>Curva</span><select id="path-sketch-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="chordal">Catmull-Rom chordal</option><option value="catmullrom">Catmull-Rom uniforme</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
           <label><span>Fluidez do gesto (px)</span><input id="path-sketch-sample" type="number" min="1" max="64" value="6" step="1"></label>
           <label><span>Suavização</span><input id="path-sketch-smoothing" type="number" min="0" max="4" value="1" step="1"></label>
@@ -959,10 +980,15 @@
         <button id="mesh-frame-viewer" type="button">Frame do viewer</button>
       </div>
       <div class="mesh-form-grid edit-navigation-locks">
-        <label><span>Plano de visualização</span><select id="edit-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <label><span>Plano de visualização</span><select id="edit-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="drawing-plane">Plano de desenho</option><option value="edit-plane">Plano de edição</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
         <button id="edit-plane-lock" type="button">Travar/destravar visualização 2D</button>
-        <label><span>Plano de edição</span><select id="edit-work-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <label><span>Plano de edição</span><select id="edit-work-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="drawing-plane">Copiar plano de desenho</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
         <button id="edit-work-plane-lock" type="button">Definir/limpar plano de edição</button>
+        <label><span>Plano de desenho</span><select id="drawing-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="edit-plane">Copiar plano de edição</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <button id="drawing-plane-lock" type="button">Definir/limpar plano de desenho</button>
+        <label><span>Inclinação °</span><input id="edit-plane-inclination" type="number" min="-89.9" max="89.9" step="1" value="0"></label>
+        <label><span>Azimute °</span><input id="edit-plane-azimuth" type="number" step="1" value="0"></label>
+        <label class="mesh-form-wide"><span>Três pontos explícitos [[x,y,z],...] — opcional</span><textarea id="edit-plane-points" class="component-text" rows="2" placeholder="Usar exatamente três objetos ou vértices selecionados"></textarea></label>
         <label><span>Ponto de órbita</span><select id="edit-point-source"><option value="component">Componente ativo</option><option value="selection">Pivô da seleção</option><option value="viewer">Alvo atual do viewer</option></select></label>
         <button id="edit-point-lock" type="button">Travar/destravar ponto</button>
         <button id="edit-navigation-clear" type="button">Limpar travas</button>
@@ -979,6 +1005,37 @@
       <div class="mesh-vector-row"><span>Mover</span><input id="mesh-move-x" type="number" value="0" step="0.1"><input id="mesh-move-y" type="number" value="0" step="0.1"><input id="mesh-move-z" type="number" value="0" step="0.1"><button id="mesh-affine-move" type="button">Aplicar</button></div>
       <div class="mesh-vector-row"><span>Girar °</span><input id="mesh-rotate-x" type="number" value="0" step="1"><input id="mesh-rotate-y" type="number" value="0" step="1"><input id="mesh-rotate-z" type="number" value="0" step="1"><button id="mesh-affine-rotate" type="button">Aplicar</button></div>
       <div class="mesh-vector-row"><span>Escalar</span><input id="mesh-scale-x" type="number" value="1" step="0.1"><input id="mesh-scale-y" type="number" value="1" step="0.1"><input id="mesh-scale-z" type="number" value="1" step="0.1"><button id="mesh-affine-scale" type="button">Aplicar</button></div>
+    </fieldset>
+
+    <fieldset data-mesh-section="planar">
+      <legend>Desenho e edição 2D</legend>
+      <div class="actions planar-tool-actions">
+        <button type="button" data-planar-workspace-tool="point">Ponto</button>
+        <button type="button" data-planar-workspace-tool="line">Segmento</button>
+        <button type="button" data-planar-workspace-tool="polyline">Polilinha</button>
+        <button type="button" data-planar-workspace-tool="rectangle">Retângulo</button>
+        <button type="button" data-planar-workspace-tool="circle">Círculo</button>
+        <button type="button" data-planar-workspace-tool="arc">Arco</button>
+        <button type="button" data-planar-workspace-tool="polygon">Polígono</button>
+      </div>
+      <div class="mesh-form-grid">
+        <label><span>Plano</span><select id="planar-sketch-plane"><option value="drawing-or-edit">Desenho → edição → viewer</option><option value="drawing">Plano de desenho</option><option value="edit">Plano de edição</option><option value="viewer">Viewer atual</option></select></label>
+        <label><span>Estilo</span><select id="planar-sketch-style"><option value="stroke">Contorno</option><option value="fill">Preenchimento</option></select></label>
+        <label><span>Cor</span><input id="planar-sketch-color" type="color" value="#64d8c8"></label>
+        <label><span>Espessura</span><input id="planar-sketch-width" type="number" min="0.001" step="0.01" value="0.08"></label>
+        <label><span>Segmentos</span><input id="planar-sketch-segments" type="number" min="3" max="4096" step="1" value="48"></label>
+        <label><span>Seção do traço</span><input id="planar-sketch-radial" type="number" min="3" max="32" step="1" value="6"></label>
+        <label><span>Lados do polígono</span><input id="planar-sketch-sides" type="number" min="3" max="256" step="1" value="6"></label>
+        <label><span>Ângulo do arco °</span><input id="planar-sketch-arc-angle" type="number" min="-360" max="360" step="1" value="90"></label>
+        <label><input id="planar-sketch-closed" type="checkbox"> Fechar polilinha</label>
+      </div>
+      <div class="actions">
+        <button id="planar-sketch-finish" type="button">Concluir polilinha</button>
+        <button id="planar-sketch-back" type="button">Remover último ponto</button>
+        <button id="planar-sketch-cancel" type="button">Cancelar desenho</button>
+        <button id="planar-edit-selected" type="button">Editar 2D selecionado</button>
+      </div>
+      <small id="planar-sketch-status">Escolha uma ferramenta e desenhe no plano ativo.</small>
     </fieldset>
 
     <fieldset data-mesh-section="snap">
@@ -1208,6 +1265,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260729-0039g2"></script>
+<script type="module" src="./boot.js?build=20260729-0040a"></script>
 </body>
 </html>

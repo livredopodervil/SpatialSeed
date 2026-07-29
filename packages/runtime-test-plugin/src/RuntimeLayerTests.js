@@ -191,15 +191,23 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260729-0039g2";
+} from "../../mesh-editor-core/src/index.js?build=20260729-0040a";
 import {
   EditContextController,
   axesFromConstraint,
-  constraintFromAxes
-} from "../../edit-context/src/index.js?build=20260729-0039g2";
+  constraintFromAxes,
+  inclinePlanarFrame,
+  planarFrameCoordinates,
+  planarFrameFromPoints,
+  planarFramePoint
+} from "../../edit-context/src/index.js?build=20260729-0040a";
+import {
+  PlanarSketchController,
+  createPlanarPrimitive
+} from "../../planar-authoring/src/index.js?build=20260729-0040a";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260729-0039g2";
+} from "../../editor-commands/src/EditorCommands.js?build=20260729-0040a";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -211,12 +219,12 @@ import {
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../edit-tools/src/index.js?build=20260729-0039g";
+} from "../../edit-tools/src/index.js?build=20260729-0040a";
 import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
-} from "../../edit-hud/src/index.js?build=20260729-0039g2";
+} from "../../edit-hud/src/index.js?build=20260729-0040a";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -233,7 +241,7 @@ import {
   samplePathFrames,
   samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "../../spatial-references/src/index.js?build=20260729-0039g2";
+} from "../../spatial-references/src/index.js?build=20260729-0040a";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -457,6 +465,88 @@ export function createRuntimeLayerTests() {
         context.clearEditPlane();
         assertEqual(context.status().editPlane, null);
         assertDeepEqual(context.status().planeLock.normal, [0, 0, 1]);
+        context.dispose();
+      },
+
+      "visualização edição e desenho mantêm três planos independentes"() {
+        const fixture = createEditContextFixture();
+        const context = new EditContextController(fixture);
+        context.togglePlaneLock({ source: "world-xy" });
+        context.setEditPlane({ source: "world-yz" });
+        context.setDrawingPlane({ source: "world-xz" });
+        const status = context.status();
+        assertDeepEqual(status.planeLock.normal, [0, 0, 1]);
+        assertDeepEqual(status.editPlane.normal, [1, 0, 0]);
+        assertDeepEqual(status.drawingPlane.normal, [0, 1, 0]);
+        context.clearDrawingPlane();
+        assertEqual(context.status().drawingPlane, null);
+        assertDeepEqual(context.status().editPlane.normal, [1, 0, 0]);
+        context.dispose();
+      },
+
+      "plano por três pontos produz base ortonormal e ida e volta"() {
+        const frame = planarFrameFromPoints([
+          [2, 3, 4],
+          [4, 3, 4],
+          [2, 6, 4]
+        ]);
+        assertVectorNear(frame.origin, [2, 3, 4]);
+        assertVectorNear(frame.xAxis, [1, 0, 0]);
+        assertVectorNear(frame.yAxis, [0, 1, 0]);
+        assertVectorNear(frame.normal, [0, 0, 1]);
+        const world = planarFramePoint(frame, [1.5, -2, 0]);
+        assertVectorNear(world, [3.5, 1, 4]);
+        assertVectorNear(
+          planarFrameCoordinates(frame, world),
+          [1.5, -2, 0]
+        );
+      },
+
+      "inclinação preserva origem e aplica azimute no frame do objeto"() {
+        const frame = inclinePlanarFrame({
+          origin: [4, 5, 6],
+          xAxis: [1, 0, 0],
+          normal: [0, 0, 1]
+        }, {
+          inclinationDegrees: 30,
+          azimuthDegrees: 0
+        });
+        assertVectorNear(frame.origin, [4, 5, 6]);
+        assertVectorNear(
+          frame.xAxis,
+          [Math.cos(Math.PI / 6), 0, Math.sin(Math.PI / 6)]
+        );
+        assertVectorNear(
+          frame.normal,
+          [-Math.sin(Math.PI / 6), 0, Math.cos(Math.PI / 6)]
+        );
+        assertEqual(frame.source.type, "object-inclination");
+      },
+
+      "controlador resolve objeto inclinado e três seleções sem misturar planos"() {
+        const fixture = createEditContextFixture();
+        fixture.renderer.readSelectionReferenceFrame = () => ({
+          origin: [3, 4, 5],
+          xAxis: [1, 0, 0],
+          normal: [0, 0, 1],
+          source: { type: "object", objectId: "base" }
+        });
+        fixture.renderer.readSelectionReferencePoints = () => [
+          [0, 0, 7],
+          [2, 0, 7],
+          [0, 3, 7]
+        ];
+        const context = new EditContextController(fixture);
+        context.setEditPlane({
+          source: "object-inclination",
+          inclinationDegrees: 45,
+          azimuthDegrees: 90
+        });
+        context.setDrawingPlane({ source: "three-points" });
+        assertVectorNear(context.status().editPlane.origin, [3, 4, 5]);
+        assertNear(context.status().editPlane.source.inclinationDegrees, 45);
+        assertVectorNear(context.status().drawingPlane.normal, [0, 0, 1]);
+        assertVectorNear(context.status().drawingPlane.origin, [0, 0, 7]);
         context.dispose();
       },
 
@@ -763,6 +853,133 @@ export function createRuntimeLayerTests() {
       }
     },
 
+    "planar-authoring": {
+      "primitivas 2D usam descritores registrados e o frame capturado"() {
+        const frame = planarFrameFromPoints([
+          [0, 0, 2],
+          [1, 0, 2],
+          [0, 1, 2]
+        ]);
+        const registry = createDefaultGeometryRegistry();
+        const cases = [
+          {
+            mode: "point",
+            points: [[1, 2, 2]],
+            settings: { strokeWidth: 0.2 },
+            type: "circle"
+          },
+          {
+            mode: "line",
+            points: [[0, 0, 2], [2, 0, 2]],
+            settings: {},
+            type: "tube"
+          },
+          {
+            mode: "polyline",
+            points: [[0, 0, 2], [1, 1, 2], [2, 0, 2]],
+            settings: { closed: true },
+            type: "tube"
+          },
+          {
+            mode: "rectangle",
+            points: [[0, 0, 2], [2, 1, 2]],
+            settings: { style: "fill" },
+            type: "plane"
+          },
+          {
+            mode: "circle",
+            points: [[0, 0, 2], [2, 0, 2]],
+            settings: { style: "stroke" },
+            type: "ring"
+          },
+          {
+            mode: "arc",
+            points: [[0, 0, 2], [2, 0, 2]],
+            settings: { arcAngleDegrees: -120 },
+            type: "ring"
+          },
+          {
+            mode: "polygon",
+            points: [[0, 0, 2], [2, 0, 2]],
+            settings: { style: "fill", sides: 7 },
+            type: "polygon"
+          }
+        ];
+        for (const entry of cases) {
+          const plan = createPlanarPrimitive({
+            frame,
+            points: entry.points,
+            settings: { mode: entry.mode, ...entry.settings }
+          });
+          assertEqual(plan.geometry.type, entry.type);
+          assertEqual(registry.normalize(plan.geometry).type, entry.type);
+          assertNear(plan.position[2], 2);
+          assertVectorNear(plan.rotation, frame.quaternion);
+        }
+      },
+
+      "retângulo preserva centro e dimensões no plano local"() {
+        const frame = planarFrameFromPoints([
+          [10, 20, 30],
+          [10, 21, 30],
+          [9, 20, 30]
+        ]);
+        const plan = createPlanarPrimitive({
+          frame,
+          points: [
+            planarFramePoint(frame, [-2, -1, 0]),
+            planarFramePoint(frame, [4, 3, 0])
+          ],
+          settings: {
+            mode: "rectangle",
+            style: "fill"
+          }
+        });
+        assertNear(plan.geometry.width, 6);
+        assertNear(plan.geometry.height, 4);
+        assertVectorNear(
+          planarFrameCoordinates(frame, plan.position),
+          [1, 1, 0]
+        );
+      },
+
+      "gesto 2D publica uma vez e rearma sem varrer a cena"() {
+        const renderer = createPathSketchRendererStub();
+        const calls = [];
+        const completed = [];
+        const controller = new PlanarSketchController({
+          renderer,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          createObject(args) {
+            calls.push(structuredClone(args));
+            return { changed: true, id: `planar-${calls.length}` };
+          },
+          onCompleted(value) {
+            completed.push(structuredClone(value));
+          }
+        });
+        controller.begin({
+          mode: "line",
+          planeSource: "viewer",
+          continuous: true
+        });
+        renderer.canvas.emit(
+          "pointerdown",
+          pathPointerEvent(12, 10, 20)
+        );
+        renderer.canvas.emit(
+          "pointerup",
+          pathPointerEvent(12, 40, 20)
+        );
+        assertEqual(calls.length, 1);
+        assertEqual(calls[0].geometry.type, "tube");
+        assertEqual(completed.length, 1);
+        assertEqual(controller.status().active, true);
+        assertEqual(controller.status().pointCount, 0);
+        controller.dispose();
+      }
+    },
+
     "tool-parameters": {
       "registro declara defaults, limites e campos condicionais"() {
         const registry = createDefaultEditToolRegistry();
@@ -820,6 +1037,17 @@ export function createRuntimeLayerTests() {
         assertEqual(registry.defaults("path.sketch").affineULength, 1);
         assertEqual(registry.defaults("path.sketch").affineColor, "source");
         assertEqual(registry.defaults("path.array").count, 8);
+        assertEqual(registry.defaults("planar.sketch").mode, "line");
+        assertEqual(
+          registry.defaults("planar.sketch").planeSource,
+          "drawing-or-edit"
+        );
+        assertDeepEqual(
+          registry.definition("planar.sketch").parameters.find(
+            parameter => parameter.id === "sides"
+          ).when,
+          { mode: "polygon" }
+        );
         assertDeepEqual(
           registry.normalizePatch("path.sketch", {
             sourceGeometry: "{\"type\":\"sphere\",\"radius\":0.4}"
@@ -1151,6 +1379,62 @@ export function createRuntimeLayerTests() {
           updates[0].affineColor,
           "mix(source,#ffffff,fract(u))"
         );
+        toolParameters.dispose();
+      },
+
+      "comando 2D combina modo do HUD com parâmetros lembrados"() {
+        const fixture = createEditContextFixture();
+        const registry = createDefaultEditToolRegistry();
+        const toolParameters = new ToolParameterStore({
+          registry,
+          storage: createMemoryStorage()
+        });
+        toolParameters.set("planar.sketch", {
+          style: "fill",
+          color: "#22aa88",
+          sides: 9
+        });
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
+        const begins = [];
+        let active = false;
+        const planarSketch = {
+          status() { return { active }; },
+          begin(value) {
+            active = true;
+            begins.push(structuredClone(value));
+            return { active: true, mode: value.mode };
+          },
+          cancel() {
+            active = false;
+            return { active: false };
+          },
+          setContinuous() {},
+          updateSettings() {}
+        };
+        const commands = createEditorCommands({
+          editor: fixture.editor,
+          renderer: fixture.renderer,
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolLifecycle: lifecycle,
+          toolParameters,
+          planarSketch
+        });
+        commands.execute("planar.sketch.begin", { mode: "polygon" });
+        assertEqual(begins.length, 1);
+        assertEqual(begins[0].mode, "polygon");
+        assertEqual(begins[0].style, "fill");
+        assertEqual(begins[0].color, "#22aa88");
+        assertEqual(begins[0].sides, 9);
+        assertEqual(begins[0].continuous, true);
+        assertEqual(lifecycle.status().activeAction, "planar.sketch");
+        commands.execute("planar.sketch.cancel");
+        lifecycle.dispose();
         toolParameters.dispose();
       },
 
@@ -14068,6 +14352,9 @@ function createPathSketchRendererStub() {
     getEditPlane() {
       return null;
     },
+    getDrawingPlane() {
+      return null;
+    },
     getNavigationLocks() {
       return { plane: null };
     },
@@ -14076,6 +14363,13 @@ function createPathSketchRendererStub() {
         origin: [0, 0, 0],
         normal: [0, 0, 1],
         xAxis: [1, 0, 0]
+      };
+    },
+    resolvePointerPlacement({ clientX, clientY }) {
+      return {
+        point: [Number(clientX) / 10, Number(clientY) / 10, 0],
+        normal: [0, 0, 1],
+        source: "test-plane"
       };
     }
   };
@@ -15030,6 +15324,7 @@ function createEditContextFixture() {
     objectAxes: { x: true, y: true, z: true },
     locks: { plane: null, point: null },
     editPlane: null,
+    drawingPlane: null,
     transformConfig: {},
     setTransformMode(mode) { editor.setToolMode(mode); },
     setSelectionOperation(operation) {
@@ -15067,7 +15362,10 @@ function createEditContextFixture() {
         mode: this.locks.plane
           ? (this.locks.point ? "plane-point" : "plane-2d")
           : (this.locks.point ? "orbit-point" : "free"),
-        editPlane: this.editPlane ? structuredClone(this.editPlane) : null
+        editPlane: this.editPlane ? structuredClone(this.editPlane) : null,
+        drawingPlane: this.drawingPlane
+          ? structuredClone(this.drawingPlane)
+          : null
       };
     },
     getEditPlane() {
@@ -15076,6 +15374,15 @@ function createEditContextFixture() {
     setEditPlane(frame) {
       this.editPlane = frame ? structuredClone(frame) : null;
       return this.getEditPlane();
+    },
+    getDrawingPlane() {
+      return this.drawingPlane
+        ? structuredClone(this.drawingPlane)
+        : null;
+    },
+    setDrawingPlane(frame) {
+      this.drawingPlane = frame ? structuredClone(frame) : null;
+      return this.getDrawingPlane();
     },
     setNavigationPlaneLock(frame) {
       this.locks.plane = frame ? structuredClone(frame) : null;

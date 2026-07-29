@@ -1842,3 +1842,45 @@ html[data-toolbar-layout="vertical"] #selection-panel{
     height:36px!important;
   }
 }
+
+/* 0040a — setores cromáticos do HUD */
+.edit-hud-group[data-edit-hud-group="subject"]>*{--hud-sector-rgb:76,201,240}
+.edit-hud-group[data-edit-hud-group="tool"]>*{--hud-sector-rgb:82,139,255}
+.edit-hud-group[data-edit-hud-group="quick"]>*{--hud-sector-rgb:154,110,255}
+.edit-hud-group[data-edit-hud-group="selection"]>*{--hud-sector-rgb:231,93,181}
+.edit-hud-group[data-edit-hud-group="frame"]>*{--hud-sector-rgb:126,123,255}
+.edit-hud-group[data-edit-hud-group="axes"]>*{--hud-sector-rgb:255,153,74}
+.edit-hud-group[data-edit-hud-group="snap"]>*{--hud-sector-rgb:238,194,73}
+.edit-hud-group[data-edit-hud-group="navigation"]>*{--hud-sector-rgb:58,196,181}
+.edit-hud-group[data-edit-hud-group="reference"]>*{--hud-sector-rgb:255,105,132}
+.edit-hud-group[data-edit-hud-group="planar"]>*{--hud-sector-rgb:65,210,143}
+.edit-hud-group[data-edit-hud-group="lifecycle"]>*{--hud-sector-rgb:155,205,82}
+.edit-hud-group[data-edit-hud-group="creation"]>*{--hud-sector-rgb:188,113,235}
+.edit-hud-group[data-edit-hud-group="actions"]>*{--hud-sector-rgb:244,112,92}
+.edit-hud-group[data-edit-hud-group="session"]>*{--hud-sector-rgb:104,196,220}
+
+.edit-hud-group[data-edit-hud-group]>*{
+  border-color:rgba(var(--hud-sector-rgb),.42)!important;
+  background:rgba(var(--hud-sector-rgb),.09);
+  box-shadow:
+    0 0 0 1px rgba(var(--hud-sector-rgb),.08) inset,
+    0 2px 8px #0003;
+}
+.edit-hud-group[data-edit-hud-group]>label>span{
+  background:rgba(var(--hud-sector-rgb),.09);
+}
+.edit-hud-group[data-edit-hud-group]>button[data-active="true"],
+.edit-hud-group[data-edit-hud-group]>label>input:checked+span{
+  color:#fff;
+  background:rgba(var(--hud-sector-rgb),.36)!important;
+  outline-color:rgba(var(--hud-sector-rgb),.92)!important;
+  box-shadow:
+    0 0 0 1px rgba(var(--hud-sector-rgb),.9) inset,
+    0 0 12px rgba(var(--hud-sector-rgb),.42)!important;
+}
+.planar-tool-actions{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(5.6rem,1fr));
+  gap:.35rem;
+}
+.mesh-form-wide{grid-column:1/-1}

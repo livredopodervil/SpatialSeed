@@ -5,7 +5,8 @@ const TOOL_LIFECYCLES = Object.freeze({
   rotate: "sticky",
   scale: "sticky",
   "object.place": "sticky",
-  "path.sketch": "continuous"
+  "path.sketch": "continuous",
+  "planar.sketch": "continuous"
 });
 
 export const TOOL_PREFERENCES_SCHEMA_VERSION = 2;
@@ -21,7 +22,8 @@ export class ToolLifecycleController {
   #defaultKeepActive = true;
   #keepByTool = new Map([
     ["object.place", true],
-    ["path.sketch", true]
+    ["path.sketch", true],
+    ["planar.sketch", true]
   ]);
   #lastRepeatable = null;
   #repeating = false;

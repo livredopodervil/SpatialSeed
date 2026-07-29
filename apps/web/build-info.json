@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260729-0039g2",
-  "channel": "fix/0039g2-undo-color-selection-gestures"
+  "build": "20260729-0040a",
+  "channel": "feature/0040-planar-authoring"
 }

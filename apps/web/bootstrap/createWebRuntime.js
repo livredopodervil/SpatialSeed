@@ -10,17 +10,17 @@ import {
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260729-0039g1";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260729-0039g2";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260729-0040a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260729-0039g2";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260729-0039g2";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260729-0039g2";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260729-0040a";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0039g2";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0040a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -79,31 +79,34 @@ import {
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260729-0039g2";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260729-0040a";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0039g2";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0040a";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260729-0039g2";
+} from "../../../packages/edit-context/src/index.js?build=20260729-0040a";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260729-0039g2";
+} from "../../../packages/edit-hud/src/index.js?build=20260729-0040a";
 import {
   ToolLifecycleController,
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../../packages/edit-tools/src/index.js?build=20260729-0039g";
+} from "../../../packages/edit-tools/src/index.js?build=20260729-0040a";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260728-0039a";
+import {
+  PlanarSketchController
+} from "../../../packages/planar-authoring/src/index.js?build=20260729-0040a";
 import {
   PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260729-0039g2";
+} from "../../../packages/spatial-references/src/index.js?build=20260729-0040a";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -509,6 +512,27 @@ export async function createWebRuntime({
     onEnded: () => toolLifecycle.cancelAction("path.sketch")
   });
   let commandsRef = null;
+  const planarSketch = new PlanarSketchController({
+    renderer,
+    geometryRegistry,
+    sandbox,
+    createObject: args =>
+      commandsRef.execute("object.create.configured", args),
+    onCompleted: ({ mode, settings, frame, points }) => {
+      toolLifecycle.remember({
+        id: "planar.primitive.create",
+        args: {
+          ...settings,
+          mode,
+          frame,
+          points
+        },
+        label: "Criar geometria 2D"
+      });
+      toolLifecycle.completeAction("planar.sketch");
+    },
+    onEnded: () => toolLifecycle.cancelAction("planar.sketch")
+  });
   const objectPlacement = new ObjectPlacementController({
     renderer,
     geometryRegistry,
@@ -571,6 +595,7 @@ export async function createWebRuntime({
     toolParameters,
     pathTools,
     pathSketch,
+    planarSketch,
     objectPlacement,
     canMutateProject: action =>
       viewerCoordinator.requireAuthority(action)
@@ -1019,6 +1044,9 @@ export async function createWebRuntime({
     .register("path.sketch.status", () =>
       pathSketch.status()
     )
+    .register("planar.sketch.status", () =>
+      planarSketch.status()
+    )
     .register("object.placement.status", () =>
       objectPlacement.status()
     )
@@ -1101,6 +1129,7 @@ export async function createWebRuntime({
     subscribe: listener => meshEditor.subscribe(listener),
     subscribeContext: listener => editContext.subscribe(listener),
     subscribeSketch: listener => pathSketch.subscribe(listener),
+    subscribePlanarSketch: listener => planarSketch.subscribe(listener),
     subscribeToolParameters: listener => toolParameters.subscribe(listener)
   });
   const editHud = new EditHud({
@@ -1128,6 +1157,7 @@ export async function createWebRuntime({
   runtime.onDispose(() => toolParameters.dispose());
   runtime.onDispose(() => toolLifecycle.dispose());
   runtime.onDispose(() => pathSketch.dispose());
+  runtime.onDispose(() => planarSketch.dispose());
   runtime.onDispose(() => meshEditPanel.dispose());
   runtime.onDispose(() => editContext.dispose());
   runtime.onDispose(() => meshEditor.dispose());
@@ -1429,6 +1459,7 @@ export async function createWebRuntime({
       editContext,
       pathTools,
       pathSketch,
+      planarSketch,
       toolRegistry,
       toolParameters,
       editHud,

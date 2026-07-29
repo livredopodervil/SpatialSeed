@@ -597,6 +597,23 @@ export class MeshEditController {
       : null;
   }
 
+  selectedReferencePoints() {
+    const session = this.#requireSession();
+    const matrix = new THREE.Matrix4().fromArray(session.objectWorldMatrix);
+    return Object.freeze(
+      [...session.selectedIndices]
+        .sort((left, right) => left - right)
+        .map(index => session.descriptor.positions[index])
+        .filter(Boolean)
+        .map(point => Object.freeze(
+          new THREE.Vector3()
+            .fromArray(point)
+            .applyMatrix4(matrix)
+            .toArray()
+        ))
+    );
+  }
+
   referenceFrame() {
     const session = this.#requireSession();
     if (session.componentMode !== "face") return null;

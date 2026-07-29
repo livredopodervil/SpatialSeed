@@ -835,8 +835,22 @@ export class PathSketchController {
 
 function resolveFrame(renderer, source) {
   const normalized = String(source ?? "locked-or-viewer").toLowerCase();
+  const drawingPlane = renderer.getDrawingPlane?.();
   const editPlane = renderer.getEditPlane?.();
-  const locked = editPlane ?? renderer.getNavigationLocks?.().plane;
+  const navigationPlane = renderer.getNavigationLocks?.().plane;
+  if (["drawing", "drawing-plane", "draw-plane"].includes(normalized)) {
+    if (!drawingPlane) {
+      throw new Error("Defina um plano de desenho antes de iniciar o traço.");
+    }
+    return normalizeFrame(drawingPlane);
+  }
+  if (["edit", "edit-plane"].includes(normalized)) {
+    if (!editPlane) {
+      throw new Error("Defina um plano de edição antes de iniciar o traço.");
+    }
+    return normalizeFrame(editPlane);
+  }
+  const locked = drawingPlane ?? editPlane ?? navigationPlane;
   if (["locked", "locked-or-viewer", "plane"].includes(normalized) && locked) {
     return normalizeFrame(locked);
   }
