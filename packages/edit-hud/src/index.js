@@ -1,4 +1,4 @@
-export { EditHud } from "./EditHud.js?build=20260729-0039g1";
+export { EditHud } from "./EditHud.js?build=20260729-0039g2";
 export {
   deriveHudContext,
   geometryToolIcon,

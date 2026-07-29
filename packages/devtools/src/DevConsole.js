@@ -731,6 +731,8 @@ export class DevConsole {
         "snap grid on|off",
         "select object-id [object-id ...]",
         "select only|add|remove|toggle object-id [...]",
+        "select gesture rectangle|brush|lasso|eraser [raio]",
+        "select gesture off",
         "select clear",
         "clear",
         "list objects",
@@ -2205,6 +2207,34 @@ export class DevConsole {
   #selectCommand(tokens) {
     const action=(tokens[0]??"").toLowerCase();
     if(action==="clear") return this.commands.execute("selection.clear");
+    if (action === "gesture") {
+      const mode = String(tokens[1] ?? "").toLowerCase();
+      if (mode === "off") {
+        this.#expectExact(tokens.slice(1), 1, "select gesture off");
+        return this.commands.execute("selection.gesture.set", {
+          mode: this.editor.selectionGestureMode ?? "rectangle",
+          radiusPixels: this.editor.selectionBrushRadius ?? 24,
+          enabled: false
+        });
+      }
+      if (!["rectangle", "brush", "lasso", "eraser"].includes(mode)) {
+        throw new Error(
+          "Uso: select gesture rectangle|brush|lasso|eraser [raio]."
+        );
+      }
+      this.#expectMaximum(
+        tokens.slice(1),
+        2,
+        "select gesture rectangle|brush|lasso|eraser [raio]"
+      );
+      return this.commands.execute("selection.gesture.set", {
+        mode,
+        radiusPixels: tokens[2] === undefined
+          ? this.editor.selectionBrushRadius ?? 24
+          : this.#number(tokens[2]),
+        enabled: true
+      });
+    }
     if (this.queries?.execute("mesh.edit.status")?.active) {
       throw new Error(
         "Durante a edição de malha, use mesh select all|none|invert; a seleção de objetos está bloqueada."
@@ -2395,7 +2425,7 @@ export class DevConsole {
       throw new Error(
         "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
         "resources|test help|animation-runtime|animation-commands|" +
-        "tool-parameters|" +
+        "tool-parameters|selection-ui|instance-batches|" +
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|file-interop|" +

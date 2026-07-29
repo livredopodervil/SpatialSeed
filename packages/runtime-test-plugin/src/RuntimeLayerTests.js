@@ -1,4 +1,4 @@
-import { EditorState } from "../../editor-core/src/EditorState.js?build=20260714-0021a";
+import { EditorState } from "../../editor-core/src/EditorState.js?build=20260729-0039g2";
 import * as THREE from "three";
 import {
   SpatialSeedRuntime,
@@ -45,8 +45,9 @@ import {
   InstanceBatchIndex
 } from "../../instance-batches/src/InstanceBatchIndex.js?build=20260713-0019g-c2";
 import {
-  InstanceBatch
-} from "../../instance-batches/src/InstanceBatch.js?build=20260713-0019g-c2";
+  InstanceBatch,
+  updateAbsoluteInstanceColor
+} from "../../instance-batches/src/InstanceBatch.js?build=20260729-0039g2";
 import {
   InstanceBatchManager
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
@@ -91,7 +92,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260729-0039g1";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260729-0039g2";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -141,7 +142,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260729-0039g";
+} from "../../devtools/src/DevConsole.js?build=20260729-0039g2";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -167,6 +168,11 @@ import {
   selectionOutlineInstance
 } from "../../renderer-three/src/SelectionOutlineBatch.js?build=20260718-0027g";
 import {
+  ScreenSelectionIndex,
+  normalizeScreenSelectionGesture,
+  screenSelectionGestureContains
+} from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260729-0039g2";
+import {
   MeshEditController,
   applyMeshTopologyOperation,
   affineDeltaWorld,
@@ -185,15 +191,15 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260729-0039g1";
+} from "../../mesh-editor-core/src/index.js?build=20260729-0039g2";
 import {
   EditContextController,
   axesFromConstraint,
   constraintFromAxes
-} from "../../edit-context/src/index.js?build=20260729-0039g1";
+} from "../../edit-context/src/index.js?build=20260729-0039g2";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260728-0039d";
+} from "../../editor-commands/src/EditorCommands.js?build=20260729-0039g2";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -210,7 +216,7 @@ import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
-} from "../../edit-hud/src/index.js?build=20260729-0039g1";
+} from "../../edit-hud/src/index.js?build=20260729-0039g2";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -227,7 +233,7 @@ import {
   samplePathFrames,
   samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "../../spatial-references/src/index.js?build=20260729-0039g1";
+} from "../../spatial-references/src/index.js?build=20260729-0039g2";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -253,10 +259,11 @@ import {
   PwaInstallController
 } from "../../../apps/web/pwa/PwaInstallController.js";
 import {
+  SelectionMarquee,
   UiActionRegistry,
   UiRefreshCoordinator,
   normalizeShortcutChord
-} from "../../ui-widgets/src/index.js?build=20260720-0028c";
+} from "../../ui-widgets/src/index.js?build=20260729-0039g2";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260720-0028c";
@@ -1912,6 +1919,48 @@ export function createRuntimeLayerTests() {
         assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
       },
 
+      "cor paramétrica persiste em todas as famílias geométricas"() {
+        const fixture = createPathToolFixture();
+        const modifier =
+          fixture.service.compileArrayBrushColorModifier({
+            affineColor: "hsl(240-120*u,1,0.5)"
+          });
+        for (const geometry of geometryProviderSamples()) {
+          const brush = fixture.service.captureArrayBrush({
+            sourceMode: "catalog",
+            geometryType: geometry.type,
+            geometry,
+            color: "#ff0000"
+          });
+          const plan = fixture.service.previewArrayBrush({
+            points: [[0, 0, 0], [1, 0, 0]],
+            brush,
+            spacing: 1,
+            curveType: "polyline",
+            colorModifier: modifier,
+            affineULength: 1,
+            maximumCopies: 4
+          });
+          const result = fixture.service.commitArrayBrushPlan({
+            plan,
+            brush
+          });
+          const created = result.createdIds.map(id =>
+            fixture.sandbox.getObject(id)
+          );
+          assertEqual(created.length, plan.previewCount);
+          assertDeepEqual(
+            created.map(object => object.instanceState?.color),
+            plan.colorsByEntry[0].colors
+          );
+          assertEqual(
+            created.every(object => object.geometry.type === geometry.type),
+            true
+          );
+          assertEqual(fixture.sandbox.undo(), true);
+        }
+      },
+
       "modificador afim fixa u por distância e inverte cor na escala negativa"() {
         assertEqual(compilePathBrushAffineModifier().identity, true);
         const modifier = compilePathBrushAffineModifier({
@@ -2544,6 +2593,107 @@ export function createRuntimeLayerTests() {
           assertEqual(
             afterSecond.previewResources.diagnostics.meshBuilds,
             1
+          );
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      "controlador persistente rearma o pincel após desfazer o traço anterior"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        delete globalThis.requestAnimationFrame;
+        delete globalThis.cancelAnimationFrame;
+        const fixture = createPathToolFixture();
+        const renderer = createPathSketchRendererStub();
+        const completions = [];
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          onCompleted: value => completions.push(value)
+        });
+        const draw = (pointerId, y) => {
+          renderer.canvas.emit(
+            "pointerdown",
+            pathPointerEvent(pointerId, 20, y)
+          );
+          renderer.canvas.emit(
+            "pointermove",
+            pathPointerEvent(pointerId, 80, y)
+          );
+          renderer.canvas.emit(
+            "pointerup",
+            pathPointerEvent(pointerId, 80, y)
+          );
+        };
+        try {
+          controller.begin({
+            mode: "array",
+            sourceMode: "catalog",
+            geometryType: "sphere",
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0,
+            spacingMode: "world",
+            spacingWorld: 0.5,
+            continuous: true
+          });
+          const meshIds = controller.status().previewResources.meshIds;
+
+          draw(1, 45);
+          assertEqual(completions.length, 1);
+          assertEqual(fixture.sandbox.undo(), true);
+          assertEqual(
+            completions[0].result.createdIds.some(id =>
+              fixture.sandbox.getObject(id)
+            ),
+            false
+          );
+
+          draw(2, 55);
+          const status = controller.status();
+          assertEqual(completions.length, 2);
+          assertEqual(status.active, true);
+          assertEqual(status.drawing, false);
+          assertEqual(status.committing, false);
+          assertEqual(status.error, null);
+          assertDeepEqual(status.previewResources.meshIds, meshIds);
+          assertEqual(
+            completions[1].result.createdIds.every(id =>
+              Boolean(fixture.sandbox.getObject(id))
+            ),
+            true
           );
         } finally {
           controller.dispose();
@@ -10339,6 +10489,39 @@ assets: {
     });
   },
 
+  "cor absoluta por instância atravessa canais nulos do material"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshStandardMaterial({
+      color: "#ff0000"
+    });
+    const batch = new InstanceBatch({
+      key: "absolute-color",
+      geometry,
+      material,
+      capacity: 2
+    });
+    batch.add("a", new THREE.Matrix4());
+
+    const desired = new THREE.Color("#00ff80");
+    assertEqual(
+      updateAbsoluteInstanceColor(batch, "a", desired),
+      true
+    );
+    const projected = batch.material.color
+      .clone()
+      .multiply(batch.colorAt("a"));
+    assertNear(projected.r, desired.r, 1e-6);
+    assertNear(projected.g, desired.g, 1e-6);
+    assertNear(projected.b, desired.b, 1e-6);
+    assertEqual(batch.material.color.g > 0, true);
+    assertEqual(batch.material.color.b > 0, true);
+
+    batch.dispose({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
+  },
+
   "manager atualiza cor sem trocar lote"() {
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const material = new THREE.MeshBasicMaterial();
@@ -13150,10 +13333,274 @@ assets: {
     },
 
     "selection-ui": {
-    "editor inicia em seleção"() { const e=new EditorState(); assertEqual(e.snapshot().tool.mode,"select"); assertEqual(e.snapshot().selectionOperation,"replace"); },
-    "preserva transformação ao navegar"() { const e=new EditorState(); e.setToolMode("rotate"); e.setToolMode("navigate"); assertEqual(e.snapshot().tool.transformMode,"rotate"); },
-    "operações são explícitas"() { const e=new EditorState(); e.setSelectionOperation("add"); e.setAreaSelection(true); assertEqual(e.snapshot().selectionOperation,"add"); assertEqual(e.snapshot().areaSelection,true); }
-  },
+      "editor inicia em seleção"() {
+        const editor = new EditorState();
+        assertEqual(editor.snapshot().tool.mode, "select");
+        assertEqual(editor.snapshot().selectionOperation, "replace");
+        assertEqual(editor.snapshot().selectionGestureMode, "rectangle");
+        assertNear(editor.snapshot().selectionBrushRadius, 24);
+      },
+
+      "preserva transformação ao navegar"() {
+        const editor = new EditorState();
+        editor.setToolMode("rotate");
+        editor.setToolMode("navigate");
+        assertEqual(editor.snapshot().tool.transformMode, "rotate");
+      },
+
+      "operações e gesto são explícitos"() {
+        const editor = new EditorState();
+        editor.setSelectionOperation("add");
+        editor.setSelectionGesture({
+          mode: "brush",
+          radiusPixels: 31,
+          enabled: true
+        });
+        assertEqual(editor.snapshot().selectionOperation, "add");
+        assertEqual(editor.snapshot().areaSelection, true);
+        assertEqual(editor.snapshot().selectionGestureMode, "brush");
+        assertNear(editor.snapshot().selectionBrushRadius, 31);
+      },
+
+      "seleção em lote preserva semântica de adicionar remover e alternar"() {
+        const selection = new Selection();
+        const member = objectId => ({
+          kind: "object",
+          regionId: "region-main",
+          objectId
+        });
+        selection.applyMany([member("a"), member("b")], {
+          operation: "replace"
+        });
+        selection.applyMany([member("c")], { operation: "add" });
+        selection.applyMany([member("b")], { operation: "remove" });
+        selection.applyMany([member("a"), member("d")], {
+          operation: "toggle"
+        });
+        assertDeepEqual(
+          selection.snapshot().members.map(value => value.objectId),
+          ["c", "d"]
+        );
+      },
+
+      "retângulo pincel laço e borracha compartilham geometria determinística"() {
+        const rectangle = normalizeScreenSelectionGesture({
+          mode: "rectangle",
+          points: [{ x: 0, y: 0 }, { x: 20, y: 20 }]
+        });
+        const brush = normalizeScreenSelectionGesture({
+          mode: "brush",
+          points: [{ x: 0, y: 10 }, { x: 30, y: 10 }],
+          radiusPixels: 5
+        });
+        const lasso = normalizeScreenSelectionGesture({
+          mode: "lasso",
+          points: [
+            { x: 0, y: 0 },
+            { x: 20, y: 0 },
+            { x: 10, y: 20 }
+          ]
+        });
+        assertEqual(screenSelectionGestureContains(rectangle, { x: 8, y: 8 }), true);
+        assertEqual(screenSelectionGestureContains(brush, { x: 16, y: 14 }), true);
+        assertEqual(screenSelectionGestureContains(brush, { x: 16, y: 17 }), false);
+        assertEqual(screenSelectionGestureContains(lasso, { x: 10, y: 8 }), true);
+        assertEqual(screenSelectionGestureContains(lasso, { x: 19, y: 18 }), false);
+      },
+
+      "índice espacial testa apenas candidatos próximos no caminho quente"() {
+        const index = new ScreenSelectionIndex({ cellSize: 64 });
+        index.rebuild(Array.from({ length: 4096 }, (_, item) => ({
+          x: (item % 64) * 16,
+          y: Math.floor(item / 64) * 16,
+          id: item
+        })));
+        const hits = index.query({
+          mode: "brush",
+          points: [{ x: 8, y: 8 }, { x: 40, y: 8 }],
+          radiusPixels: 8
+        });
+        const diagnostics = index.diagnostics();
+        assertEqual(hits.length > 0, true);
+        assertEqual(diagnostics.testedEntries < 100, true);
+      },
+
+      "captura do pincel remove listeners temporários ao soltar"() {
+        const listeners = new Map();
+        const canvas = {
+          addEventListener(type, listener) {
+            const values = listeners.get(type) ?? new Set();
+            values.add(listener);
+            listeners.set(type, values);
+          },
+          removeEventListener(type, listener) {
+            listeners.get(type)?.delete(listener);
+          },
+          getBoundingClientRect() {
+            return { left: 10, top: 20, width: 200, height: 100 };
+          },
+          setPointerCapture() {},
+          releasePointerCapture() {}
+        };
+        const path = {
+          style: {},
+          setAttribute() {}
+        };
+        const cursor = {
+          hidden: true,
+          setAttribute() {}
+        };
+        const svg = { setAttribute() {} };
+        const element = {
+          hidden: true,
+          dataset: {},
+          style: {},
+          querySelector(selector) {
+            if (selector === "svg") return svg;
+            if (selector.includes("path")) return path;
+            if (selector.includes("cursor")) return cursor;
+            return null;
+          }
+        };
+        const completed = [];
+        const marquee = new SelectionMarquee({
+          canvas,
+          element,
+          onComplete: value => completed.push(value)
+        });
+        const emit = (type, x, y) => {
+          const event = {
+            pointerId: 7,
+            pointerType: "touch",
+            button: 0,
+            clientX: 10 + x,
+            clientY: 20 + y,
+            preventDefault() {},
+            stopImmediatePropagation() {},
+            getCoalescedEvents() { return [this]; }
+          };
+          for (const listener of [...(listeners.get(type) ?? [])]) {
+            listener(event);
+          }
+        };
+        marquee.setMode("brush", { radiusPixels: 18 });
+        marquee.setEnabled(true);
+        emit("pointerdown", 5, 5);
+        emit("pointermove", 40, 20);
+        assertEqual(completed.length, 0);
+        emit("pointerup", 70, 30);
+        assertEqual(completed.length, 1);
+        assertEqual(completed[0].mode, "brush");
+        assertNear(completed[0].radiusPixels, 18);
+        assertEqual(listeners.get("pointermove").size, 0);
+        assertEqual(listeners.get("pointerup").size, 0);
+        assertEqual(listeners.get("pointercancel").size, 0);
+        emit("pointerdown", 8, 8);
+        assertEqual(listeners.get("pointermove").size, 1);
+        marquee.setEnabled(false);
+        assertEqual(listeners.get("pointermove").size, 0);
+        assertEqual(listeners.get("pointerup").size, 0);
+        assertEqual(listeners.get("pointercancel").size, 0);
+        marquee.dispose();
+        assertEqual(listeners.get("pointerdown").size, 0);
+      },
+
+      "borracha publica uma única exclusão para todos os atingidos"() {
+        const editor = new EditorState();
+        const calls = [];
+        const commands = createEditorCommands({
+          editor,
+          renderer: {
+            resolveScreenSelectionGesture() {
+              return {
+                subject: "object",
+                mode: "eraser",
+                members: [
+                  { objectId: "a" },
+                  { objectId: "b" }
+                ]
+              };
+            }
+          },
+          selectionOperations: {
+            deleteIds(ids, options) {
+              calls.push({ ids, options });
+              return { changed: true, deletedIds: ids };
+            }
+          },
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {}
+        });
+        const result = commands.execute("selection.gesture.apply", {
+          mode: "eraser",
+          points: [{ x: 1, y: 1 }]
+        });
+        assertEqual(result.changed, true);
+        assertEqual(calls.length, 1);
+        assertDeepEqual(calls[0].ids, ["a", "b"]);
+        assertEqual(calls[0].options.source, "selection-eraser");
+      },
+
+      "console escolhe gesto e raio pela mesma superfície de comando"() {
+        const calls = [];
+        const console = createGeometryConsole(calls);
+        const [entry] = console.execute("select gesture brush 36");
+        assertEqual(entry.ok, true);
+        assertDeepEqual(calls, [{
+          id: "selection.gesture.set",
+          args: {
+            mode: "brush",
+            radiusPixels: 36,
+            enabled: true
+          }
+        }]);
+      },
+
+      "borracha de componentes produz uma operação topológica local"() {
+        const editor = new EditorState();
+        const calls = [];
+        const meshEditor = {
+          active: true,
+          applyComponentSelection(value) {
+            calls.push({ type: "select", value });
+          },
+          applyTopology(value) {
+            calls.push({ type: "topology", value });
+            return { changed: true };
+          }
+        };
+        const commands = createEditorCommands({
+          editor,
+          renderer: {
+            resolveScreenSelectionGesture() {
+              return {
+                subject: "component",
+                mode: "eraser",
+                component: "face",
+                indices: [2, 4]
+              };
+            }
+          },
+          selectionOperations: {},
+          meshEditor,
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {}
+        });
+        assertEqual(commands.execute("selection.gesture.apply", {
+          mode: "eraser",
+          points: [{ x: 4, y: 4 }]
+        }).changed, true);
+        assertEqual(calls.length, 2);
+        assertDeepEqual(calls[0].value, {
+          mode: "face",
+          indices: [2, 4],
+          operation: "replace"
+        });
+        assertDeepEqual(calls[1].value, { operation: "delete" });
+      }
+    },
 
   simulation: {
       "simulador aceita comando na versão correta"() {

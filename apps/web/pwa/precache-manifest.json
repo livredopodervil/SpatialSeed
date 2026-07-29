@@ -149,6 +149,7 @@
     "packages/renderer-resource-cache/src/ThreeResourceCache.js",
     "packages/renderer-resource-cache/src/index.js",
     "packages/renderer-three/src/AnimationTransformOverlay.js",
+    "packages/renderer-three/src/ScreenSelectionGesture.js",
     "packages/renderer-three/src/SelectionOutlineBatch.js",
     "packages/renderer-three/src/ThreeRegionRenderer.js",
     "packages/renderer-three/src/ViewerEnvironment.js",

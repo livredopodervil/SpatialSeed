@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import {
-  InstanceBatch
-} from "../../instance-batches/src/InstanceBatch.js?build=20260713-0019g-c2";
+  InstanceBatch,
+  updateAbsoluteInstanceColor
+} from "../../instance-batches/src/InstanceBatch.js?build=20260729-0039g2";
 import {
   InstanceBatchManager
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
@@ -61,6 +62,10 @@ import {
 import {
   normalizeMeshComponentMode
 } from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260727-0036d";
+import {
+  normalizeScreenSelectionGesture,
+  ScreenSelectionIndex
+} from "./ScreenSelectionGesture.js?build=20260729-0039g2";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-navigation-camera-v4";
@@ -106,6 +111,13 @@ export class ThreeRegionRenderer {
   #overlapCycle = { x: null, y: null, ids: [], index: -1, time: 0 };
   #batchCapacity = 65536;
   #hierarchy = new HierarchyIndex([]);
+  #screenSelectionVersion = 0;
+  #screenSelectionCache = {
+    key: null,
+    index: new ScreenSelectionIndex(),
+    builds: 0,
+    hits: 0
+  };
   #frameListeners = new Set();
   #cameraListeners = new Set();
   #transformPreviewListeners = new Set();
@@ -359,6 +371,13 @@ export class ThreeRegionRenderer {
         y: event.clientY,
         type: event.pointerType || "mouse"
       };
+      if (
+        this.#interactionMode === "select" &&
+        this.editorState.areaSelection
+      ) {
+        this.#tap = null;
+        return;
+      }
       this.#tap = {
         id: event.pointerId,
         x: event.clientX,
@@ -1217,63 +1236,99 @@ export class ThreeRegionRenderer {
   }
 
   selectScreenRect(rectangle, operation = this.#selectionOperation) {
+    const result = this.resolveScreenSelectionGesture({
+      mode: "rectangle",
+      rectangle
+    });
+    if (result.subject === "component") {
+      const edit = this.#meshEdit;
+      edit?.onComponentPick?.({
+        mode: result.component,
+        indices: result.indices,
+        operation
+      });
+      if (!edit?.onComponentPick && result.component === "vertex") {
+        edit?.onVertexPick?.({ indices: result.indices, operation });
+      }
+      return {
+        operation,
+        selected: result.indices.length,
+        component: result.component,
+        objectId: result.objectId
+      };
+    }
+    this.#applySelectionMembers(result.members, operation);
+    return {
+      operation,
+      selected: result.members.length,
+      selection: this.selection.snapshot()
+    };
+  }
+
+  resolveScreenSelectionGesture(rawGesture) {
+    const gesture = normalizeScreenSelectionGesture(rawGesture);
     if (this.#meshEdit) {
       const edit = this.#meshEdit;
       const rect = this.canvas.getBoundingClientRect();
       edit.group.updateMatrixWorld(true);
-      const indices = [];
-      const inside = point => {
+      const entries = [];
+      const append = (point, index) => {
         const projected = new THREE.Vector3()
           .fromArray(point)
           .applyMatrix4(edit.group.matrixWorld)
           .project(this.camera);
-        if (projected.z < -1 || projected.z > 1) return false;
+        if (projected.z < -1 || projected.z > 1) return;
         const x = (projected.x + 1) * 0.5 * rect.width;
         const y = (1 - projected.y) * 0.5 * rect.height;
-        return x >= rectangle.left && x <= rectangle.right &&
-          y >= rectangle.top && y <= rectangle.bottom;
+        entries.push({ x, y, index });
       };
       if (edit.componentMode === "vertex") {
         edit.descriptor.positions.forEach((point, index) => {
-          if (inside(point)) indices.push(index);
+          append(point, index);
         });
       } else if (edit.componentMode === "edge") {
         edit.topology.edges.forEach(edge => {
           const midpoint = edit.descriptor.positions[edge.a].map((value, axis) =>
             (value + edit.descriptor.positions[edge.b][axis]) * 0.5
           );
-          if (inside(midpoint)) indices.push(edge.index);
+          append(midpoint, edge.index);
         });
       } else {
         edit.topology.faces.forEach(face => {
-          if (inside(face.centroid)) indices.push(face.index);
+          append(face.centroid, face.index);
         });
       }
-      edit.onComponentPick?.({ mode: edit.componentMode, indices, operation });
-      if (!edit.onComponentPick && edit.componentMode === "vertex") {
-        edit.onVertexPick?.({ indices, operation });
-      }
-      return {
-        operation,
+      const index = new ScreenSelectionIndex().rebuild(entries);
+      const indices = index.query(gesture).map(entry => entry.index);
+      return Object.freeze({
+        subject: "component",
+        mode: gesture.mode,
         selected: indices.length,
         component: edit.componentMode,
-        objectId: edit.objectId
-      };
+        objectId: edit.objectId,
+        indices: Object.freeze(indices)
+      });
     }
-    const r = this.canvas.getBoundingClientRect(), byId = new Map();
-    for (const [objectId, proxy] of this.#meshes) {
-      if (
-        proxy.userData.logicalOnly &&
-        !proxy.userData.cameraVisual
-      ) continue;
-      const p = proxy.getWorldPosition(new THREE.Vector3()).project(this.camera);
-      if (p.z < -1 || p.z > 1) continue;
-      const x=(p.x+1)*.5*r.width,y=(1-p.y)*.5*r.height;
-      if(x>=rectangle.left&&x<=rectangle.right&&y>=rectangle.top&&y<=rectangle.bottom){const selectedId=this.#hierarchy.has(objectId)?selectionUnitId(this.#hierarchy,objectId):objectId;byId.set(selectedId,{kind:"object",regionId:"region-main",objectId:selectedId})}
+    const byId = new Map();
+    for (const entry of this.#objectScreenSelectionIndex().query(gesture)) {
+      byId.set(entry.member.objectId, entry.member);
     }
-    const members=[...byId.values()];
-    this.#applySelectionMembers(members, operation);
-    return { operation, selected: members.length, selection: this.selection.snapshot() };
+    const members = [...byId.values()];
+    return Object.freeze({
+      subject: "object",
+      mode: gesture.mode,
+      selected: members.length,
+      members: Object.freeze(members)
+    });
+  }
+
+  getScreenSelectionDiagnostics() {
+    return Object.freeze({
+      version: this.#screenSelectionVersion,
+      builds: this.#screenSelectionCache.builds,
+      hits: this.#screenSelectionCache.hits,
+      index: this.#screenSelectionCache.index.diagnostics()
+    });
   }
 
   setPivotEditing(enabled) {
@@ -1300,6 +1355,7 @@ export class ThreeRegionRenderer {
 
   update(state) {
     this.#lastState = state;
+    this.#screenSelectionVersion += 1;
     this.#incrementalDiagnostics.fullUpdates += 1;
     const seen = new Set();
     const hierarchy = new HierarchyIndex(state.objects);
@@ -1323,6 +1379,7 @@ export class ThreeRegionRenderer {
 
   applyChanges(state, changes = []) {
     this.#lastState = state;
+    if (changes.length) this.#screenSelectionVersion += 1;
     this.#incrementalDiagnostics.incrementalUpdates += 1;
     const hierarchy = new HierarchyIndex(state.objects);
     this.#hierarchy = hierarchy;
@@ -1378,6 +1435,7 @@ export class ThreeRegionRenderer {
     const transforms = normalizePreviewTransforms(session.transforms);
     this.#sharedTransformPreviews.delete(key);
     this.#sharedTransformPreviews.set(key, transforms);
+    this.#screenSelectionVersion += 1;
     this.#rebuildSharedTransformObjectIds();
     this.#applySharedPreviewTransforms(transforms);
     return Object.freeze({
@@ -1390,6 +1448,7 @@ export class ThreeRegionRenderer {
     const key = previewSessionKey(session);
     const previous = this.#sharedTransformPreviews.get(key) ?? [];
     if (!this.#sharedTransformPreviews.delete(key)) return false;
+    this.#screenSelectionVersion += 1;
     this.#rebuildSharedTransformObjectIds();
     this.#restoreSharedPreviewObjects(
       previous.map(transform => transform.id)
@@ -2152,21 +2211,7 @@ export class ThreeRegionRenderer {
     const batch = this.#batchManager.getBatch(location.batchKey);
     if (!batch) return false;
 
-    const desired = new THREE.Color(value);
-    const base = batch.material?.color?.isColor
-      ? batch.material.color
-      : new THREE.Color(0xffffff);
-
-    const tint = new THREE.Color(
-      safeColorRatio(desired.r, base.r),
-      safeColorRatio(desired.g, base.g),
-      safeColorRatio(desired.b, base.b)
-    );
-
-    return this.#batchManager.updateAttributes(
-      objectId,
-      { color: tint }
-    );
+    return updateAbsoluteInstanceColor(batch, objectId, value);
   }
 
   #applyObjectInstanceColor(objectId) {
@@ -2245,6 +2290,8 @@ export class ThreeRegionRenderer {
 
   #configureTransformForEditor() {
     const mode=this.editorState.tool.mode;
+    const selectionGestureActive =
+      mode === "select" && Boolean(this.editorState.areaSelection);
     this.#interactionMode=mode;
     this.#selectionOperation=this.editorState.selectionOperation??"replace";
 
@@ -2261,7 +2308,8 @@ export class ThreeRegionRenderer {
         this.transform.showY = axes.y;
         this.transform.showZ = axes.z;
       }
-      this.orbit.enabled = mode === "navigate" || !this.transform.dragging;
+      this.orbit.enabled = !selectionGestureActive &&
+        (mode === "navigate" || !this.transform.dragging);
       return;
     }
 
@@ -2280,7 +2328,8 @@ export class ThreeRegionRenderer {
           : this.#objectTransformFrame.mode
       );
     }
-    this.orbit.enabled=mode==="navigate"||!this.transform.dragging;
+    this.orbit.enabled = !selectionGestureActive &&
+      (mode === "navigate" || !this.transform.dragging);
   }
 
   #beginSession() {
@@ -2953,7 +3002,8 @@ export class ThreeRegionRenderer {
       lastUpdateMs: diagnostics.lastUpdateMs,
       maxUpdateMs: diagnostics.maxUpdateMs,
       rendererInstanceLimit:
-        diagnostics.rendererInstanceLimit
+        diagnostics.rendererInstanceLimit,
+      screenGestures: this.getScreenSelectionDiagnostics()
     });
   }
 
@@ -3891,6 +3941,15 @@ export class ThreeRegionRenderer {
   #selectAt(event) {
     this.#inputDiagnostics.pointerUp += 1;
 
+    if (
+      this.#interactionMode === "select" &&
+      this.editorState.areaSelection
+    ) {
+      this.#tap = null;
+      this.#inputDiagnostics.discardedReason = "gesto-de-selecao";
+      return;
+    }
+
     if (!this.#tap) {
       this.#inputDiagnostics.discardedReason = "sem-pointerdown";
       return;
@@ -4016,7 +4075,111 @@ export class ThreeRegionRenderer {
     this.#inputDiagnostics.selectionAction=op;this.#applySelectionMembers([member],op);this.#inputDiagnostics.discardedReason=null;
   }
 
+  #objectScreenSelectionIndex() {
+    const rect = this.canvas.getBoundingClientRect();
+    this.camera.updateMatrixWorld(true);
+    const key = [
+      this.#screenSelectionVersion,
+      this.#animationSurfaceDiagnostics.frames,
+      rect.width,
+      rect.height,
+      ...this.camera.projectionMatrix.elements,
+      ...this.camera.matrixWorldInverse.elements
+    ].join(",");
+    if (this.#screenSelectionCache.key === key) {
+      this.#screenSelectionCache.hits += 1;
+      return this.#screenSelectionCache.index;
+    }
+    const entries = [];
+    for (const [objectId, proxy] of this.#meshes) {
+      if (
+        proxy.userData.logicalOnly &&
+        !proxy.userData.cameraVisual
+      ) continue;
+      const screen = this.#screenBoundsForProxy(proxy, rect);
+      if (!screen) continue;
+      const selectedId = this.#hierarchy.has(objectId)
+        ? selectionUnitId(this.#hierarchy, objectId)
+        : objectId;
+      entries.push({
+        x: screen.x,
+        y: screen.y,
+        bounds: screen.bounds,
+        member: Object.freeze({
+          kind: "object",
+          regionId: "region-main",
+          objectId: selectedId
+        })
+      });
+    }
+    this.#screenSelectionCache.index.rebuild(entries);
+    this.#screenSelectionCache.key = key;
+    this.#screenSelectionCache.builds += 1;
+    return this.#screenSelectionCache.index;
+  }
+
+  #screenBoundsForProxy(proxy, viewport) {
+    const world = this.#worldBoundsForProxy(proxy, new THREE.Box3());
+    const points = [];
+    if (!world.isEmpty()) {
+      for (const x of [world.min.x, world.max.x]) {
+        for (const y of [world.min.y, world.max.y]) {
+          for (const z of [world.min.z, world.max.z]) {
+            const projected = new THREE.Vector3(x, y, z).project(this.camera);
+            if (projected.z < -1 || projected.z > 1) continue;
+            points.push({
+              x: (projected.x + 1) * 0.5 * viewport.width,
+              y: (1 - projected.y) * 0.5 * viewport.height
+            });
+          }
+        }
+      }
+    }
+    const center = proxy
+      .getWorldPosition(new THREE.Vector3())
+      .project(this.camera);
+    const centerVisible = center.z >= -1 && center.z <= 1;
+    if (centerVisible) {
+      points.push({
+        x: (center.x + 1) * 0.5 * viewport.width,
+        y: (1 - center.y) * 0.5 * viewport.height
+      });
+    }
+    if (!points.length) return null;
+    const xs = points.map(point => point.x);
+    const ys = points.map(point => point.y);
+    const rawLeft = Math.min(...xs);
+    const rawTop = Math.min(...ys);
+    const rawRight = Math.max(...xs);
+    const rawBottom = Math.max(...ys);
+    if (
+      rawRight < 0 ||
+      rawBottom < 0 ||
+      rawLeft > viewport.width ||
+      rawTop > viewport.height
+    ) {
+      return null;
+    }
+    const left = Math.max(0, Math.min(viewport.width, rawLeft));
+    const top = Math.max(0, Math.min(viewport.height, rawTop));
+    const right = Math.max(0, Math.min(viewport.width, rawRight));
+    const bottom = Math.max(0, Math.min(viewport.height, rawBottom));
+    return Object.freeze({
+      x: centerVisible
+        ? (center.x + 1) * 0.5 * viewport.width
+        : (left + right) * 0.5,
+      y: centerVisible
+        ? (1 - center.y) * 0.5 * viewport.height
+        : (top + bottom) * 0.5,
+      bounds: Object.freeze({ left, top, right, bottom })
+    });
+  }
+
   #applySelectionMembers(members,operation){
+    if (this.selection.applyMany) {
+      this.selection.applyMany(members, { operation });
+      return;
+    }
     const current=this.#selectionSnapshot?.members??[],byId=new Map(current.map(m=>[m.objectId,m]));
     if(operation==="replace"){if(this.selection.replaceMany)this.selection.replaceMany(members);else{this.selection.clear();if(members[0])this.selection.replace(members[0]);for(const m of members.slice(1))this.selection.toggle(m)}return}
     if(operation==="add")for(const m of members)byId.set(m.objectId,m);
@@ -4412,14 +4575,6 @@ function createPreviewId() {
   }`;
 }
 
-
-function safeColorRatio(desired, base) {
-  if (Math.abs(base) < 1e-8) {
-    return desired <= 1e-8 ? 0 : desired;
-  }
-
-  return desired / base;
-}
 
 function normalizeMeshDisplaySettings(value = {}) {
   return {

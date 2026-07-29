@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260729-0039g1",
-  "channel": "fix/0039g1-path-brush-release"
+  "build": "20260729-0039g2",
+  "channel": "fix/0039g2-undo-color-selection-gestures"
 }

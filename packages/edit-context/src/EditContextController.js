@@ -114,6 +114,8 @@ export class EditContextController {
       tool: editor.tool.mode,
       selectionOperation: editor.selectionOperation,
       areaSelection: editor.areaSelection,
+      selectionGestureMode: editor.selectionGestureMode,
+      selectionBrushRadius: editor.selectionBrushRadius,
       multiSelect: editor.multiSelect,
       frameMode,
       axes: Object.freeze({ ...axes }),

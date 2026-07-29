@@ -126,8 +126,13 @@ export class EditHud {
         ? "true"
         : "false";
     }
-    this.#element("edit-hud-area-selection").dataset.active =
-      state.areaSelection ? "true" : "false";
+    for (const button of this.root.querySelectorAll("[data-edit-selection-gesture]")) {
+      button.dataset.active =
+        state.areaSelection &&
+        button.dataset.editSelectionGesture === state.selectionGestureMode
+          ? "true"
+          : "false";
+    }
     for (const button of this.root.querySelectorAll("[data-edit-frame]")) {
       button.dataset.active = button.dataset.editFrame === state.frameMode
         ? "true"
@@ -227,15 +232,15 @@ export class EditHud {
         { operation: button.dataset.editSelectionOperation }
       ));
     }
-    this.#element("edit-hud-area-selection").addEventListener("click", () => {
-      const status = this.query("edit.context.status");
-      if (status.tool === "select" && status.areaSelection) {
-        this.#execute("selection.area.toggle");
-        return;
-      }
-      this.#execute("edit.context.tool.set", { mode: "select" });
-      if (!status.areaSelection) this.#execute("selection.area.toggle");
-    });
+    for (const button of this.root.querySelectorAll("[data-edit-selection-gesture]")) {
+      button.addEventListener("click", () => this.#execute(
+        "selection.gesture.set",
+        {
+          mode: button.dataset.editSelectionGesture,
+          toggle: true
+        }
+      ));
+    }
     for (const button of this.root.querySelectorAll("[data-edit-frame]")) {
       button.addEventListener("click", () => this.#execute(
         "edit.context.frame.set",
@@ -1202,7 +1207,10 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-open": ["Painel Editar", "Abre o workspace completo com parâmetros numéricos, criação, materiais, luzes, caminhos e operações de malha."],
   "edit-hud-help": ["Ajuda dos ícones", "Ativa o modo de consulta. Nesse modo, tocar numa ferramenta mostra sua explicação sem executá-la."],
   "edit-hud-object": ["Modo objeto", "Seleciona e transforma objetos inteiros. Encerre ou aplique a sessão de malha antes de retornar a este modo."],
-  "edit-hud-area-selection": ["Selecionar por área", "Ativa a ferramenta de seleção e permite arrastar um retângulo no viewer para selecionar objetos ou componentes do modo atual."],
+  "edit-hud-area-selection": ["Seleção retangular", "Arraste um retângulo e aplique a operação de seleção atual ao soltar."],
+  "edit-hud-brush-selection": ["Seleção em pincel", "Pinte objetos ou componentes; a cena é consultada uma única vez ao soltar."],
+  "edit-hud-lasso-selection": ["Seleção em laço", "Contorne objetos ou componentes com um laço livre e conclua ao soltar."],
+  "edit-hud-eraser": ["Borracha", "Pinte objetos ou componentes para excluí-los em uma única operação reversível."],
   "edit-hud-axis-x": ["Eixo X", "Permite ou bloqueia o componente X da transformação no frame ativo."],
   "edit-hud-axis-y": ["Eixo Y", "Permite ou bloqueia o componente Y da transformação no frame ativo."],
   "edit-hud-axis-z": ["Eixo Z", "Permite ou bloqueia o componente Z da transformação no frame ativo."],

@@ -74,6 +74,66 @@ export function createEditorCommands({
       editor.setAreaSelection(!editor.areaSelection);
       return { enabled: editor.areaSelection };
     })
+    .register("selection.gesture.set", ({
+      mode = editor.selectionGestureMode,
+      radiusPixels = editor.selectionBrushRadius,
+      enabled = true,
+      toggle = false
+    } = {}) => {
+      const normalizedMode = String(mode ?? "rectangle").trim().toLowerCase();
+      const nextEnabled = toggle &&
+        editor.areaSelection &&
+        editor.selectionGestureMode === normalizedMode
+        ? false
+        : Boolean(enabled);
+      if (nextEnabled && editor.tool.mode !== "select") {
+        renderer.setTransformMode("select");
+      }
+      editor.setSelectionGesture({
+        mode: normalizedMode,
+        radiusPixels,
+        enabled: nextEnabled
+      });
+      return {
+        enabled: editor.areaSelection,
+        mode: editor.selectionGestureMode,
+        radiusPixels: editor.selectionBrushRadius
+      };
+    })
+    .register("selection.gesture.apply", ({
+      operation = editor.selectionOperation,
+      ...gesture
+    } = {}) => {
+      const result = renderer.resolveScreenSelectionGesture(gesture);
+      if (result.subject === "component") {
+        if (!meshEditor?.active) {
+          throw new Error("A sessão de malha do gesto não está ativa.");
+        }
+        if (result.mode === "eraser") {
+          if (!result.indices.length) {
+            return { changed: false, deleted: 0, subject: "component" };
+          }
+          meshEditor.applyComponentSelection({
+            mode: result.component,
+            indices: result.indices,
+            operation: "replace"
+          });
+          return meshEditor.applyTopology({ operation: "delete" });
+        }
+        return meshEditor.applyComponentSelection({
+          mode: result.component,
+          indices: result.indices,
+          operation
+        });
+      }
+      if (result.mode === "eraser") {
+        return selectionOperations.deleteIds(
+          result.members.map(member => member.objectId),
+          { source: "selection-eraser" }
+        );
+      }
+      return editor.selection.applyMany(result.members, { operation });
+    })
     .register("selection.clear", () => {
       if (meshEditor?.active) return meshEditor.clearSelection();
       editor.selection.clear();

@@ -311,6 +311,20 @@ export class MeshEditController {
     return this.status();
   }
 
+  applyComponentSelection({
+    mode = null,
+    index = null,
+    indices = null,
+    operation = "replace"
+  } = {}) {
+    return this.#handleComponentPick({
+      mode,
+      index,
+      indices,
+      operation
+    });
+  }
+
   applyTopology({ operation, options = {} } = {}) {
     const session = this.#requireSession();
     const selected = session.componentSelections[session.componentMode];

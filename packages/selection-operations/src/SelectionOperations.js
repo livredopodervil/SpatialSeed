@@ -784,7 +784,22 @@ export class SelectionOperations {
         reason: "selection-empty"
       };
     }
+    return this.deleteIds(selectedIds, {
+      source: "selection-operations"
+    });
+  }
 
+  deleteIds(objectIds, { source = "selection-eraser" } = {}) {
+    const selectedIds = [...new Set(
+      (objectIds ?? []).map(value => String(value ?? "").trim()).filter(Boolean)
+    )];
+    if (!selectedIds.length) {
+      return {
+        changed: false,
+        deletedIds: [],
+        reason: "selection-empty"
+      };
+    }
     const ids=[...hierarchySubtreeIds(
       this.sandbox.getSnapshot().objects,
       selectedIds
@@ -792,12 +807,17 @@ export class SelectionOperations {
 
     const changed = this.sandbox.dispatch({
       type: "selection.delete",
-      source: "selection-operations",
+      source,
       ids
     });
 
     if (changed) {
-      this.editor.selection.clear();
+      const deleted = new Set(ids);
+      this.editor.selection.replaceMany(
+        this.editor.selection.snapshot().members.filter(
+          member => !deleted.has(member.objectId)
+        )
+      );
       this.pendingDuplicate = null;
     }
 

@@ -149,24 +149,24 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente a correção `0039g1` — dois traços persistentes consecutivos,
-handoff observável e custo constante de seleção/ferramentas — em mobile e
+Validar visualmente a correção `0039g2` — traço após undo, cor afim em todas as
+geometrias, pincel/laço/borracha e custo constante no gesto — em mobile e
 avançar em incrementos independentes:
 
 1. redefinição paramétrica pelo Inspector, com preview e commit atômico;
 2. pivô/origem no HUD e grid configurável por plano;
 3. núcleo planar, estilos de caminho e ferramentas 2D fundamentais;
-4. seleção por laço, pincel e borracha com commit atômico;
-5. régua, transferidor e compasso como referências transformadoras;
-6. referências vinculadas por grafo de modificadores, sem ciclos e com
+4. régua, transferidor e compasso como referências transformadoras;
+5. referências vinculadas por grafo de modificadores, sem ciclos e com
    invalidação incremental;
-7. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
+6. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
 
 Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PATH_REFERENCES_0037A.md`,
 `docs/PATH_BRUSH_AUTHORING_0039E.md`,
 `docs/AFFINE_PATH_BRUSH_0039F.md`,
 `docs/INCREMENTAL_PATH_BRUSH_0039G.md`,
+`docs/SELECTION_GESTURES_0039G2.md`,
 `docs/TOOL_PARAMETERS_PATH_DRAW_0039D.md` e
 `docs/EDIT_INTERACTION_0038B.md`.
 

@@ -111,6 +111,9 @@ for needle in [
     'id="edit-hud-extrude"',
     'id="edit-hud-help"',
     'id="edit-hud-area-selection"',
+    'id="edit-hud-brush-selection"',
+    'id="edit-hud-lasso-selection"',
+    'id="edit-hud-eraser"',
     'id="edit-hud-undo"',
     'id="edit-hud-tooltip"',
     'id="edit-hud-tap-hints"',
@@ -254,6 +257,14 @@ require("packages/edit-context/src/EditContextController.js", "class EditContext
 require("packages/edit-context/src/EditContextController.js", "editor.selection?.subscribe")
 require("packages/edit-hud/src/HudContextHeuristics.js", "deriveHudContext")
 require("packages/edit-hud/src/EditHud.js", "class EditHud")
+for path, needle in [
+    ("packages/editor-commands/src/EditorCommands.js", '"selection.gesture.apply"'),
+    ("packages/renderer-three/src/ThreeRegionRenderer.js", "ScreenSelectionIndex"),
+    ("packages/renderer-three/src/ScreenSelectionGesture.js", "class ScreenSelectionIndex"),
+    ("packages/selection-operations/src/SelectionOperations.js", "deleteIds(objectIds"),
+    ("packages/ui-widgets/src/SelectionMarquee.js", '"pointercancel"')
+]:
+    require(path, needle)
 for needle in [
     "#prepareHints",
     "#onHintPointerDown",
@@ -261,7 +272,7 @@ for needle in [
     "Modo ajuda ativado",
     "HUD_HINT_DETAILS",
     'this.#execute(active ? "mesh.edit.undo" : "history.undo")',
-    'this.#execute("selection.area.toggle")',
+    '"selection.gesture.set"',
     "deriveHudContext",
     "#buildGeometryTools",
     "#applyAdaptiveLayout",

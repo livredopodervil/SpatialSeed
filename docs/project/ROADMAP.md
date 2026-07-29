@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0039g1`.
+> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0039g2`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -251,7 +251,7 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - materiais físicos editáveis por objeto no workspace e Inspector;
 - luzes pontuais, direcionais, spot e ambiente como objetos persistentes editáveis.
 
-### 0038–0039g1 — Ciclo, repetição e autoria por caminho — implementado
+### 0038–0039g2 — Ciclo, repetição, autoria por caminho e gestos — implementado
 
 - ferramentas persistentes com posicionamento e desenho contínuos;
 - plano de edição independente da trava de visualização;
@@ -285,13 +285,19 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - índices por ID e cache incremental para seleção, referências e painéis;
 - listas visuais atualizadas pelo diferencial criado, sem reconstrução por
   troca de ferramenta.
+- rearmamento do pincel persistente quando undo/redo altera a revisão entre
+  gestos, sem reconstruir recursos invariantes;
+- composição de cor absoluta por instância mesmo quando o material-base possui
+  canais RGB nulos;
+- seleção retangular, por pincel e por laço, com captura sem consulta à cena;
+- borracha de objetos e componentes com uma única operação reversível;
+- índice espacial de projeções reutilizado por câmera, viewport e revisão.
 
 ### Próximas extensões geométricas
 
 - redefinição paramétrica de objetos pelo Inspector com preview e commit único;
 - pivô/origem no HUD e grid configurável por plano;
 - núcleo planar, estilos de caminho e ferramentas 2D fundamentais;
-- seleção por laço, pincel e borracha com commit atômico;
 - régua, transferidor e compasso como referências para transformações;
 - sanitização configurável com relatório de degenerações, contornos,
   não-manifold e auto-interseções;

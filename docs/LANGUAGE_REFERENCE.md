@@ -1,7 +1,7 @@
 # Referência da linguagem e do console SpatialSeed
 
 > Referência normativa P0. Auditada em 28 de julho de 2026 contra o runtime
-> `0039g`. Consulte `help`, `help create`, `help mesh`, `help path`,
+> `0039g2`. Consulte `help`, `help create`, `help mesh`, `help path`,
 > `help animate`, `procedure help` e
 > `runtime test help` para confirmar as capabilities do build carregado.
 
@@ -81,12 +81,19 @@ select only object-id [object-id ...]
 select add object-id [object-id ...]
 select remove object-id [object-id ...]
 select toggle object-id [object-id ...]
+select gesture rectangle
+select gesture brush [raio]
+select gesture lasso
+select gesture eraser [raio]
+select gesture off
 select clear
 clear
 ```
 
 `select` sem operação substitui pela primeira referência e alterna as demais.
 Para automação legível, prefira `only`, `add`, `remove` ou `toggle`.
+`gesture` arma a captura no viewer; pincel e borracha aceitam raio de 2 a 128
+pixels. A cena só é resolvida ao soltar o gesto.
 
 ### 3.3 Transformações e pivô
 

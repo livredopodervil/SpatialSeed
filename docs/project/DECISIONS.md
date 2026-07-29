@@ -744,6 +744,30 @@ de objetos novos e renderizá-los continua sujeito ao renderer, mas selecionar
 ferramentas não deve percorrer objetos passivos. A compactação persistente em
 protótipo + instâncias leves continua uma decisão posterior.
 
+## D-043 — Gestos de seleção são capturados sem consultar a cena e resolvidos atomicamente
+
+**Estado:** implementada inicialmente no build 0039g2.
+
+Retângulo, pincel, laço e borracha registram somente pontos de tela durante o
+movimento. Ao soltar, o renderer resolve o gesto contra um índice espacial de
+projeções, reutilizado enquanto revisão da cena, câmera e viewport não mudam. A
+resolução retorna IDs ou componentes; somente o comando editorial aplica a
+seleção ou exclusão.
+
+**Motivação:** consultar objetos em todo `pointermove` faria o custo de uma
+ferramenta crescer com a cena passiva e misturaria preview com mutação. A
+borracha também precisa ser reversível como uma intenção única, e não como uma
+série de exclusões emitidas ao longo do gesto.
+
+**Consequências:** o caminho quente do movimento depende do número de pontos
+coalescidos do gesto, não dos objetos existentes. A primeira consulta após
+mudança real de cena ou câmera reconstrói o índice; consultas seguintes visitam
+somente células e candidatos atingidos. A borracha em modo objeto publica uma
+única `selection.delete` no histórico global. Em edição de malha, ela produz
+uma única operação topológica no histórico local da sessão. Seleção continua
+sem entrada de undo. O índice usa limites projetados para pincel e borracha e o
+centro projetado para a semântica de retângulo e laço.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

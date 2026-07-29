@@ -107,7 +107,19 @@ export class MeshEditPanel {
         ? "true"
         : "false";
     }
+    for (const button of this.root.querySelectorAll(
+      "[data-edit-workspace-selection-gesture]"
+    )) {
+      button.dataset.active =
+        context.areaSelection &&
+        button.dataset.editWorkspaceSelectionGesture ===
+          context.selectionGestureMode
+          ? "true"
+          : "false";
+    }
     this.#element("edit-workspace-area").checked = Boolean(context.areaSelection);
+    this.#element("edit-workspace-selection-radius").value =
+      String(context.selectionBrushRadius ?? 24);
     this.#element("edit-workspace-multi").checked = Boolean(context.multiSelect);
     this.#element("edit-workspace-keep-tool").checked = Boolean(context.keepToolActive);
     this.#element("edit-workspace-object").disabled = active;
@@ -992,6 +1004,31 @@ export class MeshEditPanel {
         { operation: button.dataset.editWorkspaceSelection }
       ));
     }
+    for (const button of this.root.querySelectorAll(
+      "[data-edit-workspace-selection-gesture]"
+    )) {
+      button.addEventListener("click", () => this.#execute(
+        "selection.gesture.set",
+        {
+          mode: button.dataset.editWorkspaceSelectionGesture,
+          radiusPixels: Number(
+            this.#element("edit-workspace-selection-radius").value
+          ),
+          toggle: true
+        }
+      ));
+    }
+    this.#element("edit-workspace-selection-radius").addEventListener(
+      "change",
+      event => {
+        const context = this.query("edit.context.status");
+        this.#execute("selection.gesture.set", {
+          mode: context.selectionGestureMode,
+          radiusPixels: Number(event.target.value),
+          enabled: context.areaSelection
+        });
+      }
+    );
     this.#element("edit-workspace-area").addEventListener("change", () =>
       this.#execute("selection.area.toggle")
     );

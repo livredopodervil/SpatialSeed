@@ -97,7 +97,10 @@
   <button id="selection-add" data-selection-op="add" title="Incluir na seleção">＋</button>
   <button id="selection-remove" data-selection-op="remove" title="Excluir da seleção">−</button>
   <button id="selection-toggle" data-selection-op="toggle" title="Alternar seleção">±</button>
-  <button id="area-selection" title="Seleção por área">▭</button>
+  <button id="area-selection" data-selection-gesture="rectangle" title="Seleção retangular">▭</button>
+  <button id="brush-selection" data-selection-gesture="brush" title="Seleção em pincel">◉</button>
+  <button id="lasso-selection" data-selection-gesture="lasso" title="Seleção em laço">➰</button>
+  <button id="selection-eraser" data-selection-gesture="eraser" title="Borracha">⌫</button>
   <button id="space">Mundo</button>
   <button id="multi-select">Seleção: única</button>
   <button id="clear-selection">Selecionar ∅</button>
@@ -230,7 +233,10 @@
       <button type="button" data-edit-tool="scale" title="Escalar">⤢</button>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="quick" aria-label="Seleção rápida e histórico">
-      <button id="edit-hud-area-selection" type="button" title="Selecionar por área">▧</button>
+      <button id="edit-hud-area-selection" type="button" data-edit-selection-gesture="rectangle" title="Seleção retangular">▧</button>
+      <button id="edit-hud-brush-selection" type="button" data-edit-selection-gesture="brush" title="Seleção em pincel">◉</button>
+      <button id="edit-hud-lasso-selection" type="button" data-edit-selection-gesture="lasso" title="Seleção em laço">➰</button>
+      <button id="edit-hud-eraser" type="button" data-edit-selection-gesture="eraser" title="Borracha">⌫</button>
       <button id="edit-hud-undo" type="button" title="Desfazer">↶</button>
       <button id="edit-hud-redo" type="button" title="Refazer">↷</button>
     </div>
@@ -319,7 +325,12 @@
   </div>
 </aside>
 
-<div id="selection-marquee" hidden></div>
+<div id="selection-marquee" data-mode="rectangle" hidden>
+  <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+    <path data-selection-gesture-path></path>
+    <circle data-selection-gesture-cursor hidden></circle>
+  </svg>
+</div>
 <aside id="selection-panel">
   <strong>Seleção do editor</strong>
   <div id="selection-summary">0 selecionados</div>
@@ -682,11 +693,21 @@
         <button type="button" data-edit-workspace-selection="remove">Remover</button>
         <button type="button" data-edit-workspace-selection="toggle">Alternar</button>
       </div>
+      <div class="mesh-operation-grid edit-workspace-selection-gestures">
+        <button type="button" data-edit-workspace-selection-gesture="rectangle">Retângulo</button>
+        <button type="button" data-edit-workspace-selection-gesture="brush">Pincel</button>
+        <button type="button" data-edit-workspace-selection-gesture="lasso">Laço</button>
+        <button type="button" data-edit-workspace-selection-gesture="eraser">Borracha</button>
+      </div>
       <div class="mesh-checkbox-grid">
         <label><input id="edit-workspace-area" type="checkbox"> Seleção por área</label>
         <label><input id="edit-workspace-multi" type="checkbox"> Seleção múltipla</label>
         <label><input id="edit-workspace-keep-tool" type="checkbox"> Manter ferramenta ativa</label>
       </div>
+      <label class="mesh-tool-parameter-select">
+        <span>Raio do pincel/borracha</span>
+        <input id="edit-workspace-selection-radius" type="number" min="2" max="128" step="1" value="24">
+      </label>
       <div class="mesh-operation-grid">
         <button id="edit-workspace-duplicate" type="button">Duplicar</button>
         <button id="edit-workspace-repeat" type="button">Repetir</button>
@@ -1187,6 +1208,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260729-0039g1"></script>
+<script type="module" src="./boot.js?build=20260729-0039g2"></script>
 </body>
 </html>

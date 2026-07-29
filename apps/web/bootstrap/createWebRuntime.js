@@ -2,7 +2,7 @@ import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
 import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260729-0039g1";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
-import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
+import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260729-0039g2";
 import {
   VIEWER_CAMERA_COMMANDS,
   CameraObjectService,
@@ -10,17 +10,17 @@ import {
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260729-0039g1";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260728-0039a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260729-0039g2";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260729-0039g";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260729-0039g2";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260729-0039g1";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260728-0039d";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260729-0039g2";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260729-0039g2";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0039g1";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0039g2";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -79,16 +79,16 @@ import {
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260729-0039g1";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260729-0039g2";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0039g1";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0039g2";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260729-0039g1";
+} from "../../../packages/edit-context/src/index.js?build=20260729-0039g2";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260729-0039g1";
+} from "../../../packages/edit-hud/src/index.js?build=20260729-0039g2";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -103,7 +103,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260729-0039g1";
+} from "../../../packages/spatial-references/src/index.js?build=20260729-0039g2";
 import {
   BrowserSandboxIdentity,
   createSandboxId,

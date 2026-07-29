@@ -1,4 +1,4 @@
-# Pincel causal, commit incremental e cor paramétrica — 0039g/0039g1
+# Pincel causal, commit incremental e cor paramétrica — 0039g/0039g1/0039g2
 
 ## Objetivo
 
@@ -54,6 +54,27 @@ Para impedir que objetos passivos encareçam ferramentas e seleção:
 O trabalho de confirmar continua proporcional à quantidade **nova** de
 objetos, como deve ser. Ele deixa de ser proporcional também à quantidade de
 objetos passivos já presentes.
+
+## Correção pós-undo e composição de cor — 0039g2
+
+Undo e redo também avançam a revisão do sandbox. Antes do `0039g2`, o pincel
+persistente só atualizava sua captura depois de uma publicação própria; assim,
+desfazer um traço deixava o próximo plano preso à revisão anterior. O
+controlador agora compara a revisão no `pointerdown` de cada novo gesto e
+rebaseia somente os metadados necessários. Se a fonte e sua chave continuam
+iguais, geometria, material, lote e `InstancedMesh` permanecem vivos.
+
+A cor lógica já era calculada e persistida para todos os providers. A falha
+visual ocorria na composição do Three.js: `material.color` multiplica
+`instanceColor`, portanto um canal zero do material-base anulava esse canal em
+qualquer expressão. O renderer passa a tornar o material-base tintável e grava
+por instância a razão necessária para obter a cor absoluta desejada. Isso vale
+para caixas, esferas, cilindros, planos, polígonos e buffers sem criar materiais
+ou geometrias por cópia.
+
+Pincel, laço e borracha de seleção também entram no `0039g2`; o contrato
+algorítmico e o roteiro de uso estão em
+[Gestos de seleção cacheados — 0039g2](SELECTION_GESTURES_0039G2.md).
 
 ## Progresso causal
 

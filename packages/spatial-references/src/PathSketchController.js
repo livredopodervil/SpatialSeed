@@ -319,6 +319,13 @@ export class PathSketchController {
     const active = this.#active;
     if (!active || active.drawing || active.committing) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    try {
+      this.#refreshBrushRevision();
+    } catch (error) {
+      active.error = error?.message ?? String(error);
+      this.#notify();
+      return;
+    }
     const point = this.#worldPoint(event);
     if (!point) return;
     event.preventDefault();
@@ -334,6 +341,36 @@ export class PathSketchController {
     this.#updatePreview(active.points);
     this.#notify();
   };
+
+  #refreshBrushRevision() {
+    const active = this.#active;
+    if (active?.settings.mode !== "array" || !active.brush) return false;
+    const currentRevision = Number(this.pathTools.sandbox?.revision);
+    if (
+      Number.isInteger(currentRevision) &&
+      active.brush.sourceRevision === currentRevision
+    ) {
+      return false;
+    }
+    const previousBrush = active.brush;
+    const nextBrush = this.pathTools.rebaseArrayBrush({
+      brush: previousBrush,
+      createdIds: []
+    });
+    active.brush = nextBrush;
+    active.sourceIds = nextBrush.sourceIds ?? Object.freeze([]);
+    active.arrayPlan = null;
+    active.resolvedSpacing = this.pathTools.resolveArrayBrushSpacing({
+      brush: nextBrush,
+      spacingMode: active.settings.spacingMode,
+      spacingWorld: active.settings.spacingWorld,
+      spacingScale: active.settings.spacingScale
+    });
+    if (nextBrush.key !== previousBrush.key) {
+      this.#previewArrayCache.configure(nextBrush);
+    }
+    return true;
+  }
 
   #onPointerMove = event => {
     const active = this.#active;
