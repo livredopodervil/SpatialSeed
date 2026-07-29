@@ -101,6 +101,7 @@ export class ThreeRegionRenderer {
   #navigationLocks = { plane: null, point: null };
   #navigationMode = "free";
   #editPlane = null;
+  #drawingPlane = null;
   #navigationDefaults = {
     enableRotate: true,
     enablePan: true,
@@ -1019,12 +1020,25 @@ export class ThreeRegionRenderer {
     });
   }
 
+  readSelectionReferencePoints() {
+    const members = this.#selectionSnapshot?.members ?? [];
+    return Object.freeze(
+      members
+        .map(member => this.#selectionReferencePosition(member.objectId))
+        .filter(Boolean)
+        .map(point => Object.freeze(point.toArray()))
+    );
+  }
+
   getNavigationLocks() {
     return Object.freeze({
       ...structuredClone(this.#navigationLocks),
       mode: this.#navigationMode,
       editPlane: this.#editPlane
         ? structuredClone(this.#editPlane)
+        : null,
+      drawingPlane: this.#drawingPlane
+        ? structuredClone(this.#drawingPlane)
         : null
     });
   }
@@ -1086,6 +1100,17 @@ export class ThreeRegionRenderer {
   setEditPlane(frame = null) {
     this.#editPlane = frame ? normalizeNavigationPlane(frame) : null;
     return this.getEditPlane();
+  }
+
+  getDrawingPlane() {
+    return this.#drawingPlane
+      ? Object.freeze(structuredClone(this.#drawingPlane))
+      : null;
+  }
+
+  setDrawingPlane(frame = null) {
+    this.#drawingPlane = frame ? normalizeNavigationPlane(frame) : null;
+    return this.getDrawingPlane();
   }
 
   resolvePointerPlacement({

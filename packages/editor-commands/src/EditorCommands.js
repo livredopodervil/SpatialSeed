@@ -14,6 +14,7 @@ export function createEditorCommands({
   toolParameters = null,
   pathTools = null,
   pathSketch = null,
+  planarSketch = null,
   objectPlacement = null,
   canMutateProject = () => true
 }) {
@@ -28,6 +29,7 @@ export function createEditorCommands({
   const cancelInteractiveAction = () => {
     if (objectPlacement?.active) objectPlacement.cancel();
     if (pathSketch?.status?.().active) pathSketch.cancel();
+    if (planarSketch?.status?.().active) planarSketch.cancel();
     toolLifecycle?.cancelAction();
   };
   const configured = (toolId, args, execute) => {
@@ -344,7 +346,11 @@ export function createEditorCommands({
       .register("edit.plane.set", args =>
         editContext.setEditPlane(args))
       .register("edit.plane.clear", () =>
-        editContext.clearEditPlane());
+        editContext.clearEditPlane())
+      .register("drawing.plane.set", args =>
+        editContext.setDrawingPlane(args))
+      .register("drawing.plane.clear", () =>
+        editContext.clearDrawingPlane());
   }
 
   if (toolLifecycle) {
@@ -361,6 +367,10 @@ export function createEditorCommands({
         }
         if (targetToolId === "path.sketch" && pathSketch?.status?.().active) {
           pathSketch.setContinuous(enabled);
+        }
+        if (targetToolId === "planar.sketch" &&
+            planarSketch?.status?.().active) {
+          planarSketch.setContinuous(enabled);
         }
         return status;
       })
@@ -379,12 +389,20 @@ export function createEditorCommands({
         if (toolId === "path.sketch" && pathSketch?.status?.().active) {
           pathSketch.updateSettings(next);
         }
+        if (toolId === "planar.sketch" &&
+            planarSketch?.status?.().active) {
+          planarSketch.updateSettings(next);
+        }
         return toolParameters.set(toolId, patch);
       })
       .register("edit.tool.parameters.reset", ({ toolId }) => {
         const next = toolParameters.reset(toolId);
         if (toolId === "path.sketch" && pathSketch?.status?.().active) {
           pathSketch.updateSettings(next);
+        }
+        if (toolId === "planar.sketch" &&
+            planarSketch?.status?.().active) {
+          planarSketch.updateSettings(next);
         }
         return next;
       });
@@ -482,6 +500,58 @@ export function createEditorCommands({
       });
   }
 
+  if (planarSketch) {
+    commands
+      .register("planar.sketch.begin", (args = {}) => {
+        requireObjectMode("desenhar geometria 2D");
+        if (objectPlacement?.active) objectPlacement.cancel();
+        if (pathSketch?.status?.().active) pathSketch.cancel();
+        toolLifecycle?.activateAction("planar.sketch");
+        try {
+          return configured("planar.sketch", args, invocation =>
+            planarSketch.begin({
+              ...invocation,
+              continuous:
+                args.continuous ??
+                toolLifecycle?.keepActive("planar.sketch")
+            })
+          );
+        } catch (error) {
+          toolLifecycle?.cancelAction("planar.sketch");
+          throw error;
+        }
+      }, {
+        category: "planar-sketch",
+        mutates: false
+      })
+      .register("planar.sketch.finish", () =>
+        planarSketch.finish(), {
+          category: "planar-sketch",
+          mutates: false
+        })
+      .register("planar.sketch.point.remove", () =>
+        planarSketch.removeLastPoint(), {
+          category: "planar-sketch",
+          mutates: false
+        })
+      .register("planar.sketch.cancel", () => {
+        const result = planarSketch.cancel();
+        toolLifecycle?.cancelAction("planar.sketch");
+        return result;
+      }, {
+        category: "planar-sketch",
+        mutates: false
+      })
+      .register("planar.primitive.create", args =>
+        configured("planar.sketch", args, invocation =>
+          planarSketch.create(invocation)), {
+          category: "planar-sketch",
+          mutates: true,
+          repeatable: true,
+          label: "Criar geometria 2D"
+        });
+  }
+
   if (objectPlacement) {
     commands
       .register("object.placement.begin", args => {
@@ -506,6 +576,31 @@ export function createEditorCommands({
 
   if (meshEditor) {
     commands
+      .register("planar.edit.begin", ({ selectAll = true } = {}) => {
+        cancelInteractiveAction();
+        if (editContext && !editContext.status().editPlane) {
+          const drawingPlane = editContext.status().drawingPlane;
+          editContext.setEditPlane(
+            drawingPlane
+              ? {
+                  source: "drawing-plane",
+                  frame: drawingPlane
+                }
+              : { source: "object" }
+          );
+        }
+        const status = editContext
+          ? editContext.setSubjectLevel("vertex", { selectAll })
+          : meshEditor.enter({ selectAll });
+        if (editContext?.status().editPlane) {
+          editContext.setFrame("custom-plane");
+        }
+        editContext?.setTool("translate");
+        return status;
+      }, {
+        category: "planar-edit",
+        mutates: false
+      })
       .register("mesh.edit.enter", args => meshEditor.enter(args), {
         category: "mesh-edit",
         mutates: false

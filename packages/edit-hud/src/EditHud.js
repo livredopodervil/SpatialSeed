@@ -2,14 +2,15 @@ import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
-} from "./HudContextHeuristics.js?build=20260728-0039a";
+} from "./HudContextHeuristics.js?build=20260729-0040a";
 
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 const GEOMETRY_CREATION_STORAGE_KEY = "spatialseed.geometry.creation.defaults.v1";
 const STATIC_GROUP_ORDER = Object.freeze([
   "subject", "tool", "quick", "selection", "frame", "axes",
-  "snap", "navigation", "lifecycle", "creation", "actions", "session"
+  "snap", "navigation", "reference", "planar", "lifecycle",
+  "creation", "actions", "session"
 ]);
 const STATIC_ACTION_ORDER = Object.freeze([
   "edit-hud-create", "edit-hud-create-light", "edit-hud-material",
@@ -44,11 +45,14 @@ const DEFAULT_PREFERENCES = Object.freeze({
   groups: {
     subject: true,
     tool: true,
+    quick: true,
     selection: true,
     frame: true,
     axes: true,
     snap: true,
     navigation: true,
+    reference: true,
+    planar: true,
     lifecycle: true,
     creation: true,
     actions: true,
@@ -110,6 +114,11 @@ export class EditHud {
     this.root.dataset.meshActive = state.meshActive ? "true" : "false";
     this.root.dataset.planeLocked = state.planeLock ? "true" : "false";
     this.root.dataset.pointLocked = state.pointLock ? "true" : "false";
+    this.root.dataset.editPlane = state.editPlane ? "true" : "false";
+    this.root.dataset.drawingPlane =
+      state.drawingPlane ? "true" : "false";
+    this.root.dataset.pivotEditing =
+      state.pivotEditing ? "true" : "false";
 
     for (const button of this.root.querySelectorAll("[data-edit-subject]")) {
       button.dataset.active = button.dataset.editSubject === state.subjectLevel
@@ -151,7 +160,11 @@ export class EditHud {
     this.#element("edit-hud-proportional").checked = Boolean(state.proportional);
     this.#element("edit-hud-plane-lock").checked = Boolean(state.planeLock);
     this.#element("edit-hud-edit-plane").checked = Boolean(state.editPlane);
+    this.#element("edit-hud-drawing-plane").checked =
+      Boolean(state.drawingPlane);
     this.#element("edit-hud-point-lock").checked = Boolean(state.pointLock);
+    this.#element("edit-hud-pivot-edit").dataset.active =
+      state.pivotEditing ? "true" : "false";
     this.#element("edit-hud-keep-tool").checked = Boolean(state.keepToolActive);
     this.#element("edit-hud-repeat").disabled = !state.canRepeat;
     this.#element("edit-hud-repeat").dataset.active = state.canRepeat ? "true" : "false";
@@ -173,6 +186,7 @@ export class EditHud {
     this.root.title = description;
     const mesh = this.query("mesh.edit.status");
     const selection = this.query("selection.snapshot");
+    const planar = this.query("planar.sketch.status") ?? {};
     const selectedObjectIds = selection.members?.map(
       member => member.objectId
     ) ?? [];
@@ -194,6 +208,24 @@ export class EditHud {
     this.#applyAdaptiveLayout(this.#heuristic);
     this.#applyPreferences();
     this.#refreshParameterAliases();
+    for (const button of this.root.querySelectorAll("[data-planar-tool]")) {
+      button.dataset.active =
+        planar.active && button.dataset.planarTool === planar.mode
+          ? "true"
+          : "false";
+      button.disabled = Boolean(state.meshActive || planar.committing);
+    }
+    this.#element("edit-hud-planar-finish").disabled =
+      !planar.active || !planar.canFinish || planar.committing;
+    this.#element("edit-hud-planar-back").disabled =
+      !planar.active || planar.mode !== "polyline" ||
+      planar.pointCount < 1 || planar.committing;
+    this.#element("edit-hud-planar-cancel").disabled = !planar.active;
+    this.#element("edit-hud-planar-edit").disabled =
+      Boolean(planar.active || state.meshActive ||
+        !(selection.members?.length));
+    this.#element("edit-hud-pivot-edit").disabled =
+      Boolean(state.meshActive || !(selection.members?.length));
   }
 
   #bind() {
@@ -290,9 +322,43 @@ export class EditHud {
     this.#element("edit-hud-edit-plane").addEventListener("change", event => {
       this.#execute(
         event.target.checked ? "edit.plane.set" : "edit.plane.clear",
-        event.target.checked ? { source: "viewer" } : {}
+        event.target.checked ? { source: this.#quickPlaneSource() } : {}
       );
     });
+    this.#element("edit-hud-drawing-plane").addEventListener(
+      "change",
+      event => {
+        this.#execute(
+          event.target.checked
+            ? "drawing.plane.set"
+            : "drawing.plane.clear",
+          event.target.checked
+            ? { source: this.#quickPlaneSource() }
+            : {}
+        );
+      }
+    );
+    this.#element("edit-hud-pivot-edit").addEventListener("click", () =>
+      this.#execute("pivot.edit.toggle")
+    );
+    for (const button of this.root.querySelectorAll("[data-planar-tool]")) {
+      button.addEventListener("click", () => this.#execute(
+        "planar.sketch.begin",
+        { mode: button.dataset.planarTool }
+      ));
+    }
+    this.#element("edit-hud-planar-finish").addEventListener("click", () =>
+      this.#execute("planar.sketch.finish")
+    );
+    this.#element("edit-hud-planar-back").addEventListener("click", () =>
+      this.#execute("planar.sketch.point.remove")
+    );
+    this.#element("edit-hud-planar-cancel").addEventListener("click", () =>
+      this.#execute("planar.sketch.cancel")
+    );
+    this.#element("edit-hud-planar-edit").addEventListener("click", () =>
+      this.#execute("planar.edit.begin")
+    );
     this.#element("edit-hud-keep-tool").addEventListener("change", event =>
       this.#execute("edit.tool.keep.set", { enabled: event.target.checked })
     );
@@ -1160,6 +1226,22 @@ export class EditHud {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.#preferences));
   }
 
+  #quickPlaneSource() {
+    const mesh = this.query("mesh.edit.status") ?? {};
+    if (mesh.active && mesh.componentMode === "face" &&
+        mesh.selectedCount > 0) {
+      return "face";
+    }
+    if (mesh.active && mesh.componentMode === "vertex" &&
+        mesh.selectedCount === 3) {
+      return "three-points";
+    }
+    const selection = this.query("selection.snapshot") ?? {};
+    if (selection.members?.length === 3) return "three-points";
+    if (selection.members?.length) return "object";
+    return "viewer";
+  }
+
   #axisArguments() {
     return Object.fromEntries(["x", "y", "z"].map(axis => [
       axis,
@@ -1197,6 +1279,13 @@ export class EditHud {
 
 const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-resize": ["Redimensionar HUD", "Arraste para ajustar rapidamente o número de colunas e linhas da grade de ferramentas."],
+  "edit-hud-pivot-edit": ["Editar pivô", "Ativa o manipulador do pivô sem deslocar a geometria do objeto selecionado."],
+  "edit-hud-edit-plane": ["Plano de edição", "Captura um referencial independente para transformações e edição de componentes."],
+  "edit-hud-drawing-plane": ["Plano de desenho", "Captura o plano onde pontos e formas 2D serão criados; não altera a câmera nem o plano de edição."],
+  "edit-hud-planar-finish": ["Concluir polilinha", "Publica todos os pontos da polilinha como uma única geometria e uma única etapa de undo."],
+  "edit-hud-planar-back": ["Remover último ponto", "Retira somente o último ponto ainda não publicado da polilinha 2D."],
+  "edit-hud-planar-edit": ["Editar 2D", "Entra na edição de vértices do objeto selecionado usando o plano de edição quando definido."],
+  "edit-hud-planar-cancel": ["Cancelar desenho 2D", "Descarta o rascunho local sem alterar o documento."],
   "edit-hud-selection-replace": ["Substituir seleção", "A próxima seleção substitui todos os objetos ou componentes atualmente selecionados."],
   "edit-hud-selection-add": ["Adicionar à seleção", "A próxima seleção acrescenta objetos, vértices, arestas ou faces ao conjunto atual."],
   "edit-hud-selection-remove": ["Remover da seleção", "A próxima seleção remove os componentes atingidos do conjunto atual."],
@@ -1308,6 +1397,23 @@ function resolveHudHint(control) {
   if (frame && FRAME_HINTS[frame]) {
     return { title: FRAME_HINTS[frame][0], description: FRAME_HINTS[frame][1] };
   }
+  const planarTool = control.dataset.planarTool;
+  if (planarTool) {
+    const label = ({
+      point: "Ponto 2D",
+      line: "Segmento 2D",
+      polyline: "Polilinha 2D",
+      rectangle: "Retângulo 2D",
+      circle: "Círculo 2D",
+      arc: "Arco 2D",
+      polygon: "Polígono 2D"
+    })[planarTool] ?? "Ferramenta 2D";
+    return {
+      title: label,
+      description:
+        `Desenha ${label.toLowerCase()} no plano de desenho, com preview local e uma única operação de undo.`
+    };
+  }
   const title = control.getAttribute("title") || control.getAttribute("aria-label") || "Ferramenta";
   return { title, description: title };
 }
@@ -1318,6 +1424,8 @@ function describeState(state) {
   const locks = [
     state.planeLock ? "vista-2D" : null,
     state.editPlane ? "plano-edição" : null,
+    state.drawingPlane ? "plano-desenho" : null,
+    state.pivotEditing ? "pivô" : null,
     state.pointLock ? "ponto" : null
   ]
     .filter(Boolean)

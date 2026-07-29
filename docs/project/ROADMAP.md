@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0039g2`.
+> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0040a`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -293,11 +293,24 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - borracha de objetos e componentes com uma única operação reversível;
 - índice espacial de projeções reutilizado por câmera, viewport e revisão.
 
+### 0040a — Núcleo planar, pivô no HUD e ferramentas 2D — implementado
+
+- setores funcionais do HUD identificados por cores próprias;
+- edição direta de pivô no HUD;
+- planos independentes para visualização, edição e desenho;
+- definição por vista, mundo, objeto, objeto+inclinação/azimute, face ativa,
+  três pontos selecionados ou explícitos e cópia entre planos;
+- ponto, segmento, polilinha, retângulo, círculo, arco e polígono regular;
+- contorno ou preenchimento, cor, espessura e resolução configuráveis;
+- preview local constante em relação à quantidade de objetos passivos;
+- publicação atômica e um único undo por geometria;
+- entrada “Editar 2D” pela edição de vértices no frame planar.
+
 ### Próximas extensões geométricas
 
 - redefinição paramétrica de objetos pelo Inspector com preview e commit único;
-- pivô/origem no HUD e grid configurável por plano;
-- núcleo planar, estilos de caminho e ferramentas 2D fundamentais;
+- grid configurável e cotas por plano;
+- trim, extend, offset, fillet e constraints geométricas 2D;
 - régua, transferidor e compasso como referências para transformações;
 - sanitização configurável com relatório de degenerações, contornos,
   não-manifold e auto-interseções;

@@ -768,6 +768,30 @@ uma única operação topológica no histórico local da sessão. Seleção cont
 sem entrada de undo. O índice usa limites projetados para pincel e borracha e o
 centro projetado para a semântica de retângulo e laço.
 
+## D-044 — Visualização, edição e desenho possuem planos independentes
+
+**Estado:** implementada inicialmente no build 0040a.
+
+O viewer mantém três referenciais planares locais e independentes: trava de
+visualização, plano de edição e plano de desenho. Cada plano é um frame
+ortonormal imutável com origem, eixos X/Y, normal, quaternion e proveniência.
+Um plano pode ser derivado da vista, de eixos mundiais, de um objeto, de um
+objeto com inclinação e azimute, de uma face ativa, de exatamente três pontos,
+de normal+tangente ou de outro plano já capturado.
+
+**Motivação:** usar uma única trava para câmera, transformação e criação fazia
+uma mudança de navegação alterar silenciosamente o desenho ou a edição. Planos
+por face, objeto inclinado e três pontos também precisam conservar sua
+proveniência para serem diagnosticáveis e repetíveis.
+
+**Consequências:** planos são estado local do viewer e não mutação do
+documento. Criações 2D capturam o frame no início do gesto, mantêm um único
+preview local e publicam uma geometria por comando e uma etapa de undo. Ponto,
+segmento, polilinha, retângulo, círculo, arco e polígono reutilizam providers
+do registro geométrico. “Editar 2D” entra na edição de vértices e usa o plano
+de edição; quando ele não existe, deriva-o do plano de desenho ou do objeto
+selecionado. Objetos passivos não participam do movimento do gesto.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

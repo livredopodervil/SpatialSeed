@@ -25,7 +25,12 @@ export function createDefaultEditToolRegistry({
           { value: "array", label: "Pincel de geometrias" }
         ], "tube"),
         enumParameter("planeSource", "Plano do desenho", [
-          { value: "locked-or-viewer", label: "Plano travado ou viewer" },
+          {
+            value: "locked-or-viewer",
+            label: "Desenho, edição, visualização ou viewer"
+          },
+          { value: "drawing", label: "Plano de desenho" },
+          { value: "edit", label: "Plano de edição" },
           { value: "viewer", label: "Viewer atual" },
           { value: "world-xy", label: "Mundo XY" },
           { value: "world-xz", label: "Mundo XZ" },
@@ -182,6 +187,68 @@ export function createDefaultEditToolRegistry({
               "Aceita source, hexadecimal, hsl(...), rgb(...), mix(...) e invert(...)."
           })
         )
+      ]
+    })
+    .register({
+      id: "planar.sketch",
+      label: "Desenhar e editar em 2D",
+      family: "planar",
+      command: "planar.sketch.begin",
+      lifecycle: "continuous",
+      parameters: [
+        enumParameter("mode", "Ferramenta 2D", [
+          { value: "point", label: "Ponto" },
+          { value: "line", label: "Segmento" },
+          { value: "polyline", label: "Polilinha" },
+          { value: "rectangle", label: "Retângulo" },
+          { value: "circle", label: "Círculo" },
+          { value: "arc", label: "Arco" },
+          { value: "polygon", label: "Polígono regular" }
+        ], "line"),
+        enumParameter("planeSource", "Plano do desenho", [
+          {
+            value: "drawing-or-edit",
+            label: "Desenho, edição ou viewer"
+          },
+          { value: "drawing", label: "Plano de desenho" },
+          { value: "edit", label: "Plano de edição" },
+          { value: "viewer", label: "Viewer atual" }
+        ], "drawing-or-edit"),
+        enumParameter("style", "Aparência", [
+          { value: "stroke", label: "Contorno" },
+          { value: "fill", label: "Preenchimento" }
+        ], "stroke"),
+        colorParameter("color", "Cor", "#64d8c8"),
+        numberParameter("strokeWidth", "Espessura do traço", 0.08, {
+          minimum: 0.001,
+          step: 0.01
+        }),
+        numberParameter("segments", "Segmentos", 48, {
+          integer: true,
+          minimum: 3,
+          maximum: 4096
+        }),
+        numberParameter("radialSegments", "Seção do traço", 6, {
+          integer: true,
+          minimum: 3,
+          maximum: 32,
+          when: { style: "stroke" }
+        }),
+        numberParameter("sides", "Lados", 6, {
+          integer: true,
+          minimum: 3,
+          maximum: 256,
+          when: { mode: "polygon" }
+        }),
+        numberParameter("arcAngleDegrees", "Ângulo do arco (°)", 90, {
+          minimum: -360,
+          maximum: 360,
+          step: 1,
+          when: { mode: "arc" }
+        }),
+        booleanParameter("closed", "Fechar polilinha", false, {
+          when: { mode: "polyline" }
+        })
       ]
     })
     .register({

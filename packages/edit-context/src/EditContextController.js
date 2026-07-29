@@ -1,3 +1,9 @@
+import {
+  inclinePlanarFrame,
+  normalizePlanarFrame,
+  planarFrameFromPoints
+} from "./PlanarFrame.js?build=20260729-0040a";
+
 const SUBJECT_LEVELS = Object.freeze(["object", "vertex", "edge", "face"]);
 const TOOLS = Object.freeze(["navigate", "select", "translate", "rotate", "scale"]);
 const FRAMES = Object.freeze(["world", "local", "viewer", "custom-plane"]);
@@ -89,7 +95,8 @@ export class EditContextController {
       plane: null,
       point: null,
       mode: "free",
-      editPlane: null
+      editPlane: null,
+      drawingPlane: null
     };
     const toolLifecycle = this.toolLifecycle?.status?.() ?? {
       keepActive: true,
@@ -130,6 +137,13 @@ export class EditContextController {
       navigationMode: navigation.mode ?? "free",
       editPlane: navigation.editPlane
         ? Object.freeze(structuredClone(navigation.editPlane))
+        : null,
+      drawingPlane: navigation.drawingPlane
+        ? Object.freeze(structuredClone(navigation.drawingPlane))
+        : null,
+      pivotEditing: Boolean(editor.pivot?.editing),
+      pivot: editor.pivot
+        ? Object.freeze(structuredClone(editor.pivot))
         : null,
       keepToolActive: Boolean(toolLifecycle.keepActive),
       activeAction: toolLifecycle.activeAction,
@@ -268,7 +282,7 @@ export class EditContextController {
     return this.status();
   }
 
-  togglePlaneLock({ source = "viewer", frame = null } = {}) {
+  togglePlaneLock({ source = "viewer", frame = null, ...options } = {}) {
     const current = this.renderer.getNavigationLocks?.().plane;
     if (current && !frame) {
       this.renderer.setNavigationPlaneLock(null);
@@ -276,7 +290,9 @@ export class EditContextController {
       return this.status();
     }
     this.renderer.setNavigationPlaneLock(
-      frame ?? this.#resolvePlaneFrame(source)
+      frame
+        ? normalizePlanarFrame(frame, { source })
+        : this.#resolvePlaneFrame(source, options)
     );
     this.#notify();
     return this.status();
@@ -304,8 +320,10 @@ export class EditContextController {
     return this.status();
   }
 
-  setEditPlane({ source = "viewer", frame = null } = {}) {
-    const resolved = frame ?? this.#resolvePlaneFrame(source);
+  setEditPlane({ source = "viewer", frame = null, ...options } = {}) {
+    const resolved = frame
+      ? normalizePlanarFrame(frame, { source })
+      : this.#resolvePlaneFrame(source, options);
     this.renderer.setEditPlane?.(resolved);
     this.#notify();
     return this.status();
@@ -317,20 +335,92 @@ export class EditContextController {
     return this.status();
   }
 
-  #resolvePlaneFrame(source) {
+  setDrawingPlane({ source = "viewer", frame = null, ...options } = {}) {
+    const resolved = frame
+      ? normalizePlanarFrame(frame, { source })
+      : this.#resolvePlaneFrame(source, options);
+    this.renderer.setDrawingPlane?.(resolved);
+    this.#notify();
+    return this.status();
+  }
+
+  clearDrawingPlane() {
+    this.renderer.setDrawingPlane?.(null);
+    this.#notify();
+    return this.status();
+  }
+
+  #resolvePlaneFrame(source, {
+    points = null,
+    inclinationDegrees = 0,
+    azimuthDegrees = 0,
+    origin = null,
+    normal = null,
+    tangent = null
+  } = {}) {
     const normalized = String(source ?? "viewer").toLowerCase();
-    if (normalized === "viewer") return this.renderer.readViewerReferenceFrame();
+    if (normalized === "viewer") {
+      return normalizePlanarFrame(
+        this.renderer.readViewerReferenceFrame(),
+        { source: "viewer" }
+      );
+    }
+    if (["edit", "edit-plane"].includes(normalized)) {
+      const frame = this.renderer.getEditPlane?.();
+      if (!frame) throw new Error("Defina primeiro o plano de edição.");
+      return normalizePlanarFrame(frame, { source: "edit-plane" });
+    }
+    if (["drawing", "drawing-plane", "draw-plane"].includes(normalized)) {
+      const frame = this.renderer.getDrawingPlane?.();
+      if (!frame) throw new Error("Defina primeiro o plano de desenho.");
+      return normalizePlanarFrame(frame, { source: "drawing-plane" });
+    }
     if (normalized === "object") {
       const frame = this.renderer.readSelectionReferenceFrame?.();
       if (!frame) throw new Error("Selecione um objeto para usar seu plano.");
-      return frame;
+      return normalizePlanarFrame(frame, { source: frame.source ?? "object" });
+    }
+    if (["object-inclination", "object-slope"].includes(normalized)) {
+      const frame = this.renderer.readSelectionReferenceFrame?.();
+      if (!frame) {
+        throw new Error(
+          "Selecione um objeto para definir a origem e a orientação da inclinação."
+        );
+      }
+      return inclinePlanarFrame(frame, {
+        inclinationDegrees,
+        azimuthDegrees,
+        source: "object-inclination"
+      });
     }
     if (normalized === "face") {
       const frame = this.meshEditor.referenceFrame?.();
       if (!frame) {
         throw new Error("Selecione uma face ativa para definir o plano.");
       }
-      return frame;
+      return normalizePlanarFrame(frame, { source: frame.source ?? "face" });
+    }
+    if (["three-points", "points"].includes(normalized)) {
+      return planarFrameFromPoints(
+        points ?? this.#selectedPlanePoints(),
+        { source: "three-points" }
+      );
+    }
+    if (["normal", "normal-tangent"].includes(normalized)) {
+      if (!normal) {
+        throw new Error("Informe a normal para definir o plano.");
+      }
+      return normalizePlanarFrame({
+        origin: origin ?? [0, 0, 0],
+        normal,
+        xAxis: tangent ?? leastParallelAxis(normal)
+      }, {
+        source: {
+          type: tangent ? "normal-tangent" : "normal",
+          normal: structuredClone(normal),
+          tangent: tangent ? structuredClone(tangent) : null
+        }
+      });
     }
     const world = {
       "world-xy": {
@@ -352,8 +442,20 @@ export class EditContextController {
         source: "world-yz"
       }
     }[normalized];
-    if (world) return world;
+    if (world) return normalizePlanarFrame(world, { source: normalized });
     throw new RangeError(`Fonte de plano desconhecida: ${source}.`);
+  }
+
+  #selectedPlanePoints() {
+    const points = this.meshEditor.active
+      ? this.meshEditor.selectedReferencePoints?.()
+      : this.renderer.readSelectionReferencePoints?.();
+    if (!Array.isArray(points) || points.length !== 3) {
+      throw new Error(
+        "Selecione exatamente três vértices ou três objetos para definir o plano."
+      );
+    }
+    return points;
   }
 
   #resolvePoint(source) {
@@ -465,4 +567,26 @@ function normalizeOne(value, allowed, label) {
     throw new RangeError(`${label} desconhecido: ${value}.`);
   }
   return normalized;
+}
+
+function leastParallelAxis(normal) {
+  if (!Array.isArray(normal) || normal.length !== 3) {
+    throw new TypeError("Normal do plano deve conter três valores.");
+  }
+  const values = normal.map(Number);
+  if (!values.every(Number.isFinite)) {
+    throw new TypeError("Normal do plano contém valor inválido.");
+  }
+  return [[1, 0, 0], [0, 1, 0], [0, 0, 1]].reduce(
+    (best, axis) =>
+      Math.abs(dot(axis, values)) < Math.abs(dot(best, values))
+        ? axis
+        : best
+  );
+}
+
+function dot(left, right) {
+  return left[0] * right[0] +
+    left[1] * right[1] +
+    left[2] * right[2];
 }
