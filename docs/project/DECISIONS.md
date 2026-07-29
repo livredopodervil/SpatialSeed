@@ -627,6 +627,147 @@ viram mutações de documento. Parâmetros, presets e layouts futuros devem
 reutilizar um armazenamento versionado por identidade semântica, mas permanecem
 separados do estado efêmero da sessão e do arquivo `.spatialseed`.
 
+## D-038 — Parâmetros são schemas locais; desenho confirma uma operação
+
+**Estado:** implementada inicialmente no build 0039d.
+
+Ferramentas parametrizadas são descritas por um registro declarativo e guardam
+valores locais normalizados por `toolId`. HUD, workspace e console usam a mesma
+resolução: argumentos explícitos prevalecem, argumentos omitidos recuperam a
+última configuração e somente uma execução válida é lembrada.
+
+**Motivação:** defaults próprios em cada superfície produziam resultados
+diferentes e impediam um painel contextual geral. A identidade e o schema
+precisam preceder formulários, presets e futuros previews do Inspector.
+
+**Consequências:** parâmetros não pertencem ao documento nem ao undo; versões
+futuras desconhecidas são preservadas; dados legados são apenas lidos durante a
+migração. O desenho livre mantém preview local e confirma tubo ou distribuição
+hierárquica como um único comando persistente. Outras famílias podem aderir ao
+registro sem criar uma nova chave de armazenamento ou um formulário paralelo.
+
+## D-039 — Distribuição desenhada é um pincel progressivo e cacheado
+
+**Estado:** implementada inicialmente no build 0039e.
+
+Ao desenhar uma distribuição, a quantidade não é declarada antes do gesto.
+Novas cópias aparecem nos múltiplos do espaçamento acumulado sobre o caminho.
+A fonte — seleção hierárquica ou geometria do catálogo — é capturada uma vez,
+e o preview conserva os mesmos lotes `InstancedMesh` até confirmar ou cancelar.
+Distribuição sobre um caminho já existente continua podendo usar quantidade
+explícita.
+
+**Motivação:** reconstruir descritores, geometrias, materiais e meshes a cada
+movimento tornava o desenho menos responsivo e confundia a amostragem do dedo
+com a distância entre objetos. Um pincel precisa responder ao comprimento já
+percorrido, sem exigir que o usuário adivinhe previamente quantos elementos
+caberão.
+
+**Consequências:** durante o gesto somente pontos, frames e matrizes novas são
+atualizados; a interface recebe um estado leve por quadro; soltar produz um
+único comando e um único undo. O renderer já agrupa objetos compatíveis como
+instâncias selecionáveis, mas o documento ainda repete descritores nas cópias.
+Protótipos persistentes, instâncias leves e copy-on-write permanecem uma
+compactação posterior e não devem ser simulados por mutação direta do Three.js.
+
+## D-040 — Variação do pincel usa schema geométrico e programa afim local
+
+**Estado:** implementada inicialmente no build 0039f; semântica global de `u`
+e escala positiva superada por D-041 no build 0039g.
+
+O pincel de catálogo guarda o descritor completo normalizado pelo provider. A
+orientação possui modos explícitos de preservação, plano e caminho. Variações
+por instância reutilizam a AST da linguagem afim e são compostas no frame local
+do caminho; não executam JavaScript fornecido pelo usuário.
+
+**Motivação:** escolher apenas o tipo da geometria impedia controlar dimensões,
+resolução e parâmetros específicos. Misturar a rotação original da fonte com o
+plano de desenho também tornava o resultado ambíguo. Uma linguagem já
+normalizada para `i` e `u` permite variações progressivas sem criar outro
+avaliador ou materializar cópias no caminho quente.
+
+**Consequências:** mudanças de descritor podem reconstruir o lote de preview,
+mas mudanças afins atualizam apenas matrizes no mesmo `InstancedMesh`.
+Expressões são compiladas uma vez por configuração e reavaliadas quando
+`count`, `u` ou o caminho mudam. A escala permanece uniforme e positiva para
+conservar TRS e hierarquias; cisalhamento e escala vetorial exigem uma futura
+representação autoritativa capaz de preservá-los sem perda.
+
+## D-041 — Autoria do pincel é causal e entrega um plano de commit preparado
+
+**Estado:** implementada inicialmente no build 0039g.
+
+No pincel desenhado, `u` é a distância acumulada dividida por um comprimento
+explícito e não depende da quantidade final. Um plano emitido pelo serviço
+conserva o prefixo já aceito e permite reparar apenas uma pequena cauda cuja
+orientação pode mudar com a curvatura. Matrizes, cores, transformações de
+catálogo e subárvores selecionadas são preparadas incrementalmente durante o
+gesto; soltar publica esse mesmo plano em uma transação.
+
+**Motivação:** normalizar `u` por `count` fazia todas as cópias mudarem quando o
+traço crescia. Recalcular o layout e materializar todas as cópias somente no
+`pointerup` também produzia uma pausa visual. A autoria precisa ser causal: uma
+amostra aceita não deve mudar por informação futura, salvo o reparo local
+necessário na ponta curva.
+
+**Consequências:** alterações explícitas de parâmetros ainda invalidam o plano
+inteiro, pois representam nova intenção. O commit só aceita planos imutáveis
+emitidos pelo mesmo `PathToolService` e na mesma revisão da cena. O preview
+permanece visível durante a publicação e por dois quadros de handoff. Cor é um
+atributo paramétrico instanciável; escala uniforme negativa usa o módulo e
+inverte a cor. Parâmetros de provider que alteram topologia continuam comuns ao
+lote, porque variantes por cópia exigiriam protótipos ou lotes geométricos
+distintos.
+
+## D-042 — Interação passiva usa índices e o handoff exige publicação observável
+
+**Estado:** implementada inicialmente no build 0039g1.
+
+Consultas de ferramenta, seleção e referência resolvem IDs em índices mantidos
+pelo sandbox e em metadados incrementais. Um commit interativo coordenado só é
+considerado concluído quando os IDs criados são observáveis no sandbox local;
+enfileirar uma intenção não autoriza ocultar o preview ou rearmar a ferramenta.
+
+**Motivação:** o primeiro traço persistente avançava a revisão da cena sem
+avançar a captura do pincel, fazendo o segundo commit falhar até alguma mudança
+de parâmetro recapturar a fonte. Paralelamente, HUD e workspace reconstruíam
+descritores e listas DOM de todos os objetos em mudanças de ferramenta. Esses
+custos e estados incompletos cresciam com objetos que não participavam da ação.
+
+**Consequências:** uma publicação própria e estritamente aditiva pode rebasear
+a revisão do pincel conservando recursos por referência; qualquer mudança
+externa ou da fonte força recaptura. Observadores de commit possuem encerramento
+explícito em aceitação, rejeição, cancelamento e descarte. O cache de referências
+é atualizado antes dos consumidores visuais; painéis consultam os IDs
+selecionados e acrescentam apenas novas opções. Criar continua custando o número
+de objetos novos e renderizá-los continua sujeito ao renderer, mas selecionar
+ferramentas não deve percorrer objetos passivos. A compactação persistente em
+protótipo + instâncias leves continua uma decisão posterior.
+
+## D-043 — Gestos de seleção são capturados sem consultar a cena e resolvidos atomicamente
+
+**Estado:** implementada inicialmente no build 0039g2.
+
+Retângulo, pincel, laço e borracha registram somente pontos de tela durante o
+movimento. Ao soltar, o renderer resolve o gesto contra um índice espacial de
+projeções, reutilizado enquanto revisão da cena, câmera e viewport não mudam. A
+resolução retorna IDs ou componentes; somente o comando editorial aplica a
+seleção ou exclusão.
+
+**Motivação:** consultar objetos em todo `pointermove` faria o custo de uma
+ferramenta crescer com a cena passiva e misturaria preview com mutação. A
+borracha também precisa ser reversível como uma intenção única, e não como uma
+série de exclusões emitidas ao longo do gesto.
+
+**Consequências:** o caminho quente do movimento depende do número de pontos
+coalescidos do gesto, não dos objetos existentes. A primeira consulta após
+mudança real de cena ou câmera reconstrói o índice; consultas seguintes visitam
+somente células e candidatos atingidos. A borracha em modo objeto publica uma
+única `selection.delete` no histórico global. Em edição de malha, ela produz
+uma única operação topológica no histórico local da sessão. Seleção continua
+sem entrada de undo. O índice usa limites projetados para pincel e borracha e o
+centro projetado para a semântica de retângulo e laço.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

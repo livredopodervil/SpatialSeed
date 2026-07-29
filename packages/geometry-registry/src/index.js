@@ -46,7 +46,8 @@ export {
 } from "./providers/LatheGeometryProvider.js";
 
 export {
-  TubeGeometryProvider
+  TubeGeometryProvider,
+  curveFromDescriptor
 } from "./providers/TubeGeometryProvider.js";
 
 export {

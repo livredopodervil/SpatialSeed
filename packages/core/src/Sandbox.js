@@ -7,6 +7,8 @@ export class Sandbox {
   #commands = [];
   #revision = 0;
   #subscribers = new Set();
+  #objectsById = new Map();
+  #objectPositions = new Map();
   #performance = {
     dispatches: 0,
     lastReducerMs: 0,
@@ -23,6 +25,7 @@ export class Sandbox {
     this.#baseVersion = region.version;
     this.#baseState = region.getState();
     this.#state = structuredClone(this.#baseState);
+    this.#rebuildObjectIndex();
   }
 
   get baseVersion() { return this.#baseVersion; }
@@ -34,12 +37,22 @@ export class Sandbox {
   getSnapshot() { return this.#state; }
   getState() { return structuredClone(this.#state); }
   getBaseState() { return structuredClone(this.#baseState); }
+  getObject(id) {
+    return this.#objectsById.get(String(id)) ?? null;
+  }
+  getObjects(ids = []) {
+    return ids.map(id => this.getObject(id));
+  }
 
   dispatch(command) {
     const dispatchStartedAt = performanceNow();
     const before = this.#state;
     const reducerStartedAt = performanceNow();
-    const result = this.reducer(before, structuredClone(command));
+    const result = this.reducer(
+      before,
+      structuredClone(command),
+      this.#reducerContext()
+    );
     if (!result || result.state === before) return false;
     const reducerMs = performanceNow() - reducerStartedAt;
 
@@ -51,6 +64,7 @@ export class Sandbox {
     this.#commands.push(structuredClone(command));
     this.#state = result.state;
     this.#revision += 1;
+    this.#updateObjectIndex(result.changes ?? []);
     const notificationStartedAt = performanceNow();
     this.#notify(result.changes ?? []);
     const notificationMs = performanceNow() - notificationStartedAt;
@@ -85,6 +99,7 @@ export class Sandbox {
     this.#state = entry.state;
     this.#commands.pop();
     this.#revision += 1;
+    this.#rebuildObjectIndex();
     this.#notify([{ type: "sandbox-undo" }]);
     return true;
   }
@@ -93,7 +108,11 @@ export class Sandbox {
     const entry = this.#redo.pop();
     if (!entry) return false;
 
-    const result = this.reducer(this.#state, entry.command);
+    const result = this.reducer(
+      this.#state,
+      entry.command,
+      this.#reducerContext()
+    );
     if (!result || result.state === this.#state) return false;
 
     this.#undo.push({
@@ -103,6 +122,7 @@ export class Sandbox {
     this.#state = result.state;
     this.#commands.push(structuredClone(entry.command));
     this.#revision += 1;
+    this.#updateObjectIndex(result.changes ?? []);
     this.#notify(result.changes ?? [{ type: "sandbox-redo" }]);
     return true;
   }
@@ -113,6 +133,7 @@ export class Sandbox {
     this.#redo.length = 0;
     this.#commands.length = 0;
     this.#revision += 1;
+    this.#rebuildObjectIndex();
     this.#notify([{ type: "sandbox-discard" }]);
   }
 
@@ -124,6 +145,7 @@ export class Sandbox {
     this.#redo.length = 0;
     this.#commands.length = 0;
     this.#revision += 1;
+    this.#rebuildObjectIndex();
     this.#notify([{
       type: "sandbox-rebased",
       baseVersion: this.#baseVersion
@@ -148,6 +170,7 @@ export class Sandbox {
     this.#redo.length = 0;
     this.#commands.length = 0;
     this.#revision += 1;
+    this.#rebuildObjectIndex();
 
     if (markClean) {
       this.#baseState = structuredClone(next);
@@ -226,6 +249,7 @@ export class Sandbox {
     this.#redo.length = 0;
     this.#commands = structuredClone(sequence);
     this.#revision = restoredRevision;
+    this.#rebuildObjectIndex();
     this.#notify([{
       type: "sandbox-recovered",
       commandCount: sequence.length,
@@ -271,6 +295,70 @@ export class Sandbox {
       } catch (error) {
         console.error("Sandbox subscriber failed", error);
       }
+    }
+  }
+
+  #rebuildObjectIndex() {
+    this.#objectsById.clear();
+    this.#objectPositions.clear();
+    for (const [index, object] of this.#state.objects.entries()) {
+      this.#objectsById.set(String(object.id), object);
+      this.#objectPositions.set(String(object.id), index);
+    }
+  }
+
+  #reducerContext() {
+    return Object.freeze({
+      hasObject: id => this.#objectsById.has(String(id)),
+      getObject: id => this.#objectsById.get(String(id)) ?? null
+    });
+  }
+
+  #updateObjectIndex(changes) {
+    const list = Array.isArray(changes) ? changes : [];
+    const supported = new Set([
+      "object-created",
+      "object-transform",
+      "object-updated"
+    ]);
+    if (
+      !list.length ||
+      list.some(change => !supported.has(change?.type))
+    ) {
+      this.#rebuildObjectIndex();
+      return;
+    }
+
+    const created = list.filter(change => change.type === "object-created");
+    const createdOffset = this.#state.objects.length - created.length;
+    let createdIndex = 0;
+    for (const change of list) {
+      const id = String(change.objectId ?? "");
+      if (!id) {
+        this.#rebuildObjectIndex();
+        return;
+      }
+      if (change.type === "object-created") {
+        const position = createdOffset + createdIndex;
+        createdIndex += 1;
+        const object = change.object ?? this.#state.objects[position];
+        if (!object || String(object.id) !== id) {
+          this.#rebuildObjectIndex();
+          return;
+        }
+        this.#objectsById.set(id, object);
+        this.#objectPositions.set(id, position);
+        continue;
+      }
+      const position = this.#objectPositions.get(id);
+      const object = Number.isInteger(position)
+        ? this.#state.objects[position]
+        : null;
+      if (!object || String(object.id) !== id) {
+        this.#rebuildObjectIndex();
+        return;
+      }
+      this.#objectsById.set(id, object);
     }
   }
 }

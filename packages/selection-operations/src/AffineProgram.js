@@ -181,6 +181,9 @@ export function evaluateCompiledAffineExpression(
     count: context.count ?? 1,
     time: context.t ?? context.time ?? 0,
     deltaTime: context.dt ?? context.deltaTime ?? 0,
+    normalizedProgress: Object.hasOwn(context, "u")
+      ? context.u
+      : undefined,
     transform: {
       position: context.position ?? [
         context.x ?? 0,
@@ -229,6 +232,7 @@ export function createAffineEvaluationContext({
   count = 1,
   time = 0,
   deltaTime = 0,
+  normalizedProgress = undefined,
   transform = {},
   variables = {}
 } = {}) {
@@ -248,16 +252,20 @@ export function createAffineEvaluationContext({
 
   const safeCount = Math.max(1, Number(count) || 1);
   const safeIndex = Number(index) || 0;
+  const progress = normalizedProgress === undefined
+    ? (
+        safeCount <= 1
+          ? 0
+          : (safeIndex - 1) / (safeCount - 1)
+      )
+    : finite(normalizedProgress);
 
   return Object.freeze({
     ...sanitizeVariables(variables),
     i: safeIndex,
     index: safeIndex,
     count: safeCount,
-    u:
-      safeCount <= 1
-        ? 0
-        : (safeIndex - 1) / (safeCount - 1),
+    u: progress,
     t: finite(time),
     time: finite(time),
     dt: finite(deltaTime),

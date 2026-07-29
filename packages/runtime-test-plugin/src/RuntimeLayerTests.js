@@ -1,4 +1,4 @@
-import { EditorState } from "../../editor-core/src/EditorState.js?build=20260714-0021a";
+import { EditorState } from "../../editor-core/src/EditorState.js?build=20260729-0039g2";
 import * as THREE from "three";
 import {
   SpatialSeedRuntime,
@@ -25,7 +25,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260725-0029f1";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260729-0039g1";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -45,8 +45,9 @@ import {
   InstanceBatchIndex
 } from "../../instance-batches/src/InstanceBatchIndex.js?build=20260713-0019g-c2";
 import {
-  InstanceBatch
-} from "../../instance-batches/src/InstanceBatch.js?build=20260713-0019g-c2";
+  InstanceBatch,
+  updateAbsoluteInstanceColor
+} from "../../instance-batches/src/InstanceBatch.js?build=20260729-0039g2";
 import {
   InstanceBatchManager
 } from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
@@ -82,7 +83,7 @@ import {
   compileAffineProgram,
   evaluateAffineExpression,
   evaluateAffineProgram
-} from "../../selection-operations/src/AffineProgram.js?build=20260714-0020b-d";
+} from "../../selection-operations/src/AffineProgram.js?build=20260729-0039g";
 import {
   resolveAffineOperations,
   affineProgramCopies,
@@ -91,7 +92,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260728-0039b";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260729-0039g2";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -119,10 +120,10 @@ import {
   LocalViewerSessionDirectory,
   createIndependentProjectUrl,
   createSharedViewerUrl
-} from "../../local-viewers/src/index.js?build=20260725-0029f1";
+} from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260727-0037c";
+} from "../../region-box/src/reducer.js?build=20260729-0039g1";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -131,7 +132,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260726-0031a";
+} from "../../geometry-registry/src/index.js?build=20260728-0039d";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -141,7 +142,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260728-0039b";
+} from "../../devtools/src/DevConsole.js?build=20260729-0039g2";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -167,6 +168,11 @@ import {
   selectionOutlineInstance
 } from "../../renderer-three/src/SelectionOutlineBatch.js?build=20260718-0027g";
 import {
+  ScreenSelectionIndex,
+  normalizeScreenSelectionGesture,
+  screenSelectionGestureContains
+} from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260729-0039g2";
+import {
   MeshEditController,
   applyMeshTopologyOperation,
   affineDeltaWorld,
@@ -185,33 +191,49 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260727-0037c";
+} from "../../mesh-editor-core/src/index.js?build=20260729-0039g2";
 import {
   EditContextController,
   axesFromConstraint,
   constraintFromAxes
-} from "../../edit-context/src/index.js?build=20260728-0039a";
+} from "../../edit-context/src/index.js?build=20260729-0039g2";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260728-0039c";
+} from "../../editor-commands/src/EditorCommands.js?build=20260729-0039g2";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
+  LEGACY_TOOL_PARAMETER_STORAGE_KEY,
+  TOOL_PARAMETER_SCHEMA_VERSION,
+  TOOL_PARAMETER_STORAGE_KEY,
   TOOL_PREFERENCES_SCHEMA_VERSION,
   TOOL_PREFERENCES_STORAGE_KEY,
-  ToolLifecycleController
-} from "../../edit-tools/src/index.js?build=20260728-0039c";
+  ToolLifecycleController,
+  ToolParameterStore,
+  createDefaultEditToolRegistry,
+  createLegacyToolParameterMigration
+} from "../../edit-tools/src/index.js?build=20260729-0039g";
 import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
-} from "../../edit-hud/src/index.js?build=20260728-0039a";
+} from "../../edit-hud/src/index.js?build=20260729-0039g2";
 import {
+  PathInstancePreviewCache,
+  PathSketchController,
   PathToolService,
   SpatialReferenceResolver,
+  compilePathBrushAffineModifier,
+  compilePathBrushColorModifier,
   createSweepGeometryDescriptor,
+  evaluatePathBrushAffineModifier,
+  evaluatePathBrushColorModifier,
+  invertHexColor,
   orderEdgeChain,
-  rotationMinimizingFrames
-} from "../../spatial-references/src/index.js?build=20260728-0039a";
+  rotationMinimizingFrames,
+  samplePathFrames,
+  samplePathFrameTailBySpacing,
+  samplePathFramesBySpacing
+} from "../../spatial-references/src/index.js?build=20260729-0039g2";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -237,10 +259,11 @@ import {
   PwaInstallController
 } from "../../../apps/web/pwa/PwaInstallController.js";
 import {
+  SelectionMarquee,
   UiActionRegistry,
   UiRefreshCoordinator,
   normalizeShortcutChord
-} from "../../ui-widgets/src/index.js?build=20260720-0028c";
+} from "../../ui-widgets/src/index.js?build=20260729-0039g2";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260720-0028c";
@@ -715,6 +738,464 @@ export function createRuntimeLayerTests() {
         assertEqual(notifications > baseline, true);
         unsubscribe();
         context.dispose();
+      },
+
+      "mudança de ferramenta emite um único contexto observável"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
+        const context = new EditContextController({
+          ...fixture,
+          toolLifecycle: lifecycle
+        });
+        let notifications = 0;
+        const unsubscribe = context.subscribe(() => {
+          notifications += 1;
+        });
+        context.setTool("rotate");
+        assertEqual(notifications, 2);
+        assertEqual(context.status().tool, "rotate");
+        unsubscribe();
+        context.dispose();
+        lifecycle.dispose();
+      }
+    },
+
+    "tool-parameters": {
+      "registro declara defaults, limites e campos condicionais"() {
+        const registry = createDefaultEditToolRegistry();
+        const sketch = registry.definition("path.sketch");
+        const described = registry.describe("path.sketch");
+        const radius = sketch.parameters.find(
+          parameter => parameter.id === "radius"
+        );
+        const spacingWorld = sketch.parameters.find(
+          parameter => parameter.id === "spacingWorld"
+        );
+        const geometryType = sketch.parameters.find(
+          parameter => parameter.id === "geometryType"
+        );
+        const sourceGeometry = sketch.parameters.find(
+          parameter => parameter.id === "sourceGeometry"
+        );
+        const orientationMode = sketch.parameters.find(
+          parameter => parameter.id === "orientationMode"
+        );
+        const affineScale = sketch.parameters.find(
+          parameter => parameter.id === "affineScale"
+        );
+        const affineULength = sketch.parameters.find(
+          parameter => parameter.id === "affineULength"
+        );
+        const affineColor = sketch.parameters.find(
+          parameter => parameter.id === "affineColor"
+        );
+        assertDeepEqual(radius.when, { mode: "tube" });
+        assertDeepEqual(spacingWorld.when, {
+          mode: "array",
+          spacingMode: "world"
+        });
+        assertDeepEqual(geometryType.when, {
+          mode: "array",
+          sourceMode: "catalog"
+        });
+        assertEqual(sourceGeometry.type, "json");
+        assertEqual(sourceGeometry.hidden, true);
+        assertDeepEqual(sourceGeometry.when, {
+          mode: "array",
+          sourceMode: "catalog"
+        });
+        assertDeepEqual(orientationMode.when, { mode: "array" });
+        assertDeepEqual(affineScale.when, { mode: "array" });
+        assertDeepEqual(affineULength.when, { mode: "array" });
+        assertDeepEqual(affineColor.when, { mode: "array" });
+        assertEqual(Object.isFrozen(described.parameters), true);
+        assertEqual(Object.isFrozen(described.parameters[0].options), true);
+        assertEqual(registry.defaults("path.sketch").spacingMode, "auto");
+        assertDeepEqual(registry.defaults("path.sketch").sourceGeometry, {});
+        assertEqual(registry.defaults("path.sketch").orientationMode, "preserve");
+        assertEqual(registry.defaults("path.sketch").affineScale, "1");
+        assertEqual(registry.defaults("path.sketch").affineULength, 1);
+        assertEqual(registry.defaults("path.sketch").affineColor, "source");
+        assertEqual(registry.defaults("path.array").count, 8);
+        assertDeepEqual(
+          registry.normalizePatch("path.sketch", {
+            sourceGeometry: "{\"type\":\"sphere\",\"radius\":0.4}"
+          }).sourceGeometry,
+          { type: "sphere", radius: 0.4 }
+        );
+        assertThrowsMessage(
+          () => registry.normalizePatch("path.sketch", {
+            sourceGeometry: "{"
+          }),
+          "JSON válido"
+        );
+        assertThrowsMessage(
+          () => registry.normalizePatch("path.array", { count: 1.5 }),
+          "deve ser inteiro"
+        );
+        assertThrowsMessage(
+          () => registry.normalizePatch("path.tube", { radius: 0 }),
+          "maior ou igual"
+        );
+        assertThrowsMessage(
+          () => registry.normalizePatch("path.tube", { raio: 1 }),
+          "Parâmetro desconhecido"
+        );
+      },
+
+      "última configuração permanece independente por ferramenta e recarga"() {
+        const registry = createDefaultEditToolRegistry();
+        const storage = createMemoryStorage();
+        const first = new ToolParameterStore({ registry, storage });
+        first.set("path.sketch", {
+          mode: "array",
+          sourceMode: "catalog",
+          geometryType: "sphere",
+          sourceGeometry: {
+            type: "sphere",
+            radius: 0.4,
+            widthSegments: 18,
+            heightSegments: 9
+          },
+          spacingMode: "world",
+          spacingWorld: 0.75,
+          align: false,
+          orientationMode: "plane",
+          affineRotateZ: "360*u",
+          affineScale: "0.5+u",
+          affineULength: 2.5,
+          affineColor: "hsl(120*u,1,0.5)"
+        });
+        first.set("path.tube", {
+          radius: 0.42,
+          radialSegments: 11
+        });
+        first.dispose();
+
+        const restored = new ToolParameterStore({ registry, storage });
+        assertEqual(restored.values("path.sketch").mode, "array");
+        assertEqual(restored.values("path.sketch").sourceMode, "catalog");
+        assertEqual(restored.values("path.sketch").geometryType, "sphere");
+        assertDeepEqual(restored.values("path.sketch").sourceGeometry, {
+          type: "sphere",
+          radius: 0.4,
+          widthSegments: 18,
+          heightSegments: 9
+        });
+        assertEqual(restored.values("path.sketch").spacingMode, "world");
+        assertNear(restored.values("path.sketch").spacingWorld, 0.75);
+        assertEqual(restored.values("path.sketch").align, false);
+        assertEqual(restored.values("path.sketch").orientationMode, "plane");
+        assertEqual(restored.values("path.sketch").affineRotateZ, "360*u");
+        assertEqual(restored.values("path.sketch").affineScale, "0.5+u");
+        assertNear(restored.values("path.sketch").affineULength, 2.5);
+        assertEqual(
+          restored.values("path.sketch").affineColor,
+          "hsl(120*u,1,0.5)"
+        );
+        assertNear(restored.values("path.tube").radius, 0.42);
+        assertEqual(restored.values("path.tube").radialSegments, 11);
+        assertEqual(restored.values("path.array").count, 8);
+        assertEqual(
+          JSON.parse(storage.getItem(TOOL_PARAMETER_STORAGE_KEY)).schemaVersion,
+          TOOL_PARAMETER_SCHEMA_VERSION
+        );
+        restored.dispose();
+      },
+
+      "registro v1 migra amostragem e preserva preferências anteriores"() {
+        const legacyValue = JSON.stringify({
+          schemaVersion: 1,
+          tools: {
+            "path.sketch": {
+              mode: "tube",
+              spacingPixels: 11,
+              radius: 0.27,
+              tubularSegments: 120,
+              radialSegments: 9,
+              color: "#123456",
+              count: 23
+            },
+            "path.tube": {
+              radius: 0.44
+            }
+          }
+        });
+        const storage = createMemoryStorage({
+          [LEGACY_TOOL_PARAMETER_STORAGE_KEY]: legacyValue
+        });
+        const store = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage
+        });
+        assertEqual(store.values("path.sketch").inputSamplePixels, 11);
+        assertNear(store.values("path.sketch").radius, 0.27);
+        assertEqual(store.values("path.sketch").tubularSegments, 120);
+        assertEqual(store.values("path.sketch").radialSegments, 9);
+        assertEqual(store.values("path.sketch").color, "#123456");
+        assertEqual(store.values("path.sketch").spacingMode, "auto");
+        assertDeepEqual(store.values("path.sketch").sourceGeometry, {});
+        assertEqual(
+          store.values("path.sketch").orientationMode,
+          "preserve"
+        );
+        assertEqual(store.values("path.sketch").affineScale, "1");
+        assertNear(store.values("path.tube").radius, 0.44);
+        assertEqual(
+          store.status().migratedFrom,
+          LEGACY_TOOL_PARAMETER_STORAGE_KEY
+        );
+        assertEqual(
+          JSON.parse(storage.getItem(TOOL_PARAMETER_STORAGE_KEY)).schemaVersion,
+          TOOL_PARAMETER_SCHEMA_VERSION
+        );
+        assertEqual(
+          storage.getItem(LEGACY_TOOL_PARAMETER_STORAGE_KEY),
+          legacyValue
+        );
+        store.dispose();
+      },
+
+      "migração recupera defaults antigos sem apagar suas chaves"() {
+        const hudValue = JSON.stringify({
+          defaults: {
+            extrude: 2.5,
+            inset: 0.35,
+            pathRadius: 0.19
+          }
+        });
+        const geometryValue = JSON.stringify({
+          parameters: {
+            tube: {
+              "parameter-radius": 0.33,
+              "parameter-tubularSegments": 72,
+              "parameter-radialSegments": 9,
+              "parameter-closed": true,
+              "parameter-curveType": "polyline"
+            }
+          }
+        });
+        const storage = createMemoryStorage({
+          "spatialseed.edit.hud.v1": hudValue,
+          "spatialseed.geometry.creation.defaults.v1": geometryValue
+        });
+        const store = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage,
+          migrate: createLegacyToolParameterMigration()
+        });
+        assertNear(store.values("path.sketch").radius, 0.19);
+        assertNear(store.values("path.from-selection").radius, 0.19);
+        assertNear(store.values("path.tube").radius, 0.33);
+        assertEqual(store.values("path.tube").tubularSegments, 72);
+        assertEqual(store.values("path.tube").radialSegments, 9);
+        assertEqual(store.values("path.tube").closed, true);
+        assertEqual(store.values("path.tube").curveType, "polyline");
+        assertNear(store.values("mesh.extrude").distance, 2.5);
+        assertNear(store.values("mesh.inset").amount, 0.35);
+        assertEqual(storage.getItem("spatialseed.edit.hud.v1"), hudValue);
+        assertEqual(
+          storage.getItem("spatialseed.geometry.creation.defaults.v1"),
+          geometryValue
+        );
+        store.dispose();
+
+        const partial = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage: createMemoryStorage(),
+          migrate: () => ({
+            "path.tube": { radius: 0.44 },
+            "path.array": { count: 0 }
+          })
+        });
+        assertNear(partial.values("path.tube").radius, 0.44);
+        assertEqual(partial.values("path.array").count, 8);
+        partial.dispose();
+      },
+
+      "registro de versão futura permanece intacto e somente leitura"() {
+        const futureValue = JSON.stringify({
+          schemaVersion: TOOL_PARAMETER_SCHEMA_VERSION + 1,
+          tools: {
+            "path.tube": { radius: 9 }
+          }
+        });
+        const storage = createMemoryStorage({
+          [TOOL_PARAMETER_STORAGE_KEY]: futureValue
+        });
+        const store = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage
+        });
+        assertEqual(store.status().futureSchema, true);
+        assertNear(store.values("path.tube").radius, 0.25);
+        assertThrowsMessage(
+          () => store.set("path.tube", { radius: 0.4 }),
+          "somente leitura"
+        );
+        let invocation = null;
+        const commands = createEditorCommands({
+          editor: {},
+          renderer: {},
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolParameters: store,
+          pathTools: {
+            createTube(args) {
+              invocation = structuredClone(args);
+              return { changed: true };
+            }
+          }
+        });
+        assertEqual(commands.execute("path.tube.create", {
+          path: { objectId: "future-safe-path" },
+          radius: 0.4
+        }).changed, true);
+        assertNear(invocation.radius, 0.4);
+        assertEqual(storage.getItem(TOOL_PARAMETER_STORAGE_KEY), futureValue);
+        store.dispose();
+      },
+
+      "comando usa valores lembrados quando a superfície os omite"() {
+        const storage = createMemoryStorage();
+        const toolParameters = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage
+        });
+        const calls = [];
+        const commands = createEditorCommands({
+          editor: {},
+          renderer: {},
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolParameters,
+          pathTools: {
+            createTube(args) {
+              calls.push(structuredClone(args));
+              return { changed: true };
+            }
+          }
+        });
+        commands.execute("path.tube.create", {
+          path: { objectId: "curve-a" },
+          radius: 0.61,
+          radialSegments: 12
+        });
+        commands.execute("path.tube.create", {
+          path: { objectId: "curve-b" }
+        });
+        assertNear(calls[1].radius, 0.61);
+        assertEqual(calls[1].radialSegments, 12);
+        assertEqual(calls[1].path.objectId, "curve-b");
+        assertEqual(Object.hasOwn(calls[1], "closed"), false);
+        assertNear(toolParameters.values("path.tube").radius, 0.61);
+        toolParameters.dispose();
+      },
+
+      "ajuste de desenho ativo atualiza o preview sem comando de documento"() {
+        const toolParameters = new ToolParameterStore({
+          registry: createDefaultEditToolRegistry(),
+          storage: createMemoryStorage()
+        });
+        const updates = [];
+        const commands = createEditorCommands({
+          editor: {},
+          renderer: {},
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolParameters,
+          pathSketch: {
+            status() {
+              return { active: true };
+            },
+            updateSettings(settings) {
+              updates.push(structuredClone(settings));
+            }
+          }
+        });
+        commands.execute("edit.tool.parameters.set", {
+          toolId: "path.sketch",
+          patch: {
+            mode: "array",
+            spacingMode: "world",
+            spacingWorld: 0.35,
+            twistDegrees: 45,
+            orientationMode: "path",
+            affineMoveY: "0.2*i",
+            affineRotateZ: "180*u",
+            affineScale: "0.75-u",
+            affineULength: 2,
+            affineColor: "mix(source,#ffffff,fract(u))"
+          }
+        });
+        assertEqual(updates.length, 1);
+        assertEqual(updates[0].mode, "array");
+        assertEqual(updates[0].spacingMode, "world");
+        assertNear(updates[0].spacingWorld, 0.35);
+        assertEqual(updates[0].twistDegrees, 45);
+        assertEqual(updates[0].orientationMode, "path");
+        assertEqual(updates[0].affineMoveY, "0.2*i");
+        assertEqual(updates[0].affineRotateZ, "180*u");
+        assertEqual(updates[0].affineScale, "0.75-u");
+        assertNear(updates[0].affineULength, 2);
+        assertEqual(
+          updates[0].affineColor,
+          "mix(source,#ffffff,fract(u))"
+        );
+        toolParameters.dispose();
+      },
+
+      "console omite defaults locais e inicia desenho de tubo ou geometria"() {
+        const calls = [];
+        const console = createPathConsole(calls);
+        console.execute("path tube object=curve-a");
+        console.execute("path draw");
+        console.execute(
+          "path draw mode=array source=catalog geometry=sphere " +
+          "params={\"radius\":0.4,\"widthSegments\":18,\"heightSegments\":9} " +
+          "spacing=0.75 align=off twist=25 plane=world-xy " +
+          "orientation=plane uLength=4 rotateZ=360*u scale=0.5-u " +
+          "colorExpr=hsl(360*fract(u),0.8,0.55)"
+        );
+        assertEqual(Object.hasOwn(calls[0].args, "radius"), false);
+        assertEqual(calls[1].id, "path.sketch.begin");
+        assertDeepEqual(calls[1].args, {});
+        assertEqual(calls[2].args.mode, "array");
+        assertEqual(calls[2].args.sourceMode, "catalog");
+        assertEqual(calls[2].args.geometryType, "sphere");
+        assertDeepEqual(calls[2].args.sourceGeometry, {
+          radius: 0.4,
+          widthSegments: 18,
+          heightSegments: 9,
+          type: "sphere"
+        });
+        assertEqual(calls[2].args.spacingMode, "world");
+        assertNear(calls[2].args.spacingWorld, 0.75);
+        assertEqual(calls[2].args.align, false);
+        assertEqual(calls[2].args.twistDegrees, 25);
+        assertEqual(calls[2].args.planeSource, "world-xy");
+        assertEqual(calls[2].args.orientationMode, "plane");
+        assertEqual(calls[2].args.affineRotateZ, "360*u");
+        assertEqual(calls[2].args.affineScale, "0.5-u");
+        assertNear(calls[2].args.affineULength, 4);
+        assertEqual(
+          calls[2].args.affineColor,
+          "hsl(360*fract(u),0.8,0.55)"
+        );
+        const invalid = console.execute(
+          "path draw mode=array params={\"radius\":0.4}"
+        )[0];
+        assertEqual(invalid.ok, false);
+        assertEqual(invalid.error.includes("exige geometry"), true);
       }
     },
 
@@ -767,8 +1248,8 @@ export function createRuntimeLayerTests() {
             activeMember: { objectId: "path" }
           },
           references: [
-            { id: "path", selected: true, pathExtractions: ["centerline"], profileExtractions: [] },
-            { id: "profile", selected: true, pathExtractions: [], profileExtractions: ["contour"] }
+            { id: "path", pathExtractions: ["centerline"], profileExtractions: [] },
+            { id: "profile", pathExtractions: [], profileExtractions: ["contour"] }
           ]
         });
         assertEqual(result.canTubeFromObject, true);
@@ -813,6 +1294,77 @@ export function createRuntimeLayerTests() {
           assertNear(tangent.dot(binormal), 0, 1e-9);
           assertNear(normal.dot(binormal), 0, 1e-9);
         });
+      },
+
+      "amostragem por distância mantém posições anteriores ao ampliar o traço"() {
+        const short = samplePathFramesBySpacing({
+          points: [[0, 0, 0], [2.4, 0, 0]],
+          spacing: 1,
+          curveType: "polyline"
+        });
+        const extended = samplePathFramesBySpacing({
+          points: [[0, 0, 0], [5.2, 0, 0]],
+          spacing: 1,
+          curveType: "polyline"
+        });
+        assertEqual(short.requestedCount, 3);
+        assertEqual(extended.requestedCount, 6);
+        assertDeepEqual(short.positions, extended.positions.slice(0, 3));
+        assertVectorNear(extended.positions.at(-1), [5, 0, 0]);
+        const tail = samplePathFrameTailBySpacing({
+          points: [[0, 0, 0], [5.2, 0, 0]],
+          spacing: 1,
+          startIndex: 1,
+          previousFrame: {
+            tangent: short.tangents[0],
+            normal: short.normals[0]
+          },
+          curveType: "polyline"
+        });
+        assertEqual(tail.startIndex, 1);
+        assertEqual(tail.evaluatedCount, 5);
+        assertDeepEqual(tail.positions, extended.positions.slice(1));
+        assertDeepEqual(tail.quaternions, extended.quaternions.slice(1));
+        assertThrowsMessage(
+          () => samplePathFrameTailBySpacing({
+            points: [[0, 0, 0], [5.2, 0, 0]],
+            spacing: 1,
+            startIndex: 1,
+            previousFrame: {
+              tangent: short.tangents[0],
+              normal: short.normals[0]
+            },
+            curveType: "polyline",
+            twistDegrees: 45
+          }),
+          "caminho aberto e sem torção"
+        );
+      },
+
+      "frames aceitam polilinha e controles Bézier desenhados"() {
+        const polyline = samplePathFrames({
+          points: [[0, 0, 0], [2, 0, 0], [2, 3, 0]],
+          count: 5,
+          curveType: "polyline"
+        });
+        const fixture = createPathToolFixture();
+        const bezierPoints = fixture.service.prepareSketchPoints({
+          points: [[0, 0, 0], [1, 2, 0], [3, 0, 0]],
+          curveType: "bezier",
+          tension: 0.5
+        });
+        const bezier = samplePathFrames({
+          points: bezierPoints,
+          count: 7,
+          curveType: "bezier"
+        });
+        assertEqual(polyline.positions.length, 5);
+        assertVectorNear(polyline.positions[0], [0, 0, 0]);
+        assertVectorNear(polyline.positions.at(-1), [2, 3, 0]);
+        assertEqual((bezierPoints.length - 1) % 3, 0);
+        assertEqual(bezier.positions.length, 7);
+        assertVectorNear(bezier.positions[0], [0, 0, 0]);
+        assertVectorNear(bezier.positions.at(-1), [3, 0, 0]);
       },
 
       "varredura produz malha triangular fechada nas extremidades"() {
@@ -1024,6 +1576,109 @@ export function createRuntimeLayerTests() {
         );
       },
 
+      "catálogo de referências reutiliza cache em ferramentas e cresce incrementalmente"() {
+        const objects = Array.from({ length: 256 }, (_, index) => ({
+          id: `passive-${index}`,
+          kind: "box",
+          name: `Passivo ${index}`,
+          position: [index, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+          geometry: {
+            type: "box",
+            size: [1, 1, 1],
+            segments: [1, 1, 1]
+          }
+        }));
+        const region = new Region(
+          {
+            id: "reference-cache-region",
+            name: "Reference cache",
+            type: "box-region"
+          },
+          { schemaVersion: 1, objects }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        const geometryRegistry = createDefaultGeometryRegistry();
+        const describeLegacyObject =
+          geometryRegistry.describeLegacyObject.bind(geometryRegistry);
+        let descriptorReads = 0;
+        geometryRegistry.describeLegacyObject = object => {
+          descriptorReads += 1;
+          return describeLegacyObject(object);
+        };
+        const resolver = new SpatialReferenceResolver({
+          sandbox,
+          editor,
+          geometryRegistry
+        });
+        let latestState = null;
+        let latestChanges = null;
+        const unsubscribe = sandbox.subscribe((state, changes) => {
+          latestState = state;
+          latestChanges = changes;
+        });
+        try {
+          const first = resolver.listObjects({
+            includeSelection: false
+          });
+          const firstDescriptorReads = descriptorReads;
+          editor.setToolMode("rotate");
+          editor.selection.replace({
+            kind: "object",
+            regionId: region.descriptor.id,
+            objectId: "passive-255"
+          });
+          const afterToolChange = resolver.listObjects({
+            includeSelection: false
+          });
+          assertEqual(afterToolChange === first, true);
+          assertEqual(descriptorReads, firstDescriptorReads);
+          const selectedOnly = resolver.listObjects({
+            includeSelection: false,
+            ids: ["passive-255"]
+          });
+          assertEqual(selectedOnly.length, 1);
+          assertEqual(selectedOnly[0] === first[255], true);
+
+          sandbox.dispatch({
+            type: "object.create",
+            id: "new-path",
+            kind: "tube",
+            name: "Novo caminho",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            geometry: {
+              type: "tube",
+              points: [[0, 0, 0], [1, 0, 0]],
+              tubularSegments: 8,
+              radius: 0.1,
+              radialSegments: 6,
+              closed: false,
+              curveType: "polyline",
+              tension: 0.5
+            }
+          });
+          resolver.applyChanges(latestState, latestChanges);
+          const extended = resolver.listObjects({
+            includeSelection: false
+          });
+          assertEqual(extended.length, first.length + 1);
+          assertEqual(extended[0] === first[0], true);
+          assertEqual(
+            extended.at(-1).pathExtractions.includes("centerline"),
+            true
+          );
+          assertEqual(
+            descriptorReads - firstDescriptorReads <= 1,
+            true
+          );
+        } finally {
+          unsubscribe();
+        }
+      },
+
       "serviço ajusta amostras livres para controles Bézier editáveis"() {
         const fixture = createPathToolFixture();
         const created = fixture.service.createPath({
@@ -1076,6 +1731,1328 @@ export function createRuntimeLayerTests() {
           state.objects.find(object => object.id === array.createdIds.at(-1)).position,
           [2, 4, 0]
         );
+      },
+
+      "traço distribui qualquer geometria ou grupo em uma ação atômica"() {
+        const fixture = createPathToolFixture();
+        fixture.editor.selection.replace({
+          kind: "object",
+          regionId: "path-tool-region",
+          objectId: "array-group"
+        });
+        const sourceIds = fixture.service.captureArraySource();
+        const points = [[0, 0, 0], [2, 1, 0], [4, 0, 0]];
+        const preview = fixture.service.previewArraySelection({
+          points,
+          sourceIds,
+          count: 4,
+          curveType: "polyline"
+        });
+        assertDeepEqual(sourceIds, ["array-group"]);
+        assertEqual(preview.previewCount, 4);
+        assertEqual(preview.entries.length, 1);
+        assertEqual(preview.entries[0].sourceId, "array-group-sphere");
+        assertEqual(preview.entries[0].worldMatrices.length, 4);
+
+        const result = fixture.service.arraySelectionAlongPoints({
+          points,
+          sourceIds,
+          count: 4,
+          curveType: "polyline"
+        });
+        assertEqual(result.changed, true);
+        assertEqual(result.createdIds.length, 8);
+        assertEqual(result.activeIds.length, 1);
+        assertEqual(result.reference.extraction, "drawn-points");
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+        assertEqual(fixture.sandbox.undo(), true);
+        assertEqual(
+          fixture.sandbox.getSnapshot().objects.some(
+            object => result.createdIds.includes(object.id)
+          ),
+          false
+        );
+      },
+
+      "pincel selecionado cresce por distância e preserva a hierarquia"() {
+        const fixture = createPathToolFixture();
+        fixture.editor.selection.replace({
+          kind: "object",
+          regionId: "path-tool-region",
+          objectId: "array-group"
+        });
+        const brush = fixture.service.captureArrayBrush();
+        const short = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [2.4, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          maximumCopies: 100
+        });
+        const extended = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [5.2, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          previousPlan: short,
+          maximumCopies: 100
+        });
+        assertEqual(brush.renderableCount, 1);
+        assertNear(brush.autoSpacing, 1);
+        assertEqual(short.previewCount, 3);
+        assertEqual(extended.previewCount, 6);
+        assertDeepEqual(
+          short.deltaMatrices,
+          extended.deltaMatrices.slice(0, short.previewCount)
+        );
+        assertEqual(extended.diagnostics.reusedPreparedCopies, 1);
+        assertEqual(extended.diagnostics.frameSampling, "tail");
+        assertEqual(extended.diagnostics.reusedFrameSamples, 1);
+        assertEqual(
+          extended.draft.copies[0] === short.draft.copies[0],
+          true
+        );
+        assertDeepEqual(
+          short.draft.copies.map(copy =>
+            copy.objects.map(object => object.id)
+          ),
+          extended.draft.copies
+            .slice(0, short.previewCount)
+            .map(copy => copy.objects.map(object => object.id))
+        );
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          0
+        );
+        assertEqual(fixture.sandbox.getSnapshot().objects.length, 5);
+        const twistedShort = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [2.4, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          twistDegrees: 45,
+          maximumCopies: 100
+        });
+        const twistedExtended = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [5.2, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          twistDegrees: 45,
+          previousPlan: twistedShort,
+          maximumCopies: 100
+        });
+        assertEqual(twistedExtended.diagnostics.frameSampling, "full");
+        assertEqual(twistedExtended.diagnostics.reusedCopies, 1);
+        const result = fixture.service.commitArrayBrushPlan({
+          plan: extended,
+          brush
+        });
+        assertEqual(result.count, 6);
+        assertEqual(result.createdIds.length, 12);
+        assertDeepEqual(
+          result.createdIds,
+          extended.draft.objects.map(object => object.id)
+        );
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+        assertEqual(fixture.sandbox.undo(), true);
+      },
+
+      "catálogo fornece qualquer geometria como pincel instanciado"() {
+        const fixture = createPathToolFixture();
+        for (const description of
+          fixture.service.resolver.geometryRegistry.describe()) {
+          const candidate = fixture.service.captureArrayBrush({
+            sourceMode: "catalog",
+            geometryType: description.type
+          });
+          assertEqual(candidate.entries.length, 1);
+          assertEqual(candidate.sourceGeometry.type, description.type);
+        }
+        const brush = fixture.service.captureArrayBrush({
+          sourceMode: "catalog",
+          geometryType: "sphere",
+          geometry: {
+            type: "sphere",
+            radius: 0.4,
+            widthSegments: 18,
+            heightSegments: 9
+          },
+          color: "#224466"
+        });
+        const result = fixture.service.arraySelectionAlongPoints({
+          points: [[0, 0, 0], [2.2, 0, 0]],
+          sourceMode: "catalog",
+          geometryType: "sphere",
+          sourceGeometry: brush.sourceGeometry,
+          sourceColor: "#224466",
+          spacingMode: "world",
+          spacingWorld: 0.5,
+          curveType: "polyline",
+          initialNormal: [0, 0, 1],
+          orientationMode: "plane",
+          affineScale: "0.5+u",
+          affineULength: 2
+        });
+        const created = fixture.sandbox.getSnapshot().objects.filter(
+          object => result.createdIds.includes(object.id)
+        );
+        assertEqual(brush.sourceMode, "catalog");
+        assertNear(brush.sourceGeometry.radius, 0.4);
+        assertEqual(brush.sourceGeometry.widthSegments, 18);
+        assertEqual(brush.sourceGeometry.heightSegments, 9);
+        assertEqual(result.count, 5);
+        assertEqual(created.length, 5);
+        assertEqual(created.every(object =>
+          object.geometry.type === "sphere"
+        ), true);
+        assertEqual(brush.sourceColor, "#224466");
+        assertEqual(created.every(object =>
+          typeof object.appearanceId === "string"
+        ), true);
+        assertNear(created[0].scale[0], 0.5);
+        assertNear(created.at(-1).scale[0], 1.5);
+        assertEqual(
+          new Set(created.map(object => object.appearanceId)).size,
+          1
+        );
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+      },
+
+      "cor paramétrica persiste em todas as famílias geométricas"() {
+        const fixture = createPathToolFixture();
+        const modifier =
+          fixture.service.compileArrayBrushColorModifier({
+            affineColor: "hsl(240-120*u,1,0.5)"
+          });
+        for (const geometry of geometryProviderSamples()) {
+          const brush = fixture.service.captureArrayBrush({
+            sourceMode: "catalog",
+            geometryType: geometry.type,
+            geometry,
+            color: "#ff0000"
+          });
+          const plan = fixture.service.previewArrayBrush({
+            points: [[0, 0, 0], [1, 0, 0]],
+            brush,
+            spacing: 1,
+            curveType: "polyline",
+            colorModifier: modifier,
+            affineULength: 1,
+            maximumCopies: 4
+          });
+          const result = fixture.service.commitArrayBrushPlan({
+            plan,
+            brush
+          });
+          const created = result.createdIds.map(id =>
+            fixture.sandbox.getObject(id)
+          );
+          assertEqual(created.length, plan.previewCount);
+          assertDeepEqual(
+            created.map(object => object.instanceState?.color),
+            plan.colorsByEntry[0].colors
+          );
+          assertEqual(
+            created.every(object => object.geometry.type === geometry.type),
+            true
+          );
+          assertEqual(fixture.sandbox.undo(), true);
+        }
+      },
+
+      "modificador afim fixa u por distância e inverte cor na escala negativa"() {
+        assertEqual(compilePathBrushAffineModifier().identity, true);
+        const modifier = compilePathBrushAffineModifier({
+          affineMoveX: "d+spacing",
+          affineMoveY: "0.1*i",
+          affineMoveZ: "k",
+          affineRotateZ: "360*u",
+          affineScale: "0.5+0.5*u"
+        });
+        assertEqual(modifier.identity, false);
+        const evaluated = evaluatePathBrushAffineModifier(modifier, {
+          index: 2,
+          count: 3,
+          progress: 1.25,
+          position: [2, 3, 4],
+          rotation: [0, 0, 0, 1],
+          variables: {
+            d: 1,
+            spacing: 0.25,
+            k: 0.125
+          }
+        });
+        assertVectorNear(evaluated.move, [1.25, 0.2, 0.125]);
+        assertVectorNear(evaluated.rotate, [0, 0, 450]);
+        assertNear(evaluated.scale, 1.125);
+        assertNear(evaluated.context.u, 1.25);
+        assertThrowsMessage(
+          () => compilePathBrushAffineModifier({
+            affineScale: "variavel_inexistente"
+          }),
+          "Variável não disponível"
+        );
+
+        const fixture = createPathToolFixture();
+        const brush = fixture.service.captureArrayBrush({
+          sourceMode: "catalog",
+          geometryType: "box",
+          geometry: {
+            type: "box",
+            size: [0.5, 0.5, 0.5],
+            segments: [1, 1, 1]
+          }
+        });
+        const progressiveModifier =
+          fixture.service.compileArrayBrushModifier({
+            affineRotateZ: "90*u",
+            affineScale: "0.5-u"
+          });
+        const progressiveColor =
+          fixture.service.compileArrayBrushColorModifier({
+            affineColor: "hsl(120*u,1,0.5)"
+          });
+        const short = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [3, 0, 0], [6.4, 1, 0]],
+          brush,
+          spacing: 1,
+          curveType: "centripetal",
+          affineModifier: progressiveModifier,
+          colorModifier: progressiveColor,
+          affineULength: 2,
+          maximumCopies: 100
+        });
+        const extended = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [3, 0, 0], [6, 1, 0], [9.2, 3, 0]],
+          brush,
+          spacing: 1,
+          curveType: "centripetal",
+          affineModifier: progressiveModifier,
+          colorModifier: progressiveColor,
+          affineULength: 2,
+          previousPlan: short,
+          maximumCopies: 100
+        });
+        assertEqual(short.previewCount >= 7, true);
+        assertEqual(extended.previewCount > short.previewCount, true);
+        assertEqual(extended.diagnostics.incremental, true);
+        assertEqual(extended.diagnostics.reusedCopies > 0, true);
+        assertEqual(extended.diagnostics.frameSampling, "tail");
+        assertEqual(
+          extended.diagnostics.evaluatedFrameSamples,
+          extended.previewCount - extended.diagnostics.reusedCopies
+        );
+        assertDeepEqual(
+          short.draft.instances.map(instance => instance.id),
+          extended.draft.instances
+            .slice(0, short.previewCount)
+            .map(instance => instance.id)
+        );
+        assertDeepEqual(
+          short.deltaMatrices.slice(0, extended.diagnostics.reusedCopies),
+          extended.deltaMatrices.slice(0, extended.diagnostics.reusedCopies)
+        );
+        assertDeepEqual(
+          short.colorsByEntry[0].colors.slice(
+            0,
+            extended.diagnostics.reusedCopies
+          ),
+          extended.colorsByEntry[0].colors.slice(
+            0,
+            extended.diagnostics.reusedCopies
+          )
+        );
+        assertNear(short.samples[2].u, 1);
+        assertNear(extended.samples[2].u, 1);
+        assertEqual(short.samples[2].invertColor, true);
+        assertEqual(short.colorsByEntry[0].colors[2], "#ff00ff");
+        assertEqual(invertHexColor("#224466"), "#ddbb99");
+        assertEqual(
+          evaluatePathBrushColorModifier(
+            compilePathBrushColorModifier(
+              "mix(#000000,#ffffff,0.5)"
+            )
+          ),
+          "#808080"
+        );
+        assertEqual(
+          evaluatePathBrushColorModifier(
+            compilePathBrushColorModifier("invert(#000000)")
+          ),
+          "#ffffff"
+        );
+
+        const directNegative = evaluatePathBrushAffineModifier(
+          compilePathBrushAffineModifier({ affineScale: "-2" }),
+          {
+            index: 1,
+            count: 1,
+            progress: 0,
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1]
+          }
+        );
+        assertNear(directNegative.scale, 2);
+        assertNear(directNegative.signedScale, -2);
+        assertEqual(directNegative.invertColor, true);
+        assertEqual(
+          evaluatePathBrushColorModifier(
+            compilePathBrushColorModifier("source"),
+            {
+              sourceColor: "#224466",
+              invert: directNegative.invertColor
+            }
+          ),
+          "#ddbb99"
+        );
+        assertThrowsMessage(
+          () => compilePathBrushColorModifier("rgb(u,desconhecida,0)"),
+          "Variável não disponível"
+        );
+        assertThrowsMessage(
+          () => fixture.service.commitArrayBrushPlan({
+            plan: structuredClone(extended),
+            brush
+          }),
+          "não foi emitido por este serviço"
+        );
+        const truncated = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [8, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          maximumCopies: 3
+        });
+        assertEqual(truncated.truncated, true);
+        assertThrowsMessage(
+          () => fixture.service.commitArrayBrushPlan({
+            plan: truncated,
+            brush
+          }),
+          "plano incremental está truncado"
+        );
+
+        const result = fixture.service.commitArrayBrushPlan({
+          plan: extended,
+          brush
+        });
+        const created = fixture.sandbox.getSnapshot().objects.filter(
+          object => result.createdIds.includes(object.id)
+        );
+        assertEqual(created.length, extended.previewCount);
+        assertDeepEqual(
+          result.createdIds,
+          extended.draft.instances.map(instance => instance.id)
+        );
+        assertDeepEqual(
+          created.map(object => object.instanceState.color),
+          extended.colorsByEntry[0].colors
+        );
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          1
+        );
+        assertEqual(result.incrementalPlan, true);
+        assertNear(
+          new THREE.Vector3().setFromMatrixScale(
+            new THREE.Matrix4().fromArray(extended.deltaMatrices[2])
+          ).x,
+          0.5
+        );
+      },
+
+      "preview instanciado atualiza cores sem recriar seus recursos"() {
+        const fixture = createPathToolFixture();
+        const brush = fixture.service.captureArrayBrush({
+          sourceMode: "catalog",
+          geometryType: "box",
+          color: "#224466"
+        });
+        const plan = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [3.2, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          affineULength: 1,
+          colorModifier: fixture.service.compileArrayBrushColorModifier({
+            affineColor: "rgb(32*i,64,128)"
+          })
+        });
+        const group = new THREE.Group();
+        const cache = new PathInstancePreviewCache({
+          group,
+          geometryRegistry: fixture.service.resolver.geometryRegistry
+        });
+        try {
+          const configured = cache.configure(brush);
+          cache.update(plan);
+          const first = cache.status();
+          cache.update(plan);
+          const repeated = cache.status();
+          assertDeepEqual(repeated.meshIds, configured.meshIds);
+          assertEqual(first.diagnostics.colorWrites, plan.previewCount);
+          assertEqual(
+            repeated.diagnostics.colorSkips >= plan.previewCount,
+            true
+          );
+          assertEqual(
+            repeated.diagnostics.resourceBuilds,
+            configured.diagnostics.resourceBuilds
+          );
+          assertEqual(group.children[0].instanceColor !== null, true);
+        } finally {
+          cache.dispose();
+        }
+      },
+
+      "orientação do pincel explicita o plano ou a tangente do caminho"() {
+        const fixture = createPathToolFixture();
+        const brush = fixture.service.captureArrayBrush({
+          sourceMode: "catalog",
+          geometryType: "plane",
+          geometry: {
+            type: "plane",
+            width: 1,
+            height: 1,
+            widthSegments: 1,
+            heightSegments: 1
+          }
+        });
+        const plane = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [3, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          initialNormal: [0, 1, 0],
+          orientationMode: "plane",
+          affineModifier: fixture.service.compileArrayBrushModifier({
+            affineRotateZ: "90"
+          })
+        });
+        const planeMatrix = new THREE.Matrix4().fromArray(
+          plane.deltaMatrices[0]
+        );
+        const planeOrigin = new THREE.Vector3().applyMatrix4(planeMatrix);
+        const planeX = new THREE.Vector3(1, 0, 0)
+          .applyMatrix4(planeMatrix)
+          .sub(planeOrigin)
+          .normalize();
+        const planeZ = new THREE.Vector3(0, 0, 1)
+          .applyMatrix4(planeMatrix)
+          .sub(planeOrigin)
+          .normalize();
+        assertVectorNear(planeX.toArray(), [0, 0, -1]);
+        assertVectorNear(planeZ.toArray(), [0, 1, 0]);
+
+        const path = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [3, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          initialNormal: [0, 1, 0],
+          orientationMode: "path"
+        });
+        const pathMatrix = new THREE.Matrix4().fromArray(
+          path.deltaMatrices[0]
+        );
+        const pathOrigin = new THREE.Vector3().applyMatrix4(pathMatrix);
+        const pathZ = new THREE.Vector3(0, 0, 1)
+          .applyMatrix4(pathMatrix)
+          .sub(pathOrigin)
+          .normalize();
+        assertVectorNear(pathZ.toArray(), [1, 0, 0]);
+
+        fixture.sandbox.dispatch({
+          type: "object.transform",
+          id: "array-source",
+          position: [5, 0, 0],
+          rotation: new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(0, 0, Math.PI / 2)
+          ).toArray(),
+          scale: [1, 1, 1]
+        });
+        fixture.editor.selection.replace({
+          kind: "object",
+          regionId: "path-tool-region",
+          objectId: "array-source"
+        });
+        const selectedBrush = fixture.service.captureArrayBrush();
+        const selectedPlan = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [3, 0, 0]],
+          brush: selectedBrush,
+          spacing: 1,
+          curveType: "polyline",
+          initialNormal: [0, 0, 1],
+          orientationMode: "plane"
+        });
+        const selectedWorld = new THREE.Matrix4()
+          .fromArray(selectedPlan.deltaMatrices[0])
+          .multiply(new THREE.Matrix4().fromArray(
+            selectedBrush.entries[0].sourceWorldMatrices[0]
+          ));
+        const selectedOrigin = new THREE.Vector3().applyMatrix4(selectedWorld);
+        const selectedX = new THREE.Vector3(1, 0, 0)
+          .applyMatrix4(selectedWorld)
+          .sub(selectedOrigin)
+          .normalize();
+        assertVectorNear(selectedOrigin.toArray(), [0, 0, 0]);
+        assertVectorNear(selectedX.toArray(), [1, 0, 0]);
+      },
+
+      "controlador acrescenta instâncias sem recriar o preview e confirma ao soltar"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        const fixture = createPathToolFixture();
+        let previewCalls = 0;
+        let commitCalls = 0;
+        let lastPreviewPlan = null;
+        let committedPlan = null;
+        const previewArrayBrush =
+          fixture.service.previewArrayBrush.bind(fixture.service);
+        const commitArrayBrushPlan =
+          fixture.service.commitArrayBrushPlan.bind(fixture.service);
+        fixture.service.previewArrayBrush = options => {
+          previewCalls += 1;
+          lastPreviewPlan = previewArrayBrush(options);
+          return lastPreviewPlan;
+        };
+        fixture.service.commitArrayBrushPlan = options => {
+          commitCalls += 1;
+          committedPlan = options.plan;
+          return commitArrayBrushPlan(options);
+        };
+        fixture.editor.selection.replace({
+          kind: "object",
+          regionId: "path-tool-region",
+          objectId: "array-group"
+        });
+        const renderer = createPathSketchRendererStub();
+        let completed = null;
+        let ended = null;
+        let notifications = 0;
+        let unsubscribe = () => {};
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          onCompleted: value => { completed = value; },
+          onEnded: value => { ended = value; }
+        });
+        try {
+          controller.begin({
+            mode: "tube",
+            planeSource: "world-xy"
+          });
+          controller.updateSettings({
+            mode: "array",
+            sourceMode: "selection",
+            spacingMode: "world",
+            spacingWorld: 1
+          });
+          assertDeepEqual(controller.status().sourceIds, ["array-group"]);
+          controller.cancel();
+          controller.begin({
+            mode: "array",
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0,
+            spacingMode: "world",
+            spacingWorld: 1
+          });
+          unsubscribe = controller.subscribe(() => {
+            notifications += 1;
+          });
+          const meshIds = controller.status().previewResources.meshIds;
+          renderer.canvas.emit("pointerdown", pathPointerEvent(1, 20, 50));
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 50, 50));
+          const firstPreviewCount = controller.status().previewCount;
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 80, 50));
+          const secondStatus = controller.status();
+          assertEqual(secondStatus.previewCount > firstPreviewCount, true);
+          assertDeepEqual(secondStatus.previewResources.meshIds, meshIds);
+          assertEqual(
+            secondStatus.previewResources.diagnostics.meshBuilds,
+            1
+          );
+          assertEqual(
+            secondStatus.previewResources.diagnostics.matrixSkips > 0,
+            true
+          );
+          assertEqual(notifications, 4);
+          assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 0);
+          const writesBefore =
+            secondStatus.previewResources.diagnostics.matrixWrites;
+          controller.updateSettings({
+            orientationMode: "plane",
+            affineRotateZ: "180*u",
+            affineScale: "0.5-u",
+            affineULength: 1,
+            affineColor: "hsl(120*u,1,0.5)"
+          });
+          const affineStatus = controller.status();
+          assertDeepEqual(affineStatus.previewResources.meshIds, meshIds);
+          assertEqual(
+            affineStatus.previewResources.diagnostics.matrixWrites >
+              writesBefore,
+            true
+          );
+          assertEqual(affineStatus.settings.orientationMode, "plane");
+          assertEqual(affineStatus.settings.affineRotateZ, "180*u");
+          assertEqual(affineStatus.settings.affineColor, "hsl(120*u,1,0.5)");
+          assertEqual(
+            affineStatus.previewResources.diagnostics.colorWrites > 0,
+            true
+          );
+
+          const pendingFrames = new Map();
+          let nextFrameId = 1;
+          globalThis.requestAnimationFrame = callback => {
+            const id = nextFrameId;
+            nextFrameId += 1;
+            pendingFrames.set(id, callback);
+            return id;
+          };
+          globalThis.cancelAnimationFrame = id => {
+            pendingFrames.delete(id);
+          };
+          const runNextFrame = () => {
+            const entry = pendingFrames.entries().next().value;
+            if (!entry) throw new Error("Frame visual esperado ausente.");
+            const [id, callback] = entry;
+            pendingFrames.delete(id);
+            callback(0);
+          };
+          const previewCallsBeforeCommit = previewCalls;
+          renderer.canvas.emit("pointerup", pathPointerEvent(1, 80, 50));
+          const previewGroup = renderer.scene.getObjectByName(
+            "path-sketch-array-preview"
+          );
+          assertEqual(controller.status().active, false);
+          assertEqual(previewCalls, previewCallsBeforeCommit);
+          assertEqual(commitCalls, 1);
+          assertEqual(committedPlan === lastPreviewPlan, true);
+          assertEqual(previewGroup.visible, true);
+          runNextFrame();
+          assertEqual(previewGroup.visible, true);
+          runNextFrame();
+          assertEqual(previewGroup.visible, false);
+          assertEqual(
+            completed.result.createdIds.length,
+            completed.result.count * 2
+          );
+          assertEqual(completed.settings.mode, "array");
+          assertEqual(completed.settings.orientationMode, "plane");
+          assertEqual(completed.settings.affineScale, "0.5-u");
+          assertEqual(completed.settings.affineULength, 1);
+          assertEqual(
+            completed.settings.affineColor,
+            "hsl(120*u,1,0.5)"
+          );
+          assertEqual(
+            fixture.sandbox.getSnapshot().objects
+              .filter(object =>
+                completed.result.createdIds.includes(object.id) &&
+                object.kind === "sphere"
+              )
+              .every(object =>
+                /^#[0-9a-f]{6}$/i.test(object.instanceState?.color)
+              ),
+            true
+          );
+          assertVectorNear(completed.frame.normal, [0, 0, 1]);
+          assertEqual(ended.reason, "completed");
+          assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+        } finally {
+          unsubscribe();
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      "controlador persistente confirma traços consecutivos sem recapturar o lote"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        delete globalThis.requestAnimationFrame;
+        delete globalThis.cancelAnimationFrame;
+        const fixture = createPathToolFixture();
+        const renderer = createPathSketchRendererStub();
+        const completions = [];
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          onCompleted: value => {
+            completions.push(value);
+            if (completions.length === 1) {
+              throw new Error("falha de pós-commit simulada");
+            }
+          }
+        });
+        const draw = (pointerId, y) => {
+          renderer.canvas.emit(
+            "pointerdown",
+            pathPointerEvent(pointerId, 20, y)
+          );
+          renderer.canvas.emit(
+            "pointermove",
+            pathPointerEvent(pointerId, 80, y)
+          );
+          renderer.canvas.emit(
+            "pointerup",
+            pathPointerEvent(pointerId, 80, y)
+          );
+        };
+        try {
+          controller.begin({
+            mode: "array",
+            sourceMode: "catalog",
+            geometryType: "sphere",
+            sourceGeometry: {
+              type: "sphere",
+              radius: 0.25,
+              widthSegments: 12,
+              heightSegments: 8
+            },
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0,
+            spacingMode: "world",
+            spacingWorld: 0.5,
+            continuous: true
+          });
+          const meshIds = controller.status().previewResources.meshIds;
+
+          draw(1, 45);
+          const afterFirst = controller.status();
+          assertEqual(afterFirst.active, true);
+          assertEqual(afterFirst.drawing, false);
+          assertEqual(afterFirst.committing, false);
+          assertEqual(
+            afterFirst.error.includes("falha ao registrar repetição"),
+            true
+          );
+          assertEqual(completions.length, 1);
+          assertEqual(
+            fixture.sandbox.getHistoryDiagnostics().commandCount,
+            1
+          );
+
+          draw(2, 55);
+          const afterSecond = controller.status();
+          assertEqual(afterSecond.active, true);
+          assertEqual(afterSecond.drawing, false);
+          assertEqual(afterSecond.committing, false);
+          assertEqual(afterSecond.error, null);
+          assertEqual(completions.length, 2);
+          assertEqual(
+            fixture.sandbox.getHistoryDiagnostics().commandCount,
+            2
+          );
+          assertDeepEqual(
+            afterSecond.previewResources.meshIds,
+            meshIds
+          );
+          assertEqual(
+            afterSecond.previewResources.diagnostics.meshBuilds,
+            1
+          );
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      "controlador persistente rearma o pincel após desfazer o traço anterior"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        delete globalThis.requestAnimationFrame;
+        delete globalThis.cancelAnimationFrame;
+        const fixture = createPathToolFixture();
+        const renderer = createPathSketchRendererStub();
+        const completions = [];
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          onCompleted: value => completions.push(value)
+        });
+        const draw = (pointerId, y) => {
+          renderer.canvas.emit(
+            "pointerdown",
+            pathPointerEvent(pointerId, 20, y)
+          );
+          renderer.canvas.emit(
+            "pointermove",
+            pathPointerEvent(pointerId, 80, y)
+          );
+          renderer.canvas.emit(
+            "pointerup",
+            pathPointerEvent(pointerId, 80, y)
+          );
+        };
+        try {
+          controller.begin({
+            mode: "array",
+            sourceMode: "catalog",
+            geometryType: "sphere",
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0,
+            spacingMode: "world",
+            spacingWorld: 0.5,
+            continuous: true
+          });
+          const meshIds = controller.status().previewResources.meshIds;
+
+          draw(1, 45);
+          assertEqual(completions.length, 1);
+          assertEqual(fixture.sandbox.undo(), true);
+          assertEqual(
+            completions[0].result.createdIds.some(id =>
+              fixture.sandbox.getObject(id)
+            ),
+            false
+          );
+
+          draw(2, 55);
+          const status = controller.status();
+          assertEqual(completions.length, 2);
+          assertEqual(status.active, true);
+          assertEqual(status.drawing, false);
+          assertEqual(status.committing, false);
+          assertEqual(status.error, null);
+          assertDeepEqual(status.previewResources.meshIds, meshIds);
+          assertEqual(
+            completions[1].result.createdIds.every(id =>
+              Boolean(fixture.sandbox.getObject(id))
+            ),
+            true
+          );
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      "controlador observa a publicação de tubo pelo id criado"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        delete globalThis.requestAnimationFrame;
+        delete globalThis.cancelAnimationFrame;
+        const fixture = createPathToolFixture();
+        const renderer = createPathSketchRendererStub();
+        let completed = null;
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          onCompleted: value => { completed = value; }
+        });
+        try {
+          controller.begin({
+            mode: "tube",
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0
+          });
+          renderer.canvas.emit(
+            "pointerdown",
+            pathPointerEvent(1, 20, 50)
+          );
+          renderer.canvas.emit(
+            "pointermove",
+            pathPointerEvent(1, 80, 50)
+          );
+          renderer.canvas.emit(
+            "pointerup",
+            pathPointerEvent(1, 80, 50)
+          );
+          assert(completed);
+          assertEqual(completed.result.changed, true);
+          assertEqual(typeof completed.result.id, "string");
+          assertEqual(controller.status().active, false);
+          assertEqual(
+            fixture.sandbox.getHistoryDiagnostics().commandCount,
+            1
+          );
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      "controlador envia ao pincel somente pontos causais aceitos"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        delete globalThis.requestAnimationFrame;
+        delete globalThis.cancelAnimationFrame;
+        const fixture = createPathToolFixture();
+        const previewInputs = [];
+        const prepareSketchPoints =
+          fixture.service.prepareSketchPoints.bind(fixture.service);
+        fixture.service.prepareSketchPoints = options => {
+          previewInputs.push(structuredClone(options.points));
+          return prepareSketchPoints(options);
+        };
+        const renderer = createPathSketchRendererStub();
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        try {
+          controller.begin({
+            mode: "array",
+            sourceMode: "catalog",
+            geometryType: "box",
+            planeSource: "world-xy",
+            curveType: "centripetal",
+            inputSamplePixels: 1,
+            spacingMode: "world",
+            spacingWorld: 0.5
+          });
+          renderer.canvas.emit("pointerdown", pathPointerEvent(1, 20, 60));
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 50, 40));
+          const first = previewInputs.at(-1);
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 80, 60));
+          const extended = previewInputs.at(-1);
+
+          assertEqual(first.length, 2);
+          assertEqual(extended.length, 3);
+          assertDeepEqual(extended.slice(0, first.length), first);
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      async "controlador mantém o preview até a réplica observar o commit"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        const pendingFrames = new Map();
+        let nextFrameId = 1;
+        globalThis.requestAnimationFrame = callback => {
+          const id = nextFrameId;
+          nextFrameId += 1;
+          pendingFrames.set(id, callback);
+          return id;
+        };
+        globalThis.cancelAnimationFrame = id => {
+          pendingFrames.delete(id);
+        };
+        const runNextFrame = () => {
+          const entry = pendingFrames.entries().next().value;
+          if (!entry) throw new Error("Frame visual esperado ausente.");
+          const [id, callback] = entry;
+          pendingFrames.delete(id);
+          callback(0);
+        };
+        const network = createLocalViewerNetwork();
+        const pair = await createLocalViewerPair({ network });
+        const editor = new EditorState();
+        const geometryRegistry = createDefaultGeometryRegistry();
+        const appearanceRuntime = new AppearanceRuntime();
+        const selectionOperations = new SelectionOperations({
+          editor,
+          sandbox: pair.replica.coordinated,
+          regionId: pair.replica.region.id,
+          geometryRegistry,
+          appearanceRuntime
+        });
+        const resolver = new SpatialReferenceResolver({
+          sandbox: pair.replica.coordinated,
+          editor,
+          geometryRegistry
+        });
+        const service = new PathToolService({
+          resolver,
+          selectionOperations,
+          sandbox: pair.replica.coordinated,
+          editor
+        });
+        let commitObservers = 0;
+        const subscribe =
+          pair.replica.coordinated.subscribe.bind(
+            pair.replica.coordinated
+          );
+        const subscribeCoordination =
+          pair.replica.coordinated.subscribeCoordination.bind(
+            pair.replica.coordinated
+          );
+        pair.replica.coordinated.subscribe = listener => {
+          commitObservers += 1;
+          const unsubscribe = subscribe(listener);
+          return () => {
+            commitObservers -= 1;
+            unsubscribe();
+          };
+        };
+        pair.replica.coordinated.subscribeCoordination = listener => {
+          commitObservers += 1;
+          const unsubscribe = subscribeCoordination(listener);
+          return () => {
+            commitObservers -= 1;
+            unsubscribe();
+          };
+        };
+        const renderer = createPathSketchRendererStub();
+        const completions = [];
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: service,
+          geometryRegistry,
+          onCompleted: value => completions.push(value)
+        });
+        const observedStatuses = [];
+        const unsubscribeController = controller.subscribe(
+          status => observedStatuses.push(status)
+        );
+        try {
+          controller.begin({
+            mode: "array",
+            sourceMode: "catalog",
+            geometryType: "sphere",
+            sourceGeometry: {
+              type: "sphere",
+              radius: 0.25,
+              widthSegments: 12,
+              heightSegments: 8
+            },
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0,
+            spacingMode: "world",
+            spacingWorld: 0.5,
+            continuous: true
+          });
+          renderer.canvas.emit("pointerdown", pathPointerEvent(1, 20, 50));
+          renderer.canvas.emit("pointermove", pathPointerEvent(1, 80, 50));
+          renderer.canvas.emit("pointerup", pathPointerEvent(1, 80, 50));
+          const previewGroup = renderer.scene.getObjectByName(
+            "path-sketch-array-preview"
+          );
+          assertEqual(completions.length, 0);
+          assertEqual(pair.replica.sandbox.objectCount, 0);
+          assertEqual(pendingFrames.size, 0);
+          assertEqual(previewGroup.visible, true);
+          assertEqual(commitObservers, 2);
+          assertEqual(observedStatuses.at(-1).committing, true);
+
+          await settleLocalViewers(20);
+
+          assertEqual(completions.length, 1);
+          assertEqual(commitObservers, 0);
+          assertEqual(observedStatuses.at(-1).active, true);
+          assertEqual(observedStatuses.at(-1).committing, false);
+          assertEqual(
+            pair.replica.sandbox.objectCount,
+            completions[0].result.createdIds.length
+          );
+          runNextFrame();
+          runNextFrame();
+          assertEqual(previewGroup.visible, false);
+
+          renderer.canvas.emit("pointerdown", pathPointerEvent(2, 20, 60));
+          renderer.canvas.emit("pointermove", pathPointerEvent(2, 80, 60));
+          renderer.canvas.emit("pointerup", pathPointerEvent(2, 80, 60));
+          assertEqual(completions.length, 1);
+          assertEqual(commitObservers, 2);
+          assertEqual(previewGroup.visible, true);
+          await settleLocalViewers(20);
+          assertEqual(completions.length, 2);
+          assertEqual(commitObservers, 0);
+          assertEqual(observedStatuses.at(-1).active, true);
+          assertEqual(observedStatuses.at(-1).committing, false);
+          assertEqual(
+            pair.replica.sandbox.objectCount,
+            completions.reduce(
+              (total, completion) =>
+                total + completion.result.createdIds.length,
+              0
+            )
+          );
+          runNextFrame();
+          runNextFrame();
+          assertEqual(previewGroup.visible, false);
+        } finally {
+          unsubscribeController();
+          controller.dispose();
+          pair.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
       },
 
       "console converte objetos nomeados sem forçar caminho aberto"() {
@@ -6032,6 +8009,66 @@ assets: {
       "mudança desconhecida usa fallback integral"() {
         const result = classifyChanges([{ type: "future-change" }]);
         assertEqual(result.mode, "full");
+      },
+
+      "índice do sandbox acompanha criação transformação e histórico"() {
+        const region = new Region(
+          {
+            id: "sandbox-index-region",
+            name: "Sandbox index",
+            type: "box-region"
+          },
+          {
+            schemaVersion: 1,
+            objects: [{
+              id: "indexed-a",
+              kind: "box",
+              name: "A",
+              position: [0, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1],
+              size: [1, 1, 1]
+            }]
+          }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        assertEqual(sandbox.getObject("indexed-a").name, "A");
+        sandbox.dispatch({
+          type: "object.create",
+          id: "indexed-b",
+          name: "B",
+          position: [1, 0, 0],
+          size: [1, 1, 1]
+        });
+        assertEqual(sandbox.getObject("indexed-b").name, "B");
+        sandbox.dispatch({
+          type: "object.transform",
+          id: "indexed-b",
+          position: [3, 4, 5],
+          rotation: [0, 0, 0, 1],
+          scale: [2, 2, 2]
+        });
+        assertDeepEqual(
+          sandbox.getObject("indexed-b").position,
+          [3, 4, 5]
+        );
+        sandbox.undo();
+        assertDeepEqual(
+          sandbox.getObject("indexed-b").position,
+          [1, 0, 0]
+        );
+        sandbox.redo();
+        assertDeepEqual(
+          sandbox.getObject("indexed-b").position,
+          [3, 4, 5]
+        );
+        sandbox.dispatch({
+          type: "selection.delete",
+          ids: ["indexed-b"]
+        });
+        assertEqual(sandbox.getObject("indexed-b"), null);
+        sandbox.undo();
+        assertEqual(sandbox.getObject("indexed-b").name, "B");
       }
     },
 
@@ -8445,6 +10482,39 @@ assets: {
     assertNear(batch.colorAt("a").g, 1);
     assertEqual(batch.stats().hasInstanceColor, true);
     assertEqual(batch.stats().colorBytes, 48);
+
+    batch.dispose({
+      disposeGeometry: true,
+      disposeMaterial: true
+    });
+  },
+
+  "cor absoluta por instância atravessa canais nulos do material"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshStandardMaterial({
+      color: "#ff0000"
+    });
+    const batch = new InstanceBatch({
+      key: "absolute-color",
+      geometry,
+      material,
+      capacity: 2
+    });
+    batch.add("a", new THREE.Matrix4());
+
+    const desired = new THREE.Color("#00ff80");
+    assertEqual(
+      updateAbsoluteInstanceColor(batch, "a", desired),
+      true
+    );
+    const projected = batch.material.color
+      .clone()
+      .multiply(batch.colorAt("a"));
+    assertNear(projected.r, desired.r, 1e-6);
+    assertNear(projected.g, desired.g, 1e-6);
+    assertNear(projected.b, desired.b, 1e-6);
+    assertEqual(batch.material.color.g > 0, true);
+    assertEqual(batch.material.color.b > 0, true);
 
     batch.dispose({
       disposeGeometry: true,
@@ -11263,10 +13333,274 @@ assets: {
     },
 
     "selection-ui": {
-    "editor inicia em seleção"() { const e=new EditorState(); assertEqual(e.snapshot().tool.mode,"select"); assertEqual(e.snapshot().selectionOperation,"replace"); },
-    "preserva transformação ao navegar"() { const e=new EditorState(); e.setToolMode("rotate"); e.setToolMode("navigate"); assertEqual(e.snapshot().tool.transformMode,"rotate"); },
-    "operações são explícitas"() { const e=new EditorState(); e.setSelectionOperation("add"); e.setAreaSelection(true); assertEqual(e.snapshot().selectionOperation,"add"); assertEqual(e.snapshot().areaSelection,true); }
-  },
+      "editor inicia em seleção"() {
+        const editor = new EditorState();
+        assertEqual(editor.snapshot().tool.mode, "select");
+        assertEqual(editor.snapshot().selectionOperation, "replace");
+        assertEqual(editor.snapshot().selectionGestureMode, "rectangle");
+        assertNear(editor.snapshot().selectionBrushRadius, 24);
+      },
+
+      "preserva transformação ao navegar"() {
+        const editor = new EditorState();
+        editor.setToolMode("rotate");
+        editor.setToolMode("navigate");
+        assertEqual(editor.snapshot().tool.transformMode, "rotate");
+      },
+
+      "operações e gesto são explícitos"() {
+        const editor = new EditorState();
+        editor.setSelectionOperation("add");
+        editor.setSelectionGesture({
+          mode: "brush",
+          radiusPixels: 31,
+          enabled: true
+        });
+        assertEqual(editor.snapshot().selectionOperation, "add");
+        assertEqual(editor.snapshot().areaSelection, true);
+        assertEqual(editor.snapshot().selectionGestureMode, "brush");
+        assertNear(editor.snapshot().selectionBrushRadius, 31);
+      },
+
+      "seleção em lote preserva semântica de adicionar remover e alternar"() {
+        const selection = new Selection();
+        const member = objectId => ({
+          kind: "object",
+          regionId: "region-main",
+          objectId
+        });
+        selection.applyMany([member("a"), member("b")], {
+          operation: "replace"
+        });
+        selection.applyMany([member("c")], { operation: "add" });
+        selection.applyMany([member("b")], { operation: "remove" });
+        selection.applyMany([member("a"), member("d")], {
+          operation: "toggle"
+        });
+        assertDeepEqual(
+          selection.snapshot().members.map(value => value.objectId),
+          ["c", "d"]
+        );
+      },
+
+      "retângulo pincel laço e borracha compartilham geometria determinística"() {
+        const rectangle = normalizeScreenSelectionGesture({
+          mode: "rectangle",
+          points: [{ x: 0, y: 0 }, { x: 20, y: 20 }]
+        });
+        const brush = normalizeScreenSelectionGesture({
+          mode: "brush",
+          points: [{ x: 0, y: 10 }, { x: 30, y: 10 }],
+          radiusPixels: 5
+        });
+        const lasso = normalizeScreenSelectionGesture({
+          mode: "lasso",
+          points: [
+            { x: 0, y: 0 },
+            { x: 20, y: 0 },
+            { x: 10, y: 20 }
+          ]
+        });
+        assertEqual(screenSelectionGestureContains(rectangle, { x: 8, y: 8 }), true);
+        assertEqual(screenSelectionGestureContains(brush, { x: 16, y: 14 }), true);
+        assertEqual(screenSelectionGestureContains(brush, { x: 16, y: 17 }), false);
+        assertEqual(screenSelectionGestureContains(lasso, { x: 10, y: 8 }), true);
+        assertEqual(screenSelectionGestureContains(lasso, { x: 19, y: 18 }), false);
+      },
+
+      "índice espacial testa apenas candidatos próximos no caminho quente"() {
+        const index = new ScreenSelectionIndex({ cellSize: 64 });
+        index.rebuild(Array.from({ length: 4096 }, (_, item) => ({
+          x: (item % 64) * 16,
+          y: Math.floor(item / 64) * 16,
+          id: item
+        })));
+        const hits = index.query({
+          mode: "brush",
+          points: [{ x: 8, y: 8 }, { x: 40, y: 8 }],
+          radiusPixels: 8
+        });
+        const diagnostics = index.diagnostics();
+        assertEqual(hits.length > 0, true);
+        assertEqual(diagnostics.testedEntries < 100, true);
+      },
+
+      "captura do pincel remove listeners temporários ao soltar"() {
+        const listeners = new Map();
+        const canvas = {
+          addEventListener(type, listener) {
+            const values = listeners.get(type) ?? new Set();
+            values.add(listener);
+            listeners.set(type, values);
+          },
+          removeEventListener(type, listener) {
+            listeners.get(type)?.delete(listener);
+          },
+          getBoundingClientRect() {
+            return { left: 10, top: 20, width: 200, height: 100 };
+          },
+          setPointerCapture() {},
+          releasePointerCapture() {}
+        };
+        const path = {
+          style: {},
+          setAttribute() {}
+        };
+        const cursor = {
+          hidden: true,
+          setAttribute() {}
+        };
+        const svg = { setAttribute() {} };
+        const element = {
+          hidden: true,
+          dataset: {},
+          style: {},
+          querySelector(selector) {
+            if (selector === "svg") return svg;
+            if (selector.includes("path")) return path;
+            if (selector.includes("cursor")) return cursor;
+            return null;
+          }
+        };
+        const completed = [];
+        const marquee = new SelectionMarquee({
+          canvas,
+          element,
+          onComplete: value => completed.push(value)
+        });
+        const emit = (type, x, y) => {
+          const event = {
+            pointerId: 7,
+            pointerType: "touch",
+            button: 0,
+            clientX: 10 + x,
+            clientY: 20 + y,
+            preventDefault() {},
+            stopImmediatePropagation() {},
+            getCoalescedEvents() { return [this]; }
+          };
+          for (const listener of [...(listeners.get(type) ?? [])]) {
+            listener(event);
+          }
+        };
+        marquee.setMode("brush", { radiusPixels: 18 });
+        marquee.setEnabled(true);
+        emit("pointerdown", 5, 5);
+        emit("pointermove", 40, 20);
+        assertEqual(completed.length, 0);
+        emit("pointerup", 70, 30);
+        assertEqual(completed.length, 1);
+        assertEqual(completed[0].mode, "brush");
+        assertNear(completed[0].radiusPixels, 18);
+        assertEqual(listeners.get("pointermove").size, 0);
+        assertEqual(listeners.get("pointerup").size, 0);
+        assertEqual(listeners.get("pointercancel").size, 0);
+        emit("pointerdown", 8, 8);
+        assertEqual(listeners.get("pointermove").size, 1);
+        marquee.setEnabled(false);
+        assertEqual(listeners.get("pointermove").size, 0);
+        assertEqual(listeners.get("pointerup").size, 0);
+        assertEqual(listeners.get("pointercancel").size, 0);
+        marquee.dispose();
+        assertEqual(listeners.get("pointerdown").size, 0);
+      },
+
+      "borracha publica uma única exclusão para todos os atingidos"() {
+        const editor = new EditorState();
+        const calls = [];
+        const commands = createEditorCommands({
+          editor,
+          renderer: {
+            resolveScreenSelectionGesture() {
+              return {
+                subject: "object",
+                mode: "eraser",
+                members: [
+                  { objectId: "a" },
+                  { objectId: "b" }
+                ]
+              };
+            }
+          },
+          selectionOperations: {
+            deleteIds(ids, options) {
+              calls.push({ ids, options });
+              return { changed: true, deletedIds: ids };
+            }
+          },
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {}
+        });
+        const result = commands.execute("selection.gesture.apply", {
+          mode: "eraser",
+          points: [{ x: 1, y: 1 }]
+        });
+        assertEqual(result.changed, true);
+        assertEqual(calls.length, 1);
+        assertDeepEqual(calls[0].ids, ["a", "b"]);
+        assertEqual(calls[0].options.source, "selection-eraser");
+      },
+
+      "console escolhe gesto e raio pela mesma superfície de comando"() {
+        const calls = [];
+        const console = createGeometryConsole(calls);
+        const [entry] = console.execute("select gesture brush 36");
+        assertEqual(entry.ok, true);
+        assertDeepEqual(calls, [{
+          id: "selection.gesture.set",
+          args: {
+            mode: "brush",
+            radiusPixels: 36,
+            enabled: true
+          }
+        }]);
+      },
+
+      "borracha de componentes produz uma operação topológica local"() {
+        const editor = new EditorState();
+        const calls = [];
+        const meshEditor = {
+          active: true,
+          applyComponentSelection(value) {
+            calls.push({ type: "select", value });
+          },
+          applyTopology(value) {
+            calls.push({ type: "topology", value });
+            return { changed: true };
+          }
+        };
+        const commands = createEditorCommands({
+          editor,
+          renderer: {
+            resolveScreenSelectionGesture() {
+              return {
+                subject: "component",
+                mode: "eraser",
+                component: "face",
+                indices: [2, 4]
+              };
+            }
+          },
+          selectionOperations: {},
+          meshEditor,
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {}
+        });
+        assertEqual(commands.execute("selection.gesture.apply", {
+          mode: "eraser",
+          points: [{ x: 4, y: 4 }]
+        }).changed, true);
+        assertEqual(calls.length, 2);
+        assertDeepEqual(calls[0].value, {
+          mode: "face",
+          indices: [2, 4],
+          operation: "replace"
+        });
+        assertDeepEqual(calls[1].value, { operation: "delete" });
+      }
+    },
 
   simulation: {
       "simulador aceita comando na versão correta"() {
@@ -11632,6 +13966,33 @@ function createPathToolFixture() {
       scale: [1, 1, 1],
       geometry: { type: "box", size: [1, 1, 1], segments: [1, 1, 1] },
       instanceState: {}
+    },
+    {
+      id: "array-group",
+      kind: "group",
+      name: "Grupo fonte",
+      parentId: null,
+      position: [3, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      pivot: [0, 0, 0],
+      instanceState: {}
+    },
+    {
+      id: "array-group-sphere",
+      kind: "sphere",
+      name: "Esfera do grupo",
+      parentId: "array-group",
+      position: [1, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      geometry: {
+        type: "sphere",
+        radius: 0.5,
+        widthSegments: 12,
+        heightSegments: 8
+      },
+      instanceState: {}
     }
   ];
   const region = new Region(
@@ -11662,6 +14023,73 @@ function createPathToolFixture() {
       sandbox,
       editor
     })
+  };
+}
+
+function createPathSketchRendererStub() {
+  const listeners = new Map();
+  const canvas = {
+    addEventListener(type, listener) {
+      const entries = listeners.get(type) ?? new Set();
+      entries.add(listener);
+      listeners.set(type, entries);
+    },
+    removeEventListener(type, listener) {
+      listeners.get(type)?.delete(listener);
+    },
+    emit(type, event) {
+      for (const listener of listeners.get(type) ?? []) listener(event);
+    },
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: 100, height: 100 };
+    },
+    setPointerCapture() {},
+    releasePointerCapture() {}
+  };
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.set(0, 0, 10);
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  let mode = "select";
+  return {
+    canvas,
+    camera,
+    scene: new THREE.Scene(),
+    orbit: { enabled: true },
+    editorState: {
+      snapshot() {
+        return { tool: { mode } };
+      }
+    },
+    setTransformMode(next) {
+      mode = String(next);
+    },
+    getEditPlane() {
+      return null;
+    },
+    getNavigationLocks() {
+      return { plane: null };
+    },
+    readViewerReferenceFrame() {
+      return {
+        origin: [0, 0, 0],
+        normal: [0, 0, 1],
+        xAxis: [1, 0, 0]
+      };
+    }
+  };
+}
+
+function pathPointerEvent(pointerId, clientX, clientY) {
+  return {
+    pointerId,
+    pointerType: "mouse",
+    button: 0,
+    clientX,
+    clientY,
+    preventDefault() {},
+    stopImmediatePropagation() {}
   };
 }
 

@@ -1,10 +1,12 @@
-export { SpatialReferenceResolver } from "./SpatialReferenceResolver.js?build=20260727-0037c";
-export { PathToolService } from "./PathToolService.js";
+export { SpatialReferenceResolver } from "./SpatialReferenceResolver.js?build=20260729-0039g1";
+export { PathToolService } from "./PathToolService.js?build=20260729-0039g1";
 export {
   createPathCurve,
   rotationMinimizingFrames,
-  samplePathFrames
-} from "./PathFrames.js";
+  samplePathFrames,
+  samplePathFrameTailBySpacing,
+  samplePathFramesBySpacing
+} from "./PathFrames.js?build=20260729-0039g";
 export { createSweepGeometryDescriptor } from "./SweepGeometry.js";
 export {
   bufferDescriptorFromGeometry,
@@ -16,4 +18,19 @@ export {
   stripRepeatedEndpoint,
   transformPoints
 } from "./ReferenceGeometry.js";
-export { PathSketchController } from "./PathSketchController.js?build=20260728-0039a";
+export { PathSketchController } from "./PathSketchController.js?build=20260729-0039g2";
+export {
+  PathInstancePreviewCache
+} from "./PathInstancePreviewCache.js?build=20260729-0039g";
+export {
+  PATH_BRUSH_AFFINE_DEFAULTS,
+  PATH_BRUSH_AFFINE_VARIABLES,
+  compilePathBrushAffineModifier,
+  evaluatePathBrushAffineModifier
+} from "./PathBrushAffine.js?build=20260729-0039g";
+export {
+  PATH_BRUSH_COLOR_DEFAULT,
+  compilePathBrushColorModifier,
+  evaluatePathBrushColorModifier,
+  invertHexColor
+} from "./PathBrushColor.js?build=20260729-0039g";

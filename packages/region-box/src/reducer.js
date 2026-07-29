@@ -119,7 +119,7 @@ function applyPropertyUpdates(objects, command) {
   }));
 }
 
-export function boxRegionReducer(state, command) {
+export function boxRegionReducer(state, command, context = {}) {
   switch (command.type) {
     case "camera.create": {
       const id = String(command.id ?? "").trim();
@@ -396,20 +396,34 @@ export function boxRegionReducer(state, command) {
       );
       if (!incoming.length) return { state, changes: [] };
 
-      const existingIds = new Set(state.objects.map(object => object.id));
+      const existingIds = typeof context.hasObject === "function"
+        ? null
+        : new Set(state.objects.map(object => String(object.id)));
+      const hasExisting = id => typeof context.hasObject === "function"
+        ? Boolean(context.hasObject(id))
+        : existingIds.has(String(id));
+      const incomingIds = new Set();
       for (const object of incoming) {
-        if (existingIds.has(object.id)) {
+        const id = String(object.id ?? "").trim();
+        if (!id) {
+          throw new Error("Identificador de nó ausente.");
+        }
+        if (hasExisting(id) || incomingIds.has(id)) {
           throw new Error(`Duplicate object id: ${object.id}`);
         }
-        existingIds.add(object.id);
+        incomingIds.add(id);
       }
 
-      new HierarchyIndex([...state.objects,...incoming]);
+      validateIncomingHierarchy(incoming, {
+        hasExisting,
+        incomingIds
+      });
+      const objects = Object.freeze([...state.objects, ...incoming]);
 
       return {
         state: Object.freeze({
           ...state,
-          objects: Object.freeze([...state.objects, ...incoming])
+          objects
         }),
         changes: incoming.map(object => ({
           type: "object-created",
@@ -556,6 +570,41 @@ export function boxRegionReducer(state, command) {
 
     default:
       return { state, changes: [] };
+  }
+}
+
+function validateIncomingHierarchy(
+  incoming,
+  { hasExisting, incomingIds }
+) {
+  const parentById = new Map();
+  for (const object of incoming) {
+    const id = String(object.id ?? "").trim();
+    const parentId = object.parentId === undefined ||
+      object.parentId === null
+      ? null
+      : String(object.parentId).trim() || null;
+    if (parentId === null) continue;
+    if (!incomingIds.has(parentId) && !hasExisting(parentId)) {
+      throw new Error(`Parent object not found: ${object.parentId}`);
+    }
+    parentById.set(id, parentId);
+  }
+
+  const complete = new Set();
+  for (const start of parentById.keys()) {
+    if (complete.has(start)) continue;
+    const path = new Set();
+    let current = start;
+    while (parentById.has(current)) {
+      if (path.has(current)) {
+        throw new Error(`Hierarchy cycle detected at: ${current}`);
+      }
+      if (complete.has(current)) break;
+      path.add(current);
+      current = parentById.get(current);
+    }
+    for (const id of path) complete.add(id);
   }
 }
 

@@ -1,8 +1,12 @@
 import * as THREE from "three";
+import {
+  PathInstancePreviewCache
+} from "./PathInstancePreviewCache.js?build=20260729-0039g";
 
 const DEFAULTS = Object.freeze({
+  mode: "tube",
   planeSource: "locked-or-viewer",
-  spacingPixels: 6,
+  inputSamplePixels: 6,
   simplify: 0.004,
   smoothIterations: 1,
   radius: 0.08,
@@ -10,11 +14,31 @@ const DEFAULTS = Object.freeze({
   radialSegments: 6,
   curveType: "centripetal",
   tension: 0.5,
-  color: "#70c8ff"
+  color: "#70c8ff",
+  closed: false,
+  sourceMode: "selection",
+  geometryType: "box",
+  sourceGeometry: Object.freeze({}),
+  sourceColor: "#6699cc",
+  spacingMode: "auto",
+  spacingWorld: 1,
+  spacingScale: 1,
+  align: true,
+  twistDegrees: 0,
+  orientationMode: "preserve",
+  affineMoveX: "0",
+  affineMoveY: "0",
+  affineMoveZ: "0",
+  affineRotateX: "0",
+  affineRotateY: "0",
+  affineRotateZ: "0",
+  affineScale: "1",
+  affineULength: 1,
+  affineColor: "source"
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v1";
+  static apiVersion = "path-sketch-controller-v5";
 
   #active = null;
   #listeners = new Set();
@@ -22,10 +46,19 @@ export class PathSketchController {
   #pointer = new THREE.Vector2();
   #previewLine;
   #previewPoints;
+  #previewTube;
+  #previewArrayGroup;
+  #previewArrayCache;
+  #previewFrame = null;
+  #pendingPreviewPoints = null;
+  #handoffFrames = [];
+  #pendingCommit = null;
+  #commitObservers = [];
 
   constructor({
     renderer,
     pathTools,
+    geometryRegistry = pathTools?.resolver?.geometryRegistry,
     onCompleted = () => {},
     onEnded = () => {}
   }) {
@@ -35,13 +68,31 @@ export class PathSketchController {
     if (!pathTools?.createPath) {
       throw new TypeError("PathSketchController exige PathToolService.");
     }
+    if (!geometryRegistry?.create) {
+      throw new TypeError("PathSketchController exige GeometryRegistry.");
+    }
     this.renderer = renderer;
     this.pathTools = pathTools;
+    this.geometryRegistry = geometryRegistry;
     this.onCompleted = onCompleted;
     this.onEnded = onEnded;
     this.#previewLine = createPreviewLine();
     this.#previewPoints = createPreviewPoints();
-    renderer.scene.add(this.#previewLine, this.#previewPoints);
+    this.#previewTube = createPreviewTube();
+    this.#previewArrayGroup = new THREE.Group();
+    this.#previewArrayGroup.name = "path-sketch-array-preview";
+    this.#previewArrayGroup.renderOrder = 1499;
+    this.#previewArrayCache = new PathInstancePreviewCache({
+      group: this.#previewArrayGroup,
+      geometryRegistry,
+      maximumInstances: 4096
+    });
+    renderer.scene.add(
+      this.#previewTube,
+      this.#previewArrayGroup,
+      this.#previewLine,
+      this.#previewPoints
+    );
     this.#bind(true);
   }
 
@@ -49,10 +100,47 @@ export class PathSketchController {
 
   begin(options = {}) {
     if (this.#active) throw new Error("Já existe um desenho de caminho ativo.");
-    const settings = normalizeSettings({ ...DEFAULTS, ...options });
+    this.#cancelPreviewHandoff({ clear: true });
+    const requested = { ...options };
+    if (requested.inputSamplePixels === undefined &&
+        requested.spacingPixels !== undefined) {
+      requested.inputSamplePixels = requested.spacingPixels;
+    }
+    const settings = normalizeSettings({ ...DEFAULTS, ...requested });
     const frame = resolveFrame(this.renderer, settings.planeSource);
+    const affineModifier = settings.mode === "array"
+      ? this.pathTools.compileArrayBrushModifier(settings)
+      : null;
+    const colorModifier = settings.mode === "array"
+      ? this.pathTools.compileArrayBrushColorModifier(settings)
+      : null;
+    const brush = settings.mode === "array"
+      ? this.pathTools.captureArrayBrush({
+          sourceMode: settings.sourceMode,
+          geometryType: settings.geometryType,
+          geometry: settings.sourceGeometry,
+          color: settings.sourceColor
+        })
+      : null;
+    if (brush) this.#previewArrayCache.configure(brush);
+    else this.#previewArrayCache.clear();
+    const sourceIds = brush?.sourceIds ?? Object.freeze([]);
     this.#active = {
       settings,
+      sourceIds,
+      brush,
+      affineModifier,
+      colorModifier,
+      arrayPlan: null,
+      brushSettingsKey: brushSettingsKey(settings),
+      resolvedSpacing: brush
+        ? this.pathTools.resolveArrayBrushSpacing({
+            brush,
+            spacingMode: settings.spacingMode,
+            spacingWorld: settings.spacingWorld,
+            spacingScale: settings.spacingScale
+          })
+        : null,
       frame,
       plane: new THREE.Plane(
         new THREE.Vector3().fromArray(frame.normal).normalize(),
@@ -62,8 +150,12 @@ export class PathSketchController {
       ),
       pointerId: null,
       drawing: false,
+      committing: false,
+      commitRequestId: null,
       screenPoints: [],
       points: [],
+      previewCount: 0,
+      previewTruncated: false,
       previousTool: this.renderer.editorState?.snapshot?.().tool?.mode ?? "select",
       previousOrbitEnabled: this.renderer.orbit.enabled,
       lastResult: null,
@@ -78,9 +170,17 @@ export class PathSketchController {
 
   cancel() {
     if (!this.#active) return this.status();
+    if (this.#active.committing) {
+      this.#active.error =
+        "A publicação do traço ainda está pendente; aguarde a confirmação.";
+      this.#notify();
+      return this.status();
+    }
+    this.#clearCommitObservation();
     this.#finishInteraction({ restoreTool: true });
     this.#active = null;
     this.#updatePreview([]);
+    this.#clearResultPreview();
     this.onEnded({ reason: "cancel" });
     this.#notify();
     return this.status();
@@ -91,7 +191,22 @@ export class PathSketchController {
     return Object.freeze({
       active: Boolean(active),
       drawing: Boolean(active?.drawing),
+      committing: Boolean(active?.committing),
+      commitRequestId: active?.commitRequestId ?? null,
       pointCount: active?.points.length ?? 0,
+      mode: active?.settings.mode ?? null,
+      sourceIds: active
+        ? Object.freeze([...active.sourceIds])
+        : Object.freeze([]),
+      previewCount: active?.previewCount ?? 0,
+      previewTruncated: Boolean(active?.previewTruncated),
+      sourceMode: active?.brush?.sourceMode ?? null,
+      sourceName: active?.brush?.sourceName ?? null,
+      resolvedSpacing: active?.resolvedSpacing ?? null,
+      planDiagnostics: active?.arrayPlan?.diagnostics
+        ? Object.freeze(structuredClone(active.arrayPlan.diagnostics))
+        : null,
+      previewResources: this.#previewArrayCache.status(),
       planeSource: active?.settings.planeSource ?? null,
       frame: active ? Object.freeze(structuredClone(active.frame)) : null,
       settings: active
@@ -112,6 +227,58 @@ export class PathSketchController {
     return this.status();
   }
 
+  updateSettings(patch = {}) {
+    if (!this.#active) return this.status();
+    const settings = normalizeSettings({
+      ...this.#active.settings,
+      ...patch
+    });
+    const affineModifier = settings.mode === "array"
+      ? this.pathTools.compileArrayBrushModifier(settings)
+      : null;
+    const colorModifier = settings.mode === "array"
+      ? this.pathTools.compileArrayBrushColorModifier(settings)
+      : null;
+    let brush = this.#active.brush;
+    const nextBrushSettingsKey = brushSettingsKey(settings);
+    if (settings.mode === "array" &&
+        (!brush ||
+         nextBrushSettingsKey !== this.#active.brushSettingsKey)) {
+      brush = this.pathTools.captureArrayBrush({
+        sourceMode: settings.sourceMode,
+        sourceIds: settings.sourceMode === "selection" &&
+          this.#active.sourceIds.length
+          ? this.#active.sourceIds
+          : null,
+        geometryType: settings.geometryType,
+        geometry: settings.sourceGeometry,
+        color: settings.sourceColor
+      });
+      this.#previewArrayCache.configure(brush);
+    } else if (settings.mode !== "array") {
+      brush = null;
+      this.#previewArrayCache.clear();
+    }
+    this.#active.settings = settings;
+    this.#active.brush = brush;
+    this.#active.affineModifier = affineModifier;
+    this.#active.colorModifier = colorModifier;
+    this.#active.arrayPlan = null;
+    this.#active.brushSettingsKey = nextBrushSettingsKey;
+    this.#active.sourceIds = brush?.sourceIds ?? Object.freeze([]);
+    this.#active.resolvedSpacing = brush
+      ? this.pathTools.resolveArrayBrushSpacing({
+          brush,
+          spacingMode: settings.spacingMode,
+          spacingWorld: settings.spacingWorld,
+          spacingScale: settings.spacingScale
+        })
+      : null;
+    this.#scheduleResultPreview(this.#active.points);
+    this.#notify();
+    return this.status();
+  }
+
   subscribe(listener) {
     if (typeof listener !== "function") {
       throw new TypeError("Listener de desenho de caminho deve ser função.");
@@ -122,9 +289,25 @@ export class PathSketchController {
   }
 
   dispose() {
-    this.cancel();
+    this.#clearCommitObservation();
+    if (this.#active) {
+      this.#finishInteraction({ restoreTool: true });
+      this.#active = null;
+      this.#updatePreview([]);
+      this.#clearResultPreview();
+    }
     this.#bind(false);
-    this.renderer.scene.remove(this.#previewLine, this.#previewPoints);
+    this.#cancelPreviewHandoff({ clear: true });
+    this.#cancelPendingPreview();
+    this.#previewArrayCache.dispose();
+    this.renderer.scene.remove(
+      this.#previewTube,
+      this.#previewArrayGroup,
+      this.#previewLine,
+      this.#previewPoints
+    );
+    this.#previewTube.geometry.dispose();
+    this.#previewTube.material.dispose();
     this.#previewLine.geometry.dispose();
     this.#previewLine.material.dispose();
     this.#previewPoints.geometry.dispose();
@@ -134,20 +317,60 @@ export class PathSketchController {
 
   #onPointerDown = event => {
     const active = this.#active;
-    if (!active || active.drawing) return;
+    if (!active || active.drawing || active.committing) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    try {
+      this.#refreshBrushRevision();
+    } catch (error) {
+      active.error = error?.message ?? String(error);
+      this.#notify();
+      return;
+    }
     const point = this.#worldPoint(event);
     if (!point) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    this.#cancelPreviewHandoff({ clear: true });
     active.pointerId = event.pointerId;
     active.drawing = true;
+    active.error = null;
     active.points = [point];
     active.screenPoints = [[event.clientX, event.clientY]];
+    active.arrayPlan = null;
     this.renderer.canvas.setPointerCapture?.(event.pointerId);
     this.#updatePreview(active.points);
     this.#notify();
   };
+
+  #refreshBrushRevision() {
+    const active = this.#active;
+    if (active?.settings.mode !== "array" || !active.brush) return false;
+    const currentRevision = Number(this.pathTools.sandbox?.revision);
+    if (
+      Number.isInteger(currentRevision) &&
+      active.brush.sourceRevision === currentRevision
+    ) {
+      return false;
+    }
+    const previousBrush = active.brush;
+    const nextBrush = this.pathTools.rebaseArrayBrush({
+      brush: previousBrush,
+      createdIds: []
+    });
+    active.brush = nextBrush;
+    active.sourceIds = nextBrush.sourceIds ?? Object.freeze([]);
+    active.arrayPlan = null;
+    active.resolvedSpacing = this.pathTools.resolveArrayBrushSpacing({
+      brush: nextBrush,
+      spacingMode: active.settings.spacingMode,
+      spacingWorld: active.settings.spacingWorld,
+      spacingScale: active.settings.spacingScale
+    });
+    if (nextBrush.key !== previousBrush.key) {
+      this.#previewArrayCache.configure(nextBrush);
+    }
+    return true;
+  }
 
   #onPointerMove = event => {
     const active = this.#active;
@@ -156,13 +379,12 @@ export class PathSketchController {
     event.stopImmediatePropagation();
     const previous = active.screenPoints.at(-1);
     if (Math.hypot(event.clientX - previous[0], event.clientY - previous[1]) <
-        active.settings.spacingPixels) return;
+        active.settings.inputSamplePixels) return;
     const point = this.#worldPoint(event);
     if (!point || near3(point, active.points.at(-1))) return;
     active.points.push(point);
     active.screenPoints.push([event.clientX, event.clientY]);
     this.#updatePreview(active.points);
-    this.#notify();
   };
 
   #onPointerUp = event => {
@@ -173,45 +395,50 @@ export class PathSketchController {
     this.renderer.canvas.releasePointerCapture?.(event.pointerId);
     active.drawing = false;
     try {
-      const points = prepareFreehandPoints(active.points, active.settings);
-      if (points.length < 2) {
+      this.#flushPendingResultPreview();
+      if (active.error) {
+        throw new Error(active.error);
+      }
+      const points = active.settings.mode === "array"
+        ? active.arrayPlan?.path?.points
+        : prepareFreehandPoints(active.points, active.settings);
+      if (!Array.isArray(points) || points.length < 2) {
         throw new Error("O traço é curto demais para formar um caminho.");
       }
-      active.lastResult = this.pathTools.createPath({
-        points,
-        name: active.settings.name || "Caminho livre",
-        radius: active.settings.radius,
-        tubularSegments: Math.max(
-          active.settings.tubularSegments,
-          points.length * 4
-        ),
-        radialSegments: active.settings.radialSegments,
-        curveType: active.settings.curveType,
-        tension: active.settings.tension,
-        color: active.settings.color
-      });
-      this.onCompleted({
+      const committedPoints = points.map(point => [...point]);
+      active.lastResult = active.settings.mode === "array"
+        ? this.pathTools.commitArrayBrushPlan({
+            plan: active.arrayPlan,
+            brush: active.brush
+          })
+        : this.pathTools.createPath({
+            points: committedPoints,
+            name: active.settings.name || "Tubo desenhado",
+            radius: active.settings.radius,
+            tubularSegments: Math.max(
+              active.settings.tubularSegments,
+              points.length * 4
+            ),
+            radialSegments: active.settings.radialSegments,
+            closed: active.settings.closed,
+            curveType: active.settings.curveType,
+            tension: active.settings.tension,
+            color: active.settings.color
+          });
+      const completion = {
         result: active.lastResult,
         settings: structuredClone(active.settings),
-        points: structuredClone(points)
-      });
-      active.error = null;
-      if (active.settings.continuous) {
-        active.pointerId = null;
-        active.points = [];
-        active.screenPoints = [];
-        this.#updatePreview([]);
-      } else {
-        this.#finishInteraction({ restoreTool: true });
-        this.#active = null;
-        this.#updatePreview([]);
-        this.onEnded({ reason: "completed" });
-      }
+        points: structuredClone(committedPoints),
+        sourceIds: [...active.sourceIds],
+        frame: structuredClone(active.frame)
+      };
+      this.#beginCommitHandoff(completion);
     } catch (error) {
       active.error = error.message;
       active.points = [];
       active.screenPoints = [];
       this.#updatePreview([]);
+      this.#clearResultPreview();
     }
     this.#notify();
   };
@@ -224,6 +451,7 @@ export class PathSketchController {
     active.points = [];
     active.screenPoints = [];
     this.#updatePreview([]);
+    this.#clearResultPreview();
     this.#notify();
   };
 
@@ -267,6 +495,326 @@ export class PathSketchController {
       object.geometry.computeBoundingSphere();
       object.visible = points.length > 0;
     }
+    this.#scheduleResultPreview(points);
+  }
+
+  #scheduleResultPreview(points) {
+    this.#pendingPreviewPoints = points.map(point => [...point]);
+    if (this.#previewFrame !== null) return;
+    if (typeof globalThis.requestAnimationFrame !== "function") {
+      this.#flushResultPreview();
+      return;
+    }
+    this.#previewFrame = globalThis.requestAnimationFrame(() => {
+      this.#previewFrame = null;
+      this.#flushResultPreview();
+    });
+  }
+
+  #flushResultPreview() {
+    const points = this.#pendingPreviewPoints ?? [];
+    this.#pendingPreviewPoints = null;
+    const active = this.#active;
+    if (!active || points.length < 2) {
+      this.#clearResultPreview();
+      return;
+    }
+    try {
+      const previewPoints = active.settings.mode === "array"
+        ? points
+        : points;
+      const prepared = this.pathTools.prepareSketchPoints({
+        points: previewPoints,
+        curveType: active.settings.curveType,
+        tension: active.settings.tension
+      });
+      if (active.settings.mode === "array") {
+        this.#renderArrayPreview(this.pathTools.previewArrayBrush({
+          points: prepared,
+          brush: active.brush,
+          spacing: active.resolvedSpacing,
+          align: active.settings.align,
+          closed: active.settings.closed,
+          curveType: active.settings.curveType,
+          tension: active.settings.tension,
+          twistDegrees: active.settings.twistDegrees,
+          initialNormal: active.frame.normal,
+          orientationMode: active.settings.orientationMode,
+          affineModifier: active.affineModifier,
+          colorModifier: active.colorModifier,
+          affineULength: active.settings.affineULength,
+          previousPlan: active.arrayPlan,
+          maximumCopies: 10000
+        }));
+        this.#previewTube.visible = false;
+      } else {
+        this.#clearArrayPreview();
+        const geometry = this.geometryRegistry.create({
+          type: "tube",
+          points: prepared,
+          tubularSegments: Math.min(
+            active.settings.tubularSegments,
+            Math.max(8, prepared.length * 4)
+          ),
+          radius: active.settings.radius,
+          radialSegments: Math.min(active.settings.radialSegments, 12),
+          closed: active.settings.closed,
+          curveType: active.settings.curveType,
+          tension: active.settings.tension
+        });
+        this.#previewTube.geometry.dispose();
+        this.#previewTube.geometry = geometry;
+        this.#previewTube.material.color.set(active.settings.color);
+        this.#previewTube.visible = true;
+        active.previewCount = 1;
+        active.previewTruncated = false;
+      }
+      active.error = null;
+    } catch (error) {
+      active.error = error.message;
+      if (!(active.settings.mode === "array" && active.arrayPlan)) {
+        this.#clearResultPreview();
+      }
+    }
+    this.#notify();
+  }
+
+  #renderArrayPreview(plan) {
+    const rendered = this.#previewArrayCache.update(plan);
+    if (this.#active) {
+      this.#active.arrayPlan = plan;
+      this.#active.previewCount = rendered.previewCount;
+      this.#active.previewTruncated = rendered.truncated;
+    }
+  }
+
+  #clearArrayPreview() {
+    this.#previewArrayCache.clear();
+  }
+
+  #clearResultPreview() {
+    this.#cancelPendingPreview();
+    this.#previewTube.visible = false;
+    this.#clearArrayPreview();
+    if (this.#active) {
+      this.#active.arrayPlan = null;
+      this.#active.previewCount = 0;
+      this.#active.previewTruncated = false;
+    }
+  }
+
+  #clearInputPreview() {
+    for (const object of [this.#previewLine, this.#previewPoints]) {
+      object.geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute([], 3)
+      );
+      object.visible = false;
+    }
+  }
+
+  #flushPendingResultPreview() {
+    if (this.#pendingPreviewPoints === null) return;
+    if (this.#previewFrame !== null &&
+        typeof globalThis.cancelAnimationFrame === "function") {
+      globalThis.cancelAnimationFrame(this.#previewFrame);
+    }
+    this.#previewFrame = null;
+    this.#flushResultPreview();
+  }
+
+  #deferResultPreviewClear() {
+    this.#cancelPreviewHandoff({ clear: false });
+    if (typeof globalThis.requestAnimationFrame !== "function") {
+      this.#clearResultPreview();
+      return;
+    }
+    const first = globalThis.requestAnimationFrame(() => {
+      this.#handoffFrames = this.#handoffFrames.filter(id => id !== first);
+      const second = globalThis.requestAnimationFrame(() => {
+        this.#handoffFrames =
+          this.#handoffFrames.filter(id => id !== second);
+        this.#clearResultPreview();
+      });
+      this.#handoffFrames.push(second);
+    });
+    this.#handoffFrames.push(first);
+  }
+
+  #beginCommitHandoff(completion) {
+    const active = this.#active;
+    if (!active) return;
+    const createdIds = resultCreatedIds(completion?.result);
+    if (!completion?.result?.changed || !createdIds.length) {
+      throw new Error("O comando do traço não publicou objetos.");
+    }
+    if (this.#committedObjectsVisible(createdIds)) {
+      this.#completeCommittedStroke(completion);
+      return;
+    }
+
+    const coordination = this.pathTools.sandbox?.coordinationStatus?.();
+    const outcome = coordination?.lastOutcome;
+    const requestId = outcome?.status === "queued"
+      ? outcome.requestId ?? null
+      : null;
+    active.committing = true;
+    active.commitRequestId = requestId;
+    active.pointerId = null;
+    active.error = null;
+    this.#pendingCommit = {
+      active,
+      completion,
+      createdIds,
+      requestId
+    };
+    const sandbox = this.pathTools.sandbox;
+    if (typeof sandbox?.subscribe === "function") {
+      this.#commitObservers.push(
+        sandbox.subscribe(() => this.#observePendingCommit())
+      );
+    }
+    if (typeof sandbox?.subscribeCoordination === "function") {
+      this.#commitObservers.push(
+        sandbox.subscribeCoordination(
+          status => this.#observePendingCoordination(status)
+        )
+      );
+    }
+    this.#observePendingCommit();
+  }
+
+  #observePendingCommit() {
+    const pending = this.#pendingCommit;
+    if (!pending) return;
+    if (!this.#committedObjectsVisible(pending.createdIds)) return;
+    this.#completeCommittedStroke(pending.completion);
+  }
+
+  #observePendingCoordination(status) {
+    const pending = this.#pendingCommit;
+    if (!pending || !status?.lastOutcome) return;
+    const outcome = status.lastOutcome;
+    if (pending.requestId && outcome.requestId !== pending.requestId) return;
+    if (outcome.status === "accepted") {
+      this.#observePendingCommit();
+      return;
+    }
+    if (!String(outcome.status).startsWith("rejected")) return;
+    const detail = outcome.error ? `: ${outcome.error}` : "";
+    this.#failPendingCommit(
+      `A publicação do traço foi rejeitada (${outcome.status})${detail}.`
+    );
+  }
+
+  #committedObjectsVisible(createdIds) {
+    const getObject = this.pathTools.sandbox?.getObject;
+    if (typeof getObject === "function") {
+      return createdIds.every(id =>
+        Boolean(getObject.call(this.pathTools.sandbox, id))
+      );
+    }
+    const objects = this.pathTools.sandbox?.getSnapshot?.().objects;
+    if (!Array.isArray(objects)) return false;
+    const available = new Set(objects.map(object => String(object.id)));
+    return createdIds.every(id => available.has(String(id)));
+  }
+
+  #completeCommittedStroke(completion) {
+    const active = this.#pendingCommit?.active ?? this.#active;
+    if (!active || active !== this.#active) return;
+    const observedAsynchronously = Boolean(this.#pendingCommit);
+    this.#clearCommitObservation();
+    active.committing = false;
+    active.commitRequestId = null;
+    active.error = null;
+    let completionError = null;
+    try {
+      this.onCompleted(completion);
+    } catch (error) {
+      completionError = error;
+    }
+    this.#clearInputPreview();
+    if (active.settings.continuous) {
+      if (active.settings.mode === "array") {
+        const previousBrush = active.brush;
+        const nextBrush = this.pathTools.rebaseArrayBrush({
+          brush: previousBrush,
+          createdIds: resultCreatedIds(completion?.result)
+        });
+        active.brush = nextBrush;
+        active.sourceIds = nextBrush.sourceIds ?? Object.freeze([]);
+        active.resolvedSpacing = this.pathTools.resolveArrayBrushSpacing({
+          brush: nextBrush,
+          spacingMode: active.settings.spacingMode,
+          spacingWorld: active.settings.spacingWorld,
+          spacingScale: active.settings.spacingScale
+        });
+        if (nextBrush.key !== previousBrush?.key) {
+          this.#previewArrayCache.configure(nextBrush);
+        }
+      }
+      active.pointerId = null;
+      active.points = [];
+      active.screenPoints = [];
+      active.arrayPlan = null;
+      active.error = completionError
+        ? `Traço publicado; falha ao registrar repetição: ${
+            completionError?.message ?? String(completionError)
+          }`
+        : null;
+      this.#deferResultPreviewClear();
+    } else {
+      this.#finishInteraction({ restoreTool: true });
+      this.#active = null;
+      this.#deferResultPreviewClear();
+      this.onEnded({ reason: "completed" });
+    }
+    if (observedAsynchronously) this.#notify();
+  }
+
+  #failPendingCommit(message) {
+    const pending = this.#pendingCommit;
+    if (!pending || pending.active !== this.#active) return;
+    const active = pending.active;
+    this.#clearCommitObservation();
+    active.committing = false;
+    active.commitRequestId = null;
+    active.error = String(message);
+    this.#notify();
+  }
+
+  #clearCommitObservation() {
+    for (const unsubscribe of this.#commitObservers.splice(0)) {
+      try {
+        unsubscribe?.();
+      } catch {
+        // A observação é auxiliar; a publicação já possui sua própria autoridade.
+      }
+    }
+    this.#pendingCommit = null;
+  }
+
+  #cancelPreviewHandoff({ clear = false } = {}) {
+    if (typeof globalThis.cancelAnimationFrame === "function") {
+      for (const frame of this.#handoffFrames) {
+        globalThis.cancelAnimationFrame(frame);
+      }
+    }
+    this.#handoffFrames = [];
+    if (clear) {
+      this.#previewTube.visible = false;
+      this.#clearArrayPreview();
+    }
+  }
+
+  #cancelPendingPreview() {
+    if (this.#previewFrame !== null &&
+        typeof globalThis.cancelAnimationFrame === "function") {
+      globalThis.cancelAnimationFrame(this.#previewFrame);
+    }
+    this.#previewFrame = null;
+    this.#pendingPreviewPoints = null;
   }
 
   #notify() {
@@ -427,8 +975,13 @@ function vector3(value, name) {
 function normalizeSettings(value) {
   const result = {
     ...value,
+    mode: String(value.mode ?? "tube").toLowerCase(),
     planeSource: String(value.planeSource),
-    spacingPixels: integerAtLeast(value.spacingPixels, 1, "spacingPixels"),
+    inputSamplePixels: integerAtLeast(
+      value.inputSamplePixels,
+      1,
+      "inputSamplePixels"
+    ),
     simplify: nonNegative(value.simplify, "simplify"),
     smoothIterations: integerAtLeast(value.smoothIterations, 0, "smoothIterations"),
     radius: positive(value.radius, "radius"),
@@ -437,15 +990,111 @@ function normalizeSettings(value) {
     curveType: String(value.curveType),
     tension: finite(value.tension, "tension"),
     color: String(value.color),
+    closed: Boolean(value.closed),
+    sourceMode: String(value.sourceMode ?? "selection").toLowerCase(),
+    geometryType: String(value.geometryType ?? "box").toLowerCase(),
+    sourceGeometry: geometryDescriptor(value.sourceGeometry),
+    sourceColor: String(value.sourceColor ?? "#6699cc"),
+    spacingMode: String(value.spacingMode ?? "auto").toLowerCase(),
+    spacingWorld: positive(value.spacingWorld, "spacingWorld"),
+    spacingScale: positive(value.spacingScale, "spacingScale"),
+    align: Boolean(value.align),
+    twistDegrees: finite(value.twistDegrees, "twistDegrees"),
+    orientationMode: String(
+      value.orientationMode ?? "preserve"
+    ).toLowerCase(),
+    affineMoveX: expression(value.affineMoveX, "affineMoveX"),
+    affineMoveY: expression(value.affineMoveY, "affineMoveY"),
+    affineMoveZ: expression(value.affineMoveZ, "affineMoveZ"),
+    affineRotateX: expression(value.affineRotateX, "affineRotateX"),
+    affineRotateY: expression(value.affineRotateY, "affineRotateY"),
+    affineRotateZ: expression(value.affineRotateZ, "affineRotateZ"),
+    affineScale: expression(value.affineScale, "affineScale"),
+    affineULength: positive(value.affineULength, "affineULength"),
+    affineColor: expression(value.affineColor, "affineColor"),
     continuous: Boolean(value.continuous),
     name: value.name === undefined ? null : String(value.name)
   };
+  if (!["tube", "array"].includes(result.mode)) {
+    throw new RangeError("O desenho aceita resultado tube ou array.");
+  }
+  if (!["selection", "catalog"].includes(result.sourceMode)) {
+    throw new RangeError("A fonte do pincel deve ser selection ou catalog.");
+  }
+  if (!["auto", "world"].includes(result.spacingMode)) {
+    throw new RangeError("O espaçamento deve ser auto ou world.");
+  }
+  if (!["preserve", "plane", "path"].includes(result.orientationMode)) {
+    throw new RangeError(
+      "A orientação deve preservar a fonte, seguir o plano ou seguir o caminho."
+    );
+  }
+  if (!/^#[0-9a-f]{6}$/i.test(result.sourceColor)) {
+    throw new TypeError("A cor do pincel deve usar a forma #rrggbb.");
+  }
   if (!["centripetal", "chordal", "catmullrom", "polyline", "bezier"].includes(result.curveType)) {
     throw new RangeError(
       "O desenho livre aceita Catmull-Rom, Bézier ajustada ou polilinha."
     );
   }
   return Object.freeze(result);
+}
+
+function brushSettingsKey(settings) {
+  if (settings.mode !== "array") return "tube";
+  return JSON.stringify([
+    settings.sourceMode,
+    settings.sourceMode === "catalog" ? settings.geometryType : null,
+    settings.sourceMode === "catalog" ? settings.sourceGeometry : null,
+    settings.sourceMode === "catalog" ? settings.sourceColor : null
+  ]);
+}
+
+function resultCreatedIds(result) {
+  const ids = Array.isArray(result?.createdIds)
+    ? result.createdIds
+    : result?.id !== undefined && result?.id !== null
+      ? [result.id]
+      : Array.isArray(result?.activeIds)
+        ? result.activeIds
+        : [];
+  return [...new Set(ids.map(String).filter(Boolean))];
+}
+
+function geometryDescriptor(value) {
+  let source = value;
+  if (typeof source === "string") {
+    try {
+      source = JSON.parse(source);
+    } catch (error) {
+      throw new TypeError("sourceGeometry deve ser JSON válido.", {
+        cause: error
+      });
+    }
+  }
+  if (source === null || source === undefined) return Object.freeze({});
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new TypeError("sourceGeometry deve ser um objeto.");
+  }
+  return deepFreeze(structuredClone(source));
+}
+
+function expression(value, name) {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError(`${name} inválido.`);
+    return value;
+  }
+  const text = String(value ?? "").trim();
+  if (!text) throw new TypeError(`${name} exige um valor ou expressão.`);
+  return text;
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
 }
 
 function createPreviewLine() {
@@ -478,6 +1127,22 @@ function createPreviewPoints() {
   points.frustumCulled = false;
   points.visible = false;
   return points;
+}
+
+function createPreviewTube() {
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x70c8ff,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.62
+  });
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+  mesh.name = "path-sketch-preview-tube";
+  mesh.renderOrder = 1499;
+  mesh.frustumCulled = false;
+  mesh.visible = false;
+  return mesh;
 }
 
 function positive(value, name) {

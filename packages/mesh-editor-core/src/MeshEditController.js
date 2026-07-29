@@ -53,9 +53,8 @@ export class MeshEditController {
     this.#unsubscribeSandbox = sandbox.subscribe((state, changes = []) => {
       const session = this.#session;
       if (!session || this.sandbox.revision === session.baseRevision) return;
-      const object = state.objects.find(
-        candidate => candidate.id === session.objectId
-      );
+      const object = this.sandbox.getObject?.(session.objectId) ??
+        state.objects.find(candidate => candidate.id === session.objectId);
       if (!object) {
         this.renderer.endMeshEdit({ restoreBatch: false });
         this.#session = null;
@@ -310,6 +309,20 @@ export class MeshEditController {
     session.activeComponents[session.componentMode] = result.activeIndex;
     this.#syncSelection();
     return this.status();
+  }
+
+  applyComponentSelection({
+    mode = null,
+    index = null,
+    indices = null,
+    operation = "replace"
+  } = {}) {
+    return this.#handleComponentPick({
+      mode,
+      index,
+      indices,
+      operation
+    });
   }
 
   applyTopology({ operation, options = {} } = {}) {
@@ -692,7 +705,10 @@ export class MeshEditController {
         ? selection.members[0].objectId
         : null;
       const selectedObject = selectedId
-        ? this.sandbox.getSnapshot().objects.find(object => object.id === selectedId)
+        ? this.sandbox.getObject?.(selectedId) ??
+          this.sandbox.getSnapshot().objects.find(
+            object => object.id === selectedId
+          )
         : null;
       const availability = selection.members.length === 1
         ? this.#editAvailability(selectedObject)

@@ -56,6 +56,34 @@ export class Selection {
     this.#emit("replace-many");
   }
 
+  applyMany(members, { operation = "replace" } = {}) {
+    const normalized = String(operation ?? "replace").trim().toLowerCase();
+    if (!new Set(["replace", "add", "remove", "toggle"]).has(normalized)) {
+      throw new RangeError(`Unknown selection operation: ${operation}`);
+    }
+    if (normalized === "replace") {
+      this.replaceMany(members);
+      return this.snapshot();
+    }
+    const byKey = new Map(this.#members.map(member => [
+      memberKey(member),
+      { ...member }
+    ]));
+    for (const member of members ?? []) {
+      if (!member?.objectId) continue;
+      const key = memberKey(member);
+      if (normalized === "remove") {
+        byKey.delete(key);
+      } else if (normalized === "toggle" && byKey.has(key)) {
+        byKey.delete(key);
+      } else {
+        byKey.set(key, { ...member });
+      }
+    }
+    this.replaceMany([...byKey.values()]);
+    return this.snapshot();
+  }
+
   toggle(member) {
     const index = this.#members.findIndex(current =>
       current.regionId === member.regionId &&
@@ -112,4 +140,8 @@ export class Selection {
       catch (error) { console.error("Selection subscriber failed", error); }
     }
   }
+}
+
+function memberKey(member) {
+  return `${member.regionId ?? ""}:${member.objectId}`;
 }

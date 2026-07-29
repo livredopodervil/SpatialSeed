@@ -1,4 +1,4 @@
-export { MeshEditController } from "./MeshEditController.js?build=20260727-0037c";
+export { MeshEditController } from "./MeshEditController.js?build=20260729-0039g2";
 export { buildMeshTopology, geodesicVertexDistances, closestPointOnSegment } from "./MeshTopology.js";
 export {
   DEFAULT_MESH_DEFORMATION_SETTINGS,

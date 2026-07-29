@@ -15,7 +15,7 @@ import {
 } from "./AffineRepeat.js?build=20260715-0021d";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v3";
+  static apiVersion = "selection-operations-v5";
 
   constructor({
     editor,
@@ -214,6 +214,87 @@ export class SelectionOperations {
     };
   }
 
+  createGeometryInstances({
+    name = null,
+    geometry,
+    worldMatrices = null,
+    preparedInstances = null,
+    colors = null,
+    color = "#6699cc",
+    material = null,
+    source = "geometry-instances"
+  } = {}) {
+    if (!this.geometryRegistry) {
+      throw new Error("Registro de geometrias indisponível.");
+    }
+    const usesPrepared = preparedInstances !== null &&
+      preparedInstances !== undefined;
+    const sourceInstances = usesPrepared
+      ? preparedInstances
+      : worldMatrices;
+    if (!Array.isArray(sourceInstances)) {
+      throw new TypeError(
+        "A criação instanciada exige matrizes ou transformações preparadas."
+      );
+    }
+    if (sourceInstances.length < 1 || sourceInstances.length > 10000) {
+      throw new RangeError(
+        "A criação instanciada exige entre 1 e 10000 transformações."
+      );
+    }
+    const instances = usesPrepared
+      ? normalizePreparedInstances(
+          sourceInstances,
+          typeof this.sandbox.getObject === "function"
+            ? id => Boolean(this.sandbox.getObject(id))
+            : this.sandbox.getSnapshot().objects
+        )
+      : transformsFromWorldMatrices(sourceInstances);
+    const descriptor = this.geometryRegistry.normalize(geometry);
+    const instanceColors = colors === null || colors === undefined
+      ? null
+      : normalizeInstanceColors(colors, instances.length);
+    const appearance = this.#creationAppearance(color, material);
+    const index = this.sandbox.getSnapshot().objects.length + 1;
+    const label = this.geometryRegistry.label(descriptor.type);
+    const baseName = name || `${label} ${index}`;
+    const created = instances.map((instance, copyIndex) => {
+      return {
+        id: instance.id,
+        kind: descriptor.type,
+        name: copyIndex === 0
+          ? baseName
+          : copyName(baseName, copyIndex - 1),
+        position: instance.position,
+        rotation: instance.rotation,
+        scale: instance.scale,
+        geometry: descriptor,
+        ...(appearance.appearanceId
+          ? { appearanceId: appearance.appearanceId }
+          : { material: { color: appearance.color } }),
+        instanceState: instanceColors
+          ? { color: instanceColors[copyIndex] }
+          : {}
+      };
+    });
+    const changed = this.sandbox.dispatch({
+      type: "selection.duplicate",
+      source: String(source),
+      sourceIds: [],
+      copyCount: created.length,
+      objects: created
+    });
+    if (changed) this.#selectIds([created.at(-1).id]);
+    return Object.freeze({
+      changed,
+      tool: "geometry-instances",
+      geometry: descriptor,
+      count: created.length,
+      createdIds: Object.freeze(created.map(object => object.id)),
+      activeIds: Object.freeze([created.at(-1).id])
+    });
+  }
+
   createLight({
     name = null,
     type = "point",
@@ -333,13 +414,11 @@ export class SelectionOperations {
   }
 
   canUngroup() {
-    const selectedIds=new Set(
-      this.editor.selection.snapshot().members.map(member => member.objectId)
-    );
-    if (!selectedIds.size) return false;
-
-    return this.sandbox.getSnapshot().objects.some(object =>
-      object.kind === "group" && selectedIds.has(object.id)
+    const selectedIds =
+      this.editor.selection.snapshot().members
+        .map(member => member.objectId);
+    return selectedIds.some(id =>
+      this.#objectById(id)?.kind === "group"
     );
   }
 
@@ -705,7 +784,22 @@ export class SelectionOperations {
         reason: "selection-empty"
       };
     }
+    return this.deleteIds(selectedIds, {
+      source: "selection-operations"
+    });
+  }
 
+  deleteIds(objectIds, { source = "selection-eraser" } = {}) {
+    const selectedIds = [...new Set(
+      (objectIds ?? []).map(value => String(value ?? "").trim()).filter(Boolean)
+    )];
+    if (!selectedIds.length) {
+      return {
+        changed: false,
+        deletedIds: [],
+        reason: "selection-empty"
+      };
+    }
     const ids=[...hierarchySubtreeIds(
       this.sandbox.getSnapshot().objects,
       selectedIds
@@ -713,12 +807,17 @@ export class SelectionOperations {
 
     const changed = this.sandbox.dispatch({
       type: "selection.delete",
-      source: "selection-operations",
+      source,
       ids
     });
 
     if (changed) {
-      this.editor.selection.clear();
+      const deleted = new Set(ids);
+      this.editor.selection.replaceMany(
+        this.editor.selection.snapshot().members.filter(
+          member => !deleted.has(member.objectId)
+        )
+      );
       this.pendingDuplicate = null;
     }
 
@@ -841,17 +940,12 @@ export class SelectionOperations {
   #resolvePendingPublication(state) {
     const publication = this.pendingPublication;
     if (!publication) return false;
-    const byId = new Map(
-      state.objects.map(object => [object.id,object])
-    );
-    if (
-      publication.createdIds.some(id => !byId.has(id))
-    ) {
+    if (publication.createdIds.some(id => !this.#objectById(id))) {
       return false;
     }
 
     const selectedObjects = publication.selectionIds.map(
-      id => byId.get(id)
+      id => this.#objectById(id)
     );
     this.pendingPublication = null;
     this.#selectIds(publication.selectionIds);
@@ -1050,23 +1144,16 @@ export class SelectionOperations {
     const ids = selectedIds.length ? selectedIds : fallbackIds;
     if (!ids.length) throw new Error("A seleção está vazia.");
 
-    const byId = new Map(
-      this.sandbox.getSnapshot().objects.map(object => [object.id, object])
-    );
-
     return ids.map(id => {
-      const object = byId.get(id);
+      const object = this.#objectById(id);
       if (!object) throw new Error(`Objeto não encontrado: ${id}`);
       return object;
     });
   }
 
   #objectsByIds(ids) {
-    const byId = new Map(
-      this.sandbox.getSnapshot().objects.map(object => [object.id, object])
-    );
     return ids.map(id => {
-      const object = byId.get(id);
+      const object = this.#objectById(id);
       if (!object) throw new Error(`Objeto não encontrado: ${id}`);
       return object;
     });
@@ -1075,9 +1162,18 @@ export class SelectionOperations {
   #activeObject() {
     const id = this.editor.selection.snapshot().activeMember?.objectId;
     if (!id) throw new Error("A seleção está vazia.");
-    const object = this.sandbox.getSnapshot().objects.find(candidate => candidate.id === id);
+    const object = this.#objectById(id);
     if (!object) throw new Error(`Objeto ativo não encontrado: ${id}`);
     return object;
+  }
+
+  #objectById(id) {
+    if (typeof this.sandbox.getObject === "function") {
+      return this.sandbox.getObject(id);
+    }
+    return this.sandbox.getSnapshot().objects.find(
+      object => String(object.id) === String(id)
+    ) ?? null;
   }
 
   #selectionPivot(objects) {
@@ -1222,6 +1318,82 @@ function hasAffineExpressions(operations) {
       typeof value === "string"
     )
   );
+}
+
+function transformsFromWorldMatrices(worldMatrices) {
+  return worldMatrices.map((matrix, copyIndex) => {
+    if (!Array.isArray(matrix) || matrix.length !== 16 ||
+        !matrix.every(value => Number.isFinite(Number(value)))) {
+      throw new TypeError(
+        `Matriz mundial inválida na cópia ${copyIndex + 1}.`
+      );
+    }
+    return Object.freeze({
+      id: crypto.randomUUID(),
+      ...decomposeMatrix(
+        new THREE.Matrix4().fromArray(matrix.map(Number))
+      )
+    });
+  });
+}
+
+function normalizePreparedInstances(instances, existingObjects) {
+  const existingHas = typeof existingObjects === "function"
+    ? existingObjects
+    : (() => {
+        const ids = new Set(
+          existingObjects.map(object => String(object.id))
+        );
+        return id => ids.has(String(id));
+      })();
+  const reserved = new Set();
+  return instances.map((instance, copyIndex) => {
+    const id = String(instance?.id ?? "").trim();
+    if (!id || existingHas(id) || reserved.has(id)) {
+      throw new Error(
+        `ID preparado inválido ou duplicado na cópia ${copyIndex + 1}.`
+      );
+    }
+    reserved.add(id);
+    return Object.freeze({
+      id,
+      position: instanceVector(instance.position, 3, "posição", copyIndex),
+      rotation: instanceVector(instance.rotation, 4, "rotação", copyIndex),
+      scale: instanceVector(instance.scale, 3, "escala", copyIndex)
+    });
+  });
+}
+
+function instanceVector(value, length, name, copyIndex) {
+  if (!Array.isArray(value) || value.length !== length) {
+    throw new TypeError(
+      `${name} preparada inválida na cópia ${copyIndex + 1}.`
+    );
+  }
+  const normalized = value.map(Number);
+  if (!normalized.every(Number.isFinite)) {
+    throw new TypeError(
+      `${name} preparada inválida na cópia ${copyIndex + 1}.`
+    );
+  }
+  return Object.freeze(normalized);
+}
+
+function normalizeInstanceColors(colors, count) {
+  if (!Array.isArray(colors) || colors.length !== count) {
+    throw new RangeError(
+      "Cores instanciadas devem acompanhar todas as matrizes."
+    );
+  }
+  return colors.map((value, index) => {
+    const color = String(value ?? "").trim().toLowerCase();
+    if (!/^#[0-9a-f]{6}$/i.test(color)) {
+      throw new TypeError(
+        `Cor instanciada inválida na cópia ${index + 1}.`
+      );
+    }
+    return color;
+  });
 }
 
 function copyName(name, copyIndex) {

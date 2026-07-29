@@ -121,6 +121,39 @@ export class InstanceBatch {
   }
 }
 
+export function updateAbsoluteInstanceColor(
+  batch,
+  objectId,
+  color,
+  { minimumBaseChannel = 1e-6 } = {}
+) {
+  if (!batch?.material?.color?.isColor ||
+      typeof batch.updateAttributes !== "function") {
+    throw new TypeError(
+      "Cor absoluta por instância exige lote com material colorido."
+    );
+  }
+  const threshold = Number(minimumBaseChannel);
+  if (!Number.isFinite(threshold) || threshold <= 0 || threshold >= 1) {
+    throw new RangeError(
+      "minimumBaseChannel deve ser finito, positivo e menor que 1."
+    );
+  }
+  const desired = normalizeColor(color).clone();
+  const base = batch.material.color;
+  for (const channel of ["r", "g", "b"]) {
+    if (Math.abs(base[channel]) >= threshold) continue;
+    base[channel] = threshold;
+  }
+  return batch.updateAttributes(objectId, {
+    color: new THREE.Color(
+      desired.r / base.r,
+      desired.g / base.g,
+      desired.b / base.b
+    )
+  });
+}
+
 function normalizeCapacity(value) {
   const capacity = Number(value);
   if (!Number.isInteger(capacity) || capacity < 1) throw new RangeError("capacity deve ser inteiro positivo.");

@@ -11,6 +11,7 @@ export function createEditorCommands({
   meshEditor = null,
   editContext = null,
   toolLifecycle = null,
+  toolParameters = null,
   pathTools = null,
   pathSketch = null,
   objectPlacement = null,
@@ -28,6 +29,26 @@ export function createEditorCommands({
     if (objectPlacement?.active) objectPlacement.cancel();
     if (pathSketch?.status?.().active) pathSketch.cancel();
     toolLifecycle?.cancelAction();
+  };
+  const configured = (toolId, args, execute) => {
+    if (!toolParameters) return execute(args ?? {});
+    toolParameters.activate(toolId);
+    const parameters = toolParameters.resolve(toolId, args ?? {});
+    const invocation = {
+      ...Object.fromEntries(
+        Object.entries(args ?? {}).filter(([, value]) =>
+          value !== null && value !== undefined
+        )
+      ),
+      ...Object.fromEntries(
+        Object.entries(parameters).filter(([, value]) => value !== null)
+      )
+    };
+    const result = execute(invocation, parameters);
+    if (!toolParameters.status().futureSchema) {
+      toolParameters.remember(toolId, parameters);
+    }
+    return result;
   };
 
   commands
@@ -52,6 +73,66 @@ export function createEditorCommands({
     .register("selection.area.toggle", () => {
       editor.setAreaSelection(!editor.areaSelection);
       return { enabled: editor.areaSelection };
+    })
+    .register("selection.gesture.set", ({
+      mode = editor.selectionGestureMode,
+      radiusPixels = editor.selectionBrushRadius,
+      enabled = true,
+      toggle = false
+    } = {}) => {
+      const normalizedMode = String(mode ?? "rectangle").trim().toLowerCase();
+      const nextEnabled = toggle &&
+        editor.areaSelection &&
+        editor.selectionGestureMode === normalizedMode
+        ? false
+        : Boolean(enabled);
+      if (nextEnabled && editor.tool.mode !== "select") {
+        renderer.setTransformMode("select");
+      }
+      editor.setSelectionGesture({
+        mode: normalizedMode,
+        radiusPixels,
+        enabled: nextEnabled
+      });
+      return {
+        enabled: editor.areaSelection,
+        mode: editor.selectionGestureMode,
+        radiusPixels: editor.selectionBrushRadius
+      };
+    })
+    .register("selection.gesture.apply", ({
+      operation = editor.selectionOperation,
+      ...gesture
+    } = {}) => {
+      const result = renderer.resolveScreenSelectionGesture(gesture);
+      if (result.subject === "component") {
+        if (!meshEditor?.active) {
+          throw new Error("A sessão de malha do gesto não está ativa.");
+        }
+        if (result.mode === "eraser") {
+          if (!result.indices.length) {
+            return { changed: false, deleted: 0, subject: "component" };
+          }
+          meshEditor.applyComponentSelection({
+            mode: result.component,
+            indices: result.indices,
+            operation: "replace"
+          });
+          return meshEditor.applyTopology({ operation: "delete" });
+        }
+        return meshEditor.applyComponentSelection({
+          mode: result.component,
+          indices: result.indices,
+          operation
+        });
+      }
+      if (result.mode === "eraser") {
+        return selectionOperations.deleteIds(
+          result.members.map(member => member.objectId),
+          { source: "selection-eraser" }
+        );
+      }
+      return editor.selection.applyMany(result.members, { operation });
     })
     .register("selection.clear", () => {
       if (meshEditor?.active) return meshEditor.clearSelection();
@@ -286,6 +367,29 @@ export function createEditorCommands({
       .register("edit.command.repeat", () => toolLifecycle.repeat());
   }
 
+  if (toolParameters) {
+    commands
+      .register("edit.tool.parameters.activate", ({ toolId }) =>
+        toolParameters.activate(toolId))
+      .register("edit.tool.parameters.set", ({ toolId, patch = {} }) => {
+        if (toolParameters.status().futureSchema) {
+          return toolParameters.set(toolId, patch);
+        }
+        const next = toolParameters.resolve(toolId, patch);
+        if (toolId === "path.sketch" && pathSketch?.status?.().active) {
+          pathSketch.updateSettings(next);
+        }
+        return toolParameters.set(toolId, patch);
+      })
+      .register("edit.tool.parameters.reset", ({ toolId }) => {
+        const next = toolParameters.reset(toolId);
+        if (toolId === "path.sketch" && pathSketch?.status?.().active) {
+          pathSketch.updateSettings(next);
+        }
+        return next;
+      });
+  }
+
   if (pathTools) {
     commands
       .register("path.create", args =>
@@ -301,28 +405,40 @@ export function createEditorCommands({
           mutates: false
         })
       .register("path.tube.create", args =>
-        pathTools.createTube(args), {
+        configured("path.tube", args, invocation =>
+          pathTools.createTube(invocation)), {
           category: "path-tools",
           mutates: true,
           repeatable: true,
           label: "Criar tubo por caminho"
         })
       .register("path.sweep.create", args =>
-        pathTools.createSweep(args), {
+        configured("path.sweep", args, invocation =>
+          pathTools.createSweep(invocation)), {
           category: "path-tools",
           mutates: true,
           repeatable: true,
           label: "Criar varredura"
         })
       .register("path.array.create", args =>
-        pathTools.arraySelection(args), {
+        configured("path.array", args, invocation =>
+          pathTools.arraySelection(invocation)), {
           category: "path-tools",
           mutates: true,
           repeatable: true,
           label: "Distribuir por caminho"
         })
+      .register("path.array.points.create", args =>
+        configured("path.sketch", args, invocation =>
+          pathTools.arraySelectionAlongPoints(invocation)), {
+          category: "path-tools",
+          mutates: true,
+          repeatable: true,
+          label: "Distribuir no caminho desenhado"
+        })
       .register("path.from-mesh-selection.create", args =>
-        pathTools.createPathFromMeshSelection(args), {
+        configured("path.from-selection", args, invocation =>
+          pathTools.createPathFromMeshSelection(invocation)), {
           category: "path-tools",
           mutates: true,
           repeatable: true,
@@ -340,10 +456,14 @@ export function createEditorCommands({
       .register("path.sketch.begin", args => {
         toolLifecycle?.activateAction("path.sketch");
         try {
-          return pathSketch.begin({
-            ...args,
-            continuous: args.continuous ?? toolLifecycle?.keepActive("path.sketch")
-          });
+          return configured("path.sketch", args, invocation =>
+            pathSketch.begin({
+              ...invocation,
+              continuous:
+                args.continuous ??
+                toolLifecycle?.keepActive("path.sketch")
+            })
+          );
         } catch (error) {
           toolLifecycle?.cancelAction("path.sketch");
           throw error;
@@ -416,7 +536,25 @@ export function createEditorCommands({
         meshEditor.setComponentMode(mode))
       .register("mesh.selection.apply", ({ operation, options }) =>
         meshEditor.selectComponents(operation, options))
-      .register("mesh.topology.apply", args => meshEditor.applyTopology(args), {
+      .register("mesh.topology.apply", args => {
+        const toolId = {
+          extrude: "mesh.extrude",
+          inset: "mesh.inset",
+          split: "mesh.split"
+        }[args.operation];
+        if (!toolId || !toolParameters) {
+          return meshEditor.applyTopology(args);
+        }
+        return configured(toolId, args.options ?? {}, parameters =>
+          meshEditor.applyTopology({
+            ...args,
+            options: {
+              ...(args.options ?? {}),
+              ...parameters
+            }
+          })
+        );
+      }, {
         repeatable: true,
         label: "Operação topológica"
       })

@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 28 de julho de 2026 durante o marco `0039c`.
+> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0039g2`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -251,7 +251,7 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - materiais físicos editáveis por objeto no workspace e Inspector;
 - luzes pontuais, direcionais, spot e ambiente como objetos persistentes editáveis.
 
-### 0038–0039c — Ciclo de ferramentas e repetição — implementado
+### 0038–0039g2 — Ciclo, repetição, autoria por caminho e gestos — implementado
 
 - ferramentas persistentes com posicionamento e desenho contínuos;
 - plano de edição independente da trava de visualização;
@@ -259,10 +259,46 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - duplicação seguida de transformação composta e `repeat count`;
 - preferências de continuidade isoladas por identidade semântica;
 - armazenamento versionado e migração sem apagar preferências anteriores;
-- testes do lifecycle isolados do estado real do navegador.
+- testes do lifecycle isolados do estado real do navegador;
+- schemas e últimos valores de ferramentas parametrizadas compartilhados por
+  HUD, workspace e console;
+- painel contextual gerado por schema;
+- desenho livre com preview de tubo ou de qualquer geometria/grupo distribuído
+  diretamente pelo traço;
+- distribuição desenhada progressiva por espaçamento, sem quantidade
+  predeterminada;
+- seleção ou qualquer provider do catálogo como fonte do pincel;
+- cache efêmero que conserva geometria, material e `InstancedMesh` durante o
+  gesto e atualiza somente matrizes;
+- migração não destrutiva do armazenamento de parâmetros para schema 2;
+- lote distribuído confirmado em uma única operação de undo.
+- parâmetros completos de qualquer provider do catálogo no pincel;
+- orientação explícita preservada, relativa ao plano ou à tangente;
+- modificadores afins locais com `i`, `u`, distância, curvatura e frames;
+- progresso `u` causal por distância, sem redefinir o prefixo ao crescer;
+- reparo limitado da cauda conforme a interpolação e a curvatura;
+- plano lógico de commit preparado incrementalmente durante o gesto;
+- cor paramétrica instanciada e escala negativa por inversão cromática;
+- handoff visual sem ocultar e recriar o traço no encerramento.
+- rearmamento da ferramenta persistente sem recapturar recursos invariantes;
+- confirmação coordenada somente após os IDs criados serem observáveis;
+- índices por ID e cache incremental para seleção, referências e painéis;
+- listas visuais atualizadas pelo diferencial criado, sem reconstrução por
+  troca de ferramenta.
+- rearmamento do pincel persistente quando undo/redo altera a revisão entre
+  gestos, sem reconstruir recursos invariantes;
+- composição de cor absoluta por instância mesmo quando o material-base possui
+  canais RGB nulos;
+- seleção retangular, por pincel e por laço, com captura sem consulta à cena;
+- borracha de objetos e componentes com uma única operação reversível;
+- índice espacial de projeções reutilizado por câmera, viewport e revisão.
 
 ### Próximas extensões geométricas
 
+- redefinição paramétrica de objetos pelo Inspector com preview e commit único;
+- pivô/origem no HUD e grid configurável por plano;
+- núcleo planar, estilos de caminho e ferramentas 2D fundamentais;
+- régua, transferidor e compasso como referências para transformações;
 - sanitização configurável com relatório de degenerações, contornos,
   não-manifold e auto-interseções;
 - booleanos robustos em Worker e limpeza posterior;

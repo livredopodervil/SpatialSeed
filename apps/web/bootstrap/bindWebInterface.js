@@ -1,4 +1,4 @@
-import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260720-0028c";
+import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260729-0039g2";
 import {
   BrowserProjectFileGateway
 } from "../file-interop/BrowserProjectFileGateway.js?build=20260724-0029b2";
@@ -208,7 +208,14 @@ export function bindWebInterface({
     configuration: uiConfiguration?.shortcuts
   });
   attachScrubbableFields(documentRoot);
-  const marquee=new SelectionMarquee({canvas:$("world"),element:$("selection-marquee"),onComplete:r=>renderer.selectScreenRect(r,latestEditor.selectionOperation)});
+  const marquee = new SelectionMarquee({
+    canvas: $("world"),
+    element: $("selection-marquee"),
+    onComplete: gesture => execute("selection.gesture.apply", {
+      ...gesture,
+      operation: latestEditor.selectionOperation
+    })
+  });
 
   function showError(error) {
     $("error-box").hidden = false;
@@ -328,6 +335,13 @@ export function bindWebInterface({
   registerRuntimeAction("selection.multi.toggle");
   registerRuntimeAction("selection.clear");
   registerRuntimeAction("selection.area.toggle");
+  for (const mode of ["rectangle", "brush", "lasso", "eraser"]) {
+    registerRuntimeAction(
+      `selection.gesture.${mode}`,
+      "selection.gesture.set",
+      () => ({ mode, toggle: true })
+    );
+  }
   registerRuntimeAction("selection.duplicate");
   registerRuntimeAction("selection.group");
   registerRuntimeAction("selection.ungroup");
@@ -522,6 +536,18 @@ export function bindWebInterface({
       documentRoot.querySelectorAll("[data-tool-mode]").forEach(button=>{button.dataset.active=button.dataset.toolMode===snapshot.tool.mode?"true":"false"});
       documentRoot.querySelectorAll("[data-selection-op]").forEach(button=>{button.dataset.active=button.dataset.selectionOp===snapshot.selectionOperation?"true":"false"});
       $("area-selection").dataset.active=snapshot.areaSelection?"true":"false";
+      documentRoot.querySelectorAll("[data-selection-gesture]").forEach(
+        button => {
+          button.dataset.active =
+            snapshot.areaSelection &&
+            button.dataset.selectionGesture === snapshot.selectionGestureMode
+              ? "true"
+              : "false";
+        }
+      );
+      marquee.setMode(snapshot.selectionGestureMode, {
+        radiusPixels: snapshot.selectionBrushRadius
+      });
       marquee.setEnabled(snapshot.tool.mode==="select"&&snapshot.areaSelection);
       uiRefresh.request("editor.changed");
 
@@ -545,7 +571,12 @@ export function bindWebInterface({
       `selection.operation.${button.dataset.selectionOp}`
     )
   );
-  uiActions.bindControl($("area-selection"), "selection.area.toggle");
+  documentRoot.querySelectorAll("[data-selection-gesture]").forEach(button =>
+    uiActions.bindControl(
+      button,
+      `selection.gesture.${button.dataset.selectionGesture}`
+    )
+  );
   uiActions.bindControl($("space"), "space.toggle");
   uiActions.bindControl($("multi-select"), "selection.multi.toggle");
   uiActions.bindControl($("clear-selection"), "selection.clear");

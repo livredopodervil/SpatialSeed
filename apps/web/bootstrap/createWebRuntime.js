@@ -1,26 +1,26 @@
 import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-0020b-a";
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260725-0029f1";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260729-0039g1";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
-import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260714-0020b-a";
+import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260729-0039g2";
 import {
   VIEWER_CAMERA_COMMANDS,
   CameraObjectService,
   ViewerCameraController,
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260727-0037c";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260728-0039a";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260729-0039g1";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260729-0039g2";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260728-0039b";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260729-0039g2";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
-import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260728-0039a";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260728-0039b";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260728-0039c";
+import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260729-0039g2";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260729-0039g2";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260728-0039c";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0039g2";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -30,7 +30,7 @@ import {
 } from "../../../packages/property-registry/src/index.js?build=20260727-0037c";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260727-0037c";
+} from "../../../packages/geometry-registry/src/index.js?build=20260728-0039d";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -79,27 +79,31 @@ import {
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260727-0037c";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260729-0039g2";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260728-0039a";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0039g2";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260728-0039a";
+} from "../../../packages/edit-context/src/index.js?build=20260729-0039g2";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260728-0039a";
+} from "../../../packages/edit-hud/src/index.js?build=20260729-0039g2";
 import {
-  ToolLifecycleController
-} from "../../../packages/edit-tools/src/index.js?build=20260728-0039c";
+  ToolLifecycleController,
+  ToolParameterStore,
+  createDefaultEditToolRegistry,
+  createLegacyToolParameterMigration
+} from "../../../packages/edit-tools/src/index.js?build=20260729-0039g";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260728-0039a";
 import {
+  PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260728-0039a";
+} from "../../../packages/spatial-references/src/index.js?build=20260729-0039g2";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -116,7 +120,7 @@ import {
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260725-0029f1";
+} from "../../../packages/local-viewers/src/index.js?build=20260729-0039g1";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v4";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -386,7 +390,27 @@ export async function createWebRuntime({
         });
       }
     });
+  const toolRegistry = createDefaultEditToolRegistry({
+    geometryCatalog: geometryRegistry.describe()
+  });
+  const toolParameters = new ToolParameterStore({
+    registry: toolRegistry,
+    migrate: createLegacyToolParameterMigration()
+  });
   const toolLifecycle = new ToolLifecycleController({ editor });
+  const spatialReferences = new SpatialReferenceResolver({
+    sandbox,
+    editor,
+    geometryRegistry
+  });
+  /*
+   * Este observador precisa preceder consumidores que possam selecionar
+   * objetos durante a própria notificação do sandbox. Assim nenhum HUD cai
+   * na reconstrução integral por ter observado o snapshot antes do cache.
+   */
+  const unsubscribeSpatialReferences = sandbox.subscribe(
+    (state, changes) => spatialReferences.applyChanges(state, changes)
+  );
   const selectionOperations = new SelectionOperations({
     editor,
     sandbox,
@@ -410,11 +434,6 @@ export async function createWebRuntime({
     meshEditor,
     toolLifecycle
   });
-  const spatialReferences = new SpatialReferenceResolver({
-    sandbox,
-    editor,
-    geometryRegistry
-  });
   const pathTools = new PathToolService({
     resolver: spatialReferences,
     selectionOperations,
@@ -432,21 +451,59 @@ export async function createWebRuntime({
   const pathSketch = new PathSketchController({
     renderer,
     pathTools,
-    onCompleted: ({ settings, points }) => {
-      toolLifecycle.remember({
-        id: "path.create",
-        args: {
-          points,
-          name: settings.name || "Caminho livre",
-          radius: settings.radius,
-          tubularSegments: Math.max(settings.tubularSegments, points.length * 4),
-          radialSegments: settings.radialSegments,
-          curveType: settings.curveType,
-          tension: settings.tension,
-          color: settings.color
-        },
-        label: "Criar caminho"
-      });
+    geometryRegistry,
+    onCompleted: ({ settings, points, sourceIds, frame }) => {
+      const repeatable = settings.mode === "array"
+        ? {
+            id: "path.array.points.create",
+            args: {
+              points,
+              sourceIds,
+              sourceMode: settings.sourceMode,
+              geometryType: settings.geometryType,
+              sourceGeometry: settings.sourceGeometry,
+              sourceColor: settings.sourceColor,
+              spacingMode: settings.spacingMode,
+              spacingWorld: settings.spacingWorld,
+              spacingScale: settings.spacingScale,
+              align: settings.align,
+              closed: settings.closed,
+              curveType: settings.curveType,
+              tension: settings.tension,
+              twistDegrees: settings.twistDegrees,
+              initialNormal: frame.normal,
+              orientationMode: settings.orientationMode,
+              affineMoveX: settings.affineMoveX,
+              affineMoveY: settings.affineMoveY,
+              affineMoveZ: settings.affineMoveZ,
+              affineRotateX: settings.affineRotateX,
+              affineRotateY: settings.affineRotateY,
+              affineRotateZ: settings.affineRotateZ,
+              affineScale: settings.affineScale,
+              affineULength: settings.affineULength,
+              affineColor: settings.affineColor
+            },
+            label: "Distribuir no caminho desenhado"
+          }
+        : {
+            id: "path.create",
+            args: {
+              points,
+              name: settings.name || "Tubo desenhado",
+              radius: settings.radius,
+              tubularSegments: Math.max(
+                settings.tubularSegments,
+                points.length * 4
+              ),
+              radialSegments: settings.radialSegments,
+              closed: settings.closed,
+              curveType: settings.curveType,
+              tension: settings.tension,
+              color: settings.color
+            },
+            label: "Criar tubo desenhado"
+          };
+      toolLifecycle.remember(repeatable);
       toolLifecycle.completeAction("path.sketch");
     },
     onEnded: () => toolLifecycle.cancelAction("path.sketch")
@@ -511,6 +568,7 @@ export async function createWebRuntime({
     meshEditor,
     editContext,
     toolLifecycle,
+    toolParameters,
     pathTools,
     pathSketch,
     objectPlacement,
@@ -935,19 +993,25 @@ export async function createWebRuntime({
       meshEditor.status()
     )
     .register("scene.objects.list", () =>
-      Object.freeze(sandbox.getSnapshot().objects.map(object => Object.freeze({
-        id: object.id,
-        name: object.name ?? object.id,
-        kind: object.kind,
-        position: Object.freeze([...(object.position ?? [0, 0, 0])]),
-        rotation: Object.freeze([...(object.rotation ?? [0, 0, 0, 1])])
-      })))
+      sandbox.getSnapshot().objects
+    )
+    .register("scene.object.get", ({ id } = {}) =>
+      id === undefined || id === null
+        ? null
+        : sandbox.getObject?.(id) ??
+          sandbox.getSnapshot().objects.find(
+            object => String(object.id) === String(id)
+          ) ??
+          null
     )
     .register("geometry.catalog", () =>
       geometryRegistry.describe()
     )
-    .register("path.references.list", () =>
-      pathTools.listReferences()
+    .register("geometry.descriptor.normalize", ({ geometry } = {}) =>
+      geometryRegistry.normalize(geometry)
+    )
+    .register("path.references.list", args =>
+      pathTools.listReferences(args)
     )
     .register("path.reference.inspect", args =>
       pathTools.inspect(args)
@@ -960,6 +1024,22 @@ export async function createWebRuntime({
     )
     .register("edit.tool.status", () =>
       toolLifecycle.status()
+    )
+    .register("edit.tools.describe", ({ toolId = null } = {}) =>
+      toolRegistry.describe(toolId)
+    )
+    .register("edit.tool.parameters.get", ({ toolId = null } = {}) => {
+      const resolvedToolId =
+        toolId ??
+        toolParameters.status().activeToolId ??
+        "path.sketch";
+      return Object.freeze({
+        toolId: resolvedToolId,
+        values: toolParameters.values(resolvedToolId)
+      });
+    })
+    .register("edit.tool.parameters.status", () =>
+      toolParameters.status()
     )
     .register("viewer.transform.settings", () =>
       renderer.getTransformConfig()
@@ -1020,7 +1100,8 @@ export async function createWebRuntime({
     execute: (id, args) => runtime.execute(id, args),
     subscribe: listener => meshEditor.subscribe(listener),
     subscribeContext: listener => editContext.subscribe(listener),
-    subscribeSketch: listener => pathSketch.subscribe(listener)
+    subscribeSketch: listener => pathSketch.subscribe(listener),
+    subscribeToolParameters: listener => toolParameters.subscribe(listener)
   });
   const editHud = new EditHud({
     root: editHudRoot,
@@ -1031,15 +1112,20 @@ export async function createWebRuntime({
       const unsubscribeHistory = sandbox.subscribe(() =>
         listener(editContext.status())
       );
+      const unsubscribeToolParameters = toolParameters.subscribe(() =>
+        listener(editContext.status())
+      );
       return () => {
         unsubscribeContext();
         unsubscribeHistory();
+        unsubscribeToolParameters();
       };
     }
   });
   runtime.onDispose(() => editHud.dispose());
   runtime.onDispose(() => objectPlacement.dispose());
   runtime.onDispose(() => selectionOperations.dispose());
+  runtime.onDispose(() => toolParameters.dispose());
   runtime.onDispose(() => toolLifecycle.dispose());
   runtime.onDispose(() => pathSketch.dispose());
   runtime.onDispose(() => meshEditPanel.dispose());
@@ -1160,8 +1246,12 @@ export async function createWebRuntime({
     .register("pathReferences", () => ({
       apiVersion: SpatialReferenceResolver.apiVersion,
       toolApiVersion: PathToolService.apiVersion,
+      parameterStoreApiVersion: ToolParameterStore.apiVersion,
       referenceKinds: ["path", "profile", "point"],
-      tools: ["tube", "sweep", "array"],
+      tools: ["tube", "sweep", "array", "draw-tube", "draw-array"],
+      preview: "local-ephemeral",
+      brushOrientation: ["preserve", "plane", "path"],
+      affineBrushVariables: PATH_BRUSH_AFFINE_VARIABLES,
       persistence: "snapshot"
     }))
     .register("animation", () => ({
@@ -1308,6 +1398,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeEditContext)
     .onDispose(unsubscribeMeshEdit)
     .onDispose(unsubscribeSelection)
+    .onDispose(unsubscribeSpatialReferences)
     .onDispose(unsubscribeSandbox);
 
   return Object.freeze({
@@ -1338,6 +1429,8 @@ export async function createWebRuntime({
       editContext,
       pathTools,
       pathSketch,
+      toolRegistry,
+      toolParameters,
       editHud,
       geometryRegistry,
       propertyRegistry,

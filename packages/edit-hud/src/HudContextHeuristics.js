@@ -91,7 +91,12 @@ export function deriveHudContext({
   const selectedObjects = selection.members?.length ?? 0;
   const selectedComponents = meshActive ? Number(mesh.selectedCount ?? 0) : 0;
   const activeObjectId = selection.activeMember?.objectId ?? null;
-  const selectedReferences = references.filter(reference => reference.selected);
+  const selectedIds = new Set(
+    selection.members?.map(member => String(member.objectId)) ?? []
+  );
+  const selectedReferences = references.filter(reference =>
+    selectedIds.has(String(reference.id)) || reference.selected
+  );
   const pathReference = preferredReference(
     selectedReferences.filter(reference => reference.pathExtractions?.length),
     activeObjectId

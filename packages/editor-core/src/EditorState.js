@@ -1,4 +1,4 @@
-import { Selection } from "./Selection.js?build=20260711-0014";
+import { Selection } from "./Selection.js?build=20260729-0039g2";
 
 export class EditorState {
   static apiVersion = "editor-state-v2";
@@ -9,6 +9,8 @@ export class EditorState {
     this.tool = { type: "interaction", mode: "select", transformMode: "translate" };
     this.selectionOperation = "replace";
     this.areaSelection = false;
+    this.selectionGestureMode = "rectangle";
+    this.selectionBrushRadius = 24;
     this.multiSelect = false;
     this.pivot = {
       policy: "median",
@@ -42,6 +44,26 @@ export class EditorState {
   setAreaSelection(enabled) {
     this.areaSelection = Boolean(enabled);
     this.#emit("area-selection");
+  }
+
+  setSelectionGesture({
+    mode = this.selectionGestureMode,
+    radiusPixels = this.selectionBrushRadius,
+    enabled = true
+  } = {}) {
+    const normalizedMode = String(mode ?? "").trim().toLowerCase();
+    const allowed = new Set(["rectangle", "brush", "lasso", "eraser"]);
+    if (!allowed.has(normalizedMode)) {
+      throw new RangeError(`Unknown selection gesture: ${mode}`);
+    }
+    const radius = Number(radiusPixels);
+    if (!Number.isFinite(radius) || radius < 2 || radius > 128) {
+      throw new RangeError("Selection brush radius must be between 2 and 128 pixels.");
+    }
+    this.selectionGestureMode = normalizedMode;
+    this.selectionBrushRadius = radius;
+    this.areaSelection = Boolean(enabled);
+    this.#emit("selection-gesture");
   }
 
   setMultiSelect(enabled) {
@@ -103,6 +125,8 @@ export class EditorState {
       tool: { ...this.tool },
       selectionOperation: this.selectionOperation,
       areaSelection: this.areaSelection,
+      selectionGestureMode: this.selectionGestureMode,
+      selectionBrushRadius: this.selectionBrushRadius,
       multiSelect: this.multiSelect,
       pivot: {
         ...this.pivot,

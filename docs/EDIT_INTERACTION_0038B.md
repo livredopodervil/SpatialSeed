@@ -33,6 +33,24 @@ somente a sessão correspondente ao alvo recebe a mudança de continuidade.
 O desenho livre e o posicionamento de objetos usam o mesmo controlador. `Esc`
 cancela a ação em curso sem modificar o histórico.
 
+## Parâmetros lembrados
+
+Continuidade e parâmetros permanecem registros distintos. O
+`ToolParameterStore` indexa valores normalizados por `toolId` em
+`spatialseed.edit.tool-parameters.v2`. O registro `v1` é migrado sem ser
+apagado. Argumentos explícitos prevalecem; campos omitidos recuperam a última
+configuração da ferramenta.
+
+O workspace projeta os schemas de `EditToolRegistry` num painel contextual. Os
+controles rápidos de caminhos e topologia e o HUD funcionam como aliases da
+mesma origem. Alterações válidas feitas durante um desenho ativo atualizam o
+preview sem criar comando de documento.
+
+O desenho livre pode confirmar um tubo ou usar a seleção, um grupo ou qualquer
+geometria do catálogo como pincel progressivo por espaçamento. Nos dois modos,
+a prévia é local e somente o resultado final ocupa uma entrada de undo.
+Consulte `PATH_BRUSH_AUTHORING_0039E.md`.
+
 ## Repetição
 
 O registro de comandos possui um observador posterior à execução. Comandos
@@ -103,6 +121,9 @@ XY, XZ e YZ. Alterar ou limpar esse plano não modifica a trava de visualizaçã
 
 ```text
 edit.tool.keep.set
+edit.tool.parameters.activate
+edit.tool.parameters.set
+edit.tool.parameters.reset
 edit.command.repeat
 object.placement.begin
 object.placement.cancel
@@ -114,6 +135,9 @@ edit.navigation.point.toggle
 
 ```text
 edit.tool.status
+edit.tools.describe
+edit.tool.parameters.get
+edit.tool.parameters.status
 object.placement.status
 edit.context.status
 ```

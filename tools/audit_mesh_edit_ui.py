@@ -69,6 +69,11 @@ for path, needle in [
 ]:
     require(path, needle)
 
+require(
+    "apps/web/bootstrap/createWebRuntime.js",
+    '.register("geometry.descriptor.normalize"'
+)
+
 
 for needle in [
     "#mesh-edit-panel {",
@@ -106,6 +111,9 @@ for needle in [
     'id="edit-hud-extrude"',
     'id="edit-hud-help"',
     'id="edit-hud-area-selection"',
+    'id="edit-hud-brush-selection"',
+    'id="edit-hud-lasso-selection"',
+    'id="edit-hud-eraser"',
     'id="edit-hud-undo"',
     'id="edit-hud-tooltip"',
     'id="edit-hud-tap-hints"',
@@ -120,12 +128,28 @@ for needle in [
     'id="edit-hud-adaptive-order"',
     'id="edit-create-reference"',
     'id="edit-material-apply"',
-    'id="edit-light-apply"'
+    'id="edit-light-apply"',
+    'id="path-sketch-sample"',
+    'id="path-sketch-source"',
+    'id="path-sketch-geometry"',
+    'id="path-sketch-source-color"',
+    'id="path-sketch-spacing-mode"',
+    'id="path-sketch-spacing-world"',
+    'id="path-sketch-spacing-scale"',
+    'id="path-sketch-geometry-settings"',
+    'id="path-sketch-geometry-parameters"',
+    'id="path-sketch-affine-settings"',
+    'id="path-sketch-orientation"',
+    'id="path-sketch-affine-scale"',
+    'id="path-sketch-affine-u-length"',
+    'id="path-sketch-affine-color"',
+    'id="path-sketch-affine-move-x"',
+    'id="path-sketch-affine-rotate-z"'
 ]:
     require("apps/web/index.html", needle)
 
 for needle in [
-    'static apiVersion = "mesh-edit-panel-v6"',
+    'static apiVersion = "mesh-edit-panel-v9"',
     '"mesh.topology.apply"',
     '"mesh.component.mode.set"',
     '"mesh.selection.apply"',
@@ -137,9 +161,68 @@ for needle in [
     'this.#click("mesh-frame-viewer", "edit.context.frame.set"',
     '"path.tube.create"',
     '"path.sweep.create"',
-    '"path.array.create"'
+    '"path.array.create"',
+    "#bindBrushGeometryParameters",
+    '"affineRotateZ", "path-sketch-affine-rotate-z"',
+    '"affineULength",',
+    '"affineColor", "path-sketch-affine-color"'
 ]:
     require("packages/mesh-edit-panel/src/MeshEditPanel.js", needle)
+
+for needle in [
+    "compilePathBrushAffineModifier",
+    "evaluatePathBrushAffineModifier",
+    "path-brush-affine-modifier",
+    "identity: isIdentity(expressions)"
+]:
+    require("packages/spatial-references/src/PathBrushAffine.js", needle)
+
+for needle in [
+    "compilePathBrushColorModifier",
+    "evaluatePathBrushColorModifier",
+    "invertHexColor",
+    "hslToHex"
+]:
+    require("packages/spatial-references/src/PathBrushColor.js", needle)
+
+for needle in [
+    "commitArrayBrushPlan",
+    "previousPlan",
+    "reusedCopies",
+    "colorsByEntry",
+    "#prepareArrayBrushDraft",
+    "#issuedArrayBrushPlans"
+]:
+    require("packages/spatial-references/src/PathToolService.js", needle)
+
+for needle in [
+    "samplePathFrameTailBySpacing",
+    "framesAfterPrevious",
+    "evaluatedCount"
+]:
+    require("packages/spatial-references/src/PathFrames.js", needle)
+
+for needle in [
+    "commitArrayBrushPlan",
+    "#deferResultPreviewClear",
+    "previousPlan: active.arrayPlan",
+    "maximumCopies: 10000"
+]:
+    require("packages/spatial-references/src/PathSketchController.js", needle)
+
+for needle in [
+    "preparedInstances",
+    "normalizePreparedInstances",
+    "normalizeInstanceColors"
+]:
+    require("packages/selection-operations/src/SelectionOperations.js", needle)
+
+for needle in [
+    "setColorAt",
+    "colorWrites",
+    "colorSkips"
+]:
+    require("packages/spatial-references/src/PathInstancePreviewCache.js", needle)
 
 for needle in [
     "applyMeshTopologyOperation",
@@ -174,6 +257,14 @@ require("packages/edit-context/src/EditContextController.js", "class EditContext
 require("packages/edit-context/src/EditContextController.js", "editor.selection?.subscribe")
 require("packages/edit-hud/src/HudContextHeuristics.js", "deriveHudContext")
 require("packages/edit-hud/src/EditHud.js", "class EditHud")
+for path, needle in [
+    ("packages/editor-commands/src/EditorCommands.js", '"selection.gesture.apply"'),
+    ("packages/renderer-three/src/ThreeRegionRenderer.js", "ScreenSelectionIndex"),
+    ("packages/renderer-three/src/ScreenSelectionGesture.js", "class ScreenSelectionIndex"),
+    ("packages/selection-operations/src/SelectionOperations.js", "deleteIds(objectIds"),
+    ("packages/ui-widgets/src/SelectionMarquee.js", '"pointercancel"')
+]:
+    require(path, needle)
 for needle in [
     "#prepareHints",
     "#onHintPointerDown",
@@ -181,7 +272,7 @@ for needle in [
     "Modo ajuda ativado",
     "HUD_HINT_DETAILS",
     'this.#execute(active ? "mesh.edit.undo" : "history.undo")',
-    'this.#execute("selection.area.toggle")',
+    '"selection.gesture.set"',
     "deriveHudContext",
     "#buildGeometryTools",
     "#applyAdaptiveLayout",

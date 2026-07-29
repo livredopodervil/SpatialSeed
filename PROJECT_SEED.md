@@ -78,6 +78,14 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   sem apagar o registro local anterior;
 - duplicação coordenada com publicação tardia da seleção e `repeat count`,
   preservando a matriz delta composta numa única transação;
+- schemas e parâmetros versionados por ferramenta, compartilhados por HUD,
+  workspace e console, com migração não destrutiva;
+- desenho livre com preview local de tubo ou distribuição de qualquer
+  geometria/grupo selecionado pelo traço, confirmado em uma única ação;
+- pincel de caminho progressivo por espaçamento, usando seleção ou qualquer
+  provider do catálogo e conservando os mesmos lotes instanciados no preview;
+- pincel causal com `u` por distância, prefixo estável, cauda reparável, cor
+  paramétrica e plano lógico preparado incrementalmente antes do commit;
 - planos independentes de visualização e edição, visualização 2D autoritativa e
   órbita em ponto travado.
 
@@ -141,18 +149,26 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente o ciclo de ferramentas e as travas `0038b` em mobile e
+Validar visualmente a correção `0039g2` — traço após undo, cor afim em todas as
+geometrias, pincel/laço/borracha e custo constante no gesto — em mobile e
 avançar em incrementos independentes:
 
-1. analisador e pipeline configurável de sanitização de malhas;
-2. booleanos robustos em Worker, com diagnóstico e limpeza posterior;
-3. objetos 2D, polylines e curvas como referências de primeira classe;
-4. referências vinculadas por grafo de modificadores, sem ciclos e com
+1. redefinição paramétrica pelo Inspector, com preview e commit atômico;
+2. pivô/origem no HUD e grid configurável por plano;
+3. núcleo planar, estilos de caminho e ferramentas 2D fundamentais;
+4. régua, transferidor e compasso como referências transformadoras;
+5. referências vinculadas por grafo de modificadores, sem ciclos e com
    invalidação incremental;
-5. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
+6. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
 
 Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
-`docs/PATH_REFERENCES_0037A.md` e `docs/EDIT_INTERACTION_0038B.md`.
+`docs/PATH_REFERENCES_0037A.md`,
+`docs/PATH_BRUSH_AUTHORING_0039E.md`,
+`docs/AFFINE_PATH_BRUSH_0039F.md`,
+`docs/INCREMENTAL_PATH_BRUSH_0039G.md`,
+`docs/SELECTION_GESTURES_0039G2.md`,
+`docs/TOOL_PARAMETERS_PATH_DRAW_0039D.md` e
+`docs/EDIT_INTERACTION_0038B.md`.
 
 ## Protocolo para nova LLM
 

@@ -1,7 +1,8 @@
 # Referência da linguagem e do console SpatialSeed
 
-> Referência normativa P0. Auditada em 27 de julho de 2026 contra o runtime
-> `0033a`. Consulte `help`, `help create`, `help mesh`, `help animate`, `procedure help` e
+> Referência normativa P0. Auditada em 28 de julho de 2026 contra o runtime
+> `0039g2`. Consulte `help`, `help create`, `help mesh`, `help path`,
+> `help animate`, `procedure help` e
 > `runtime test help` para confirmar as capabilities do build carregado.
 
 ## 1. Três linguagens, uma fronteira editorial
@@ -80,12 +81,19 @@ select only object-id [object-id ...]
 select add object-id [object-id ...]
 select remove object-id [object-id ...]
 select toggle object-id [object-id ...]
+select gesture rectangle
+select gesture brush [raio]
+select gesture lasso
+select gesture eraser [raio]
+select gesture off
 select clear
 clear
 ```
 
 `select` sem operação substitui pela primeira referência e alterna as demais.
 Para automação legível, prefira `only`, `add`, `remove` ou `toggle`.
+`gesture` arma a captura no viewer; pincel e borracha aceitam raio de 2 a 128
+pixels. A cena só é resolvida ao soltar o gesto.
 
 ### 3.3 Transformações e pivô
 
@@ -170,6 +178,47 @@ Duplicar ou excluir um grupo opera sobre a subárvore. `ungroup` remove um níve
 e preserva transforms mundiais dos filhos. `repeat count N` aplica a matriz
 delta anterior `N` vezes em uma única operação de undo e seleciona a última
 fronteira.
+
+### 3.7 Caminhos, tubos e distribuição
+
+```text
+path list
+path inspect object=id extraction=auto|centerline|boundary|loose-edges
+path draw
+path draw mode=tube radius=0.08 curve=centripetal plane=locked-or-viewer
+path draw mode=array source=selection spacing=auto align=on twist=0
+path draw mode=array source=catalog geometry=sphere params={"radius":0.4} spacing=0.75
+path draw mode=array orientation=plane uLength=4 rotateZ=360*u scale=0.5-u colorExpr=hsl(360*fract(u),0.8,0.55)
+path tube object=id [radius=n] [segments=n] [radial=n] [closed=on|off]
+path sweep path=id profile=id [segments=n] [twist=n] [caps=on|off]
+path array object=id [count=n] [align=on|off] [twist=n]
+```
+
+`path draw mode=array` usa a seleção ou uma geometria do catálogo como pincel.
+Novas instâncias aparecem sempre que o traço acumula outro intervalo de
+`spacing`; `spacing=auto` deriva o intervalo do tamanho da fonte e
+`spacingScale` ajusta esse valor. Não se informa `count` antes de desenhar.
+O preview conserva seus recursos durante o gesto; ao soltar, todo o lote entra
+no histórico como uma única ação. `path array` continua aceitando `count`
+quando distribui sobre um caminho já existente.
+
+Opções omitidas recuperam a última configuração válida da ferramenta. O mesmo
+registro atende console, HUD e workspace. `closed` omitido herda o fechamento
+da referência; `path draw` pode usar o plano de edição travado, o viewer ou os
+planos mundiais XY, XZ e YZ. `sample` controla a coleta do gesto em pixels e é
+independente do espaçamento mundial entre instâncias.
+
+`params={...}` configura o descritor do provider escolhido em `geometry`.
+`orientation=preserve|plane|path` define o referencial das expressões:
+`plane` usa X na direção do traço e Z normal ao plano; `path` usa Z na
+tangente. `moveX`, `moveY`, `moveZ`, `rotateX`, `rotateY`, `rotateZ` e `scale`
+aceitam expressões seguras. `i` começa em 1; `u=d/uLength` permanece estável
+quando o traço cresce e `fract(u)` produz ciclos. Também estão disponíveis
+`count`, `d`, `length`, `spacing`, `k`, posição mundial e componentes da
+tangente, normal e binormal. `colorExpr` aceita `source`, hexadecimal,
+`hsl(...)`, `rgb(...)`, `mix(...)` e `invert(...)`; escala negativa usa o
+módulo e inverte a cor. Consulte `docs/AFFINE_PATH_BRUSH_0039F.md` e
+`docs/INCREMENTAL_PATH_BRUSH_0039G.md`.
 
 ## 4. Criação geométrica
 
@@ -676,6 +725,8 @@ runtime test help
 runtime test animation-runtime
 runtime test animation-commands
 runtime test animation-tracks
+runtime test tool-parameters
+runtime test path-references
 runtime test all
 runtime benchmark api [iterações]
 benchmark help
@@ -722,3 +773,7 @@ usados somente quando não dependem de DOM, rede, importação ou assincronismo.
 - `packages/property-registry/src/createDefaultPropertyRegistry.js`
 - `packages/property-registry/src/PropertyBatchProgram.js`
 - `packages/property-registry/src/SelectionTargetResolver.js`
+- `packages/edit-tools/src/EditToolRegistry.js`
+- `packages/edit-tools/src/ToolParameterStore.js`
+- `packages/spatial-references/src/PathSketchController.js`
+- `packages/spatial-references/src/PathToolService.js`

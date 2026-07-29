@@ -70,6 +70,7 @@ export class EditHud {
   #hintTimer = null;
   #hintHideTimer = null;
   #suppressedClick = null;
+  #fitFrame = null;
 
   constructor({ root, query, execute, subscribe, openWorkspace = null }) {
     if (!root) throw new TypeError("EditHud exige root.");
@@ -94,6 +95,14 @@ export class EditHud {
     this.#listeners(false);
     this.#clearHintTimer();
     this.#clearHintHideTimer();
+    if (this.#fitFrame !== null) {
+      if (typeof globalThis.cancelAnimationFrame === "function") {
+        globalThis.cancelAnimationFrame(this.#fitFrame);
+      } else {
+        globalThis.clearTimeout?.(this.#fitFrame);
+      }
+      this.#fitFrame = null;
+    }
   }
 
   refresh(snapshot = null) {
@@ -117,8 +126,13 @@ export class EditHud {
         ? "true"
         : "false";
     }
-    this.#element("edit-hud-area-selection").dataset.active =
-      state.areaSelection ? "true" : "false";
+    for (const button of this.root.querySelectorAll("[data-edit-selection-gesture]")) {
+      button.dataset.active =
+        state.areaSelection &&
+        button.dataset.editSelectionGesture === state.selectionGestureMode
+          ? "true"
+          : "false";
+    }
     for (const button of this.root.querySelectorAll("[data-edit-frame]")) {
       button.dataset.active = button.dataset.editFrame === state.frameMode
         ? "true"
@@ -159,12 +173,18 @@ export class EditHud {
     this.root.title = description;
     const mesh = this.query("mesh.edit.status");
     const selection = this.query("selection.snapshot");
+    const selectedObjectIds = selection.members?.map(
+      member => member.objectId
+    ) ?? [];
     this.#heuristic = deriveHudContext({
       state,
       mesh,
       selection,
       selectionActions: this.query("selection.actions.describe") ?? {},
-      references: this.query("path.references.list") ?? [],
+      references: this.query("path.references.list", {
+        includeSelection: false,
+        ids: selectedObjectIds
+      }) ?? [],
       placement: this.query("object.placement.status") ?? {},
       sketch: this.query("path.sketch.status") ?? {}
     });
@@ -173,6 +193,7 @@ export class EditHud {
     this.#refreshGeometryTools();
     this.#applyAdaptiveLayout(this.#heuristic);
     this.#applyPreferences();
+    this.#refreshParameterAliases();
   }
 
   #bind() {
@@ -211,15 +232,15 @@ export class EditHud {
         { operation: button.dataset.editSelectionOperation }
       ));
     }
-    this.#element("edit-hud-area-selection").addEventListener("click", () => {
-      const status = this.query("edit.context.status");
-      if (status.tool === "select" && status.areaSelection) {
-        this.#execute("selection.area.toggle");
-        return;
-      }
-      this.#execute("edit.context.tool.set", { mode: "select" });
-      if (!status.areaSelection) this.#execute("selection.area.toggle");
-    });
+    for (const button of this.root.querySelectorAll("[data-edit-selection-gesture]")) {
+      button.addEventListener("click", () => this.#execute(
+        "selection.gesture.set",
+        {
+          mode: button.dataset.editSelectionGesture,
+          toggle: true
+        }
+      ));
+    }
     for (const button of this.root.querySelectorAll("[data-edit-frame]")) {
       button.addEventListener("click", () => this.#execute(
         "edit.context.frame.set",
@@ -338,6 +359,32 @@ export class EditHud {
           pathRadius: Math.max(0.001, finiteOr(this.#element("edit-hud-default-path-radius").value, 0.08))
         };
         this.#savePreferences();
+        const parameter = {
+          "edit-hud-default-extrude": [
+            "mesh.extrude",
+            { distance: this.#preferences.defaults.extrude }
+          ],
+          "edit-hud-default-inset": [
+            "mesh.inset",
+            { amount: this.#preferences.defaults.inset }
+          ],
+          "edit-hud-default-path-radius": [
+            "path.sketch",
+            { radius: this.#preferences.defaults.pathRadius }
+          ]
+        }[id];
+        if (parameter) {
+          this.#execute("edit.tool.parameters.set", {
+            toolId: parameter[0],
+            patch: parameter[1]
+          });
+          if (id === "edit-hud-default-path-radius") {
+            this.#execute("edit.tool.parameters.set", {
+              toolId: "path.from-selection",
+              patch: parameter[1]
+            });
+          }
+        }
         this.#applyPreferences();
       });
     }
@@ -345,6 +392,7 @@ export class EditHud {
       this.#preferences = structuredClone(DEFAULT_PREFERENCES);
       this.#savePreferences();
       this.#applyPreferences();
+      this.#refreshParameterAliases();
     });
     const action = (id, command, args = () => ({})) => {
       this.#element(id).addEventListener("click", () => this.#execute(command, args()));
@@ -353,14 +401,7 @@ export class EditHud {
       this.#beginRememberedObjectPlacement()
     );
     action("edit-hud-enter-mesh", "mesh.edit.enter");
-    action("edit-hud-draw-path", "path.sketch.begin", () => ({
-      planeSource: "locked-or-viewer",
-      spacingPixels: 6,
-      simplify: 0.004,
-      smoothIterations: 1,
-      radius: this.#preferences.defaults.pathRadius,
-      curveType: "centripetal"
-    }));
+    action("edit-hud-draw-path", "path.sketch.begin");
     this.#element("edit-hud-create-light").addEventListener("click", () =>
       this.#createRememberedLight()
     );
@@ -409,12 +450,10 @@ export class EditHud {
     action("edit-hud-fill", "mesh.topology.apply", () => ({ operation: "fill" }));
     action("edit-hud-weld", "mesh.topology.apply", () => ({ operation: "weld" }));
     action("edit-hud-extrude", "mesh.topology.apply", () => ({
-      operation: "extrude",
-      options: { distance: this.#preferences.defaults.extrude }
+      operation: "extrude"
     }));
     action("edit-hud-inset", "mesh.topology.apply", () => ({
-      operation: "inset",
-      options: { amount: this.#preferences.defaults.inset }
+      operation: "inset"
     }));
     action("edit-hud-split", "mesh.topology.apply", () => ({
       operation: "split",
@@ -425,10 +464,7 @@ export class EditHud {
     action("edit-hud-bridge", "mesh.topology.apply", () => ({ operation: "bridge" }));
     action("edit-hud-subdivide", "mesh.topology.apply", () => ({ operation: "subdivide" }));
     action("edit-hud-flip-normal", "mesh.topology.apply", () => ({ operation: "flip-normal" }));
-    action("edit-hud-path-from-selection", "path.from-mesh-selection.create", () => ({
-      curveType: "centripetal",
-      radius: this.#preferences.defaults.pathRadius
-    }));
+    action("edit-hud-path-from-selection", "path.from-mesh-selection.create");
     action("edit-hud-recalculate-normals", "mesh.topology.apply", () => ({
       operation: "recalculate-normals"
     }));
@@ -629,12 +665,16 @@ export class EditHud {
     const selection = this.query("selection.snapshot");
     const objectId = selection?.activeMember?.objectId ?? null;
     const reference = objectId
-      ? (this.query("scene.objects.list") ?? []).find(object => object.id === objectId)
+      ? this.query("scene.object.get", { id: objectId })
       : null;
     return this.#execute("light.create", {
       type: defaults.lightType ?? "point",
-      position: reference ? [...reference.position] : [0, 3, 0],
-      rotation: reference ? [...reference.rotation] : [0, 0, 0, 1],
+      position: reference
+        ? [...(reference.position ?? [0, 0, 0])]
+        : [0, 3, 0],
+      rotation: reference
+        ? [...(reference.rotation ?? [0, 0, 0, 1])]
+        : [0, 0, 0, 1],
       color: normalizeRememberedColor(defaults.color),
       intensity: finiteOr(defaults.lightIntensity, 3),
       distance: Math.max(0, finiteOr(defaults.lightDistance, 0)),
@@ -659,7 +699,7 @@ export class EditHud {
       const selection = this.query("selection.snapshot");
       const objectId = selection?.activeMember?.objectId ?? null;
       const reference = objectId
-        ? (this.query("scene.objects.list") ?? []).find(object => object.id === objectId)
+        ? this.query("scene.object.get", { id: objectId })
         : null;
       return this.#execute("object.placement.begin", {
         geometry,
@@ -842,7 +882,19 @@ export class EditHud {
     this.#element("edit-hud-default-inset").value = String(p.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(p.defaults.pathRadius);
     this.#applyAdaptiveLayout(this.#heuristic);
-    requestAnimationFrame(() => this.#fitToViewport());
+    this.#scheduleFitToViewport();
+  }
+
+  #scheduleFitToViewport() {
+    if (this.#fitFrame !== null) return;
+    const callback = () => {
+      this.#fitFrame = null;
+      this.#fitToViewport();
+    };
+    this.#fitFrame =
+      typeof globalThis.requestAnimationFrame === "function"
+        ? globalThis.requestAnimationFrame(callback)
+        : globalThis.setTimeout?.(callback, 0) ?? null;
   }
 
   #fitToViewport() {
@@ -1029,8 +1081,7 @@ export class EditHud {
       "Selecione um objeto que possa fornecer um caminho."
     );
     return this.#execute("path.tube.create", {
-      path: { source: "object", objectId: reference.id, extraction: "auto" },
-      radius: this.#preferences.defaults.pathRadius
+      path: { source: "object", objectId: reference.id, extraction: "auto" }
     });
   }
 
@@ -1054,10 +1105,23 @@ export class EditHud {
       "Selecione um caminho e os objetos que serão distribuídos."
     );
     return this.#execute("path.array.create", {
-      path: { source: "object", objectId: path.id, extraction: "auto" },
-      count: 8,
-      align: true
+      path: { source: "object", objectId: path.id, extraction: "auto" }
     });
+  }
+
+  #refreshParameterAliases() {
+    for (const [toolId, parameterId, controlId] of [
+      ["mesh.extrude", "distance", "edit-hud-default-extrude"],
+      ["mesh.inset", "amount", "edit-hud-default-inset"],
+      ["path.sketch", "radius", "edit-hud-default-path-radius"]
+    ]) {
+      const result = this.query("edit.tool.parameters.get", { toolId });
+      const control = this.#element(controlId);
+      if (this.root.ownerDocument.activeElement !== control &&
+          result?.values?.[parameterId] !== undefined) {
+        control.value = String(result.values[parameterId]);
+      }
+    }
   }
 
   #reportError(message) {
@@ -1143,7 +1207,10 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-open": ["Painel Editar", "Abre o workspace completo com parâmetros numéricos, criação, materiais, luzes, caminhos e operações de malha."],
   "edit-hud-help": ["Ajuda dos ícones", "Ativa o modo de consulta. Nesse modo, tocar numa ferramenta mostra sua explicação sem executá-la."],
   "edit-hud-object": ["Modo objeto", "Seleciona e transforma objetos inteiros. Encerre ou aplique a sessão de malha antes de retornar a este modo."],
-  "edit-hud-area-selection": ["Selecionar por área", "Ativa a ferramenta de seleção e permite arrastar um retângulo no viewer para selecionar objetos ou componentes do modo atual."],
+  "edit-hud-area-selection": ["Seleção retangular", "Arraste um retângulo e aplique a operação de seleção atual ao soltar."],
+  "edit-hud-brush-selection": ["Seleção em pincel", "Pinte objetos ou componentes; a cena é consultada uma única vez ao soltar."],
+  "edit-hud-lasso-selection": ["Seleção em laço", "Contorne objetos ou componentes com um laço livre e conclua ao soltar."],
+  "edit-hud-eraser": ["Borracha", "Pinte objetos ou componentes para excluí-los em uma única operação reversível."],
   "edit-hud-axis-x": ["Eixo X", "Permite ou bloqueia o componente X da transformação no frame ativo."],
   "edit-hud-axis-y": ["Eixo Y", "Permite ou bloqueia o componente Y da transformação no frame ativo."],
   "edit-hud-axis-z": ["Eixo Z", "Permite ou bloqueia o componente Z da transformação no frame ativo."],
