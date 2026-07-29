@@ -3,7 +3,7 @@ import {
   compileAffineProgram,
   createAffineEvaluationContext,
   evaluateAffineProgram
-} from "../../selection-operations/src/AffineProgram.js?build=20260715-0021d";
+} from "../../selection-operations/src/AffineProgram.js?build=20260729-0039g";
 
 export const PATH_BRUSH_AFFINE_DEFAULTS = Object.freeze({
   affineMoveX: "0",
@@ -78,6 +78,7 @@ export function compilePathBrushAffineModifier(source = {}) {
 export function evaluatePathBrushAffineModifier(modifier, {
   index,
   count,
+  progress = undefined,
   position,
   rotation,
   variables = {}
@@ -95,19 +96,20 @@ export function evaluatePathBrushAffineModifier(modifier, {
       rotation: quaternion(rotation),
       scale: [1, 1, 1]
     },
+    normalizedProgress: progress,
     variables
   });
   const evaluated = evaluateAffineProgram(modifier.program, context);
   const move = operationValue(evaluated, "move");
   const rotate = operationValue(evaluated, "rotate");
   const scaleVector = operationValue(evaluated, "scale");
-  const scale = finite(scaleVector[0], "scale");
-  if (scale <= 1e-9 ||
-      scaleVector.some(value => Math.abs(value - scale) > 1e-12)) {
+  const signedScale = finite(scaleVector[0], "scale");
+  if (scaleVector.some(value => Math.abs(value - signedScale) > 1e-12)) {
     throw new RangeError(
-      "A escala afim do pincel deve ser uniforme e maior que zero."
+      "A escala afim do pincel deve ser uniforme."
     );
   }
+  const scale = Math.max(Math.abs(signedScale), 1e-6);
   const quaternionValue = new THREE.Quaternion().setFromEuler(
     new THREE.Euler(
       THREE.MathUtils.degToRad(rotate[0]),
@@ -139,7 +141,10 @@ export function evaluatePathBrushAffineModifier(modifier, {
     }),
     move: Object.freeze([...move]),
     rotate: Object.freeze([...rotate]),
-    scale
+    scale,
+    signedScale,
+    invertColor: signedScale < 0,
+    clampedAtZero: Math.abs(signedScale) < 1e-6
   });
 }
 

@@ -126,6 +126,77 @@ export function samplePathFramesBySpacing({
   });
 }
 
+export function samplePathFrameTailBySpacing({
+  points,
+  spacing,
+  maximumSamples = 10000,
+  startIndex = 0,
+  previousFrame = null,
+  closed = false,
+  curveType = "centripetal",
+  tension = 0.5,
+  initialNormal = null,
+  twistDegrees = 0
+} = {}) {
+  const distance = positive(spacing, "spacing");
+  const limit = integerAtLeast(maximumSamples, 1, "maximumSamples");
+  const requestedStart = integerAtLeast(startIndex, 0, "startIndex");
+  const isClosed = Boolean(closed);
+  const twist = finite(twistDegrees, "twistDegrees");
+  if (requestedStart > 0 && (isClosed || Math.abs(twist) > 1e-14)) {
+    throw new Error(
+      "Amostragem parcial exige caminho aberto e sem torção total."
+    );
+  }
+  const curve = createPathCurve(points, {
+    closed: isClosed,
+    curveType,
+    tension
+  });
+  const length = curve.getLength();
+  const epsilon = Math.max(1e-12, length * 1e-12);
+  const estimatedCount = isClosed
+    ? Math.max(1, Math.ceil((length - epsilon) / distance))
+    : Math.floor((length + epsilon) / distance) + 1;
+  const requestedCount = Number.isSafeInteger(estimatedCount)
+    ? estimatedCount
+    : Number.MAX_SAFE_INTEGER;
+  const sampleCount = Math.min(requestedCount, limit);
+  const resolvedStart = Math.min(requestedStart, sampleCount);
+  const parameters = Array.from(
+    { length: sampleCount - resolvedStart },
+    (_, offset) => {
+      const index = resolvedStart + offset;
+      return length > epsilon
+        ? THREE.MathUtils.clamp((index * distance) / length, 0, 1)
+        : 0;
+    }
+  );
+  const frames = resolvedStart === 0
+    ? framesAtParameters({
+        curve,
+        parameters,
+        closed: isClosed,
+        initialNormal,
+        twistDegrees: twist
+      })
+    : framesAfterPrevious({
+        curve,
+        parameters,
+        previousFrame
+      });
+  return Object.freeze({
+    ...frames,
+    length,
+    spacing: distance,
+    requestedCount,
+    sampleCount,
+    startIndex: resolvedStart,
+    evaluatedCount: parameters.length,
+    truncated: requestedCount !== sampleCount
+  });
+}
+
 function framesAtParameters({
   curve,
   parameters,
@@ -201,6 +272,115 @@ function framesAtParameters({
     binormals: Object.freeze(binormals.map(vector => Object.freeze(vector.toArray()))),
     quaternions: Object.freeze(quaternions.map(value => Object.freeze(value.toArray())))
   });
+}
+
+function framesAfterPrevious({ curve, parameters, previousFrame }) {
+  if (!parameters.length) return emptyFrames(curve);
+  const previousTangent = frameVector(
+    previousFrame?.tangent,
+    "tangente anterior"
+  );
+  const previousNormal = frameVector(
+    previousFrame?.normal,
+    "normal anterior"
+  );
+  const positions = parameters.map(value => curve.getPointAt(value));
+  const tangents = parameters.map(value => safeTangent(curve, value));
+  const normals = [];
+  const binormals = [];
+  const firstNormal = previousNormal
+    .applyQuaternion(minimalRotation(previousTangent, tangents[0]));
+  orthogonalize(firstNormal, tangents[0]);
+  if (firstNormal.lengthSq() < 1e-18) {
+    firstNormal.copy(chooseInitialNormal(tangents[0], null));
+  }
+  normals.push(firstNormal);
+  binormals.push(
+    new THREE.Vector3()
+      .crossVectors(tangents[0], firstNormal)
+      .normalize()
+  );
+  for (let index = 1; index < tangents.length; index += 1) {
+    const normal = normals[index - 1]
+      .clone()
+      .applyQuaternion(
+        minimalRotation(tangents[index - 1], tangents[index])
+      );
+    orthogonalize(normal, tangents[index]);
+    normals.push(normal);
+    binormals.push(
+      new THREE.Vector3()
+        .crossVectors(tangents[index], normal)
+        .normalize()
+    );
+  }
+  return frozenFrames({
+    curve,
+    closed: false,
+    positions,
+    tangents,
+    normals,
+    binormals
+  });
+}
+
+function emptyFrames(curve) {
+  return Object.freeze({
+    curve,
+    closed: false,
+    positions: Object.freeze([]),
+    tangents: Object.freeze([]),
+    normals: Object.freeze([]),
+    binormals: Object.freeze([]),
+    quaternions: Object.freeze([])
+  });
+}
+
+function frozenFrames({
+  curve,
+  closed,
+  positions,
+  tangents,
+  normals,
+  binormals
+}) {
+  const quaternions = tangents.map((tangent, index) => {
+    const basis = new THREE.Matrix4().makeBasis(
+      normals[index],
+      binormals[index],
+      tangent
+    );
+    return new THREE.Quaternion().setFromRotationMatrix(basis);
+  });
+  return Object.freeze({
+    curve,
+    closed: Boolean(closed),
+    positions: frozenVectors(positions),
+    tangents: frozenVectors(tangents),
+    normals: frozenVectors(normals),
+    binormals: frozenVectors(binormals),
+    quaternions: Object.freeze(
+      quaternions.map(value => Object.freeze(value.toArray()))
+    )
+  });
+}
+
+function frozenVectors(vectors) {
+  return Object.freeze(
+    vectors.map(vector => Object.freeze(vector.toArray()))
+  );
+}
+
+function frameVector(value, name) {
+  if (!Array.isArray(value) || value.length !== 3) {
+    throw new TypeError(`${name} deve conter x, y e z.`);
+  }
+  const vector = new THREE.Vector3().fromArray(value.map(Number));
+  if (![vector.x, vector.y, vector.z].every(Number.isFinite) ||
+      vector.lengthSq() < 1e-18) {
+    throw new TypeError(`${name} inválida.`);
+  }
+  return vector.normalize();
 }
 
 export function samplePathFrames({

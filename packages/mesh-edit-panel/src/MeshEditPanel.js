@@ -1,7 +1,7 @@
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 
 export class MeshEditPanel {
-  static apiVersion = "mesh-edit-panel-v8";
+  static apiVersion = "mesh-edit-panel-v9";
 
   constructor({
     root,
@@ -1026,6 +1026,8 @@ export class MeshEditPanel {
       affineRotateY: this.#element("path-sketch-affine-rotate-y").value,
       affineRotateZ: this.#element("path-sketch-affine-rotate-z").value,
       affineScale: this.#element("path-sketch-affine-scale").value,
+      affineULength: this.#number("path-sketch-affine-u-length"),
+      affineColor: this.#element("path-sketch-affine-color").value,
       closed: this.#element("path-sketch-closed").checked
     }));
     this.#click("path-sketch-cancel", "path.sketch.cancel");
@@ -1707,6 +1709,15 @@ function rememberedToolControls() {
       live: true
     }),
     toolControl("path.sketch", "affineScale", "path-sketch-affine-scale", {
+      live: true
+    }),
+    toolControl(
+      "path.sketch",
+      "affineULength",
+      "path-sketch-affine-u-length",
+      { number: true, live: true }
+    ),
+    toolControl("path.sketch", "affineColor", "path-sketch-affine-color", {
       live: true
     }),
     toolControl("path.sketch", "closed", "path-sketch-closed"),

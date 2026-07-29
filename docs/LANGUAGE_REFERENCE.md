@@ -1,7 +1,7 @@
 # Referência da linguagem e do console SpatialSeed
 
 > Referência normativa P0. Auditada em 28 de julho de 2026 contra o runtime
-> `0039f`. Consulte `help`, `help create`, `help mesh`, `help path`,
+> `0039g`. Consulte `help`, `help create`, `help mesh`, `help path`,
 > `help animate`, `procedure help` e
 > `runtime test help` para confirmar as capabilities do build carregado.
 
@@ -181,7 +181,7 @@ path draw
 path draw mode=tube radius=0.08 curve=centripetal plane=locked-or-viewer
 path draw mode=array source=selection spacing=auto align=on twist=0
 path draw mode=array source=catalog geometry=sphere params={"radius":0.4} spacing=0.75
-path draw mode=array orientation=plane rotateZ=360*u scale=0.5+u
+path draw mode=array orientation=plane uLength=4 rotateZ=360*u scale=0.5-u colorExpr=hsl(360*fract(u),0.8,0.55)
 path tube object=id [radius=n] [segments=n] [radial=n] [closed=on|off]
 path sweep path=id profile=id [segments=n] [twist=n] [caps=on|off]
 path array object=id [count=n] [align=on|off] [twist=n]
@@ -205,10 +205,13 @@ independente do espaçamento mundial entre instâncias.
 `orientation=preserve|plane|path` define o referencial das expressões:
 `plane` usa X na direção do traço e Z normal ao plano; `path` usa Z na
 tangente. `moveX`, `moveY`, `moveZ`, `rotateX`, `rotateY`, `rotateZ` e `scale`
-aceitam expressões seguras. `i` começa em 1; `u` percorre 0–1 e é recalculado
-quando o número de instâncias muda. Também estão disponíveis `count`, `d`,
-`length`, `spacing`, `k`, posição mundial e componentes da tangente, normal e
-binormal. Consulte `docs/AFFINE_PATH_BRUSH_0039F.md`.
+aceitam expressões seguras. `i` começa em 1; `u=d/uLength` permanece estável
+quando o traço cresce e `fract(u)` produz ciclos. Também estão disponíveis
+`count`, `d`, `length`, `spacing`, `k`, posição mundial e componentes da
+tangente, normal e binormal. `colorExpr` aceita `source`, hexadecimal,
+`hsl(...)`, `rgb(...)`, `mix(...)` e `invert(...)`; escala negativa usa o
+módulo e inverte a cor. Consulte `docs/AFFINE_PATH_BRUSH_0039F.md` e
+`docs/INCREMENTAL_PATH_BRUSH_0039G.md`.
 
 ## 4. Criação geométrica
 

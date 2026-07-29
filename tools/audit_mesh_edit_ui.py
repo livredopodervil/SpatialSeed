@@ -138,13 +138,15 @@ for needle in [
     'id="path-sketch-affine-settings"',
     'id="path-sketch-orientation"',
     'id="path-sketch-affine-scale"',
+    'id="path-sketch-affine-u-length"',
+    'id="path-sketch-affine-color"',
     'id="path-sketch-affine-move-x"',
     'id="path-sketch-affine-rotate-z"'
 ]:
     require("apps/web/index.html", needle)
 
 for needle in [
-    'static apiVersion = "mesh-edit-panel-v8"',
+    'static apiVersion = "mesh-edit-panel-v9"',
     '"mesh.topology.apply"',
     '"mesh.component.mode.set"',
     '"mesh.selection.apply"',
@@ -158,7 +160,9 @@ for needle in [
     '"path.sweep.create"',
     '"path.array.create"',
     "#bindBrushGeometryParameters",
-    '"affineRotateZ", "path-sketch-affine-rotate-z"'
+    '"affineRotateZ", "path-sketch-affine-rotate-z"',
+    '"affineULength",',
+    '"affineColor", "path-sketch-affine-color"'
 ]:
     require("packages/mesh-edit-panel/src/MeshEditPanel.js", needle)
 
@@ -169,6 +173,53 @@ for needle in [
     "identity: isIdentity(expressions)"
 ]:
     require("packages/spatial-references/src/PathBrushAffine.js", needle)
+
+for needle in [
+    "compilePathBrushColorModifier",
+    "evaluatePathBrushColorModifier",
+    "invertHexColor",
+    "hslToHex"
+]:
+    require("packages/spatial-references/src/PathBrushColor.js", needle)
+
+for needle in [
+    "commitArrayBrushPlan",
+    "previousPlan",
+    "reusedCopies",
+    "colorsByEntry",
+    "#prepareArrayBrushDraft",
+    "#issuedArrayBrushPlans"
+]:
+    require("packages/spatial-references/src/PathToolService.js", needle)
+
+for needle in [
+    "samplePathFrameTailBySpacing",
+    "framesAfterPrevious",
+    "evaluatedCount"
+]:
+    require("packages/spatial-references/src/PathFrames.js", needle)
+
+for needle in [
+    "commitArrayBrushPlan",
+    "#deferResultPreviewClear",
+    "previousPlan: active.arrayPlan",
+    "maximumCopies: 10000"
+]:
+    require("packages/spatial-references/src/PathSketchController.js", needle)
+
+for needle in [
+    "preparedInstances",
+    "normalizePreparedInstances",
+    "normalizeInstanceColors"
+]:
+    require("packages/selection-operations/src/SelectionOperations.js", needle)
+
+for needle in [
+    "setColorAt",
+    "colorWrites",
+    "colorSkips"
+]:
+    require("packages/spatial-references/src/PathInstancePreviewCache.js", needle)
 
 for needle in [
     "applyMeshTopologyOperation",

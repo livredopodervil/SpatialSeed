@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260728-0039f",
-  "channel": "feature/0039f-affine-path-brush"
+  "build": "20260729-0039g",
+  "channel": "feature/0039g-incremental-path-brush"
 }

@@ -1,5 +1,10 @@
 # Parâmetros geométricos e pincel afim — 0039f
 
+> O `0039g` substitui a normalização global de `u` por progresso causal por
+> distância, prepara o commit durante o gesto, mantém o preview no handoff,
+> aceita cor paramétrica e trata escala negativa por inversão cromática.
+> Consulte [Pincel causal e commit incremental — 0039g](INCREMENTAL_PATH_BRUSH_0039G.md).
+
 ## Objetivo
 
 O `0039f` completa a configuração do pincel progressivo introduzido no

@@ -831,6 +831,8 @@
               </select>
             </label>
             <label><span>Escala uniforme</span><input id="path-sketch-affine-scale" type="text" value="1" spellcheck="false"></label>
+            <label><span>Comprimento para u=1</span><input id="path-sketch-affine-u-length" type="number" min="0.001" value="1" step="0.1"></label>
+            <label><span>Cor paramétrica</span><input id="path-sketch-affine-color" type="text" value="source" spellcheck="false"></label>
             <label><span>Mover X local</span><input id="path-sketch-affine-move-x" type="text" value="0" spellcheck="false"></label>
             <label><span>Mover Y local</span><input id="path-sketch-affine-move-y" type="text" value="0" spellcheck="false"></label>
             <label><span>Mover Z local</span><input id="path-sketch-affine-move-z" type="text" value="0" spellcheck="false"></label>
@@ -840,6 +842,10 @@
           </div>
           <small>
             Aceita expressões com i, u, count, d, length, spacing, k, x, y e z.
+            u é a distância acumulada dividida pelo comprimento escolhido e não
+            muda quando o traço cresce. Escala negativa conserva o tamanho e
+            inverte a cor. A cor aceita source, hexadecimal, hsl, rgb, mix e invert.
+            Parâmetros que alteram a topologia permanecem comuns ao lote.
             No referencial “plano”, X acompanha o traço, Y é lateral e Z é normal
             ao plano; no referencial “caminho”, Z acompanha o traço.
           </small>
@@ -1181,6 +1187,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260728-0039f"></script>
+<script type="module" src="./boot.js?build=20260729-0039g"></script>
 </body>
 </html>

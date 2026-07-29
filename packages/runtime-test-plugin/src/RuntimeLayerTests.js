@@ -82,7 +82,7 @@ import {
   compileAffineProgram,
   evaluateAffineExpression,
   evaluateAffineProgram
-} from "../../selection-operations/src/AffineProgram.js?build=20260714-0020b-d";
+} from "../../selection-operations/src/AffineProgram.js?build=20260729-0039g";
 import {
   resolveAffineOperations,
   affineProgramCopies,
@@ -91,7 +91,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260728-0039e";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260729-0039g";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -141,7 +141,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260728-0039f";
+} from "../../devtools/src/DevConsole.js?build=20260729-0039g";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -205,24 +205,29 @@ import {
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../edit-tools/src/index.js?build=20260728-0039f";
+} from "../../edit-tools/src/index.js?build=20260729-0039g";
 import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
 } from "../../edit-hud/src/index.js?build=20260728-0039a";
 import {
+  PathInstancePreviewCache,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver,
   compilePathBrushAffineModifier,
+  compilePathBrushColorModifier,
   createSweepGeometryDescriptor,
   evaluatePathBrushAffineModifier,
+  evaluatePathBrushColorModifier,
+  invertHexColor,
   orderEdgeChain,
   rotationMinimizingFrames,
   samplePathFrames,
+  samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "../../spatial-references/src/index.js?build=20260728-0039f";
+} from "../../spatial-references/src/index.js?build=20260729-0039g";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -752,6 +757,12 @@ export function createRuntimeLayerTests() {
         const affineScale = sketch.parameters.find(
           parameter => parameter.id === "affineScale"
         );
+        const affineULength = sketch.parameters.find(
+          parameter => parameter.id === "affineULength"
+        );
+        const affineColor = sketch.parameters.find(
+          parameter => parameter.id === "affineColor"
+        );
         assertDeepEqual(radius.when, { mode: "tube" });
         assertDeepEqual(spacingWorld.when, {
           mode: "array",
@@ -769,12 +780,16 @@ export function createRuntimeLayerTests() {
         });
         assertDeepEqual(orientationMode.when, { mode: "array" });
         assertDeepEqual(affineScale.when, { mode: "array" });
+        assertDeepEqual(affineULength.when, { mode: "array" });
+        assertDeepEqual(affineColor.when, { mode: "array" });
         assertEqual(Object.isFrozen(described.parameters), true);
         assertEqual(Object.isFrozen(described.parameters[0].options), true);
         assertEqual(registry.defaults("path.sketch").spacingMode, "auto");
         assertDeepEqual(registry.defaults("path.sketch").sourceGeometry, {});
         assertEqual(registry.defaults("path.sketch").orientationMode, "preserve");
         assertEqual(registry.defaults("path.sketch").affineScale, "1");
+        assertEqual(registry.defaults("path.sketch").affineULength, 1);
+        assertEqual(registry.defaults("path.sketch").affineColor, "source");
         assertEqual(registry.defaults("path.array").count, 8);
         assertDeepEqual(
           registry.normalizePatch("path.sketch", {
@@ -821,7 +836,9 @@ export function createRuntimeLayerTests() {
           align: false,
           orientationMode: "plane",
           affineRotateZ: "360*u",
-          affineScale: "0.5+u"
+          affineScale: "0.5+u",
+          affineULength: 2.5,
+          affineColor: "hsl(120*u,1,0.5)"
         });
         first.set("path.tube", {
           radius: 0.42,
@@ -845,6 +862,11 @@ export function createRuntimeLayerTests() {
         assertEqual(restored.values("path.sketch").orientationMode, "plane");
         assertEqual(restored.values("path.sketch").affineRotateZ, "360*u");
         assertEqual(restored.values("path.sketch").affineScale, "0.5+u");
+        assertNear(restored.values("path.sketch").affineULength, 2.5);
+        assertEqual(
+          restored.values("path.sketch").affineColor,
+          "hsl(120*u,1,0.5)"
+        );
         assertNear(restored.values("path.tube").radius, 0.42);
         assertEqual(restored.values("path.tube").radialSegments, 11);
         assertEqual(restored.values("path.array").count, 8);
@@ -1081,7 +1103,9 @@ export function createRuntimeLayerTests() {
             orientationMode: "path",
             affineMoveY: "0.2*i",
             affineRotateZ: "180*u",
-            affineScale: "0.75+0.25*u"
+            affineScale: "0.75-u",
+            affineULength: 2,
+            affineColor: "mix(source,#ffffff,fract(u))"
           }
         });
         assertEqual(updates.length, 1);
@@ -1092,7 +1116,12 @@ export function createRuntimeLayerTests() {
         assertEqual(updates[0].orientationMode, "path");
         assertEqual(updates[0].affineMoveY, "0.2*i");
         assertEqual(updates[0].affineRotateZ, "180*u");
-        assertEqual(updates[0].affineScale, "0.75+0.25*u");
+        assertEqual(updates[0].affineScale, "0.75-u");
+        assertNear(updates[0].affineULength, 2);
+        assertEqual(
+          updates[0].affineColor,
+          "mix(source,#ffffff,fract(u))"
+        );
         toolParameters.dispose();
       },
 
@@ -1105,7 +1134,8 @@ export function createRuntimeLayerTests() {
           "path draw mode=array source=catalog geometry=sphere " +
           "params={\"radius\":0.4,\"widthSegments\":18,\"heightSegments\":9} " +
           "spacing=0.75 align=off twist=25 plane=world-xy " +
-          "orientation=plane rotateZ=360*u scale=0.5+u"
+          "orientation=plane uLength=4 rotateZ=360*u scale=0.5-u " +
+          "colorExpr=hsl(360*fract(u),0.8,0.55)"
         );
         assertEqual(Object.hasOwn(calls[0].args, "radius"), false);
         assertEqual(calls[1].id, "path.sketch.begin");
@@ -1126,7 +1156,12 @@ export function createRuntimeLayerTests() {
         assertEqual(calls[2].args.planeSource, "world-xy");
         assertEqual(calls[2].args.orientationMode, "plane");
         assertEqual(calls[2].args.affineRotateZ, "360*u");
-        assertEqual(calls[2].args.affineScale, "0.5+u");
+        assertEqual(calls[2].args.affineScale, "0.5-u");
+        assertNear(calls[2].args.affineULength, 4);
+        assertEqual(
+          calls[2].args.affineColor,
+          "hsl(360*fract(u),0.8,0.55)"
+        );
         const invalid = console.execute(
           "path draw mode=array params={\"radius\":0.4}"
         )[0];
@@ -1247,6 +1282,34 @@ export function createRuntimeLayerTests() {
         assertEqual(extended.requestedCount, 6);
         assertDeepEqual(short.positions, extended.positions.slice(0, 3));
         assertVectorNear(extended.positions.at(-1), [5, 0, 0]);
+        const tail = samplePathFrameTailBySpacing({
+          points: [[0, 0, 0], [5.2, 0, 0]],
+          spacing: 1,
+          startIndex: 1,
+          previousFrame: {
+            tangent: short.tangents[0],
+            normal: short.normals[0]
+          },
+          curveType: "polyline"
+        });
+        assertEqual(tail.startIndex, 1);
+        assertEqual(tail.evaluatedCount, 5);
+        assertDeepEqual(tail.positions, extended.positions.slice(1));
+        assertDeepEqual(tail.quaternions, extended.quaternions.slice(1));
+        assertThrowsMessage(
+          () => samplePathFrameTailBySpacing({
+            points: [[0, 0, 0], [5.2, 0, 0]],
+            spacing: 1,
+            startIndex: 1,
+            previousFrame: {
+              tangent: short.tangents[0],
+              normal: short.normals[0]
+            },
+            curveType: "polyline",
+            twistDegrees: 45
+          }),
+          "caminho aberto e sem torção"
+        );
       },
 
       "frames aceitam polilinha e controles Bézier desenhados"() {
@@ -1599,6 +1662,7 @@ export function createRuntimeLayerTests() {
           brush,
           spacing: 1,
           curveType: "polyline",
+          previousPlan: short,
           maximumCopies: 100
         });
         assertEqual(brush.renderableCount, 1);
@@ -1609,14 +1673,55 @@ export function createRuntimeLayerTests() {
           short.deltaMatrices,
           extended.deltaMatrices.slice(0, short.previewCount)
         );
-        const result = fixture.service.arrayBrushAlongPoints({
+        assertEqual(extended.diagnostics.reusedPreparedCopies, 1);
+        assertEqual(extended.diagnostics.frameSampling, "tail");
+        assertEqual(extended.diagnostics.reusedFrameSamples, 1);
+        assertEqual(
+          extended.draft.copies[0] === short.draft.copies[0],
+          true
+        );
+        assertDeepEqual(
+          short.draft.copies.map(copy =>
+            copy.objects.map(object => object.id)
+          ),
+          extended.draft.copies
+            .slice(0, short.previewCount)
+            .map(copy => copy.objects.map(object => object.id))
+        );
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
+          0
+        );
+        assertEqual(fixture.sandbox.getSnapshot().objects.length, 5);
+        const twistedShort = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [2.4, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          twistDegrees: 45,
+          maximumCopies: 100
+        });
+        const twistedExtended = fixture.service.previewArrayBrush({
           points: [[0, 0, 0], [5.2, 0, 0]],
           brush,
           spacing: 1,
-          curveType: "polyline"
+          curveType: "polyline",
+          twistDegrees: 45,
+          previousPlan: twistedShort,
+          maximumCopies: 100
+        });
+        assertEqual(twistedExtended.diagnostics.frameSampling, "full");
+        assertEqual(twistedExtended.diagnostics.reusedCopies, 1);
+        const result = fixture.service.commitArrayBrushPlan({
+          plan: extended,
+          brush
         });
         assertEqual(result.count, 6);
         assertEqual(result.createdIds.length, 12);
+        assertDeepEqual(
+          result.createdIds,
+          extended.draft.objects.map(object => object.id)
+        );
         assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
         assertEqual(fixture.sandbox.undo(), true);
       },
@@ -1654,7 +1759,8 @@ export function createRuntimeLayerTests() {
           curveType: "polyline",
           initialNormal: [0, 0, 1],
           orientationMode: "plane",
-          affineScale: "0.5+u"
+          affineScale: "0.5+u",
+          affineULength: 2
         });
         const created = fixture.sandbox.getSnapshot().objects.filter(
           object => result.createdIds.includes(object.id)
@@ -1681,7 +1787,7 @@ export function createRuntimeLayerTests() {
         assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
       },
 
-      "modificador afim usa i e u e reavalia instâncias durante o traço"() {
+      "modificador afim fixa u por distância e inverte cor na escala negativa"() {
         assertEqual(compilePathBrushAffineModifier().identity, true);
         const modifier = compilePathBrushAffineModifier({
           affineMoveX: "d+spacing",
@@ -1694,6 +1800,7 @@ export function createRuntimeLayerTests() {
         const evaluated = evaluatePathBrushAffineModifier(modifier, {
           index: 2,
           count: 3,
+          progress: 1.25,
           position: [2, 3, 4],
           rotation: [0, 0, 0, 1],
           variables: {
@@ -1703,9 +1810,9 @@ export function createRuntimeLayerTests() {
           }
         });
         assertVectorNear(evaluated.move, [1.25, 0.2, 0.125]);
-        assertVectorNear(evaluated.rotate, [0, 0, 180]);
-        assertNear(evaluated.scale, 0.75);
-        assertNear(evaluated.context.u, 0.5);
+        assertVectorNear(evaluated.rotate, [0, 0, 450]);
+        assertNear(evaluated.scale, 1.125);
+        assertNear(evaluated.context.u, 1.25);
         assertThrowsMessage(
           () => compilePathBrushAffineModifier({
             affineScale: "variavel_inexistente"
@@ -1726,44 +1833,203 @@ export function createRuntimeLayerTests() {
         const progressiveModifier =
           fixture.service.compileArrayBrushModifier({
             affineRotateZ: "90*u",
-            affineScale: "0.5+u"
+            affineScale: "0.5-u"
+          });
+        const progressiveColor =
+          fixture.service.compileArrayBrushColorModifier({
+            affineColor: "hsl(120*u,1,0.5)"
           });
         const short = fixture.service.previewArrayBrush({
-          points: [[0, 0, 0], [2.4, 0, 0]],
+          points: [[0, 0, 0], [3, 0, 0], [6.4, 1, 0]],
           brush,
           spacing: 1,
-          curveType: "polyline",
+          curveType: "centripetal",
           affineModifier: progressiveModifier,
+          colorModifier: progressiveColor,
+          affineULength: 2,
           maximumCopies: 100
         });
         const extended = fixture.service.previewArrayBrush({
-          points: [[0, 0, 0], [5.2, 0, 0]],
+          points: [[0, 0, 0], [3, 0, 0], [6, 1, 0], [9.2, 3, 0]],
+          brush,
+          spacing: 1,
+          curveType: "centripetal",
+          affineModifier: progressiveModifier,
+          colorModifier: progressiveColor,
+          affineULength: 2,
+          previousPlan: short,
+          maximumCopies: 100
+        });
+        assertEqual(short.previewCount >= 7, true);
+        assertEqual(extended.previewCount > short.previewCount, true);
+        assertEqual(extended.diagnostics.incremental, true);
+        assertEqual(extended.diagnostics.reusedCopies > 0, true);
+        assertEqual(extended.diagnostics.frameSampling, "tail");
+        assertEqual(
+          extended.diagnostics.evaluatedFrameSamples,
+          extended.previewCount - extended.diagnostics.reusedCopies
+        );
+        assertDeepEqual(
+          short.draft.instances.map(instance => instance.id),
+          extended.draft.instances
+            .slice(0, short.previewCount)
+            .map(instance => instance.id)
+        );
+        assertDeepEqual(
+          short.deltaMatrices.slice(0, extended.diagnostics.reusedCopies),
+          extended.deltaMatrices.slice(0, extended.diagnostics.reusedCopies)
+        );
+        assertDeepEqual(
+          short.colorsByEntry[0].colors.slice(
+            0,
+            extended.diagnostics.reusedCopies
+          ),
+          extended.colorsByEntry[0].colors.slice(
+            0,
+            extended.diagnostics.reusedCopies
+          )
+        );
+        assertNear(short.samples[2].u, 1);
+        assertNear(extended.samples[2].u, 1);
+        assertEqual(short.samples[2].invertColor, true);
+        assertEqual(short.colorsByEntry[0].colors[2], "#ff00ff");
+        assertEqual(invertHexColor("#224466"), "#ddbb99");
+        assertEqual(
+          evaluatePathBrushColorModifier(
+            compilePathBrushColorModifier(
+              "mix(#000000,#ffffff,0.5)"
+            )
+          ),
+          "#808080"
+        );
+        assertEqual(
+          evaluatePathBrushColorModifier(
+            compilePathBrushColorModifier("invert(#000000)")
+          ),
+          "#ffffff"
+        );
+
+        const directNegative = evaluatePathBrushAffineModifier(
+          compilePathBrushAffineModifier({ affineScale: "-2" }),
+          {
+            index: 1,
+            count: 1,
+            progress: 0,
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1]
+          }
+        );
+        assertNear(directNegative.scale, 2);
+        assertNear(directNegative.signedScale, -2);
+        assertEqual(directNegative.invertColor, true);
+        assertEqual(
+          evaluatePathBrushColorModifier(
+            compilePathBrushColorModifier("source"),
+            {
+              sourceColor: "#224466",
+              invert: directNegative.invertColor
+            }
+          ),
+          "#ddbb99"
+        );
+        assertThrowsMessage(
+          () => compilePathBrushColorModifier("rgb(u,desconhecida,0)"),
+          "Variável não disponível"
+        );
+        assertThrowsMessage(
+          () => fixture.service.commitArrayBrushPlan({
+            plan: structuredClone(extended),
+            brush
+          }),
+          "não foi emitido por este serviço"
+        );
+        const truncated = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [8, 0, 0]],
           brush,
           spacing: 1,
           curveType: "polyline",
-          affineModifier: progressiveModifier,
-          maximumCopies: 100
+          maximumCopies: 3
         });
-        assertEqual(short.previewCount, 3);
-        assertEqual(extended.previewCount, 6);
-        assertDeepEqual(short.deltaMatrices[0], extended.deltaMatrices[0]);
-        assertEqual(
-          JSON.stringify(short.deltaMatrices[1]) ===
-            JSON.stringify(extended.deltaMatrices[1]),
-          false
+        assertEqual(truncated.truncated, true);
+        assertThrowsMessage(
+          () => fixture.service.commitArrayBrushPlan({
+            plan: truncated,
+            brush
+          }),
+          "plano incremental está truncado"
         );
-        assertNear(
-          new THREE.Vector3().setFromMatrixScale(
-            new THREE.Matrix4().fromArray(short.deltaMatrices[1])
-          ).x,
+
+        const result = fixture.service.commitArrayBrushPlan({
+          plan: extended,
+          brush
+        });
+        const created = fixture.sandbox.getSnapshot().objects.filter(
+          object => result.createdIds.includes(object.id)
+        );
+        assertEqual(created.length, extended.previewCount);
+        assertDeepEqual(
+          result.createdIds,
+          extended.draft.instances.map(instance => instance.id)
+        );
+        assertDeepEqual(
+          created.map(object => object.instanceState.color),
+          extended.colorsByEntry[0].colors
+        );
+        assertEqual(
+          fixture.sandbox.getHistoryDiagnostics().commandCount,
           1
         );
+        assertEqual(result.incrementalPlan, true);
         assertNear(
           new THREE.Vector3().setFromMatrixScale(
-            new THREE.Matrix4().fromArray(extended.deltaMatrices[1])
+            new THREE.Matrix4().fromArray(extended.deltaMatrices[2])
           ).x,
-          0.7
+          0.5
         );
+      },
+
+      "preview instanciado atualiza cores sem recriar seus recursos"() {
+        const fixture = createPathToolFixture();
+        const brush = fixture.service.captureArrayBrush({
+          sourceMode: "catalog",
+          geometryType: "box",
+          color: "#224466"
+        });
+        const plan = fixture.service.previewArrayBrush({
+          points: [[0, 0, 0], [3.2, 0, 0]],
+          brush,
+          spacing: 1,
+          curveType: "polyline",
+          affineULength: 1,
+          colorModifier: fixture.service.compileArrayBrushColorModifier({
+            affineColor: "rgb(32*i,64,128)"
+          })
+        });
+        const group = new THREE.Group();
+        const cache = new PathInstancePreviewCache({
+          group,
+          geometryRegistry: fixture.service.resolver.geometryRegistry
+        });
+        try {
+          const configured = cache.configure(brush);
+          cache.update(plan);
+          const first = cache.status();
+          cache.update(plan);
+          const repeated = cache.status();
+          assertDeepEqual(repeated.meshIds, configured.meshIds);
+          assertEqual(first.diagnostics.colorWrites, plan.previewCount);
+          assertEqual(
+            repeated.diagnostics.colorSkips >= plan.previewCount,
+            true
+          );
+          assertEqual(
+            repeated.diagnostics.resourceBuilds,
+            configured.diagnostics.resourceBuilds
+          );
+          assertEqual(group.children[0].instanceColor !== null, true);
+        } finally {
+          cache.dispose();
+        }
       },
 
       "orientação do pincel explicita o plano ou a tangente do caminho"() {
@@ -1863,9 +2129,31 @@ export function createRuntimeLayerTests() {
       "controlador acrescenta instâncias sem recriar o preview e confirma ao soltar"() {
         const previousAddEventListener = globalThis.addEventListener;
         const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
         globalThis.addEventListener = () => {};
         globalThis.removeEventListener = () => {};
         const fixture = createPathToolFixture();
+        let previewCalls = 0;
+        let commitCalls = 0;
+        let lastPreviewPlan = null;
+        let committedPlan = null;
+        const previewArrayBrush =
+          fixture.service.previewArrayBrush.bind(fixture.service);
+        const commitArrayBrushPlan =
+          fixture.service.commitArrayBrushPlan.bind(fixture.service);
+        fixture.service.previewArrayBrush = options => {
+          previewCalls += 1;
+          lastPreviewPlan = previewArrayBrush(options);
+          return lastPreviewPlan;
+        };
+        fixture.service.commitArrayBrushPlan = options => {
+          commitCalls += 1;
+          committedPlan = options.plan;
+          return commitArrayBrushPlan(options);
+        };
         fixture.editor.selection.replace({
           kind: "object",
           regionId: "path-tool-region",
@@ -1932,7 +2220,9 @@ export function createRuntimeLayerTests() {
           controller.updateSettings({
             orientationMode: "plane",
             affineRotateZ: "180*u",
-            affineScale: "0.5+0.5*u"
+            affineScale: "0.5-u",
+            affineULength: 1,
+            affineColor: "hsl(120*u,1,0.5)"
           });
           const affineStatus = controller.status();
           assertDeepEqual(affineStatus.previewResources.meshIds, meshIds);
@@ -1943,16 +2233,67 @@ export function createRuntimeLayerTests() {
           );
           assertEqual(affineStatus.settings.orientationMode, "plane");
           assertEqual(affineStatus.settings.affineRotateZ, "180*u");
+          assertEqual(affineStatus.settings.affineColor, "hsl(120*u,1,0.5)");
+          assertEqual(
+            affineStatus.previewResources.diagnostics.colorWrites > 0,
+            true
+          );
 
+          const pendingFrames = new Map();
+          let nextFrameId = 1;
+          globalThis.requestAnimationFrame = callback => {
+            const id = nextFrameId;
+            nextFrameId += 1;
+            pendingFrames.set(id, callback);
+            return id;
+          };
+          globalThis.cancelAnimationFrame = id => {
+            pendingFrames.delete(id);
+          };
+          const runNextFrame = () => {
+            const entry = pendingFrames.entries().next().value;
+            if (!entry) throw new Error("Frame visual esperado ausente.");
+            const [id, callback] = entry;
+            pendingFrames.delete(id);
+            callback(0);
+          };
+          const previewCallsBeforeCommit = previewCalls;
           renderer.canvas.emit("pointerup", pathPointerEvent(1, 80, 50));
+          const previewGroup = renderer.scene.getObjectByName(
+            "path-sketch-array-preview"
+          );
           assertEqual(controller.status().active, false);
+          assertEqual(previewCalls, previewCallsBeforeCommit);
+          assertEqual(commitCalls, 1);
+          assertEqual(committedPlan === lastPreviewPlan, true);
+          assertEqual(previewGroup.visible, true);
+          runNextFrame();
+          assertEqual(previewGroup.visible, true);
+          runNextFrame();
+          assertEqual(previewGroup.visible, false);
           assertEqual(
             completed.result.createdIds.length,
             completed.result.count * 2
           );
           assertEqual(completed.settings.mode, "array");
           assertEqual(completed.settings.orientationMode, "plane");
-          assertEqual(completed.settings.affineScale, "0.5+0.5*u");
+          assertEqual(completed.settings.affineScale, "0.5-u");
+          assertEqual(completed.settings.affineULength, 1);
+          assertEqual(
+            completed.settings.affineColor,
+            "hsl(120*u,1,0.5)"
+          );
+          assertEqual(
+            fixture.sandbox.getSnapshot().objects
+              .filter(object =>
+                completed.result.createdIds.includes(object.id) &&
+                object.kind === "sphere"
+              )
+              .every(object =>
+                /^#[0-9a-f]{6}$/i.test(object.instanceState?.color)
+              ),
+            true
+          );
           assertVectorNear(completed.frame.normal, [0, 0, 1]);
           assertEqual(ended.reason, "completed");
           assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
@@ -1968,6 +2309,18 @@ export function createRuntimeLayerTests() {
             delete globalThis.removeEventListener;
           } else {
             globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
           }
         }
       },

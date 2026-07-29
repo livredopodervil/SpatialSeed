@@ -3,7 +3,7 @@ import * as THREE from "three";
 const DEFAULT_MAXIMUM_INSTANCES = 4096;
 
 export class PathInstancePreviewCache {
-  static apiVersion = "path-instance-preview-cache-v1";
+  static apiVersion = "path-instance-preview-cache-v2";
 
   #batches = [];
   #brushKey = null;
@@ -16,7 +16,9 @@ export class PathInstancePreviewCache {
     meshBuilds: 0,
     frameUpdates: 0,
     matrixWrites: 0,
-    matrixSkips: 0
+    matrixSkips: 0,
+    colorWrites: 0,
+    colorSkips: 0
   };
 
   constructor({
@@ -69,7 +71,7 @@ export class PathInstancePreviewCache {
     for (const entry of normalized.entries) {
       const geometry = this.geometryRegistry.create(entry.geometry);
       const material = new THREE.MeshBasicMaterial({
-        color: entry.color,
+        color: 0xffffff,
         depthTest: false,
         depthWrite: false,
         transparent: true,
@@ -87,11 +89,16 @@ export class PathInstancePreviewCache {
       this.group.add(mesh);
       this.#batches.push({
         key: entry.key,
+        color: entry.color,
         mesh,
         sourceMatrices: entry.sourceWorldMatrices.map(matrix =>
           new THREE.Matrix4().fromArray(matrix)
         ),
         previousMatrices: Array.from(
+          { length: capacity },
+          () => null
+        ),
+        previousColors: Array.from(
           { length: capacity },
           () => null
         )
@@ -106,18 +113,29 @@ export class PathInstancePreviewCache {
     return this.status();
   }
 
-  update({ deltaMatrices = [], requestedCount = deltaMatrices.length } = {}) {
+  update({
+    deltaMatrices = [],
+    colorsByEntry = [],
+    requestedCount = deltaMatrices.length
+  } = {}) {
     if (!this.#batches.length) {
       throw new Error("Configure a fonte do pincel antes do preview.");
     }
     const copyCount = Math.min(deltaMatrices.length, this.#copyCapacity);
     const delta = new THREE.Matrix4();
     const world = new THREE.Matrix4();
+    const colorMap = new Map(colorsByEntry.map(entry => [
+      String(entry.key),
+      entry.colors
+    ]));
     for (const batch of this.#batches) {
       let instanceIndex = 0;
       let changed = false;
+      let colorsChanged = false;
+      const colors = colorMap.get(batch.key) ?? [];
       for (let copyIndex = 0; copyIndex < copyCount; copyIndex += 1) {
         delta.fromArray(deltaMatrices[copyIndex]);
+        const color = normalizeColor(colors[copyIndex] ?? batch.color);
         for (const sourceMatrix of batch.sourceMatrices) {
           world.multiplyMatrices(delta, sourceMatrix);
           const previous = batch.previousMatrices[instanceIndex];
@@ -130,6 +148,14 @@ export class PathInstancePreviewCache {
           } else {
             this.#diagnostics.matrixSkips += 1;
           }
+          if (batch.previousColors[instanceIndex] !== color) {
+            batch.mesh.setColorAt(instanceIndex, new THREE.Color(color));
+            batch.previousColors[instanceIndex] = color;
+            this.#diagnostics.colorWrites += 1;
+            colorsChanged = true;
+          } else {
+            this.#diagnostics.colorSkips += 1;
+          }
           instanceIndex += 1;
         }
       }
@@ -138,6 +164,10 @@ export class PathInstancePreviewCache {
         changed = true;
       }
       if (changed) batch.mesh.instanceMatrix.needsUpdate = true;
+      if (colorsChanged && batch.mesh.instanceColor) {
+        batch.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+        batch.mesh.instanceColor.needsUpdate = true;
+      }
     }
     this.#visibleCopies = copyCount;
     this.#diagnostics.frameUpdates += 1;
@@ -220,6 +250,14 @@ function normalizeBrush(brush, geometryRegistry) {
       throw new Error("Cada lote do pincel exige ao menos uma matriz fonte.");
     }
     const color = normalizeColor(entry.color);
+    const sourceIds = Array.isArray(entry.sourceIds)
+      ? entry.sourceIds.map(value => value === null ? null : String(value))
+      : sourceWorldMatrices.map(() => null);
+    if (sourceIds.length !== sourceWorldMatrices.length) {
+      throw new Error(
+        `IDs e matrizes da entrada ${index} do pincel não correspondem.`
+      );
+    }
     return Object.freeze({
       key: String(
         entry.key ??
@@ -227,6 +265,7 @@ function normalizeBrush(brush, geometryRegistry) {
       ),
       geometry,
       color,
+      sourceIds: Object.freeze(sourceIds),
       sourceWorldMatrices: Object.freeze(sourceWorldMatrices)
     });
   });

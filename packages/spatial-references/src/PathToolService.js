@@ -11,15 +11,24 @@ import {
 } from "./ReferenceGeometry.js";
 import {
   samplePathFrames,
+  samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "./PathFrames.js?build=20260728-0039e";
+} from "./PathFrames.js?build=20260729-0039g";
 import {
   compilePathBrushAffineModifier,
   evaluatePathBrushAffineModifier
-} from "./PathBrushAffine.js?build=20260728-0039f";
+} from "./PathBrushAffine.js?build=20260729-0039g";
+import {
+  compilePathBrushColorModifier,
+  evaluatePathBrushColorModifier
+} from "./PathBrushColor.js?build=20260729-0039g";
+
+const ARRAY_BRUSH_PLAN_TYPE = "array-brush-stroke-plan";
+const ARRAY_BRUSH_PLAN_VERSION = 1;
 
 export class PathToolService {
-  static apiVersion = "path-tool-service-v3";
+  static apiVersion = "path-tool-service-v4";
+  #issuedArrayBrushPlans = new WeakSet();
 
   constructor({
     resolver,
@@ -329,13 +338,16 @@ export class PathToolService {
     initialNormal = null,
     orientationMode = "preserve",
     affineModifier = null,
+    colorModifier = null,
     affineMoveX = "0",
     affineMoveY = "0",
     affineMoveZ = "0",
     affineRotateX = "0",
     affineRotateY = "0",
     affineRotateZ = "0",
-    affineScale = "1"
+    affineScale = "1",
+    affineULength = 1,
+    affineColor = "source"
   } = {}) {
     this.#assertCanMutate("distribuir objetos no caminho desenhado");
     if (count === null || count === undefined) {
@@ -362,6 +374,8 @@ export class PathToolService {
           affineRotateZ,
           affineScale
         });
+      const resolvedColorModifier = colorModifier ??
+        this.compileArrayBrushColorModifier({ affineColor });
       return this.arrayBrushAlongPoints({
         points,
         brush: captured,
@@ -373,7 +387,9 @@ export class PathToolService {
         twistDegrees,
         initialNormal,
         orientationMode,
-        affineModifier: modifier
+        affineModifier: modifier,
+        colorModifier: resolvedColorModifier,
+        affineULength
       });
     }
     const resolvedPath = pointsPathReference({
@@ -434,6 +450,7 @@ export class PathToolService {
         sourceMode: "catalog",
         sourceRevision: this.sandbox.revision,
         sourceIds: Object.freeze([]),
+        sourceNodeIds: Object.freeze([]),
         sourceGeometry: descriptor,
         sourceColor: normalizedColor,
         sourceName: this.resolver.geometryRegistry.label(descriptor.type),
@@ -445,6 +462,7 @@ export class PathToolService {
           key,
           geometry: descriptor,
           color: normalizedColor,
+          sourceIds: Object.freeze([null]),
           sourceWorldMatrices: Object.freeze([
             Object.freeze(new THREE.Matrix4().toArray())
           ])
@@ -492,8 +510,10 @@ export class PathToolService {
           key: batchKey,
           geometry: descriptor,
           color: objectColor,
+          sourceIds: [],
           sourceWorldMatrices: []
         };
+        batch.sourceIds.push(objectId);
         batch.sourceWorldMatrices.push(
           Object.freeze(worldMatrix.toArray())
         );
@@ -514,9 +534,14 @@ export class PathToolService {
     const entries = [...batches.values()].map(entry => Object.freeze({
       ...entry,
       geometry: Object.freeze(structuredClone(entry.geometry)),
+      sourceIds: Object.freeze(entry.sourceIds),
       sourceWorldMatrices: Object.freeze(entry.sourceWorldMatrices)
     }));
     const pivot = average(rootIds.map(id => hierarchy.worldPivotOf(id)));
+    const sourceNodeIds = rootIds.flatMap(rootId => [
+      rootId,
+      ...hierarchy.descendantsOf(rootId)
+    ]);
     const referenceRotation = worldRotation(
       hierarchy.worldMatrixOf(rootIds[0])
     );
@@ -535,6 +560,7 @@ export class PathToolService {
       sourceMode: "selection",
       sourceRevision: this.sandbox.revision,
       sourceIds: rootIds,
+      sourceNodeIds: Object.freeze(sourceNodeIds),
       sourceGeometry: null,
       sourceColor: null,
       sourceName: rootIds.length === 1
@@ -569,6 +595,12 @@ export class PathToolService {
     return compilePathBrushAffineModifier(options);
   }
 
+  compileArrayBrushColorModifier(options = {}) {
+    return compilePathBrushColorModifier(
+      options.affineColor ?? options.colorExpression ?? "source"
+    );
+  }
+
   previewArrayBrush({
     points,
     brush,
@@ -581,6 +613,10 @@ export class PathToolService {
     initialNormal = null,
     orientationMode = "preserve",
     affineModifier = null,
+    colorModifier = null,
+    affineULength = 1,
+    previousPlan = null,
+    preserveStablePrefix = true,
     maximumCopies = 4096
   } = {}) {
     const resolvedPath = pointsPathReference({
@@ -588,6 +624,9 @@ export class PathToolService {
       closed,
       sourceRevision: this.sandbox.revision
     });
+    const reusablePlan = this.#issuedArrayBrushPlans.has(previousPlan)
+      ? previousPlan
+      : null;
     const layout = this.#arrayBrushLayout({
       resolvedPath,
       brush,
@@ -601,18 +640,49 @@ export class PathToolService {
       orientationMode,
       affineModifier: affineModifier ??
         this.compileArrayBrushModifier(),
+      colorModifier: colorModifier ??
+        this.compileArrayBrushColorModifier(),
+      affineULength: positive(affineULength, "affineULength"),
+      previousPlan: reusablePlan,
+      preserveStablePrefix,
       maximumCopies
     });
-    return Object.freeze({
+    const draft = this.#prepareArrayBrushDraft({
+      brush,
+      layout,
+      previousPlan: layout.diagnostics.incremental
+        ? reusablePlan
+        : null
+    });
+    const plan = deepFreeze({
+      type: ARRAY_BRUSH_PLAN_TYPE,
+      version: ARRAY_BRUSH_PLAN_VERSION,
       tool: "array-brush-preview",
+      key: layout.key,
+      brushKey: brush.key,
+      sourceRevision: brush.sourceRevision,
+      path: {
+        points: resolvedPath.points,
+        closed: resolvedPath.closed,
+        curveType: String(curveType),
+        tension: finite(tension, "tension")
+      },
       spacing: layout.frames.spacing,
       requestedCount: layout.frames.requestedCount,
       previewCount: layout.deltaMatrices.length,
       truncated: layout.frames.truncated,
-      deltaMatrices: Object.freeze(layout.deltaMatrices.map(matrix =>
-        Object.freeze(matrix.toArray())
-      ))
+      deltaMatrices: layout.deltaMatrices.map(matrix => matrix.toArray()),
+      colorsByEntry: layout.colorsByEntry,
+      samples: layout.samples,
+      baseInverse: layout.baseInverse,
+      draft,
+      diagnostics: {
+        ...layout.diagnostics,
+        ...draft.diagnostics
+      }
     });
+    this.#issuedArrayBrushPlans.add(plan);
+    return plan;
   }
 
   arrayBrushAlongPoints({
@@ -626,16 +696,12 @@ export class PathToolService {
     twistDegrees = 0,
     initialNormal = null,
     orientationMode = "preserve",
-    affineModifier = null
+    affineModifier = null,
+    colorModifier = null,
+    affineULength = 1
   } = {}) {
-    this.#assertCanMutate("distribuir um pincel no caminho desenhado");
-    const resolvedPath = pointsPathReference({
+    const plan = this.previewArrayBrush({
       points,
-      closed,
-      sourceRevision: this.sandbox.revision
-    });
-    const layout = this.#arrayBrushLayout({
-      resolvedPath,
       brush,
       spacing,
       align,
@@ -645,20 +711,46 @@ export class PathToolService {
       twistDegrees,
       initialNormal,
       orientationMode,
-      affineModifier: affineModifier ??
-        this.compileArrayBrushModifier(),
+      affineModifier,
+      colorModifier,
+      affineULength,
       maximumCopies: 10001
     });
-    if (layout.frames.requestedCount > 10000) {
+    return this.commitArrayBrushPlan({ plan, brush });
+  }
+
+  commitArrayBrushPlan({ plan, brush } = {}) {
+    this.#assertCanMutate("distribuir um pincel no caminho desenhado");
+    const validated = validateArrayBrushPlan(plan, brush, {
+      issued: this.#issuedArrayBrushPlans.has(plan)
+    });
+    if (validated.sourceRevision !== this.sandbox.revision) {
+      throw new Error(
+        "A cena mudou durante o desenho; arme o pincel novamente."
+      );
+    }
+    if (validated.requestedCount > 10000) {
       throw new RangeError(
         "O traço produziria mais de 10000 instâncias; aumente o espaçamento."
       );
     }
+    if (validated.truncated) {
+      throw new Error(
+        "O plano incremental está truncado; recalcule-o com o limite completo."
+      );
+    }
+    const resolvedPath = pointsPathReference({
+      points: validated.path.points,
+      closed: validated.path.closed,
+      sourceRevision: validated.sourceRevision
+    });
     if (brush.sourceMode === "catalog") {
+      const colors = colorsForEntry(validated, brush.entries[0].key);
       const result = this.selectionOperations.createGeometryInstances({
         name: `${brush.sourceName} · pincel`,
         geometry: brush.sourceGeometry,
-        worldMatrices: layout.deltaMatrices.map(matrix => matrix.toArray()),
+        preparedInstances: validated.draft.instances,
+        colors,
         color: brush.sourceColor,
         source: "path-brush-catalog"
       });
@@ -666,7 +758,8 @@ export class PathToolService {
         ...result,
         tool: "array-brush-along-drawn-path",
         sourceMode: "catalog",
-        spacing: layout.frames.spacing,
+        spacing: validated.spacing,
+        incrementalPlan: true,
         reference: summary(resolvedPath)
       });
     }
@@ -682,8 +775,8 @@ export class PathToolService {
     return this.#commitSelectionBrush({
       resolvedPath,
       brush,
-      deltaMatrices: layout.deltaMatrices,
-      spacing: layout.frames.spacing
+      draft: validated.draft,
+      spacing: validated.spacing
     });
   }
 
@@ -915,6 +1008,149 @@ export class PathToolService {
     });
   }
 
+  #prepareArrayBrushDraft({ brush, layout, previousPlan }) {
+    const copies = layout.deltaMatrices.length;
+    const reusedPreparedCopies = Math.min(
+      layout.diagnostics.reusedCopies,
+      brush.sourceMode === "catalog"
+        ? previousPlan?.draft?.instances?.length ?? 0
+        : previousPlan?.draft?.copies?.length ?? 0
+    );
+    if (brush.sourceMode === "catalog") {
+      const colors = colorsForEntry(
+        { colorsByEntry: layout.colorsByEntry },
+        brush.entries[0].key
+      );
+      const previous = previousPlan?.draft?.instances ?? [];
+      const instances = layout.deltaMatrices.map((matrix, index) =>
+        index < reusedPreparedCopies
+          ? previous[index]
+          : Object.freeze({
+              id: previous[index]?.id ?? crypto.randomUUID(),
+              ...matrixTransform(matrix),
+              color: colors[index]
+            })
+      );
+      return Object.freeze({
+        type: "catalog-instance-draft",
+        instances: Object.freeze(instances),
+        diagnostics: Object.freeze({
+          reusedPreparedCopies,
+          preparedCopies: copies - reusedPreparedCopies
+        })
+      });
+    }
+
+    const sourceNodeIds = brush.sourceNodeIds ?? [];
+    if (!sourceNodeIds.length) {
+      throw new Error("A fonte selecionada não possui uma subárvore válida.");
+    }
+    if (sourceNodeIds.length * copies > 100000) {
+      throw new RangeError(
+        "O pincel produziria mais de 100000 nós; aumente o espaçamento."
+      );
+    }
+    const previousCopies = previousPlan?.draft?.copies ?? [];
+    const stableCopies = previousCopies.slice(0, reusedPreparedCopies);
+    const tailCount = copies - reusedPreparedCopies;
+    if (tailCount < 1) {
+      return selectionDraft({
+        copies: stableCopies,
+        reusedPreparedCopies,
+        preparedCopies: 0
+      });
+    }
+
+    const state = this.sandbox.getSnapshot();
+    const hierarchy = new HierarchyIndex(state.objects);
+    const rootIds = this.#arraySourceIds({
+      sourceIds: brush.sourceIds,
+      excludeIds: [],
+      hierarchy
+    });
+    const previousIdsByCopy = Array.from(
+      { length: tailCount },
+      (_, relativeIndex) => {
+        const previous =
+          previousCopies[reusedPreparedCopies + relativeIndex];
+        return new Map((previous?.sourceIds ?? []).map(
+          (sourceId, sourceIndex) => [
+            sourceId,
+            previous.objects[sourceIndex]?.id
+          ]
+        ));
+      }
+    );
+    const cloned = cloneHierarchySubtrees(state.objects, {
+      rootIds,
+      copies: tailCount,
+      createId: ({ sourceId, copyIndex }) =>
+        previousIdsByCopy[copyIndex - 1].get(sourceId) ??
+        crypto.randomUUID(),
+      rename: ({ name, copyIndex }) =>
+        `${name ?? "Objeto"} · pincel ${
+          reusedPreparedCopies + copyIndex
+        }`
+    });
+    if (cloned.sourceIds.length !== sourceNodeIds.length ||
+        cloned.sourceIds.some((id, index) => id !== sourceNodeIds[index])) {
+      throw new Error("A subárvore da fonte mudou durante o desenho.");
+    }
+    const desired = [];
+    cloned.copies.forEach((copy, relativeIndex) => {
+      const matrix =
+        layout.deltaMatrices[reusedPreparedCopies + relativeIndex];
+      copy.rootIds.forEach((cloneId, rootIndex) => {
+        const sourceId = cloned.sourceRootIds[rootIndex];
+        const sourceWorld = new THREE.Matrix4().fromArray(
+          hierarchy.worldMatrixOf(sourceId)
+        );
+        desired.push({
+          id: cloneId,
+          worldMatrix: matrix.clone().multiply(sourceWorld).toArray()
+        });
+      });
+    });
+    const combined = applyWorldTransforms(
+      [...state.objects, ...cloned.objects],
+      desired
+    );
+    const transformedById = new Map(
+      combined.map(object => [object.id, object])
+    );
+    const colorsBySourceId = brushColorsBySourceId(
+      brush,
+      layout.colorsByEntry
+    );
+    const preparedTail = cloned.copies.map((copy, relativeIndex) => {
+      const copyIndex = reusedPreparedCopies + relativeIndex;
+      const objects = copy.objects.map((object, sourceIndex) => {
+        const transformed = transformedById.get(object.id);
+        const sourceId = cloned.sourceIds[sourceIndex];
+        const color = colorsBySourceId.get(sourceId)?.[copyIndex];
+        if (!color) return transformed;
+        return Object.freeze({
+          ...structuredClone(transformed),
+          instanceState: Object.freeze({
+            ...(transformed.instanceState ?? {}),
+            color
+          })
+        });
+      });
+      return Object.freeze({
+        copyIndex: copyIndex + 1,
+        rootIds: copy.rootIds,
+        sourceIds: cloned.sourceIds,
+        objects: Object.freeze(objects)
+      });
+    });
+    return selectionDraft({
+      copies: [...stableCopies, ...preparedTail],
+      reusedPreparedCopies,
+      preparedCopies: tailCount
+    });
+  }
+
   #arrayBrushLayout({
     resolvedPath,
     brush,
@@ -927,6 +1163,10 @@ export class PathToolService {
     initialNormal,
     orientationMode,
     affineModifier,
+    colorModifier,
+    affineULength,
+    previousPlan,
+    preserveStablePrefix,
     maximumCopies
   }) {
     if (!brush || !Array.isArray(brush.pivot) || brush.pivot.length !== 3 ||
@@ -934,54 +1174,112 @@ export class PathToolService {
         brush.referenceRotation.length !== 4) {
       throw new TypeError("Fonte do pincel inválida.");
     }
-    const frames = samplePathFramesBySpacing({
-      points: resolvedPath.points,
-      spacing: positive(spacing, "spacing"),
-      maximumSamples: integerAtLeast(
-        maximumCopies,
-        1,
-        "maximumCopies"
-      ),
-      closed: closed === undefined ? resolvedPath.closed : Boolean(closed),
-      curveType,
-      tension: finite(tension, "tension"),
-      initialNormal: initialNormal === null || initialNormal === undefined
+    const resolvedSpacing = positive(spacing, "spacing");
+    const maximumSamples = integerAtLeast(
+      maximumCopies,
+      1,
+      "maximumCopies"
+    );
+    const resolvedClosed = closed === undefined
+      ? resolvedPath.closed
+      : Boolean(closed);
+    const resolvedTension = finite(tension, "tension");
+    const resolvedInitialNormal =
+      initialNormal === null || initialNormal === undefined
         ? null
-        : vector3(initialNormal, "initialNormal"),
-      twistDegrees: finite(twistDegrees, "twistDegrees")
-    });
+        : vector3(initialNormal, "initialNormal");
+    const resolvedTwist = finite(twistDegrees, "twistDegrees");
     const mode = normalizeBrushOrientationMode(orientationMode);
     const modifier = affineModifier ??
       this.compileArrayBrushModifier();
-    if (mode === "preserve" && modifier.identity) {
-      const firstFrameInverse = new THREE.Quaternion()
-        .fromArray(frames.quaternions[0])
-        .invert();
-      const deltaMatrices = frames.positions.map((point, index) => {
-        const frame = new THREE.Quaternion().fromArray(
-          frames.quaternions[index]
-        );
-        const relativeRotation = align
-          ? frame.clone().multiply(firstFrameInverse)
-          : new THREE.Quaternion();
-        return new THREE.Matrix4()
-          .makeTranslation(...point)
-          .multiply(
-            new THREE.Matrix4().makeRotationFromQuaternion(relativeRotation)
-          )
-          .multiply(new THREE.Matrix4().makeTranslation(
-            -brush.pivot[0],
-            -brush.pivot[1],
-            -brush.pivot[2]
-          ));
+    const color = colorModifier ??
+      this.compileArrayBrushColorModifier();
+    const uLength = positive(affineULength, "affineULength");
+    const key = arrayBrushLayoutKey({
+      brush,
+      spacing,
+      align,
+      closed,
+      curveType,
+      tension,
+      twistDegrees,
+      initialNormal,
+      orientationMode: mode,
+      affineModifier: modifier,
+      colorModifier: color,
+      affineULength: uLength
+    });
+    const mutableTailCopies = arrayBrushMutableTailCopies(curveType);
+    const compatiblePlan = preserveStablePrefix &&
+      isCompatibleArrayBrushPlan(previousPlan, {
+        key,
+        resolvedPath
+      })
+        ? previousPlan
+        : null;
+    const requestedReuse = compatiblePlan
+      ? Math.max(0, compatiblePlan.previewCount - mutableTailCopies)
+      : 0;
+    let frames;
+    let reusable = null;
+    let reusedCopies = 0;
+    let evaluatedFrameSamples = 0;
+    let frameSampling = "full";
+    if (requestedReuse > 0 &&
+        !resolvedClosed &&
+        Math.abs(resolvedTwist) <= 1e-14) {
+      const tail = samplePathFrameTailBySpacing({
+        points: resolvedPath.points,
+        spacing: resolvedSpacing,
+        maximumSamples,
+        startIndex: requestedReuse,
+        previousFrame: compatiblePlan.samples[requestedReuse - 1],
+        closed: false,
+        curveType,
+        tension: resolvedTension,
+        initialNormal: resolvedInitialNormal,
+        twistDegrees: 0
       });
-      return Object.freeze({
-        brush,
-        frames,
-        orientationMode: mode,
-        affineModifier: modifier,
-        deltaMatrices: Object.freeze(deltaMatrices)
+      if (tail.startIndex === requestedReuse &&
+          canReuseArrayBrushPlan(compatiblePlan, {
+            key,
+            resolvedPath,
+            requestedCount: tail.requestedCount
+          })) {
+        reusable = compatiblePlan;
+        reusedCopies = requestedReuse;
+        frames = mergeIncrementalPathFrames({
+          plan: compatiblePlan,
+          tail,
+          reusedCopies
+        });
+        evaluatedFrameSamples = tail.evaluatedCount;
+        frameSampling = "tail";
+      }
+    }
+    if (!frames) {
+      frames = samplePathFramesBySpacing({
+        points: resolvedPath.points,
+        spacing: resolvedSpacing,
+        maximumSamples,
+        closed: resolvedClosed,
+        curveType,
+        tension: resolvedTension,
+        initialNormal: resolvedInitialNormal,
+        twistDegrees: resolvedTwist
       });
+      reusable = compatiblePlan &&
+        canReuseArrayBrushPlan(compatiblePlan, {
+          key,
+          resolvedPath,
+          requestedCount: frames.requestedCount
+        })
+          ? compatiblePlan
+          : null;
+      reusedCopies = reusable
+        ? Math.min(requestedReuse, frames.positions.length)
+        : 0;
+      evaluatedFrameSamples = frames.positions.length;
     }
     const pathOrientations = frames.quaternions.map(value =>
       new THREE.Quaternion().fromArray(value)
@@ -995,47 +1293,69 @@ export class PathToolService {
         )
       : pathOrientations;
     const firstOrientation = orientations[0];
-    const baseInverse = mode === "preserve"
-      ? pathOrientations[0].clone().invert()
-      : new THREE.Quaternion()
-          .fromArray(brush.referenceRotation)
-          .normalize()
-          .invert();
+    const baseInverse = reusable?.baseInverse
+      ? new THREE.Quaternion().fromArray(reusable.baseInverse)
+      : mode === "preserve"
+        ? pathOrientations[0].clone().invert()
+        : new THREE.Quaternion()
+            .fromArray(brush.referenceRotation)
+            .normalize()
+            .invert();
     const contextCount = frames.requestedCount;
-    const deltaMatrices = frames.positions.map((point, index) => {
+    const previousColors = new Map(
+      (reusable?.colorsByEntry ?? []).map(entry => [
+        entry.key,
+        entry.colors
+      ])
+    );
+    const colorsByEntry = new Map(brush.entries.map(entry => [
+      entry.key,
+      []
+    ]));
+    const deltaMatrices = [];
+    const samples = [];
+    for (let index = 0; index < frames.positions.length; index += 1) {
+      if (index < reusedCopies) {
+        deltaMatrices.push(
+          new THREE.Matrix4().fromArray(reusable.deltaMatrices[index])
+        );
+        samples.push(structuredClone(reusable.samples[index]));
+        for (const entry of brush.entries) {
+          colorsByEntry.get(entry.key).push(
+            previousColors.get(entry.key)?.[index] ?? entry.color
+          );
+        }
+        continue;
+      }
+      const point = frames.positions[index];
       const orientation = align
         ? orientations[index]
         : firstOrientation;
-      if (modifier.identity) {
-        const relativeRotation = orientation.clone().multiply(baseInverse);
-        return new THREE.Matrix4()
-          .makeTranslation(...point)
-          .multiply(
-            new THREE.Matrix4().makeRotationFromQuaternion(relativeRotation)
-          )
-          .multiply(new THREE.Matrix4().makeTranslation(
-            -brush.pivot[0],
-            -brush.pivot[1],
-            -brush.pivot[2]
-          ));
-      }
+      const variables = pathBrushVariables({ frames, index });
+      const progress = variables.distance / uLength;
+      const evaluated = modifier.identity
+        ? identityPathBrushEvaluation({
+            index: index + 1,
+            count: contextCount,
+            progress,
+            point,
+            variables
+          })
+        : evaluatePathBrushAffineModifier(modifier, {
+            index: index + 1,
+            count: contextCount,
+            progress,
+            position: point,
+            rotation: orientation.toArray(),
+            variables
+          });
       const matrix = new THREE.Matrix4()
         .makeTranslation(...point)
         .multiply(
           new THREE.Matrix4().makeRotationFromQuaternion(orientation)
         );
-      const evaluated = evaluatePathBrushAffineModifier(modifier, {
-        index: index + 1,
-        count: contextCount,
-        position: point,
-        rotation: orientation.toArray(),
-        variables: pathBrushVariables({
-          frames,
-          index
-        })
-      });
       matrix.multiply(new THREE.Matrix4().fromArray(evaluated.matrix));
-      return matrix
+      matrix
         .multiply(
           new THREE.Matrix4().makeRotationFromQuaternion(baseInverse)
         )
@@ -1044,70 +1364,101 @@ export class PathToolService {
           -brush.pivot[1],
           -brush.pivot[2]
         ));
-    });
+      deltaMatrices.push(matrix);
+      const colorContext = {
+        ...evaluated.context,
+        position: point,
+        rotation: orientation.toArray(),
+        scale: [evaluated.scale, evaluated.scale, evaluated.scale]
+      };
+      for (const entry of brush.entries) {
+        colorsByEntry.get(entry.key).push(
+          evaluatePathBrushColorModifier(color, {
+            context: colorContext,
+            sourceColor: entry.color,
+            invert: evaluated.invertColor
+          })
+        );
+      }
+      samples.push({
+        index: index + 1,
+        u: progress,
+        distance: variables.distance,
+        curvature: variables.curvature,
+        position: [...point],
+        tangent: [...frames.tangents[index]],
+        normal: [...frames.normals[index]],
+        binormal: [...frames.binormals[index]],
+        signedScale: evaluated.signedScale,
+        scale: evaluated.scale,
+        invertColor: evaluated.invertColor,
+        clampedAtZero: evaluated.clampedAtZero
+      });
+    }
     return Object.freeze({
+      key,
       brush,
       frames,
       orientationMode: mode,
       affineModifier: modifier,
-      deltaMatrices: Object.freeze(deltaMatrices)
+      colorModifier: color,
+      baseInverse: Object.freeze(baseInverse.toArray()),
+      deltaMatrices: Object.freeze(deltaMatrices),
+      colorsByEntry: Object.freeze(
+        [...colorsByEntry].map(([entryKey, colors]) => Object.freeze({
+          key: entryKey,
+          colors: Object.freeze(colors)
+        }))
+      ),
+      samples: Object.freeze(samples.map(sample => Object.freeze({
+        ...sample,
+        position: Object.freeze(sample.position),
+        tangent: Object.freeze(sample.tangent),
+        normal: Object.freeze(sample.normal),
+        binormal: Object.freeze(sample.binormal)
+      }))),
+      diagnostics: Object.freeze({
+        frameSamples: frames.positions.length,
+        evaluatedFrameSamples,
+        reusedFrameSamples: reusedCopies,
+        frameSampling,
+        reusedCopies,
+        evaluatedCopies: frames.positions.length - reusedCopies,
+        mutableTailCopies,
+        stableCopies: Math.max(
+          0,
+          frames.positions.length - mutableTailCopies
+        ),
+        incremental: Boolean(reusable)
+      })
     });
   }
 
   #commitSelectionBrush({
     resolvedPath,
     brush,
-    deltaMatrices,
+    draft,
     spacing
   }) {
-    const copies = deltaMatrices.length;
-    const state = this.sandbox.getSnapshot();
-    const hierarchy = new HierarchyIndex(state.objects);
-    const rootIds = this.#arraySourceIds({
-      sourceIds: brush.sourceIds,
-      excludeIds: [],
-      hierarchy
-    });
-    const cloned = cloneHierarchySubtrees(state.objects, {
-      rootIds,
-      copies,
-      createId: () => crypto.randomUUID(),
-      rename: ({ name, copyIndex }) =>
-        `${name ?? "Objeto"} · pincel ${copyIndex}`
-    });
-    const desired = [];
-    cloned.copies.forEach((copy, copyArrayIndex) => {
-      const delta = deltaMatrices[copyArrayIndex];
-      copy.rootIds.forEach((cloneId, rootIndex) => {
-        const sourceId = cloned.sourceRootIds[rootIndex];
-        const sourceWorld = new THREE.Matrix4().fromArray(
-          hierarchy.worldMatrixOf(sourceId)
-        );
-        desired.push({
-          id: cloneId,
-          worldMatrix: delta.clone().multiply(sourceWorld).toArray()
-        });
-      });
-    });
-    const combined = applyWorldTransforms(
-      [...state.objects, ...cloned.objects],
-      desired
-    );
-    const cloneIds = new Set(cloned.objects.map(object => object.id));
-    const transformedClones = combined.filter(object =>
-      cloneIds.has(object.id)
-    );
+    if (draft?.type !== "selection-subtree-draft" ||
+        !Array.isArray(draft.copies) ||
+        !Array.isArray(draft.objects) ||
+        draft.copies.length < 1) {
+      throw new TypeError("Rascunho incremental da seleção inválido.");
+    }
+    const copies = draft.copies.length;
+    const rootIds = brush.sourceIds;
     const changed = this.sandbox.dispatch({
       type: "selection.duplicate",
       source: "path-brush-selection",
-      sourceIds: cloned.sourceRootIds,
+      sourceIds: rootIds,
       copyCount: copies,
       spacing,
       pathReference: summary(resolvedPath),
-      objects: transformedClones
+      objects: draft.objects
     });
     if (changed) {
-      const lastRoots = cloned.copies.at(-1).rootIds;
+      const lastRoots = draft.copies.at(-1).rootIds;
       this.editor.selection.replaceMany(lastRoots.map(objectId => ({
         kind: "object",
         regionId: this.selectionOperations.regionId,
@@ -1118,14 +1469,13 @@ export class PathToolService {
       changed,
       tool: "array-brush-along-drawn-path",
       sourceMode: "selection",
+      incrementalPlan: true,
       spacing,
       count: copies,
       sourceIds: Object.freeze(rootIds),
-      createdIds: Object.freeze(
-        transformedClones.map(object => object.id)
-      ),
+      createdIds: Object.freeze(draft.objects.map(object => object.id)),
       activeIds: Object.freeze([
-        ...(cloned.copies.at(-1)?.rootIds ?? [])
+        ...(draft.copies.at(-1)?.rootIds ?? [])
       ]),
       reference: summary(resolvedPath)
     });
@@ -1319,6 +1669,277 @@ function frameCurvature(frames, index) {
     (rightIndex - leftIndex) * frames.spacing
   );
   return angle / distance;
+}
+
+function identityPathBrushEvaluation({
+  index,
+  count,
+  progress,
+  point,
+  variables
+}) {
+  return Object.freeze({
+    matrix: Object.freeze(new THREE.Matrix4().toArray()),
+    context: Object.freeze({
+      ...variables,
+      i: index,
+      index,
+      count,
+      u: progress,
+      x: point[0],
+      y: point[1],
+      z: point[2]
+    }),
+    move: Object.freeze([0, 0, 0]),
+    rotate: Object.freeze([0, 0, 0]),
+    scale: 1,
+    signedScale: 1,
+    invertColor: false,
+    clampedAtZero: false
+  });
+}
+
+function arrayBrushLayoutKey({
+  brush,
+  spacing,
+  align,
+  closed,
+  curveType,
+  tension,
+  twistDegrees,
+  initialNormal,
+  orientationMode,
+  affineModifier,
+  colorModifier,
+  affineULength
+}) {
+  return JSON.stringify([
+    brush.key,
+    positive(spacing, "spacing"),
+    Boolean(align),
+    Boolean(closed),
+    String(curveType),
+    finite(tension, "tension"),
+    finite(twistDegrees, "twistDegrees"),
+    initialNormal === null || initialNormal === undefined
+      ? null
+      : vector3(initialNormal, "initialNormal"),
+    orientationMode,
+    affineModifier?.program?.astHash ?? null,
+    colorModifier?.source ?? null,
+    positive(affineULength, "affineULength")
+  ]);
+}
+
+function canReuseArrayBrushPlan(plan, {
+  key,
+  resolvedPath,
+  requestedCount
+}) {
+  if (!isCompatibleArrayBrushPlan(plan, { key, resolvedPath })) {
+    return false;
+  }
+  return requestedCount >= Math.max(
+    1,
+    plan.previewCount - arrayBrushMutableTailCopies(
+      resolvedPath.curveType ?? plan.path.curveType
+    )
+  );
+}
+
+function isCompatibleArrayBrushPlan(plan, {
+  key,
+  resolvedPath
+}) {
+  if (plan?.type !== ARRAY_BRUSH_PLAN_TYPE ||
+      plan?.version !== ARRAY_BRUSH_PLAN_VERSION ||
+      plan.key !== key ||
+      plan.sourceRevision !== resolvedPath.sourceRevision ||
+      !Array.isArray(plan.path?.points) ||
+      !Array.isArray(plan.deltaMatrices) ||
+      !Array.isArray(plan.samples)) {
+    return false;
+  }
+  const previousFirst = plan.path.points[0];
+  const nextFirst = resolvedPath.points[0];
+  if (!previousFirst || !nextFirst ||
+      Math.hypot(
+        previousFirst[0] - nextFirst[0],
+        previousFirst[1] - nextFirst[1],
+        previousFirst[2] - nextFirst[2]
+      ) > 1e-7) {
+    return false;
+  }
+  return true;
+}
+
+function mergeIncrementalPathFrames({
+  plan,
+  tail,
+  reusedCopies
+}) {
+  const prefix = plan.samples.slice(0, reusedCopies);
+  if (prefix.length !== reusedCopies ||
+      tail.startIndex !== reusedCopies ||
+      reusedCopies + tail.positions.length !== tail.sampleCount) {
+    throw new Error("A cauda incremental não corresponde ao plano anterior.");
+  }
+  return Object.freeze({
+    ...tail,
+    positions: Object.freeze([
+      ...prefix.map(sample => sample.position),
+      ...tail.positions
+    ]),
+    tangents: Object.freeze([
+      ...prefix.map(sample => sample.tangent),
+      ...tail.tangents
+    ]),
+    normals: Object.freeze([
+      ...prefix.map(sample => sample.normal),
+      ...tail.normals
+    ]),
+    binormals: Object.freeze([
+      ...prefix.map(sample => sample.binormal),
+      ...tail.binormals
+    ]),
+    quaternions: Object.freeze([
+      ...prefix.map(sampleQuaternion),
+      ...tail.quaternions
+    ])
+  });
+}
+
+function sampleQuaternion(sample) {
+  const tangent = new THREE.Vector3().fromArray(sample.tangent);
+  const normal = new THREE.Vector3().fromArray(sample.normal);
+  const binormal = new THREE.Vector3().fromArray(sample.binormal);
+  return Object.freeze(
+    new THREE.Quaternion().setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(normal, binormal, tangent)
+    ).toArray()
+  );
+}
+
+function arrayBrushMutableTailCopies(curveType) {
+  const type = String(curveType ?? "centripetal").toLowerCase();
+  if (type === "polyline") return 2;
+  if (type === "bezier") return 6;
+  return 4;
+}
+
+function validateArrayBrushPlan(plan, brush, { issued = false } = {}) {
+  if (plan?.type !== ARRAY_BRUSH_PLAN_TYPE ||
+      plan?.version !== ARRAY_BRUSH_PLAN_VERSION) {
+    throw new TypeError("Plano incremental do pincel inválido.");
+  }
+  if (!issued || !Object.isFrozen(plan)) {
+    throw new Error(
+      "O plano do pincel não foi emitido por este serviço."
+    );
+  }
+  if (!brush?.key || plan.brushKey !== brush.key) {
+    throw new Error("O plano não pertence à fonte atual do pincel.");
+  }
+  if (!Array.isArray(plan.deltaMatrices) ||
+      plan.deltaMatrices.length < 1 ||
+      plan.deltaMatrices.length > 10000) {
+    throw new RangeError(
+      "O plano do pincel exige entre 1 e 10000 matrizes."
+    );
+  }
+  if (!Array.isArray(plan.path?.points) ||
+      plan.path.points.length < 2 ||
+      !Array.isArray(plan.colorsByEntry)) {
+    throw new TypeError("Conteúdo do plano incremental inválido.");
+  }
+  for (const entry of brush.entries ?? []) {
+    const colors = colorsForEntry(plan, entry.key);
+    if (colors.length !== plan.deltaMatrices.length) {
+      throw new Error(
+        `Cores incompletas no lote do pincel: ${entry.key}.`
+      );
+    }
+  }
+  if (brush.sourceMode === "catalog") {
+    if (plan.draft?.type !== "catalog-instance-draft" ||
+        plan.draft.instances?.length !== plan.deltaMatrices.length) {
+      throw new Error("Rascunho incremental do catálogo incompleto.");
+    }
+  } else if (plan.draft?.type !== "selection-subtree-draft" ||
+      plan.draft.copies?.length !== plan.deltaMatrices.length ||
+      !Array.isArray(plan.draft.objects)) {
+    throw new Error("Rascunho incremental da seleção incompleto.");
+  }
+  return plan;
+}
+
+function colorsForEntry(plan, entryKey) {
+  const entry = plan.colorsByEntry.find(candidate =>
+    candidate.key === entryKey
+  );
+  if (!entry || !Array.isArray(entry.colors)) {
+    throw new Error(`Lote de cor ausente no plano: ${entryKey}.`);
+  }
+  return entry.colors;
+}
+
+function matrixTransform(matrix) {
+  const position = new THREE.Vector3();
+  const rotation = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  matrix.decompose(position, rotation, scale);
+  const values = [
+    ...position.toArray(),
+    ...rotation.toArray(),
+    ...scale.toArray()
+  ];
+  if (!values.every(Number.isFinite)) {
+    throw new TypeError("Transformação incremental do pincel inválida.");
+  }
+  return Object.freeze({
+    position: Object.freeze(position.toArray()),
+    rotation: Object.freeze(rotation.normalize().toArray()),
+    scale: Object.freeze(scale.toArray())
+  });
+}
+
+function brushColorsBySourceId(brush, colorsByEntry) {
+  const result = new Map();
+  for (const entry of brush.entries) {
+    const colors = colorsForEntry({ colorsByEntry }, entry.key);
+    for (const sourceId of entry.sourceIds ?? []) {
+      if (sourceId !== null) result.set(sourceId, colors);
+    }
+  }
+  return result;
+}
+
+function selectionDraft({
+  copies,
+  reusedPreparedCopies,
+  preparedCopies
+}) {
+  const frozenCopies = Object.freeze([...copies]);
+  return Object.freeze({
+    type: "selection-subtree-draft",
+    copies: frozenCopies,
+    objects: Object.freeze(
+      frozenCopies.flatMap(copy => copy.objects)
+    ),
+    diagnostics: Object.freeze({
+      reusedPreparedCopies,
+      preparedCopies
+    })
+  });
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+  Object.freeze(value);
+  for (const child of Object.values(value)) deepFreeze(child);
+  return value;
 }
 
 function vector3(value, name) {

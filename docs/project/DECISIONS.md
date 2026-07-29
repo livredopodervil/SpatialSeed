@@ -672,7 +672,8 @@ compactação posterior e não devem ser simulados por mutação direta do Three
 
 ## D-040 — Variação do pincel usa schema geométrico e programa afim local
 
-**Estado:** implementada inicialmente no build 0039f.
+**Estado:** implementada inicialmente no build 0039f; semântica global de `u`
+e escala positiva superada por D-041 no build 0039g.
 
 O pincel de catálogo guarda o descritor completo normalizado pelo provider. A
 orientação possui modos explícitos de preservação, plano e caminho. Variações
@@ -691,6 +692,32 @@ Expressões são compiladas uma vez por configuração e reavaliadas quando
 `count`, `u` ou o caminho mudam. A escala permanece uniforme e positiva para
 conservar TRS e hierarquias; cisalhamento e escala vetorial exigem uma futura
 representação autoritativa capaz de preservá-los sem perda.
+
+## D-041 — Autoria do pincel é causal e entrega um plano de commit preparado
+
+**Estado:** implementada inicialmente no build 0039g.
+
+No pincel desenhado, `u` é a distância acumulada dividida por um comprimento
+explícito e não depende da quantidade final. Um plano emitido pelo serviço
+conserva o prefixo já aceito e permite reparar apenas uma pequena cauda cuja
+orientação pode mudar com a curvatura. Matrizes, cores, transformações de
+catálogo e subárvores selecionadas são preparadas incrementalmente durante o
+gesto; soltar publica esse mesmo plano em uma transação.
+
+**Motivação:** normalizar `u` por `count` fazia todas as cópias mudarem quando o
+traço crescia. Recalcular o layout e materializar todas as cópias somente no
+`pointerup` também produzia uma pausa visual. A autoria precisa ser causal: uma
+amostra aceita não deve mudar por informação futura, salvo o reparo local
+necessário na ponta curva.
+
+**Consequências:** alterações explícitas de parâmetros ainda invalidam o plano
+inteiro, pois representam nova intenção. O commit só aceita planos imutáveis
+emitidos pelo mesmo `PathToolService` e na mesma revisão da cena. O preview
+permanece visível durante a publicação e por dois quadros de handoff. Cor é um
+atributo paramétrico instanciável; escala uniforme negativa usa o módulo e
+inverte a cor. Parâmetros de provider que alteram topologia continuam comuns ao
+lote, porque variantes por cópia exigiriam protótipos ou lotes geométricos
+distintos.
 
 ## Decisões superadas ou rejeitadas
 

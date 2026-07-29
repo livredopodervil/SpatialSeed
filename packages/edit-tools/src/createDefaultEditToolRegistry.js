@@ -160,7 +160,26 @@ export function createDefaultEditToolRegistry({
           "1",
           affineBrushParameterOptions({
             description:
-              "A escala precisa permanecer positiva em todas as instâncias."
+              "O módulo define o tamanho; valor negativo inverte a cor."
+          })
+        ),
+        numberParameter(
+          "affineULength",
+          "Comprimento correspondente a u=1",
+          1,
+          {
+            minimum: 0.001,
+            step: 0.1,
+            when: { mode: "array" }
+          }
+        ),
+        stringParameter(
+          "affineColor",
+          "Cor · expressão",
+          "source",
+          affineBrushParameterOptions({
+            description:
+              "Aceita source, hexadecimal, hsl(...), rgb(...), mix(...) e invert(...)."
           })
         )
       ]

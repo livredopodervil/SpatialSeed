@@ -84,6 +84,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   geometria/grupo selecionado pelo traço, confirmado em uma única ação;
 - pincel de caminho progressivo por espaçamento, usando seleção ou qualquer
   provider do catálogo e conservando os mesmos lotes instanciados no preview;
+- pincel causal com `u` por distância, prefixo estável, cauda reparável, cor
+  paramétrica e plano lógico preparado incrementalmente antes do commit;
 - planos independentes de visualização e edição, visualização 2D autoritativa e
   órbita em ponto travado.
 
@@ -147,8 +149,7 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente os parâmetros e modificadores afins do pincel `0039f` em
-mobile e
+Validar visualmente o handoff e o prefixo causal do pincel `0039g` em mobile e
 avançar em incrementos independentes:
 
 1. redefinição paramétrica pelo Inspector, com preview e commit atômico;
@@ -164,6 +165,7 @@ Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PATH_REFERENCES_0037A.md`,
 `docs/PATH_BRUSH_AUTHORING_0039E.md`,
 `docs/AFFINE_PATH_BRUSH_0039F.md`,
+`docs/INCREMENTAL_PATH_BRUSH_0039G.md`,
 `docs/TOOL_PARAMETERS_PATH_DRAW_0039D.md` e
 `docs/EDIT_INTERACTION_0038B.md`.
 

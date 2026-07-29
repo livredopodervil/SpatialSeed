@@ -15,7 +15,7 @@ import {
 } from "./AffineRepeat.js?build=20260715-0021d";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v4";
+  static apiVersion = "selection-operations-v5";
 
   constructor({
     editor,
@@ -217,7 +217,9 @@ export class SelectionOperations {
   createGeometryInstances({
     name = null,
     geometry,
-    worldMatrices,
+    worldMatrices = null,
+    preparedInstances = null,
+    colors = null,
     color = "#6699cc",
     material = null,
     source = "geometry-instances"
@@ -225,38 +227,52 @@ export class SelectionOperations {
     if (!this.geometryRegistry) {
       throw new Error("Registro de geometrias indisponível.");
     }
-    if (!Array.isArray(worldMatrices) ||
-        worldMatrices.length < 1 ||
-        worldMatrices.length > 10000) {
-      throw new RangeError(
-        "A criação instanciada exige entre 1 e 10000 matrizes."
+    const usesPrepared = preparedInstances !== null &&
+      preparedInstances !== undefined;
+    const sourceInstances = usesPrepared
+      ? preparedInstances
+      : worldMatrices;
+    if (!Array.isArray(sourceInstances)) {
+      throw new TypeError(
+        "A criação instanciada exige matrizes ou transformações preparadas."
       );
     }
+    if (sourceInstances.length < 1 || sourceInstances.length > 10000) {
+      throw new RangeError(
+        "A criação instanciada exige entre 1 e 10000 transformações."
+      );
+    }
+    const instances = usesPrepared
+      ? normalizePreparedInstances(
+          sourceInstances,
+          this.sandbox.getSnapshot().objects
+        )
+      : transformsFromWorldMatrices(sourceInstances);
     const descriptor = this.geometryRegistry.normalize(geometry);
+    const instanceColors = colors === null || colors === undefined
+      ? null
+      : normalizeInstanceColors(colors, instances.length);
     const appearance = this.#creationAppearance(color, material);
     const index = this.sandbox.getSnapshot().objects.length + 1;
     const label = this.geometryRegistry.label(descriptor.type);
     const baseName = name || `${label} ${index}`;
-    const created = worldMatrices.map((matrix, copyIndex) => {
-      if (!Array.isArray(matrix) || matrix.length !== 16 ||
-          !matrix.every(value => Number.isFinite(Number(value)))) {
-        throw new TypeError(`Matriz mundial inválida na cópia ${copyIndex + 1}.`);
-      }
-      const transform = decomposeMatrix(
-        new THREE.Matrix4().fromArray(matrix.map(Number))
-      );
+    const created = instances.map((instance, copyIndex) => {
       return {
-        id: crypto.randomUUID(),
+        id: instance.id,
         kind: descriptor.type,
         name: copyIndex === 0
           ? baseName
           : copyName(baseName, copyIndex - 1),
-        ...transform,
+        position: instance.position,
+        rotation: instance.rotation,
+        scale: instance.scale,
         geometry: descriptor,
         ...(appearance.appearanceId
           ? { appearanceId: appearance.appearanceId }
           : { material: { color: appearance.color } }),
-        instanceState: {}
+        instanceState: instanceColors
+          ? { color: instanceColors[copyIndex] }
+          : {}
       };
     });
     const changed = this.sandbox.dispatch({
@@ -1285,6 +1301,76 @@ function hasAffineExpressions(operations) {
       typeof value === "string"
     )
   );
+}
+
+function transformsFromWorldMatrices(worldMatrices) {
+  return worldMatrices.map((matrix, copyIndex) => {
+    if (!Array.isArray(matrix) || matrix.length !== 16 ||
+        !matrix.every(value => Number.isFinite(Number(value)))) {
+      throw new TypeError(
+        `Matriz mundial inválida na cópia ${copyIndex + 1}.`
+      );
+    }
+    return Object.freeze({
+      id: crypto.randomUUID(),
+      ...decomposeMatrix(
+        new THREE.Matrix4().fromArray(matrix.map(Number))
+      )
+    });
+  });
+}
+
+function normalizePreparedInstances(instances, existingObjects) {
+  const reserved = new Set(
+    existingObjects.map(object => String(object.id))
+  );
+  return instances.map((instance, copyIndex) => {
+    const id = String(instance?.id ?? "").trim();
+    if (!id || reserved.has(id)) {
+      throw new Error(
+        `ID preparado inválido ou duplicado na cópia ${copyIndex + 1}.`
+      );
+    }
+    reserved.add(id);
+    return Object.freeze({
+      id,
+      position: instanceVector(instance.position, 3, "posição", copyIndex),
+      rotation: instanceVector(instance.rotation, 4, "rotação", copyIndex),
+      scale: instanceVector(instance.scale, 3, "escala", copyIndex)
+    });
+  });
+}
+
+function instanceVector(value, length, name, copyIndex) {
+  if (!Array.isArray(value) || value.length !== length) {
+    throw new TypeError(
+      `${name} preparada inválida na cópia ${copyIndex + 1}.`
+    );
+  }
+  const normalized = value.map(Number);
+  if (!normalized.every(Number.isFinite)) {
+    throw new TypeError(
+      `${name} preparada inválida na cópia ${copyIndex + 1}.`
+    );
+  }
+  return Object.freeze(normalized);
+}
+
+function normalizeInstanceColors(colors, count) {
+  if (!Array.isArray(colors) || colors.length !== count) {
+    throw new RangeError(
+      "Cores instanciadas devem acompanhar todas as matrizes."
+    );
+  }
+  return colors.map((value, index) => {
+    const color = String(value ?? "").trim().toLowerCase();
+    if (!/^#[0-9a-f]{6}$/i.test(color)) {
+      throw new TypeError(
+        `Cor instanciada inválida na cópia ${index + 1}.`
+      );
+    }
+    return color;
+  });
 }
 
 function copyName(name, copyIndex) {

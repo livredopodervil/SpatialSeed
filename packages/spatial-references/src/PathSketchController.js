@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import {
   PathInstancePreviewCache
-} from "./PathInstancePreviewCache.js?build=20260728-0039e";
+} from "./PathInstancePreviewCache.js?build=20260729-0039g";
 
 const DEFAULTS = Object.freeze({
   mode: "tube",
@@ -32,11 +32,13 @@ const DEFAULTS = Object.freeze({
   affineRotateX: "0",
   affineRotateY: "0",
   affineRotateZ: "0",
-  affineScale: "1"
+  affineScale: "1",
+  affineULength: 1,
+  affineColor: "source"
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v3";
+  static apiVersion = "path-sketch-controller-v4";
 
   #active = null;
   #listeners = new Set();
@@ -49,6 +51,7 @@ export class PathSketchController {
   #previewArrayCache;
   #previewFrame = null;
   #pendingPreviewPoints = null;
+  #handoffFrames = [];
 
   constructor({
     renderer,
@@ -95,6 +98,7 @@ export class PathSketchController {
 
   begin(options = {}) {
     if (this.#active) throw new Error("Já existe um desenho de caminho ativo.");
+    this.#cancelPreviewHandoff({ clear: true });
     const requested = { ...options };
     if (requested.inputSamplePixels === undefined &&
         requested.spacingPixels !== undefined) {
@@ -104,6 +108,9 @@ export class PathSketchController {
     const frame = resolveFrame(this.renderer, settings.planeSource);
     const affineModifier = settings.mode === "array"
       ? this.pathTools.compileArrayBrushModifier(settings)
+      : null;
+    const colorModifier = settings.mode === "array"
+      ? this.pathTools.compileArrayBrushColorModifier(settings)
       : null;
     const brush = settings.mode === "array"
       ? this.pathTools.captureArrayBrush({
@@ -121,6 +128,8 @@ export class PathSketchController {
       sourceIds,
       brush,
       affineModifier,
+      colorModifier,
+      arrayPlan: null,
       brushSettingsKey: brushSettingsKey(settings),
       resolvedSpacing: brush
         ? this.pathTools.resolveArrayBrushSpacing({
@@ -181,6 +190,9 @@ export class PathSketchController {
       sourceMode: active?.brush?.sourceMode ?? null,
       sourceName: active?.brush?.sourceName ?? null,
       resolvedSpacing: active?.resolvedSpacing ?? null,
+      planDiagnostics: active?.arrayPlan?.diagnostics
+        ? Object.freeze(structuredClone(active.arrayPlan.diagnostics))
+        : null,
       previewResources: this.#previewArrayCache.status(),
       planeSource: active?.settings.planeSource ?? null,
       frame: active ? Object.freeze(structuredClone(active.frame)) : null,
@@ -211,6 +223,9 @@ export class PathSketchController {
     const affineModifier = settings.mode === "array"
       ? this.pathTools.compileArrayBrushModifier(settings)
       : null;
+    const colorModifier = settings.mode === "array"
+      ? this.pathTools.compileArrayBrushColorModifier(settings)
+      : null;
     let brush = this.#active.brush;
     const nextBrushSettingsKey = brushSettingsKey(settings);
     if (settings.mode === "array" &&
@@ -234,6 +249,8 @@ export class PathSketchController {
     this.#active.settings = settings;
     this.#active.brush = brush;
     this.#active.affineModifier = affineModifier;
+    this.#active.colorModifier = colorModifier;
+    this.#active.arrayPlan = null;
     this.#active.brushSettingsKey = nextBrushSettingsKey;
     this.#active.sourceIds = brush?.sourceIds ?? Object.freeze([]);
     this.#active.resolvedSpacing = brush
@@ -261,6 +278,7 @@ export class PathSketchController {
   dispose() {
     this.cancel();
     this.#bind(false);
+    this.#cancelPreviewHandoff({ clear: true });
     this.#cancelPendingPreview();
     this.#previewArrayCache.dispose();
     this.renderer.scene.remove(
@@ -286,11 +304,13 @@ export class PathSketchController {
     if (!point) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    this.#cancelPreviewHandoff({ clear: true });
     active.pointerId = event.pointerId;
     active.drawing = true;
     active.error = null;
     active.points = [point];
     active.screenPoints = [[event.clientX, event.clientY]];
+    active.arrayPlan = null;
     this.renderer.canvas.setPointerCapture?.(event.pointerId);
     this.#updatePreview(active.points);
     this.#notify();
@@ -319,30 +339,21 @@ export class PathSketchController {
     this.renderer.canvas.releasePointerCapture?.(event.pointerId);
     active.drawing = false;
     try {
-      const points = prepareFreehandPoints(active.points, active.settings);
-      if (points.length < 2) {
+      this.#flushPendingResultPreview();
+      if (active.error) {
+        throw new Error(active.error);
+      }
+      const points = active.settings.mode === "array"
+        ? active.arrayPlan?.path?.points
+        : prepareFreehandPoints(active.points, active.settings);
+      if (!Array.isArray(points) || points.length < 2) {
         throw new Error("O traço é curto demais para formar um caminho.");
       }
-      const committedPoints = active.settings.mode === "array"
-        ? this.pathTools.prepareSketchPoints({
-            points,
-            curveType: active.settings.curveType,
-            tension: active.settings.tension
-          })
-        : points;
+      const committedPoints = points.map(point => [...point]);
       active.lastResult = active.settings.mode === "array"
-        ? this.pathTools.arrayBrushAlongPoints({
-            points: committedPoints,
-            brush: active.brush,
-            spacing: active.resolvedSpacing,
-            align: active.settings.align,
-            closed: active.settings.closed,
-            curveType: active.settings.curveType,
-            tension: active.settings.tension,
-            twistDegrees: active.settings.twistDegrees,
-            initialNormal: active.frame.normal,
-            orientationMode: active.settings.orientationMode,
-            affineModifier: active.affineModifier
+        ? this.pathTools.commitArrayBrushPlan({
+            plan: active.arrayPlan,
+            brush: active.brush
           })
         : this.pathTools.createPath({
             points: committedPoints,
@@ -366,17 +377,17 @@ export class PathSketchController {
         frame: structuredClone(active.frame)
       });
       active.error = null;
-      this.#clearResultPreview();
+      this.#clearInputPreview();
       if (active.settings.continuous) {
         active.pointerId = null;
         active.points = [];
         active.screenPoints = [];
-        this.#updatePreview([]);
+        active.arrayPlan = null;
+        this.#deferResultPreviewClear();
       } else {
         this.#finishInteraction({ restoreTool: true });
         this.#active = null;
-        this.#updatePreview([]);
-        this.#clearResultPreview();
+        this.#deferResultPreviewClear();
         this.onEnded({ reason: "completed" });
       }
     } catch (error) {
@@ -466,8 +477,11 @@ export class PathSketchController {
       return;
     }
     try {
+      const previewPoints = active.settings.mode === "array"
+        ? prepareFreehandPoints(points, active.settings)
+        : points;
       const prepared = this.pathTools.prepareSketchPoints({
-        points,
+        points: previewPoints,
         curveType: active.settings.curveType,
         tension: active.settings.tension
       });
@@ -484,7 +498,10 @@ export class PathSketchController {
           initialNormal: active.frame.normal,
           orientationMode: active.settings.orientationMode,
           affineModifier: active.affineModifier,
-          maximumCopies: this.#previewArrayCache.copyCapacity
+          colorModifier: active.colorModifier,
+          affineULength: active.settings.affineULength,
+          previousPlan: active.arrayPlan,
+          maximumCopies: 10000
         }));
         this.#previewTube.visible = false;
       } else {
@@ -512,7 +529,9 @@ export class PathSketchController {
       active.error = null;
     } catch (error) {
       active.error = error.message;
-      this.#clearResultPreview();
+      if (!(active.settings.mode === "array" && active.arrayPlan)) {
+        this.#clearResultPreview();
+      }
     }
     this.#notify();
   }
@@ -520,6 +539,7 @@ export class PathSketchController {
   #renderArrayPreview(plan) {
     const rendered = this.#previewArrayCache.update(plan);
     if (this.#active) {
+      this.#active.arrayPlan = plan;
       this.#active.previewCount = rendered.previewCount;
       this.#active.previewTruncated = rendered.truncated;
     }
@@ -534,8 +554,60 @@ export class PathSketchController {
     this.#previewTube.visible = false;
     this.#clearArrayPreview();
     if (this.#active) {
+      this.#active.arrayPlan = null;
       this.#active.previewCount = 0;
       this.#active.previewTruncated = false;
+    }
+  }
+
+  #clearInputPreview() {
+    for (const object of [this.#previewLine, this.#previewPoints]) {
+      object.geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute([], 3)
+      );
+      object.visible = false;
+    }
+  }
+
+  #flushPendingResultPreview() {
+    if (this.#pendingPreviewPoints === null) return;
+    if (this.#previewFrame !== null &&
+        typeof globalThis.cancelAnimationFrame === "function") {
+      globalThis.cancelAnimationFrame(this.#previewFrame);
+    }
+    this.#previewFrame = null;
+    this.#flushResultPreview();
+  }
+
+  #deferResultPreviewClear() {
+    this.#cancelPreviewHandoff({ clear: false });
+    if (typeof globalThis.requestAnimationFrame !== "function") {
+      this.#clearResultPreview();
+      return;
+    }
+    const first = globalThis.requestAnimationFrame(() => {
+      this.#handoffFrames = this.#handoffFrames.filter(id => id !== first);
+      const second = globalThis.requestAnimationFrame(() => {
+        this.#handoffFrames =
+          this.#handoffFrames.filter(id => id !== second);
+        this.#clearResultPreview();
+      });
+      this.#handoffFrames.push(second);
+    });
+    this.#handoffFrames.push(first);
+  }
+
+  #cancelPreviewHandoff({ clear = false } = {}) {
+    if (typeof globalThis.cancelAnimationFrame === "function") {
+      for (const frame of this.#handoffFrames) {
+        globalThis.cancelAnimationFrame(frame);
+      }
+    }
+    this.#handoffFrames = [];
+    if (clear) {
+      this.#previewTube.visible = false;
+      this.#clearArrayPreview();
     }
   }
 
@@ -741,6 +813,8 @@ function normalizeSettings(value) {
     affineRotateY: expression(value.affineRotateY, "affineRotateY"),
     affineRotateZ: expression(value.affineRotateZ, "affineRotateZ"),
     affineScale: expression(value.affineScale, "affineScale"),
+    affineULength: positive(value.affineULength, "affineULength"),
+    affineColor: expression(value.affineColor, "affineColor"),
     continuous: Boolean(value.continuous),
     name: value.name === undefined ? null : String(value.name)
   };

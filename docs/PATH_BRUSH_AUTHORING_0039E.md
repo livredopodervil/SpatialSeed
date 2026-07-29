@@ -3,6 +3,9 @@
 > O `0039f` acrescenta parâmetros completos do provider, orientação relativa ao
 > plano/caminho e expressões afins interativas. Consulte
 > [Parâmetros geométricos e pincel afim — 0039f](AFFINE_PATH_BRUSH_0039F.md).
+> O `0039g` estabiliza o progresso por distância, prepara o commit durante o
+> gesto e acrescenta cor paramétrica. Consulte
+> [Pincel causal e commit incremental — 0039g](INCREMENTAL_PATH_BRUSH_0039G.md).
 
 ## Objetivo
 
