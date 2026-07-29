@@ -1,6 +1,6 @@
 import {
   VIEWER_CAMERA_COMMANDS
-} from "../../runtime-layers/src/ViewerCameraCommands.js";
+} from "../../runtime-layers/src/ViewerCameraCommands.js?build=20260729-0040b";
 
 export const CAMERA_PLAN_COMMANDS = VIEWER_CAMERA_COMMANDS;
 
@@ -63,6 +63,10 @@ export function createCameraPlanningFacade({
         to,
         alpha
       });
+    },
+
+    reset() {
+      return emit("viewer.camera.reset");
     },
 
     restore(camera) {

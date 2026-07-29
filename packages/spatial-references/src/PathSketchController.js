@@ -2,6 +2,9 @@ import * as THREE from "three";
 import {
   PathInstancePreviewCache
 } from "./PathInstancePreviewCache.js?build=20260729-0039g";
+import {
+  constrainPlanarPoint
+} from "../../planar-authoring/src/PlanarConstraints.js?build=20260729-0040b";
 
 const DEFAULTS = Object.freeze({
   mode: "tube",
@@ -149,6 +152,7 @@ export class PathSketchController {
           .dot(new THREE.Vector3().fromArray(frame.origin))
       ),
       pointerId: null,
+      pointerType: null,
       drawing: false,
       committing: false,
       commitRequestId: null,
@@ -158,11 +162,15 @@ export class PathSketchController {
       previewTruncated: false,
       previousTool: this.renderer.editorState?.snapshot?.().tool?.mode ?? "select",
       previousOrbitEnabled: this.renderer.orbit.enabled,
+      navigationToken:
+        this.renderer.acquireToolGestureNavigation?.("path-sketch") ?? null,
       lastResult: null,
       error: null
     };
     this.renderer.setTransformMode("navigate");
-    this.renderer.orbit.enabled = false;
+    if (!this.#active.navigationToken) {
+      this.renderer.orbit.enabled = false;
+    }
     this.#updatePreview([]);
     this.#notify();
     return this.status();
@@ -319,6 +327,10 @@ export class PathSketchController {
     const active = this.#active;
     if (!active || active.drawing || active.committing) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (this.renderer.isToolNavigationGesture?.(event)) {
+      this.#cancelInputDraft();
+      return;
+    }
     try {
       this.#refreshBrushRevision();
     } catch (error) {
@@ -329,15 +341,20 @@ export class PathSketchController {
     const point = this.#worldPoint(event);
     if (!point) return;
     event.preventDefault();
-    event.stopImmediatePropagation();
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+    }
     this.#cancelPreviewHandoff({ clear: true });
     active.pointerId = event.pointerId;
+    active.pointerType = event.pointerType || "mouse";
     active.drawing = true;
     active.error = null;
     active.points = [point];
     active.screenPoints = [[event.clientX, event.clientY]];
     active.arrayPlan = null;
-    this.renderer.canvas.setPointerCapture?.(event.pointerId);
+    if (active.pointerType !== "touch") {
+      this.renderer.canvas.setPointerCapture?.(event.pointerId);
+    }
     this.#updatePreview(active.points);
     this.#notify();
   };
@@ -374,9 +391,15 @@ export class PathSketchController {
 
   #onPointerMove = event => {
     const active = this.#active;
+    if (active && this.renderer.isToolNavigationGesture?.(event)) {
+      this.#cancelInputDraft();
+      return;
+    }
     if (!active?.drawing || event.pointerId !== active.pointerId) return;
     event.preventDefault();
-    event.stopImmediatePropagation();
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+    }
     const previous = active.screenPoints.at(-1);
     if (Math.hypot(event.clientX - previous[0], event.clientY - previous[1]) <
         active.settings.inputSamplePixels) return;
@@ -389,11 +412,18 @@ export class PathSketchController {
 
   #onPointerUp = event => {
     const active = this.#active;
+    if (active && this.renderer.isToolNavigationGesture?.(event)) {
+      this.#cancelInputDraft();
+      return;
+    }
     if (!active?.drawing || event.pointerId !== active.pointerId) return;
     event.preventDefault();
-    event.stopImmediatePropagation();
-    this.renderer.canvas.releasePointerCapture?.(event.pointerId);
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+      this.renderer.canvas.releasePointerCapture?.(event.pointerId);
+    }
     active.drawing = false;
+    active.pointerType = null;
     try {
       this.#flushPendingResultPreview();
       if (active.error) {
@@ -447,13 +477,28 @@ export class PathSketchController {
     const active = this.#active;
     if (!active?.drawing || event.pointerId !== active.pointerId) return;
     event.preventDefault();
+    if (event.pointerType !== "touch") {
+      this.renderer.canvas.releasePointerCapture?.(event.pointerId);
+    }
+    this.#cancelInputDraft();
+  };
+
+  #cancelInputDraft() {
+    const active = this.#active;
+    if (!active || active.committing) return;
+    if (active.pointerId !== null && active.pointerType !== "touch") {
+      this.renderer.canvas.releasePointerCapture?.(active.pointerId);
+    }
+    active.pointerId = null;
+    active.pointerType = null;
     active.drawing = false;
     active.points = [];
     active.screenPoints = [];
+    active.arrayPlan = null;
     this.#updatePreview([]);
     this.#clearResultPreview();
     this.#notify();
-  };
+  }
 
   #onKeyDown = event => {
     if (!this.#active || event.key !== "Escape") return;
@@ -472,16 +517,35 @@ export class PathSketchController {
       this.#active.plane,
       new THREE.Vector3()
     );
-    return point?.toArray() ?? null;
+    if (!point) return null;
+    const transform = this.renderer.getTransformConfig?.() ?? {};
+    return [...constrainPlanarPoint({
+      frame: this.#active.frame,
+      point: point.toArray(),
+      anchor: this.#active.points.at(-1) ?? null,
+      gridStep: transform.gridLock
+        ? transform.translationSnap ?? 1
+        : null,
+      angleStepDegrees: transform.rotationSnapDeg,
+      axes: this.renderer.getObjectTransformAxes?.() ?? {
+        x: true,
+        y: true
+      }
+    })];
   }
 
   #finishInteraction({ restoreTool }) {
     const active = this.#active;
     if (!active) return;
-    if (active.pointerId !== null) {
+    if (active.pointerId !== null && active.pointerType !== "touch") {
       this.renderer.canvas.releasePointerCapture?.(active.pointerId);
     }
-    this.renderer.orbit.enabled = active.previousOrbitEnabled;
+    if (active.navigationToken) {
+      this.renderer.releaseToolGestureNavigation?.(active.navigationToken);
+      active.navigationToken = null;
+    } else {
+      this.renderer.orbit.enabled = active.previousOrbitEnabled;
+    }
     if (restoreTool) this.renderer.setTransformMode(active.previousTool);
   }
 
@@ -661,6 +725,7 @@ export class PathSketchController {
     active.committing = true;
     active.commitRequestId = requestId;
     active.pointerId = null;
+    active.pointerType = null;
     active.error = null;
     this.#pendingCommit = {
       active,
@@ -755,6 +820,7 @@ export class PathSketchController {
         }
       }
       active.pointerId = null;
+      active.pointerType = null;
       active.points = [];
       active.screenPoints = [];
       active.arrayPlan = null;

@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0040a`.
+> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0040b`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -306,12 +306,25 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - publicação atômica e um único undo por geometria;
 - entrada “Editar 2D” pela edição de vértices no frame planar.
 
+### 0040b — Multitoque, HUD extensível, snap e medição — implementado
+
+- um toque permanece com a ferramenta; dois fazem `pan/pinch` e três orbitam o
+  foco corrente;
+- transição multitoque cancela somente o rascunho local, sem publicação ou
+  seleção acidental;
+- HUD aceita qualquer número positivo de colunas/linhas e aproveita o viewport
+  fixado antes de criar rolagem;
+- passos configuráveis de grade e ângulo são comuns a ferramentas 2D e 3D;
+- restrições X/Y do frame planar também valem para desenho e medição;
+- régua e transferidor são overlays efêmeros locais ao viewer;
+- `viewer.camera.reset` restaura o estado inicial controlado da câmera.
+
 ### Próximas extensões geométricas
 
 - redefinição paramétrica de objetos pelo Inspector com preview e commit único;
-- grid configurável e cotas por plano;
+- cotas persistentes e referências de medição por plano;
 - trim, extend, offset, fillet e constraints geométricas 2D;
-- régua, transferidor e compasso como referências para transformações;
+- compasso e medições como referências para transformações;
 - sanitização configurável com relatório de degenerações, contornos,
   não-manifold e auto-interseções;
 - booleanos robustos em Worker e limpeza posterior;

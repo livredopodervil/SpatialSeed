@@ -66,9 +66,12 @@ import {
   normalizeScreenSelectionGesture,
   ScreenSelectionIndex
 } from "./ScreenSelectionGesture.js?build=20260729-0039g2";
+import {
+  ToolGestureNavigation
+} from "./ToolGestureNavigation.js?build=20260729-0040b";
 
 export class ThreeRegionRenderer {
-  static apiVersion = "renderer-three-navigation-camera-v4";
+  static apiVersion = "renderer-three-navigation-camera-v5";
   #meshes = new Map();
   #cameraVisuals = new Map();
   #lightVisuals = new Map();
@@ -100,6 +103,8 @@ export class ThreeRegionRenderer {
   #objectTransformAxes = { x: true, y: true, z: true };
   #navigationLocks = { plane: null, point: null };
   #navigationMode = "free";
+  #toolGestureNavigation = null;
+  #editorToolNavigationToken = null;
   #editPlane = null;
   #drawingPlane = null;
   #navigationDefaults = {
@@ -265,6 +270,17 @@ export class ThreeRegionRenderer {
     this.orbit = new OrbitControls(this.camera, canvas);
     this.orbit.enableDamping = true;
     this.orbit.target.set(0, 1, 0);
+    this.#toolGestureNavigation = new ToolGestureNavigation({
+      canvas,
+      orbit: this.orbit,
+      camera: this.camera,
+      canRotate: () =>
+        this.orbit.enableRotate && !this.#navigationLocks.plane,
+      onCameraChanged: () => {
+        this.#enforceNavigationLocks();
+        this.#notifyNavigationCamera();
+      }
+    });
     this.#navigationDefaults = {
       enableRotate: this.orbit.enableRotate,
       enablePan: this.orbit.enablePan,
@@ -355,7 +371,8 @@ export class ThreeRegionRenderer {
     });
 
     this.transform.addEventListener("dragging-changed", event => {
-      this.orbit.enabled = !event.value;
+      this.orbit.enabled = this.#toolGestureNavigation.active ||
+        !event.value;
       if (event.value) this.#beginSession();
       else if (this.#session) this.#commitSession();
     });
@@ -372,6 +389,11 @@ export class ThreeRegionRenderer {
         y: event.clientY,
         type: event.pointerType || "mouse"
       };
+      if (this.#toolGestureNavigation.isNavigationGesture(event)) {
+        this.#tap = null;
+        this.#inputDiagnostics.discardedReason = "gesto-multitoque";
+        return;
+      }
       if (
         this.#interactionMode === "select" &&
         this.editorState.areaSelection
@@ -1252,6 +1274,31 @@ export class ThreeRegionRenderer {
     if (["translate", "rotate", "scale"].includes(mode)) this.transform.setMode(mode);
     this.#configureTransformForEditor();
     this.#rebuildAnchor();
+  }
+
+  acquireToolGestureNavigation(owner = "interactive-tool") {
+    const token = this.#toolGestureNavigation.acquire(owner);
+    this.orbit.enabled = true;
+    return token;
+  }
+
+  releaseToolGestureNavigation(token) {
+    const released = this.#toolGestureNavigation.release(token);
+    this.#configureTransformForEditor();
+    return released;
+  }
+
+  isToolNavigationGesture(event = null) {
+    return this.#toolGestureNavigation.isNavigationGesture(event);
+  }
+
+  getToolGestureNavigationStatus() {
+    return this.#toolGestureNavigation.status();
+  }
+
+  disposeToolGestureNavigation() {
+    this.#editorToolNavigationToken = null;
+    this.#toolGestureNavigation.dispose();
   }
 
   setSelectionOperation(operation) {
@@ -2317,6 +2364,13 @@ export class ThreeRegionRenderer {
     const mode=this.editorState.tool.mode;
     const selectionGestureActive =
       mode === "select" && Boolean(this.editorState.areaSelection);
+    if (mode === "navigate" && this.#editorToolNavigationToken) {
+      this.#toolGestureNavigation.release(this.#editorToolNavigationToken);
+      this.#editorToolNavigationToken = null;
+    } else if (mode !== "navigate" && !this.#editorToolNavigationToken) {
+      this.#editorToolNavigationToken =
+        this.#toolGestureNavigation.acquire(`editor:${mode}`);
+    }
     this.#interactionMode=mode;
     this.#selectionOperation=this.editorState.selectionOperation??"replace";
 
@@ -2333,8 +2387,9 @@ export class ThreeRegionRenderer {
         this.transform.showY = axes.y;
         this.transform.showZ = axes.z;
       }
-      this.orbit.enabled = !selectionGestureActive &&
-        (mode === "navigate" || !this.transform.dragging);
+      this.orbit.enabled = this.#toolGestureNavigation.active ||
+        (!selectionGestureActive &&
+          (mode === "navigate" || !this.transform.dragging));
       return;
     }
 
@@ -2353,8 +2408,9 @@ export class ThreeRegionRenderer {
           : this.#objectTransformFrame.mode
       );
     }
-    this.orbit.enabled = !selectionGestureActive &&
-      (mode === "navigate" || !this.transform.dragging);
+    this.orbit.enabled = this.#toolGestureNavigation.active ||
+      (!selectionGestureActive &&
+        (mode === "navigate" || !this.transform.dragging));
   }
 
   #beginSession() {
@@ -3965,6 +4021,12 @@ export class ThreeRegionRenderer {
 
   #selectAt(event) {
     this.#inputDiagnostics.pointerUp += 1;
+
+    if (this.#toolGestureNavigation.isNavigationGesture(event)) {
+      this.#tap = null;
+      this.#inputDiagnostics.discardedReason = "gesto-multitoque";
+      return;
+    }
 
     if (
       this.#interactionMode === "select" &&

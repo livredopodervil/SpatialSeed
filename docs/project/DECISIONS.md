@@ -792,6 +792,33 @@ do registro geométrico. “Editar 2D” entra na edição de vértices e usa o 
 de edição; quando ele não existe, deriva-o do plano de desenho ou do objeto
 selecionado. Objetos passivos não participam do movimento do gesto.
 
+## D-045 — Ponteiros são arbitrados por quantidade e medições pertencem ao viewer
+
+**Estado:** implementada inicialmente no build 0040b.
+
+Durante uma ferramenta de desenho, seleção, criação ou transformação, um único
+ponteiro pertence à ferramenta. A presença de dois ponteiros de toque transfere
+o gesto para `pan + pinch`; três ponteiros orbitam o alvo corrente quando a
+órbita não está bloqueada. O rascunho ainda não publicado é cancelado nessa
+transição. Régua e transferidor são overlays efêmeros do viewer e usam o plano
+de desenho, os eixos permitidos e os mesmos passos de grade e ângulo das
+transformações.
+
+**Motivação:** desabilitar `OrbitControls` durante toda ferramenta tornava
+navegação e autoria mutuamente exclusivas em telas de toque. Publicar no
+primeiro `pointerdown` também criava objetos antes de um segundo dedo poder
+declarar a intenção de navegar. Medições, por sua vez, não devem poluir o
+documento ou seu histórico enquanto servem apenas como leitura local.
+
+**Consequências:** ferramentas confirmam toques discretos no `pointerup` e não
+capturam o primeiro ponteiro de toque para si. O segundo toque cancela apenas o
+rascunho local; não publica, não seleciona e não cria undo. Transformações 3D,
+desenho 2D, caminhos e medições compartilham `translationSnap`,
+`rotationSnapDeg` e restrições de eixo. O reset da câmera restaura o snapshot
+inicial mantido pelo controlador do viewer. Medições não são sincronizadas,
+salvas nem recuperadas; uma futura cota persistente deverá ser uma entidade
+documental distinta.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

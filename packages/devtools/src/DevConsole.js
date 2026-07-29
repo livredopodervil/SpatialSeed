@@ -768,6 +768,7 @@ export class DevConsole {
         "camera default id|none",
         "camera object-projection id near far [fov]",
         "camera restore câmera-JSON",
+        "camera reset",
         "camera interpolate alpha câmera-JSON"
       ],
       notes: [
@@ -1147,6 +1148,10 @@ export class DevConsole {
       return this.commands.execute("viewer.camera.restore", {
         camera: parseJson(tokens.join(" "), "Câmera")
       });
+    }
+    if (action === "reset") {
+      this.#expectMaximum(tokens, 0, "camera reset");
+      return this.commands.execute("viewer.camera.reset");
     }
     if (action === "interpolate") {
       if (tokens.length < 2) {

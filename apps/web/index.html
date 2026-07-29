@@ -191,8 +191,8 @@
         <label>Orientação <select id="edit-hud-orientation"><option value="horizontal">Horizontal</option><option value="vertical">Vertical</option></select></label>
         <label>Tamanho <select id="edit-hud-size"><option value="compact">Compacto</option><option value="normal">Normal</option><option value="large">Ampliado</option></select></label>
         <label>Opacidade <input id="edit-hud-opacity" type="range" min="0.45" max="1" step="0.05" value="0.96"></label>
-        <label>Colunas <input id="edit-hud-columns" type="number" min="1" max="12" step="1" value="4"></label>
-        <label>Linhas <input id="edit-hud-rows" type="number" min="1" max="8" step="1" value="2"></label>
+        <label>Colunas <input id="edit-hud-columns" type="number" min="1" step="1" value="4"></label>
+        <label>Linhas <input id="edit-hud-rows" type="number" min="1" step="1" value="2"></label>
         <label><input id="edit-hud-tap-hints" type="checkbox" checked> Mostrar nome após toque</label>
         <label><input id="edit-hud-adaptive-order" type="checkbox" checked> Ordenar grupos pelo contexto</label>
       </div>
@@ -207,6 +207,7 @@
         <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="reference" checked> Pivô e planos</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="planar" checked> Ferramentas 2D</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="measure" checked> Medição</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="lifecycle" checked> Continuidade</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="creation" checked> Criação e procedimentos</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="actions" checked> Ações contextuais</label>
@@ -216,6 +217,8 @@
         <label>Extrusão <input id="edit-hud-default-extrude" type="number" step="0.1" value="1"></label>
         <label>Inset <input id="edit-hud-default-inset" type="number" min="0.001" max="0.999" step="0.05" value="0.2"></label>
         <label>Raio de caminho <input id="edit-hud-default-path-radius" type="number" min="0.001" step="0.01" value="0.08"></label>
+        <label>Passo da grade <input id="edit-hud-grid-step" type="number" min="0.000001" step="0.1" value="1"></label>
+        <label>Passo angular <input id="edit-hud-angle-step" type="number" min="0.000001" max="180" step="1" value="15"></label>
       </div>
       <p class="edit-hud-help-note">Toque curto executa. Pressione e segure para ver nome e explicação. O botão ? ativa um modo de consulta que não executa as ferramentas.</p>
       <button id="edit-hud-reset" type="button">Restaurar HUD</button>
@@ -267,11 +270,13 @@
       <label title="Snap em arestas"><input id="edit-hud-snap-edge" type="checkbox" checked><span>━</span></label>
       <label title="Snap em faces"><input id="edit-hud-snap-face" type="checkbox" checked><span>▲</span></label>
       <label title="Snap em grade"><input id="edit-hud-snap-grid" type="checkbox"><span>#</span></label>
+      <label title="Travar ângulos no passo configurado"><input id="edit-hud-snap-angle" type="checkbox"><span>∠</span></label>
       <label title="Influência proporcional"><input id="edit-hud-proportional" type="checkbox"><span>∿</span></label>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="navigation" aria-label="Travas de navegação">
       <label title="Travar visualização em plano 2D"><input id="edit-hud-plane-lock" type="checkbox"><span>▱</span></label>
       <label title="Orbitar ponto travado"><input id="edit-hud-point-lock" type="checkbox"><span>⊙</span></label>
+      <button id="edit-hud-view-reset" type="button" title="Restaurar câmera do viewer">⌂</button>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="reference" aria-label="Pivô e planos">
       <button id="edit-hud-pivot-edit" type="button" title="Editar pivô da seleção">⊕</button>
@@ -290,6 +295,11 @@
       <button id="edit-hud-planar-back" type="button" title="Remover último ponto 2D">↤</button>
       <button id="edit-hud-planar-edit" type="button" title="Editar vértices da geometria 2D selecionada">✥</button>
       <button id="edit-hud-planar-cancel" type="button" title="Cancelar ferramenta 2D">×</button>
+    </div>
+    <div class="edit-hud-group" data-edit-hud-group="measure" aria-label="Ferramentas de medição">
+      <button id="edit-hud-ruler" type="button" title="Régua no plano de desenho">📏</button>
+      <button id="edit-hud-protractor" type="button" title="Transferidor no plano de desenho">∡</button>
+      <button id="edit-hud-measure-clear" type="button" title="Limpar medição">⌫</button>
     </div>
     <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="lifecycle" aria-label="Continuidade das ferramentas">
       <label title="Manter ferramenta ativa"><input id="edit-hud-keep-tool" type="checkbox"><span>📌</span></label>
@@ -344,6 +354,8 @@
     <span id="edit-hud-tooltip-description"></span>
   </div>
 </aside>
+
+<output id="measurement-readout" aria-live="polite" hidden></output>
 
 <div id="selection-marquee" data-mode="rectangle" hidden>
   <svg viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
@@ -1265,6 +1277,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260729-0040a"></script>
+<script type="module" src="./boot.js?build=20260729-0040b"></script>
 </body>
 </html>

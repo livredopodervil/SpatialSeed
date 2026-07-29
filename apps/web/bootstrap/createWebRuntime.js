@@ -8,19 +8,19 @@ import {
   CameraObjectService,
   ViewerCameraController,
   ViewerState,
-} from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
+} from "../../../packages/runtime-layers/src/index.js?build=20260729-0040b";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260729-0039g1";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260729-0040a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260729-0040b";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260729-0039g2";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260729-0040b";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260729-0039g2";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260729-0040a";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260729-0040b";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0040a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0040b";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
 import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
@@ -47,7 +47,7 @@ import {
   SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
-} from "../../../packages/script-runtime/src/index.js?build=20260726-0031a";
+} from "../../../packages/script-runtime/src/index.js?build=20260729-0040b";
 import {
   BrowserProcedureCatalogStore
 } from "../procedures/BrowserProcedureCatalogStore.js?build=20260716-0026i";
@@ -85,10 +85,10 @@ import {
 } from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0040a";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260729-0040a";
+} from "../../../packages/edit-context/src/index.js?build=20260729-0040b";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260729-0040a";
+} from "../../../packages/edit-hud/src/index.js?build=20260729-0040b";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -97,16 +97,19 @@ import {
 } from "../../../packages/edit-tools/src/index.js?build=20260729-0040a";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260728-0039a";
+} from "../../../packages/object-placement/src/index.js?build=20260729-0040b";
 import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260729-0040a";
+} from "../../../packages/planar-authoring/src/index.js?build=20260729-0040b";
+import {
+  MeasurementController
+} from "../../../packages/measurement-tools/src/index.js?build=20260729-0040b";
 import {
   PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260729-0040a";
+} from "../../../packages/spatial-references/src/index.js?build=20260729-0040b";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -125,7 +128,7 @@ import {
   createIndependentProjectUrl
 } from "../../../packages/local-viewers/src/index.js?build=20260729-0039g1";
 
-const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v4";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v5";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({
@@ -541,6 +544,7 @@ export async function createWebRuntime({
     onCompleted: () => toolLifecycle.completeAction("object.place"),
     onEnded: () => toolLifecycle.cancelAction("object.place")
   });
+  const measurement = new MeasurementController({ renderer });
 
   const sandboxRecovery = new SandboxRecoveryController({
     sandbox: baseSandbox,
@@ -597,6 +601,7 @@ export async function createWebRuntime({
     pathSketch,
     planarSketch,
     objectPlacement,
+    measurement,
     canMutateProject: action =>
       viewerCoordinator.requireAuthority(action)
   });
@@ -1050,6 +1055,9 @@ export async function createWebRuntime({
     .register("object.placement.status", () =>
       objectPlacement.status()
     )
+    .register("measurement.status", () =>
+      measurement.status()
+    )
     .register("edit.tool.status", () =>
       toolLifecycle.status()
     )
@@ -1144,13 +1152,18 @@ export async function createWebRuntime({
       const unsubscribeToolParameters = toolParameters.subscribe(() =>
         listener(editContext.status())
       );
+      const unsubscribeMeasurement = measurement.subscribe(() =>
+        listener(editContext.status())
+      );
       return () => {
         unsubscribeContext();
         unsubscribeHistory();
         unsubscribeToolParameters();
+        unsubscribeMeasurement();
       };
     }
   });
+  runtime.onDispose(() => renderer.disposeToolGestureNavigation());
   runtime.onDispose(() => editHud.dispose());
   runtime.onDispose(() => objectPlacement.dispose());
   runtime.onDispose(() => selectionOperations.dispose());
@@ -1158,6 +1171,7 @@ export async function createWebRuntime({
   runtime.onDispose(() => toolLifecycle.dispose());
   runtime.onDispose(() => pathSketch.dispose());
   runtime.onDispose(() => planarSketch.dispose());
+  runtime.onDispose(() => measurement.dispose());
   runtime.onDispose(() => meshEditPanel.dispose());
   runtime.onDispose(() => editContext.dispose());
   runtime.onDispose(() => meshEditor.dispose());
@@ -1284,6 +1298,13 @@ export async function createWebRuntime({
       affineBrushVariables: PATH_BRUSH_AFFINE_VARIABLES,
       persistence: "snapshot"
     }))
+    .register("measurement", () => ({
+      apiVersion: MeasurementController.apiVersion,
+      tools: ["ruler", "protractor"],
+      scope: "local-viewer",
+      persistence: "ephemeral",
+      planarConstraints: true
+    }))
     .register("animation", () => ({
       apiVersion: ANIMATION_RUNTIME_VERSION,
       commandApiVersion: ANIMATION_COMMAND_SERVICE_VERSION,
@@ -1378,6 +1399,9 @@ export async function createWebRuntime({
   const unsubscribeEditContext = editContext.subscribe(
     snapshot => runtime.emit("edit.context.changed", snapshot)
   );
+  const unsubscribeMeasurement = measurement.subscribe(
+    snapshot => runtime.emit("measurement.changed", snapshot)
+  );
 
   const unsubscribeEditor = editor.subscribe(
     snapshot => runtime.emit("editor.changed", snapshot)
@@ -1426,6 +1450,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeViewer)
     .onDispose(unsubscribeEditor)
     .onDispose(unsubscribeEditContext)
+    .onDispose(unsubscribeMeasurement)
     .onDispose(unsubscribeMeshEdit)
     .onDispose(unsubscribeSelection)
     .onDispose(unsubscribeSpatialReferences)
@@ -1460,6 +1485,7 @@ export async function createWebRuntime({
       pathTools,
       pathSketch,
       planarSketch,
+      measurement,
       toolRegistry,
       toolParameters,
       editHud,

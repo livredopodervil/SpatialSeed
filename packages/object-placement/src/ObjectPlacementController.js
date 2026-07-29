@@ -64,12 +64,18 @@ export class ObjectPlacementController {
       settings,
       previousTool: this.renderer.editorState?.snapshot?.().tool?.mode ?? "select",
       previousOrbitEnabled: this.renderer.orbit.enabled,
+      navigationToken:
+        this.renderer.acquireToolGestureNavigation?.("object-placement") ?? null,
+      pointerId: null,
+      pointerType: null,
       lastPlacement: null,
       lastResult: null,
       error: null
     };
     this.renderer.setTransformMode("navigate");
-    this.renderer.orbit.enabled = false;
+    if (!this.#active.navigationToken) {
+      this.renderer.orbit.enabled = false;
+    }
     this.#notify();
     return this.status();
   }
@@ -126,6 +132,14 @@ export class ObjectPlacementController {
 
   #onPointerMove = event => {
     if (!this.#active) return;
+    if (this.renderer.isToolNavigationGesture?.(event)) {
+      this.#cancelPointer();
+      return;
+    }
+    if (this.#active.pointerId !== null &&
+        event.pointerId !== this.#active.pointerId) {
+      return;
+    }
     const placement = this.#resolve(event);
     if (!placement) return;
     this.#active.lastPlacement = placement;
@@ -136,11 +150,42 @@ export class ObjectPlacementController {
   #onPointerDown = event => {
     if (!this.#active) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (this.renderer.isToolNavigationGesture?.(event)) {
+      this.#cancelPointer();
+      return;
+    }
     const placement = this.#resolve(event);
     if (!placement) return;
     event.preventDefault();
-    event.stopImmediatePropagation();
     const active = this.#active;
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+      this.renderer.canvas.setPointerCapture?.(event.pointerId);
+    }
+    active.pointerId = event.pointerId;
+    active.pointerType = event.pointerType || "mouse";
+    active.lastPlacement = placement;
+    this.#updatePreview(placement);
+    this.#notify();
+  };
+
+  #onPointerUp = event => {
+    const active = this.#active;
+    if (!active) return;
+    if (this.renderer.isToolNavigationGesture?.(event)) {
+      this.#cancelPointer();
+      return;
+    }
+    if (event.pointerId !== active.pointerId) return;
+    event.preventDefault();
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+      this.renderer.canvas.releasePointerCapture?.(event.pointerId);
+    }
+    const placement = this.#resolve(event) ?? active.lastPlacement;
+    active.pointerId = null;
+    active.pointerType = null;
+    if (!placement) return;
     try {
       const result = this.createObject({
         name: active.settings.name,
@@ -168,6 +213,26 @@ export class ObjectPlacementController {
     }
     this.#notify();
   };
+
+  #onPointerCancel = event => {
+    const active = this.#active;
+    if (!active || event.pointerId !== active.pointerId) return;
+    event.preventDefault();
+    this.#cancelPointer();
+  };
+
+  #cancelPointer() {
+    const active = this.#active;
+    if (!active) return;
+    if (active.pointerId !== null && active.pointerType !== "touch") {
+      this.renderer.canvas.releasePointerCapture?.(active.pointerId);
+    }
+    active.pointerId = null;
+    active.pointerType = null;
+    active.lastPlacement = null;
+    if (this.#preview) this.#preview.visible = false;
+    this.#notify();
+  }
 
   #onKeyDown = event => {
     if (!this.#active || event.key !== "Escape") return;
@@ -210,7 +275,15 @@ export class ObjectPlacementController {
   #finish({ restoreTool }) {
     const active = this.#active;
     if (!active) return;
-    this.renderer.orbit.enabled = active.previousOrbitEnabled;
+    if (active.pointerId !== null && active.pointerType !== "touch") {
+      this.renderer.canvas.releasePointerCapture?.(active.pointerId);
+    }
+    if (active.navigationToken) {
+      this.renderer.releaseToolGestureNavigation?.(active.navigationToken);
+      active.navigationToken = null;
+    } else {
+      this.renderer.orbit.enabled = active.previousOrbitEnabled;
+    }
     if (restoreTool) this.renderer.setTransformMode(active.previousTool);
   }
 
@@ -232,7 +305,9 @@ export class ObjectPlacementController {
     const method = enabled ? "addEventListener" : "removeEventListener";
     this.renderer.canvas[method]("pointermove", this.#onPointerMove, true);
     this.renderer.canvas[method]("pointerdown", this.#onPointerDown, true);
-    globalThis[method]("keydown", this.#onKeyDown, true);
+    this.renderer.canvas[method]("pointerup", this.#onPointerUp, true);
+    this.renderer.canvas[method]("pointercancel", this.#onPointerCancel, true);
+    globalThis[method]?.("keydown", this.#onKeyDown, true);
   }
 }
 

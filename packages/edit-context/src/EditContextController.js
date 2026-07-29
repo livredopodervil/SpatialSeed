@@ -2,7 +2,7 @@ import {
   inclinePlanarFrame,
   normalizePlanarFrame,
   planarFrameFromPoints
-} from "./PlanarFrame.js?build=20260729-0040a";
+} from "./PlanarFrame.js?build=20260729-0040b";
 
 const SUBJECT_LEVELS = Object.freeze(["object", "vertex", "edge", "face"]);
 const TOOLS = Object.freeze(["navigate", "select", "translate", "rotate", "scale"]);
@@ -25,6 +25,9 @@ export class EditContextController {
     edge: true,
     face: true,
     grid: false,
+    angle: false,
+    gridStep: 1,
+    angleStepDegrees: 15,
     scope: "active",
     anchor: "active",
     tolerancePixels: 18,
@@ -251,7 +254,13 @@ export class EditContextController {
   setSnap(patch = {}) {
     this.#snap = normalizeSnap({ ...this.#snap, ...patch });
     this.renderer.setTransformConfig?.({
-      gridLock: this.#snap.enabled && this.#snap.grid
+      gridLock: this.#snap.enabled && this.#snap.grid,
+      translationSnap: this.#snap.enabled && this.#snap.grid
+        ? this.#snap.gridStep
+        : null,
+      rotationSnapDeg: this.#snap.enabled && this.#snap.angle
+        ? this.#snap.angleStepDegrees
+        : null
     });
     if (this.meshEditor.active) {
       const modes = SNAP_COMPONENTS.filter(type => this.#snap[type]);
@@ -527,6 +536,17 @@ function normalizeSnap(value = {}) {
   }
   const scope = normalizeOne(value.scope ?? "active", ["active", "scene"], "escopo de snap");
   const anchor = normalizeOne(value.anchor ?? "active", ["active", "pivot", "nearest"], "âncora de snap");
+  const gridStep = positiveFinite(
+    value.gridStep ?? 1,
+    "passo da grade"
+  );
+  const angleStepDegrees = positiveFinite(
+    value.angleStepDegrees ?? 15,
+    "passo angular"
+  );
+  if (angleStepDegrees > 180) {
+    throw new RangeError("O passo angular deve ser menor ou igual a 180°.");
+  }
   return {
     enabled: Boolean(value.enabled),
     auto: value.auto === undefined ? true : Boolean(value.auto),
@@ -534,11 +554,22 @@ function normalizeSnap(value = {}) {
     edge: value.edge === undefined ? true : Boolean(value.edge),
     face: value.face === undefined ? true : Boolean(value.face),
     grid: Boolean(value.grid),
+    angle: Boolean(value.angle),
+    gridStep,
+    angleStepDegrees,
     scope,
     anchor,
     tolerancePixels,
     self: Boolean(value.self)
   };
+}
+
+function positiveFinite(value, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    throw new RangeError(`${label} deve ser maior que zero.`);
+  }
+  return number;
 }
 
 function mergeSnapState(base, meshSnap) {

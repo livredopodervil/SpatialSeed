@@ -1,4 +1,4 @@
-import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260729-0039g2";
+import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260729-0040b";
 import {
   BrowserProjectFileGateway
 } from "../file-interop/BrowserProjectFileGateway.js?build=20260724-0029b2";
@@ -102,7 +102,6 @@ export function bindWebInterface({
       );
     }
   }
-  const initialCamera = runtime.query("viewer.camera.snapshot");
   const toolbarBinding = composeToolbar({
     root: documentRoot,
     configuration: uiConfiguration?.toolbar
@@ -211,6 +210,7 @@ export function bindWebInterface({
   const marquee = new SelectionMarquee({
     canvas: $("world"),
     element: $("selection-marquee"),
+    navigation: renderer,
     onComplete: gesture => execute("selection.gesture.apply", {
       ...gesture,
       operation: latestEditor.selectionOperation
@@ -518,6 +518,29 @@ export function bindWebInterface({
       uiRefresh.request("mesh.edit.changed");
     }
   );
+  const renderMeasurement = snapshot => {
+    const output = $("measurement-readout");
+    const active = Boolean(snapshot?.active);
+    output.hidden = !active;
+    if (!active) {
+      output.textContent = "";
+      return;
+    }
+    const label = snapshot.mode === "protractor"
+      ? "Transferidor"
+      : "Régua";
+    const instruction = snapshot.mode === "protractor"
+      ? "marque centro e dois raios"
+      : "arraste entre dois pontos";
+    output.textContent = snapshot.readout
+      ? `${label}: ${snapshot.readout}`
+      : `${label}: ${instruction}`;
+  };
+  const unsubscribeMeasurement = runtime.subscribe(
+    "measurement.changed",
+    renderMeasurement
+  );
+  renderMeasurement(runtime.query("measurement.status"));
 
   const unsubscribeEditor = runtime.subscribe(
     "editor.changed",
@@ -760,9 +783,7 @@ export function bindWebInterface({
   });
 
   $("camera-reset").addEventListener("click", () => {
-    const result = execute("viewer.camera.restore", {
-      camera: initialCamera
-    });
+    const result = execute("viewer.camera.reset");
     if (!result || result.reason) return;
     refreshCameraPanel();
     showNotice("Vista inicial restaurada.");
@@ -1736,6 +1757,7 @@ export function bindWebInterface({
       clearTimeout(statusTimer);
       unsubscribeEditor();
       unsubscribeMeshEdit();
+      unsubscribeMeasurement();
       unsubscribeSelection();
       unsubscribeWorld();
       unsubscribeViewer();
