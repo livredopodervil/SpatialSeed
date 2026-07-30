@@ -9,7 +9,7 @@ const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 const GEOMETRY_CREATION_STORAGE_KEY = "spatialseed.geometry.creation.defaults.v1";
 const STATIC_GROUP_ORDER = Object.freeze([
   "subject", "tool", "quick", "selection", "frame", "axes",
-  "snap", "navigation", "reference", "planar", "lifecycle",
+  "snap", "navigation", "reference", "planar", "measure", "lifecycle",
   "creation", "actions", "session"
 ]);
 const STATIC_ACTION_ORDER = Object.freeze([
@@ -53,6 +53,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
     navigation: true,
     reference: true,
     planar: true,
+    measure: true,
     lifecycle: true,
     creation: true,
     actions: true,
@@ -64,6 +65,8 @@ export class EditHud {
   static apiVersion = "edit-hud-v1";
 
   #unsubscribe = null;
+  #unsubscribeHistory = null;
+  #historyFrame = null;
   #preferences = structuredClone(DEFAULT_PREFERENCES);
   #drag = null;
   #resize = null;
@@ -76,7 +79,14 @@ export class EditHud {
   #suppressedClick = null;
   #fitFrame = null;
 
-  constructor({ root, query, execute, subscribe, openWorkspace = null }) {
+  constructor({
+    root,
+    query,
+    execute,
+    subscribe,
+    subscribeHistory = null,
+    openWorkspace = null
+  }) {
     if (!root) throw new TypeError("EditHud exige root.");
     if (typeof query !== "function" || typeof execute !== "function") {
       throw new TypeError("EditHud exige query e execute.");
@@ -91,11 +101,23 @@ export class EditHud {
     this.#bind();
     this.#applyPreferences();
     this.#unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
+    this.#unsubscribeHistory = subscribeHistory?.(() =>
+      this.#scheduleHistoryRefresh()
+    ) ?? null;
     this.refresh();
   }
 
   dispose() {
     this.#unsubscribe?.();
+    this.#unsubscribeHistory?.();
+    if (this.#historyFrame !== null) {
+      if (typeof globalThis.cancelAnimationFrame === "function") {
+        globalThis.cancelAnimationFrame(this.#historyFrame);
+      } else {
+        globalThis.clearTimeout?.(this.#historyFrame);
+      }
+      this.#historyFrame = null;
+    }
     this.#listeners(false);
     this.#clearHintTimer();
     this.#clearHintHideTimer();
@@ -157,6 +179,16 @@ export class EditHud {
     this.#element("edit-hud-snap-edge").checked = Boolean(snap.edge);
     this.#element("edit-hud-snap-face").checked = Boolean(snap.face);
     this.#element("edit-hud-snap-grid").checked = Boolean(snap.grid);
+    this.#element("edit-hud-snap-angle").checked = Boolean(snap.angle);
+    for (const [id, value] of [
+      ["edit-hud-grid-step", snap.gridStep ?? 1],
+      ["edit-hud-angle-step", snap.angleStepDegrees ?? 15]
+    ]) {
+      const control = this.#element(id);
+      if (this.root.ownerDocument.activeElement !== control) {
+        control.value = String(value);
+      }
+    }
     this.#element("edit-hud-proportional").checked = Boolean(state.proportional);
     this.#element("edit-hud-plane-lock").checked = Boolean(state.planeLock);
     this.#element("edit-hud-edit-plane").checked = Boolean(state.editPlane);
@@ -165,14 +197,14 @@ export class EditHud {
     this.#element("edit-hud-point-lock").checked = Boolean(state.pointLock);
     this.#element("edit-hud-pivot-edit").dataset.active =
       state.pivotEditing ? "true" : "false";
+    this.#element("edit-hud-pivot-policy").value =
+      state.pivot?.policy ?? "median";
+    this.#element("edit-hud-pivot-reference").value =
+      state.pivot?.reference ?? "absolute";
     this.#element("edit-hud-keep-tool").checked = Boolean(state.keepToolActive);
     this.#element("edit-hud-repeat").disabled = !state.canRepeat;
     this.#element("edit-hud-repeat").dataset.active = state.canRepeat ? "true" : "false";
-    const projectHistory = state.meshActive
-      ? { canUndo: state.canUndo, canRedo: state.canRedo }
-      : this.query("history.status");
-    this.#element("edit-hud-undo").disabled = !projectHistory.canUndo;
-    this.#element("edit-hud-redo").disabled = !projectHistory.canRedo;
+    this.refreshHistory(state);
     this.#element("edit-hud-apply").disabled = !state.meshActive || state.stale;
     this.#element("edit-hud-cancel").disabled = !state.meshActive;
     const sessionGroup = this.root.querySelector('[data-edit-hud-group="session"]');
@@ -187,6 +219,7 @@ export class EditHud {
     const mesh = this.query("mesh.edit.status");
     const selection = this.query("selection.snapshot");
     const planar = this.query("planar.sketch.status") ?? {};
+    const measurement = this.query("measurement.status") ?? {};
     const selectedObjectIds = selection.members?.map(
       member => member.objectId
     ) ?? [];
@@ -226,6 +259,36 @@ export class EditHud {
         !(selection.members?.length));
     this.#element("edit-hud-pivot-edit").disabled =
       Boolean(state.meshActive || !(selection.members?.length));
+    this.#element("edit-hud-ruler").dataset.active =
+      measurement.active && measurement.mode === "ruler"
+        ? "true"
+        : "false";
+    this.#element("edit-hud-protractor").dataset.active =
+      measurement.active && measurement.mode === "protractor"
+        ? "true"
+        : "false";
+    this.#element("edit-hud-measure-clear").disabled =
+      !measurement.active && !measurement.result;
+  }
+
+  refreshHistory(snapshot = null) {
+    const state = snapshot ?? this.query("edit.context.status");
+    const projectHistory = state?.meshActive
+      ? { canUndo: state.canUndo, canRedo: state.canRedo }
+      : this.query("history.status");
+    this.#element("edit-hud-undo").disabled = !projectHistory?.canUndo;
+    this.#element("edit-hud-redo").disabled = !projectHistory?.canRedo;
+  }
+
+  #scheduleHistoryRefresh() {
+    if (this.#historyFrame !== null) return;
+    const run = () => {
+      this.#historyFrame = null;
+      this.refreshHistory();
+    };
+    this.#historyFrame = typeof globalThis.requestAnimationFrame === "function"
+      ? globalThis.requestAnimationFrame(run)
+      : globalThis.setTimeout(run, 16);
   }
 
   #bind() {
@@ -290,7 +353,10 @@ export class EditHud {
       "edit-hud-snap-vertex",
       "edit-hud-snap-edge",
       "edit-hud-snap-face",
-      "edit-hud-snap-grid"
+      "edit-hud-snap-grid",
+      "edit-hud-snap-angle",
+      "edit-hud-grid-step",
+      "edit-hud-angle-step"
     ]) {
       this.#element(id).addEventListener("change", () =>
         this.#execute("edit.context.snap.set", this.#snapArguments())
@@ -319,6 +385,9 @@ export class EditHud {
         });
       }
     });
+    this.#element("edit-hud-view-reset").addEventListener("click", () =>
+      this.#execute("viewer.camera.reset")
+    );
     this.#element("edit-hud-edit-plane").addEventListener("change", event => {
       this.#execute(
         event.target.checked ? "edit.plane.set" : "edit.plane.clear",
@@ -341,6 +410,18 @@ export class EditHud {
     this.#element("edit-hud-pivot-edit").addEventListener("click", () =>
       this.#execute("pivot.edit.toggle")
     );
+    this.#element("edit-hud-pivot-policy").addEventListener("change", event =>
+      this.#execute("pivot.policy", { policy: event.target.value })
+    );
+    this.#element("edit-hud-pivot-reference").addEventListener("change", event =>
+      this.#execute("pivot.reference.set", { reference: event.target.value })
+    );
+    this.#element("edit-hud-anchor-policy").addEventListener("change", event =>
+      this.#execute("edit.tool.parameters.set", {
+        toolId: "path.sketch",
+        patch: { anchorPolicy: event.target.value }
+      })
+    );
     for (const button of this.root.querySelectorAll("[data-planar-tool]")) {
       button.addEventListener("click", () => this.#execute(
         "planar.sketch.begin",
@@ -358,6 +439,15 @@ export class EditHud {
     );
     this.#element("edit-hud-planar-edit").addEventListener("click", () =>
       this.#execute("planar.edit.begin")
+    );
+    this.#element("edit-hud-ruler").addEventListener("click", () =>
+      this.#execute("measurement.begin", { mode: "ruler" })
+    );
+    this.#element("edit-hud-protractor").addEventListener("click", () =>
+      this.#execute("measurement.begin", { mode: "protractor" })
+    );
+    this.#element("edit-hud-measure-clear").addEventListener("click", () =>
+      this.#execute("measurement.clear")
     );
     this.#element("edit-hud-keep-tool").addEventListener("change", event =>
       this.#execute("edit.tool.keep.set", { enabled: event.target.checked })
@@ -411,12 +501,12 @@ export class EditHud {
         this.#preferences.orientation = this.#element("edit-hud-orientation").value;
         this.#preferences.size = this.#element("edit-hud-size").value;
         this.#preferences.opacity = Number(this.#element("edit-hud-opacity").value);
-        this.#preferences.columns = integerBetween(
-          this.#element("edit-hud-columns").value, 1, 12, 4
-        );
-        this.#preferences.rows = integerBetween(
-          this.#element("edit-hud-rows").value, 1, 8, 2
-        );
+        const dimensions = normalizeHudDimensions({
+          columns: this.#element("edit-hud-columns").value,
+          rows: this.#element("edit-hud-rows").value
+        }, this.#preferences);
+        this.#preferences.columns = dimensions.columns;
+        this.#preferences.rows = dimensions.rows;
         this.#preferences.tapHints = this.#element("edit-hud-tap-hints").checked;
         this.#preferences.adaptiveOrder = this.#element("edit-hud-adaptive-order").checked;
         this.#preferences.defaults = {
@@ -827,16 +917,12 @@ export class EditHud {
 
   #onResizePointerMove = event => {
     if (!this.#resize || event.pointerId !== this.#resize.pointerId) return;
-    const columns = integerBetween(
+    const columns = positiveInteger(
       this.#resize.columns + Math.round((event.clientX - this.#resize.x) / this.#resize.cell),
-      1,
-      12,
       this.#resize.columns
     );
-    const rows = integerBetween(
+    const rows = positiveInteger(
       this.#resize.rows + Math.round((event.clientY - this.#resize.y) / this.#resize.cell),
-      1,
-      8,
       this.#resize.rows
     );
     this.#preferences.columns = columns;
@@ -905,17 +991,7 @@ export class EditHud {
     this.root.dataset.orientation = p.orientation;
     this.root.dataset.size = p.size;
     this.root.style.setProperty("--edit-hud-opacity", String(p.opacity));
-    this.root.style.setProperty("--edit-hud-columns", String(p.columns));
-    this.root.style.setProperty("--edit-hud-rows", String(p.rows));
     const cellSize = ({ compact: 26, normal: 32, large: 42 })[p.size] ?? 32;
-    this.root.style.setProperty(
-      "--edit-hud-window-height",
-      `${p.rows * cellSize + Math.max(0, p.rows - 1) * 3 + 10}px`
-    );
-    this.root.style.setProperty(
-      "--edit-hud-window-width",
-      `${p.columns * cellSize + Math.max(0, p.columns - 1) * 3 + 10}px`
-    );
     if (p.dock === "floating") {
       this.root.style.left = `${p.left}px`;
       this.root.style.top = `${p.top}px`;
@@ -933,6 +1009,30 @@ export class EditHud {
       group.hidden = p.groups[group.dataset.editHudGroup] === false ||
         group.dataset.contextHidden === "true";
     }
+    const visibleCells = visibleHudCellCount(this.root);
+    const layout = resolveHudLayout({
+      preferences: p,
+      visibleCells,
+      cellSize,
+      viewportWidth: globalThis.innerWidth,
+      viewportHeight: globalThis.innerHeight
+    });
+    this.root.style.setProperty(
+      "--edit-hud-columns",
+      String(layout.columns)
+    );
+    this.root.style.setProperty(
+      "--edit-hud-rows",
+      String(layout.rows)
+    );
+    this.root.style.setProperty(
+      "--edit-hud-window-height",
+      `${layout.rows * cellSize + Math.max(0, layout.rows - 1) * 3 + 10}px`
+    );
+    this.root.style.setProperty(
+      "--edit-hud-window-width",
+      `${layout.columns * cellSize + Math.max(0, layout.columns - 1) * 3 + 10}px`
+    );
     for (const checkbox of this.root.querySelectorAll("[data-edit-hud-group-toggle]")) {
       checkbox.checked = p.groups[checkbox.dataset.editHudGroupToggle] !== false;
     }
@@ -1179,7 +1279,8 @@ export class EditHud {
     for (const [toolId, parameterId, controlId] of [
       ["mesh.extrude", "distance", "edit-hud-default-extrude"],
       ["mesh.inset", "amount", "edit-hud-default-inset"],
-      ["path.sketch", "radius", "edit-hud-default-path-radius"]
+      ["path.sketch", "radius", "edit-hud-default-path-radius"],
+      ["path.sketch", "anchorPolicy", "edit-hud-anchor-policy"]
     ]) {
       const result = this.query("edit.tool.parameters.get", { toolId });
       const control = this.#element(controlId);
@@ -1206,8 +1307,7 @@ export class EditHud {
       this.#preferences = {
         ...structuredClone(DEFAULT_PREFERENCES),
         ...stored,
-        columns: integerBetween(stored.columns, 1, 12, DEFAULT_PREFERENCES.columns),
-        rows: integerBetween(stored.rows, 1, 8, DEFAULT_PREFERENCES.rows),
+        ...normalizeHudDimensions(stored, DEFAULT_PREFERENCES),
         defaults: {
           ...DEFAULT_PREFERENCES.defaults,
           ...(stored.defaults ?? {})
@@ -1256,7 +1356,13 @@ export class EditHud {
       vertex: this.#element("edit-hud-snap-vertex").checked,
       edge: this.#element("edit-hud-snap-edge").checked,
       face: this.#element("edit-hud-snap-face").checked,
-      grid: this.#element("edit-hud-snap-grid").checked
+      grid: this.#element("edit-hud-snap-grid").checked,
+      angle: this.#element("edit-hud-snap-angle").checked,
+      gridStep: finiteOr(this.#element("edit-hud-grid-step").value, 1),
+      angleStepDegrees: finiteOr(
+        this.#element("edit-hud-angle-step").value,
+        15
+      )
     };
   }
 
@@ -1309,10 +1415,15 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-snap-edge": ["Snap em aresta", "Atrai a âncora para o ponto mais próximo de uma aresta compatível."],
   "edit-hud-snap-face": ["Snap em face", "Atrai a transformação para a superfície de uma face compatível."],
   "edit-hud-snap-grid": ["Snap em grade", "Quantiza a transformação segundo o espaçamento da grade."],
+  "edit-hud-snap-angle": ["Trava angular", "Quantiza segmentos 2D e rotações 3D segundo o passo angular configurado."],
   "edit-hud-proportional": ["Influência proporcional", "Move também vértices conectados segundo raio, métrica e função de atenuação configurados."],
   "edit-hud-plane-lock": ["Visualização 2D", "Fixa a câmera perpendicular ao plano capturado, desativa a órbita e mantém o pan dentro desse plano."],
   "edit-hud-edit-plane": ["Plano de edição", "Captura um plano independente para criação, desenho, snap e frame personalizado."],
   "edit-hud-point-lock": ["Travar ponto", "Mantém o alvo do viewer fixo e orbita ao redor desse ponto."],
+  "edit-hud-view-reset": ["Restaurar viewer", "Retorna posição, orientação, foco e projeção da câmera ao estado inicial deste viewer."],
+  "edit-hud-ruler": ["Régua", "Mede a distância entre dois pontos no plano de desenho, respeitando grade, eixos e trava angular."],
+  "edit-hud-protractor": ["Transferidor", "Mede o ângulo entre dois raios definidos no plano de desenho."],
+  "edit-hud-measure-clear": ["Limpar medição", "Remove os pontos e o resultado do overlay local de medição."],
   "edit-hud-keep-tool": ["Manter ferramenta", "Mantém desenho e criação ativos após cada operação para executar várias vezes sem reabrir a ferramenta."],
   "edit-hud-repeat": ["Repetir", "Reaplica a última operação repetível, com os mesmos parâmetros, sobre a seleção atual."],
   "edit-hud-create": ["Criar objeto", "Abre a criação de geometria usando os parâmetros memorizados e, opcionalmente, outro objeto como referência."],
@@ -1516,10 +1627,77 @@ function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-function integerBetween(value, minimum, maximum, fallback) {
+export function normalizeHudDimensions(value = {}, fallback = {}) {
+  return Object.freeze({
+    columns: positiveInteger(
+      value.columns,
+      positiveInteger(fallback.columns, DEFAULT_PREFERENCES.columns)
+    ),
+    rows: positiveInteger(
+      value.rows,
+      positiveInteger(fallback.rows, DEFAULT_PREFERENCES.rows)
+    )
+  });
+}
+
+function positiveInteger(value, fallback) {
   const number = Number(value);
-  if (!Number.isInteger(number)) return fallback;
-  return clamp(number, minimum, maximum);
+  return Number.isInteger(number) && number >= 1 ? number : fallback;
+}
+
+function visibleHudCellCount(root) {
+  let count = 0;
+  for (const group of root.querySelectorAll("[data-edit-hud-group]")) {
+    if (group.hidden) continue;
+    for (const control of group.querySelectorAll("button, label")) {
+      if (!control.hidden) count += 1;
+    }
+  }
+  return Math.max(1, count);
+}
+
+function resolveHudLayout({
+  preferences,
+  visibleCells,
+  cellSize,
+  viewportWidth,
+  viewportHeight
+}) {
+  const gap = 3;
+  const columnsInViewport = Math.max(
+    1,
+    Math.floor((positiveFiniteOr(viewportWidth, 1) - 22) / (cellSize + gap))
+  );
+  const rowsInViewport = Math.max(
+    1,
+    Math.floor((positiveFiniteOr(viewportHeight, 1) - 54) / (cellSize + gap))
+  );
+  const docked = preferences.dock !== "floating";
+  if (preferences.orientation === "vertical") {
+    const requestedRows = docked
+      ? Math.max(preferences.rows, rowsInViewport)
+      : preferences.rows;
+    const rows = Math.min(visibleCells, requestedRows);
+    const columns = Math.min(
+      preferences.columns,
+      Math.max(1, Math.ceil(visibleCells / rows))
+    );
+    return { columns, rows };
+  }
+  const requestedColumns = docked
+    ? Math.max(preferences.columns, columnsInViewport)
+    : preferences.columns;
+  const columns = Math.min(visibleCells, requestedColumns);
+  const rows = Math.min(
+    preferences.rows,
+    Math.max(1, Math.ceil(visibleCells / columns))
+  );
+  return { columns, rows };
+}
+
+function positiveFiniteOr(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
 function finiteOr(value, fallback) {

@@ -13,6 +13,8 @@ export class LocalViewerCoordinator {
   #disposed = false;
   #broadcastScheduled = false;
   #applyingRemoteIntent = false;
+  #authorityOperation = null;
+  #appliedOperations = new Set();
   #intentQueue = [];
   #inFlight = null;
   #lastOutcome = null;
@@ -30,7 +32,11 @@ export class LocalViewerCoordinator {
     maximumCaptureMs: 0,
     snapshotsApplied: 0,
     lastApplyMs: 0,
-    maximumApplyMs: 0
+    maximumApplyMs: 0,
+    snapshotsSkippedWithoutPeers: 0,
+    compactOperationsBroadcast: 0,
+    compactOperationsApplied: 0,
+    compactOperationMismatches: 0
   };
 
   constructor({
@@ -152,19 +158,26 @@ export class LocalViewerCoordinator {
   dispatch(command) {
     this.#assertActive();
     if (this.isAuthority) {
-      return this.sandbox.dispatch(command);
+      return this.#runAuthorityOperation(
+        "dispatch",
+        () => this.sandbox.dispatch(command),
+        () => this.#snapshotAdapter.prepareIntent(command)
+      );
     }
     this.#queueIntent("dispatch", {
-      payload: this.#snapshotAdapter.prepareIntent(
-        structuredClone(command)
-      )
+      payload: this.#snapshotAdapter.prepareIntent(command)
     });
     return true;
   }
 
   undo() {
     this.#assertActive();
-    if (this.isAuthority) return this.sandbox.undo();
+    if (this.isAuthority) {
+      return this.#runAuthorityOperation(
+        "undo",
+        () => this.sandbox.undo()
+      );
+    }
     if (!this.sharedHistory.canUndo) return false;
     this.#queueIntent("undo");
     return true;
@@ -172,7 +185,12 @@ export class LocalViewerCoordinator {
 
   redo() {
     this.#assertActive();
-    if (this.isAuthority) return this.sandbox.redo();
+    if (this.isAuthority) {
+      return this.#runAuthorityOperation(
+        "redo",
+        () => this.sandbox.redo()
+      );
+    }
     if (!this.sharedHistory.canRedo) return false;
     this.#queueIntent("redo");
     return true;
@@ -409,6 +427,11 @@ export class LocalViewerCoordinator {
             this.#applyHistory(message.payload.history);
           }
           break;
+        case "operation":
+          if (!this.isAuthority && isFor(message, this.viewerId)) {
+            this.#applyAuthorityOperation(message.payload);
+          }
+          break;
         case "sandbox-switch":
           if (!this.isAuthority && isFor(message, this.viewerId)) {
             this.#followSandboxSwitch(message.payload);
@@ -531,14 +554,88 @@ export class LocalViewerCoordinator {
     ) {
       return;
     }
+    if (!this.#hasReplicaPeers()) {
+      this.#performance.snapshotsSkippedWithoutPeers += 1;
+      return;
+    }
+    if (this.#authorityOperation) {
+      this.#post("operation", {
+        ...this.#authorityOperation,
+        revision: this.sandbox.revision,
+        history: this.sharedHistory
+      });
+      this.#performance.compactOperationsBroadcast += 1;
+      return;
+    }
     if (this.#broadcastScheduled) return;
     this.#broadcastScheduled = true;
     queueMicrotask(() => {
       this.#broadcastScheduled = false;
-      if (!this.#disposed && this.isAuthority) {
+      if (!this.#disposed && this.isAuthority && this.#hasReplicaPeers()) {
         this.#broadcastSnapshot();
       }
     });
+  }
+
+  #runAuthorityOperation(operation, action, preparePayload = null) {
+    if (!this.#hasReplicaPeers()) return action();
+    const descriptor = {
+      operationId: createId(),
+      operation,
+      baseRevision: this.sandbox.revision,
+      ...(preparePayload ? { payload: preparePayload() } : {})
+    };
+    this.#authorityOperation = descriptor;
+    try {
+      return action();
+    } finally {
+      this.#authorityOperation = null;
+    }
+  }
+
+  #hasReplicaPeers() {
+    for (const peer of this.#peers.values()) {
+      if (peer.role !== "authority") return true;
+    }
+    return false;
+  }
+
+  #applyAuthorityOperation(payload = {}) {
+    const operationId = String(payload.operationId ?? "");
+    if (operationId && this.#appliedOperations.has(operationId)) return false;
+    const baseRevision = Number(payload.baseRevision);
+    if (baseRevision !== this.sandbox.revision) {
+      this.#performance.compactOperationMismatches += 1;
+      this.#post("sync-request", { revision: this.sandbox.revision });
+      return false;
+    }
+    this.#applyingRemoteIntent = true;
+    let changed = false;
+    try {
+      if (payload.operation === "dispatch") {
+        changed = this.#snapshotAdapter.applyIntent(payload.payload);
+      } else if (payload.operation === "undo") {
+        changed = this.sandbox.undo();
+      } else if (payload.operation === "redo") {
+        changed = this.sandbox.redo();
+      } else {
+        throw new Error(
+          `Operação compartilhada desconhecida: ${payload.operation}.`
+        );
+      }
+    } finally {
+      this.#applyingRemoteIntent = false;
+    }
+    if (operationId) {
+      this.#appliedOperations.add(operationId);
+      if (this.#appliedOperations.size > 256) {
+        this.#appliedOperations.delete(this.#appliedOperations.values().next().value);
+      }
+    }
+    this.sharedRevision = this.sandbox.revision;
+    this.#applyHistory(payload.history);
+    this.#performance.compactOperationsApplied += 1;
+    return changed;
   }
 
   #queueIntent(operation, extra = {}) {
@@ -695,7 +792,9 @@ export class LocalViewerCoordinator {
   }
 
   #broadcastSnapshot() {
-    if (!this.#channel || !this.isAuthority) return;
+    if (!this.#channel || !this.isAuthority || !this.#hasReplicaPeers()) {
+      return;
+    }
     this.#sendSnapshot();
   }
 
@@ -789,7 +888,7 @@ export class LocalViewerCoordinator {
       payload: {
         role: this.role,
         revision: this.sandbox.revision,
-        ...structuredClone(payload)
+        ...payload
       }
     });
     return true;

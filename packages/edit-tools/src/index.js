@@ -15,4 +15,4 @@ export {
 export {
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "./createDefaultEditToolRegistry.js?build=20260729-0040a";
+} from "./createDefaultEditToolRegistry.js?build=20260730-0040h";

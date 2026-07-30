@@ -9,6 +9,11 @@ export class PathInstancePreviewCache {
   #brushKey = null;
   #copyCapacity = 0;
   #visibleCopies = 0;
+  #deltaMatrix = new THREE.Matrix4();
+  #worldMatrix = new THREE.Matrix4();
+  #anchor = new THREE.Vector3();
+  #color = new THREE.Color();
+  #statusSnapshot = null;
   #diagnostics = {
     resourceBuilds: 0,
     geometryBuilds: 0,
@@ -94,14 +99,9 @@ export class PathInstancePreviewCache {
         sourceMatrices: entry.sourceWorldMatrices.map(matrix =>
           new THREE.Matrix4().fromArray(matrix)
         ),
-        previousMatrices: Array.from(
-          { length: capacity },
-          () => null
-        ),
-        previousColors: Array.from(
-          { length: capacity },
-          () => null
-        )
+        previousMatrices: new Float64Array(capacity * 16),
+        matrixValidity: new Uint8Array(capacity),
+        previousColors: new Int32Array(capacity).fill(-1)
       });
       this.#diagnostics.geometryBuilds += 1;
       this.#diagnostics.materialBuilds += 1;
@@ -109,7 +109,9 @@ export class PathInstancePreviewCache {
     }
     this.#brushKey = normalized.key;
     this.#diagnostics.resourceBuilds += 1;
+    this.group.position.set(0, 0, 0);
     this.group.visible = false;
+    this.#statusSnapshot = null;
     return this.status();
   }
 
@@ -122,35 +124,70 @@ export class PathInstancePreviewCache {
       throw new Error("Configure a fonte do pincel antes do preview.");
     }
     const copyCount = Math.min(deltaMatrices.length, this.#copyCapacity);
-    const delta = new THREE.Matrix4();
-    const world = new THREE.Matrix4();
     const colorMap = new Map(colorsByEntry.map(entry => [
       String(entry.key),
       entry.colors
     ]));
+
+    /*
+     * As matrizes recebidas estão em coordenadas mundiais. Mantê-las no
+     * InstancedMesh força o shader a subtrair câmera e objeto em float32,
+     * perdendo precisão longe da origem. O grupo carrega uma origem local e
+     * as matrizes passam a conter somente deslocamentos próximos de zero.
+     */
+    if (copyCount > 0) {
+      this.#deltaMatrix.fromArray(deltaMatrices[0]);
+      this.#worldMatrix.multiplyMatrices(
+        this.#deltaMatrix,
+        this.#batches[0].sourceMatrices[0]
+      );
+      this.#anchor.setFromMatrixPosition(this.#worldMatrix);
+      this.group.position.copy(this.#anchor);
+    } else {
+      this.#anchor.set(0, 0, 0);
+      this.group.position.set(0, 0, 0);
+    }
+
     for (const batch of this.#batches) {
       let instanceIndex = 0;
       let changed = false;
       let colorsChanged = false;
       const colors = colorMap.get(batch.key) ?? [];
       for (let copyIndex = 0; copyIndex < copyCount; copyIndex += 1) {
-        delta.fromArray(deltaMatrices[copyIndex]);
-        const color = normalizeColor(colors[copyIndex] ?? batch.color);
+        this.#deltaMatrix.fromArray(deltaMatrices[copyIndex]);
+        const packedColor = colorHexInt(
+          colors[copyIndex] ?? batch.color
+        );
         for (const sourceMatrix of batch.sourceMatrices) {
-          world.multiplyMatrices(delta, sourceMatrix);
-          const previous = batch.previousMatrices[instanceIndex];
-          if (!previous || !matrixNear(previous, world.elements)) {
-            batch.mesh.setMatrixAt(instanceIndex, world);
-            batch.previousMatrices[instanceIndex] =
-              Float64Array.from(world.elements);
+          this.#worldMatrix.multiplyMatrices(
+            this.#deltaMatrix,
+            sourceMatrix
+          );
+          this.#worldMatrix.elements[12] -= this.#anchor.x;
+          this.#worldMatrix.elements[13] -= this.#anchor.y;
+          this.#worldMatrix.elements[14] -= this.#anchor.z;
+          const offset = instanceIndex * 16;
+          if (!batch.matrixValidity[instanceIndex] ||
+              !matrixNearFlat(
+                batch.previousMatrices,
+                offset,
+                this.#worldMatrix.elements
+              )) {
+            batch.mesh.setMatrixAt(instanceIndex, this.#worldMatrix);
+            batch.previousMatrices.set(
+              this.#worldMatrix.elements,
+              offset
+            );
+            batch.matrixValidity[instanceIndex] = 1;
             this.#diagnostics.matrixWrites += 1;
             changed = true;
           } else {
             this.#diagnostics.matrixSkips += 1;
           }
-          if (batch.previousColors[instanceIndex] !== color) {
-            batch.mesh.setColorAt(instanceIndex, new THREE.Color(color));
-            batch.previousColors[instanceIndex] = color;
+          if (batch.previousColors[instanceIndex] !== packedColor) {
+            this.#color.setHex(packedColor);
+            batch.mesh.setColorAt(instanceIndex, this.#color);
+            batch.previousColors[instanceIndex] = packedColor;
             this.#diagnostics.colorWrites += 1;
             colorsChanged = true;
           } else {
@@ -172,6 +209,7 @@ export class PathInstancePreviewCache {
     this.#visibleCopies = copyCount;
     this.#diagnostics.frameUpdates += 1;
     this.group.visible = copyCount > 0;
+    this.#statusSnapshot = null;
     return Object.freeze({
       previewCount: copyCount,
       requestedCount: integerAtLeast(requestedCount, 0, "requestedCount"),
@@ -183,12 +221,15 @@ export class PathInstancePreviewCache {
   clear() {
     this.#visibleCopies = 0;
     for (const batch of this.#batches) batch.mesh.count = 0;
+    this.group.position.set(0, 0, 0);
     this.group.visible = false;
+    this.#statusSnapshot = null;
     return this.status();
   }
 
   status() {
-    return Object.freeze({
+    if (this.#statusSnapshot) return this.#statusSnapshot;
+    this.#statusSnapshot = Object.freeze({
       brushKey: this.#brushKey,
       batchCount: this.#batches.length,
       meshIds: Object.freeze(this.#batches.map(batch => batch.mesh.uuid)),
@@ -201,6 +242,7 @@ export class PathInstancePreviewCache {
       visibleInstances: this.#visibleInstanceCount(),
       diagnostics: Object.freeze({ ...this.#diagnostics })
     });
+    return this.#statusSnapshot;
   }
 
   dispose() {
@@ -208,6 +250,7 @@ export class PathInstancePreviewCache {
     this.#brushKey = null;
     this.#copyCapacity = 0;
     this.#visibleCopies = 0;
+    this.#statusSnapshot = null;
   }
 
   #visibleInstanceCount() {
@@ -225,7 +268,9 @@ export class PathInstancePreviewCache {
       batch.mesh.dispose?.();
     }
     this.#batches = [];
+    this.group.position.set(0, 0, 0);
     this.group.visible = false;
+    this.#statusSnapshot = null;
   }
 }
 
@@ -290,11 +335,17 @@ function normalizeColor(value) {
   return color.toLowerCase();
 }
 
-function matrixNear(previous, next, epsilon = 1e-10) {
+function matrixNearFlat(previous, offset, next, epsilon = 1e-10) {
   for (let index = 0; index < 16; index += 1) {
-    if (Math.abs(previous[index] - next[index]) > epsilon) return false;
+    if (Math.abs(previous[offset + index] - next[index]) > epsilon) {
+      return false;
+    }
   }
   return true;
+}
+
+function colorHexInt(value) {
+  return Number.parseInt(normalizeColor(value).slice(1), 16);
 }
 
 function integerAtLeast(value, minimum, name) {

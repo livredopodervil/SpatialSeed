@@ -6,5 +6,6 @@ export const VIEWER_CAMERA_COMMANDS = Object.freeze([
   "viewer.camera.orbit",
   "viewer.camera.frame-selection",
   "viewer.camera.interpolate",
+  "viewer.camera.reset",
   "viewer.camera.restore"
 ]);

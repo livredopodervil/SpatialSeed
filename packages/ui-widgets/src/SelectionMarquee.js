@@ -10,11 +10,14 @@ export class SelectionMarquee {
   #path;
   #cursor;
   #svg;
+  #navigation;
+  #navigationToken = null;
   enabled = false;
 
-  constructor({ canvas, element, onComplete }) {
+  constructor({ canvas, element, navigation = null, onComplete }) {
     this.#canvas = canvas;
     this.#element = element;
+    this.#navigation = navigation;
     this.#complete = onComplete;
     this.#svg = element.querySelector?.("svg") ?? null;
     this.#path = element.querySelector?.("[data-selection-gesture-path]") ?? null;
@@ -23,8 +26,23 @@ export class SelectionMarquee {
   }
 
   setEnabled(value) {
-    this.enabled = Boolean(value);
-    if (!this.enabled) this.cancel();
+    const enabled = Boolean(value);
+    if (enabled === this.enabled) return;
+    this.enabled = enabled;
+    if (enabled) {
+      this.#navigationToken =
+        this.#navigation?.acquireToolGestureNavigation?.(
+          "selection-gesture"
+        ) ?? null;
+    } else {
+      this.cancel();
+      if (this.#navigationToken) {
+        this.#navigation?.releaseToolGestureNavigation?.(
+          this.#navigationToken
+        );
+        this.#navigationToken = null;
+      }
+    }
   }
 
   setMode(mode, { radiusPixels = this.#radiusPixels } = {}) {
@@ -47,7 +65,9 @@ export class SelectionMarquee {
   cancel() {
     const pointerId = this.#gesture?.id;
     if (pointerId !== null && pointerId !== undefined) {
-      this.#canvas.releasePointerCapture?.(pointerId);
+      if (this.#gesture?.pointerType !== "touch") {
+        this.#canvas.releasePointerCapture?.(pointerId);
+      }
       this.#canvas.removeEventListener("pointermove", this.#move, true);
       this.#canvas.removeEventListener("pointerup", this.#up, true);
       this.#canvas.removeEventListener("pointercancel", this.#cancel, true);
@@ -64,6 +84,7 @@ export class SelectionMarquee {
 
   dispose() {
     this.#canvas.removeEventListener("pointerdown", this.#down, true);
+    this.setEnabled(false);
     this.cancel();
   }
 
@@ -71,16 +92,25 @@ export class SelectionMarquee {
     if (!this.enabled || (event.pointerType === "mouse" && event.button !== 0)) {
       return;
     }
+    if (this.#navigation?.isToolNavigationGesture?.(event)) {
+      this.cancel();
+      return;
+    }
     event.preventDefault();
-    event.stopImmediatePropagation();
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+    }
     const bounds = this.#canvas.getBoundingClientRect();
     const point = localPoint(event, bounds);
     this.#gesture = {
       id: event.pointerId,
+      pointerType: event.pointerType || "mouse",
       bounds,
       points: [point]
     };
-    this.#canvas.setPointerCapture?.(event.pointerId);
+    if (this.#gesture.pointerType !== "touch") {
+      this.#canvas.setPointerCapture?.(event.pointerId);
+    }
     Object.assign(this.#element.style, {
       left: `${bounds.left}px`,
       top: `${bounds.top}px`,
@@ -98,8 +128,14 @@ export class SelectionMarquee {
 
   #move = event => {
     if (!this.#gesture || event.pointerId !== this.#gesture.id) return;
+    if (this.#navigation?.isToolNavigationGesture?.(event)) {
+      this.cancel();
+      return;
+    }
     event.preventDefault();
-    event.stopImmediatePropagation();
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+    }
     const samples = event.getCoalescedEvents?.() ?? [event];
     for (const sample of samples) {
       this.#append(localPoint(sample, this.#gesture.bounds));
@@ -109,8 +145,14 @@ export class SelectionMarquee {
 
   #up = event => {
     if (!this.#gesture || event.pointerId !== this.#gesture.id) return;
+    if (this.#navigation?.isToolNavigationGesture?.(event)) {
+      this.cancel();
+      return;
+    }
     event.preventDefault();
-    event.stopImmediatePropagation();
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+    }
     this.#append(localPoint(event, this.#gesture.bounds), { force: true });
     const payload = this.#payload();
     this.#clean(event.pointerId);
@@ -119,7 +161,9 @@ export class SelectionMarquee {
 
   #cancel = event => {
     event.preventDefault();
-    event.stopImmediatePropagation();
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+    }
     this.#clean(event.pointerId);
   };
 
@@ -161,7 +205,9 @@ export class SelectionMarquee {
   }
 
   #clean(pointerId) {
-    this.#canvas.releasePointerCapture?.(pointerId);
+    if (this.#gesture?.pointerType !== "touch") {
+      this.#canvas.releasePointerCapture?.(pointerId);
+    }
     this.#canvas.removeEventListener("pointermove", this.#move, true);
     this.#canvas.removeEventListener("pointerup", this.#up, true);
     this.#canvas.removeEventListener("pointercancel", this.#cancel, true);

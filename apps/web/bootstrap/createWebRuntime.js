@@ -1,6 +1,6 @@
 import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-0020b-a";
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260729-0039g1";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260730-0040h";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260729-0039g2";
 import {
@@ -8,21 +8,24 @@ import {
   CameraObjectService,
   ViewerCameraController,
   ViewerState,
-} from "../../../packages/runtime-layers/src/index.js?build=20260725-0029f1";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260729-0039g1";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260729-0040a";
+} from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260730-0040g";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260730-0040h";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260729-0039g2";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260730-0040e";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260729-0039g2";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260729-0040a";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260730-0040h";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260730-0040e";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260729-0040a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260730-0040e";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
-import { classifyChanges } from "../../../packages/incremental-runtime/src/index.js?build=20260714-0020b-a";
+import {
+  classifyChanges,
+  SceneProjectionScheduler
+} from "../../../packages/incremental-runtime/src/index.js?build=20260730-0040h";
 import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
 import {
   createDefaultPropertyRegistry,
@@ -47,7 +50,7 @@ import {
   SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
-} from "../../../packages/script-runtime/src/index.js?build=20260726-0031a";
+} from "../../../packages/script-runtime/src/index.js?build=20260730-0040e";
 import {
   BrowserProcedureCatalogStore
 } from "../procedures/BrowserProcedureCatalogStore.js?build=20260716-0026i";
@@ -85,28 +88,31 @@ import {
 } from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0040a";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260729-0040a";
+} from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260729-0040a";
+} from "../../../packages/edit-hud/src/index.js?build=20260730-0040h";
 import {
   ToolLifecycleController,
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../../packages/edit-tools/src/index.js?build=20260729-0040a";
+} from "../../../packages/edit-tools/src/index.js?build=20260730-0040h";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260728-0039a";
+} from "../../../packages/object-placement/src/index.js?build=20260730-0040e";
 import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260729-0040a";
+} from "../../../packages/planar-authoring/src/index.js?build=20260730-0040g";
+import {
+  MeasurementController
+} from "../../../packages/measurement-tools/src/index.js?build=20260730-0040e";
 import {
   PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260729-0040a";
+} from "../../../packages/spatial-references/src/index.js?build=20260730-0040h";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -123,9 +129,9 @@ import {
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260729-0039g1";
+} from "../../../packages/local-viewers/src/index.js?build=20260730-0040f";
 
-const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v4";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v5";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({
@@ -202,9 +208,21 @@ export async function createWebRuntime({
   const baseSandbox = new Sandbox(region, reducer);
   const editor = new EditorState();
   let commandSandbox = baseSandbox;
+  const preparedCommandMarker = "spatialseed-prepared-command-v1";
 
   function dispatchRuntimeCommand(command) {
-    const next = structuredClone(command);
+    const prepared = Boolean(
+      command &&
+      typeof command === "object" &&
+      command.preparedImmutable === preparedCommandMarker &&
+      Object.isFrozen(command)
+    );
+    const requiresMaterialMigration = Boolean(
+      command?.type === "object.update" && command.patch?.material
+    );
+    const next = prepared && !requiresMaterialMigration
+      ? command
+      : structuredClone(command);
 
     if (next.type === "object.update" && next.patch?.material) {
       const created = appearanceRuntime.internLegacyMaterial(
@@ -309,10 +327,12 @@ export async function createWebRuntime({
       assets: appearanceRuntime.exportAssets()
     }),
     applyIntent: intent => {
-      baseSandbox.previewCommandSequence(
-        baseSandbox.getState(),
-        [intent.command]
-      );
+      /*
+       * O sandbox local já é a autoridade do documento. O preflight anterior
+       * clonava o estado completo e executava o redutor uma vez antes do
+       * dispatch real. Comandos locais preparados são validados pelo produtor
+       * e passam uma única vez pelo redutor autoritativo.
+       */
       appearanceRuntime.importAssets(
         intent.assets,
         { replace: false }
@@ -541,6 +561,7 @@ export async function createWebRuntime({
     onCompleted: () => toolLifecycle.completeAction("object.place"),
     onEnded: () => toolLifecycle.cancelAction("object.place")
   });
+  const measurement = new MeasurementController({ renderer });
 
   const sandboxRecovery = new SandboxRecoveryController({
     sandbox: baseSandbox,
@@ -597,10 +618,49 @@ export async function createWebRuntime({
     pathSketch,
     planarSketch,
     objectPlacement,
+    measurement,
     canMutateProject: action =>
       viewerCoordinator.requireAuthority(action)
   });
   commandsRef = commands;
+  commands.register(
+    "selection.instances.compact",
+    args => {
+      viewerCoordinator.requireAuthority(
+        "compactar instâncias selecionadas"
+      );
+      return selectionOperations.compactSelectedInstances(args);
+    },
+    { category: "selection", mutates: true }
+  );
+  commands.register(
+    "pivot.reference.set",
+    ({ reference = "absolute" } = {}) => {
+      const normalized = String(reference).toLowerCase();
+      if (!["absolute", "active-relative"].includes(normalized)) {
+        throw new RangeError(`Referência de pivô desconhecida: ${reference}.`);
+      }
+      const pivot = renderer.getSelectionPivotPosition?.();
+      if (!pivot) throw new Error("Selecione um objeto para definir o pivô.");
+      if (normalized === "absolute") {
+        editor.setCustomPivot(pivot);
+        return Object.freeze({ reference: normalized, position: [...pivot] });
+      }
+      const activeId = editor.selection.snapshot().activeMember?.objectId;
+      const activePosition = renderer.getObjectReferencePosition?.(activeId);
+      if (!activePosition) {
+        throw new Error("A seleção ativa não possui origem de referência.");
+      }
+      const offset = pivot.map((value, index) => value - activePosition[index]);
+      editor.setRelativePivot(offset);
+      return Object.freeze({
+        reference: normalized,
+        position: [...pivot],
+        offset: Object.freeze(offset)
+      });
+    },
+    { category: "pivot", mutates: false }
+  );
   toolLifecycle.attachExecute((id, args) => commands.execute(id, args));
   commands.setExecutionObserver(event => toolLifecycle.observeExecution(event));
   const requireNoMeshEdit = action => {
@@ -1050,6 +1110,9 @@ export async function createWebRuntime({
     .register("object.placement.status", () =>
       objectPlacement.status()
     )
+    .register("measurement.status", () =>
+      measurement.status()
+    )
     .register("edit.tool.status", () =>
       toolLifecycle.status()
     )
@@ -1081,6 +1144,57 @@ export async function createWebRuntime({
     .register("viewer.instances.status", () =>
       viewerCoordinator.status()
     )
+    .register("performance.locality.diagnostics", () => {
+      const state = baseSandbox.getSnapshot();
+      let familyObjects = 0;
+      let familyInstances = 0;
+      let packedTransformBytes = 0;
+      for (const object of state.objects) {
+        if (object.kind !== "instance-family") continue;
+        familyObjects += 1;
+        familyInstances += Number(object.family?.count ?? 0);
+        packedTransformBytes +=
+          (object.family?.positions?.length ?? 0) * 4 +
+          (object.family?.rotations?.length ?? 0) * 4 +
+          (object.family?.scales?.length ?? 0) * 4 +
+          (object.family?.colors?.length ?? 0) * 4;
+      }
+      return Object.freeze({
+        revision: baseSandbox.revision,
+        logicalObjects: state.objects.length,
+        familyObjects,
+        familyInstances,
+        packedTransformBytes,
+        sandbox: baseSandbox.getHistoryDiagnostics(),
+        coordination: viewerCoordinator.status().performance,
+        renderer: renderer.getIncrementalDiagnostics(),
+        sceneProjection: sceneProjection.status(),
+        pathSketch: pathSketch.status(),
+        pathTools: pathTools.getLocalityDiagnostics?.() ?? null,
+        selectionOperations:
+          selectionOperations.getLocalityDiagnostics?.() ?? null,
+        sets: Object.freeze({
+          sceneObjects: state.objects.length,
+          sandboxSubscribers:
+            baseSandbox.getHistoryDiagnostics().subscriberCount,
+          rendererLogicalProxies:
+            renderer.getResourceDiagnostics?.().logicalProxies ?? null,
+          rendererBatches:
+            renderer.getResourceDiagnostics?.().batches?.batches ?? null,
+          queuedStrokes: pathSketch.status().queuedCommits,
+          pendingStrokePublications:
+            pathSketch.status().pendingPublications,
+          familyBuildQueue:
+            renderer.getIncrementalDiagnostics().familyBuildQueue
+        }),
+        accounting: Object.freeze({
+          gestureEnd: "O pointerup sela o capsule; preparação e despacho são fases separadas e continuam com orçamento durante gestos subsequentes.",
+          undoRedo: "Deltas inversos são compactados antes da projeção; create+delete pendentes são eliminados sem construir recursos visuais.",
+          toolChange: "Captura de fonte selecionada ainda constrói HierarchyIndex uma vez por revisão; previews posteriores usam cápsula S, não a cena N.",
+          selection: "Clique percorre lotes e famílias renderizadas; seleção em área reconstrói o índice de tela quando câmera ou cena invalidam o cache."
+        })
+      });
+    })
     .register("viewer.sessions.status", () =>
       viewerDirectory.status()
     )
@@ -1138,19 +1252,17 @@ export async function createWebRuntime({
     execute: (id, args) => runtime.execute(id, args),
     subscribe: listener => {
       const unsubscribeContext = editContext.subscribe(listener);
-      const unsubscribeHistory = sandbox.subscribe(() =>
-        listener(editContext.status())
-      );
       const unsubscribeToolParameters = toolParameters.subscribe(() =>
         listener(editContext.status())
       );
       return () => {
         unsubscribeContext();
-        unsubscribeHistory();
         unsubscribeToolParameters();
       };
-    }
+    },
+    subscribeHistory: listener => sandbox.subscribe(() => listener())
   });
+  runtime.onDispose(() => renderer.disposeToolGestureNavigation());
   runtime.onDispose(() => editHud.dispose());
   runtime.onDispose(() => objectPlacement.dispose());
   runtime.onDispose(() => selectionOperations.dispose());
@@ -1158,6 +1270,7 @@ export async function createWebRuntime({
   runtime.onDispose(() => toolLifecycle.dispose());
   runtime.onDispose(() => pathSketch.dispose());
   runtime.onDispose(() => planarSketch.dispose());
+  runtime.onDispose(() => measurement.dispose());
   runtime.onDispose(() => meshEditPanel.dispose());
   runtime.onDispose(() => editContext.dispose());
   runtime.onDispose(() => meshEditor.dispose());
@@ -1284,6 +1397,13 @@ export async function createWebRuntime({
       affineBrushVariables: PATH_BRUSH_AFFINE_VARIABLES,
       persistence: "snapshot"
     }))
+    .register("measurement", () => ({
+      apiVersion: MeasurementController.apiVersion,
+      tools: ["ruler", "protractor"],
+      scope: "local-viewer",
+      persistence: "ephemeral",
+      planarConstraints: true
+    }))
     .register("animation", () => ({
       apiVersion: ANIMATION_RUNTIME_VERSION,
       commandApiVersion: ANIMATION_COMMAND_SERVICE_VERSION,
@@ -1350,14 +1470,22 @@ export async function createWebRuntime({
       runtime.benchmark({ iterations })
   );
 
+  const sceneProjection = new SceneProjectionScheduler({
+    applyIncremental: (state, changes) =>
+      renderer.applyChanges(state, changes),
+    applyFull: state => renderer.update(state),
+    interactionActive: () => Boolean(pathSketch.status().drawing)
+  });
+  let initialSceneProjected = false;
   const unsubscribeSandbox = sandbox.subscribe(
     (state, changes) => {
       const classification = classifyChanges(changes);
-
-      if (classification.mode === "incremental") {
-        renderer.applyChanges(state, classification.changes);
+      if (!initialSceneProjected &&
+          changes.some(change => change?.type === "initial")) {
+        initialSceneProjected = true;
+        sceneProjection.applyInitial(state);
       } else {
-        renderer.update(state);
+        sceneProjection.enqueue(state, classification);
       }
 
       runtime.emit("world.changed", {
@@ -1368,6 +1496,7 @@ export async function createWebRuntime({
       viewerDirectory.announce();
     }
   );
+  runtime.onDispose(() => sceneProjection.dispose());
 
   const unsubscribeSelection = editor.selection.subscribe(
     snapshot => runtime.emit("selection.changed", snapshot)
@@ -1377,6 +1506,9 @@ export async function createWebRuntime({
   );
   const unsubscribeEditContext = editContext.subscribe(
     snapshot => runtime.emit("edit.context.changed", snapshot)
+  );
+  const unsubscribeMeasurement = measurement.subscribe(
+    snapshot => runtime.emit("measurement.changed", snapshot)
   );
 
   const unsubscribeEditor = editor.subscribe(
@@ -1426,6 +1558,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeViewer)
     .onDispose(unsubscribeEditor)
     .onDispose(unsubscribeEditContext)
+    .onDispose(unsubscribeMeasurement)
     .onDispose(unsubscribeMeshEdit)
     .onDispose(unsubscribeSelection)
     .onDispose(unsubscribeSpatialReferences)
@@ -1460,6 +1593,7 @@ export async function createWebRuntime({
       pathTools,
       pathSketch,
       planarSketch,
+      measurement,
       toolRegistry,
       toolParameters,
       editHud,

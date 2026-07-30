@@ -3,7 +3,10 @@ import {
   normalizePlanarFrame,
   planarFrameCoordinates,
   planarFramePoint
-} from "../../edit-context/src/PlanarFrame.js?build=20260729-0040a";
+} from "../../edit-context/src/PlanarFrame.js?build=20260730-0040e";
+import {
+  constrainPlanarPoint
+} from "./PlanarConstraints.js?build=20260730-0040e";
 
 const MODES = Object.freeze([
   "point",
@@ -37,10 +40,12 @@ export class PlanarSketchController {
   #listeners = new Set();
   #preview = null;
   #previewFrame = null;
-  #pendingPreview = null;
+  #previewDirty = false;
   #handoffFrames = [];
   #pendingCommit = null;
   #commitObservers = [];
+  #visibilityRevision = null;
+  #visibilityIds = new Set();
 
   constructor({
     renderer,
@@ -93,6 +98,7 @@ export class PlanarSketchController {
       points: [],
       hover: null,
       pointerId: null,
+      pointerType: null,
       dragging: false,
       committing: false,
       commitRequestId: null,
@@ -100,11 +106,15 @@ export class PlanarSketchController {
       error: null,
       previousTool:
         this.renderer.editorState?.snapshot?.().tool?.mode ?? "select",
-      previousOrbitEnabled: Boolean(this.renderer.orbit?.enabled)
+      previousOrbitEnabled: Boolean(this.renderer.orbit?.enabled),
+      navigationToken:
+        this.renderer.acquireToolGestureNavigation?.("planar-sketch") ?? null
     };
     this.#ensurePreview(settings.color);
     this.renderer.setTransformMode?.("navigate");
-    if (this.renderer.orbit) this.renderer.orbit.enabled = false;
+    if (!this.#active.navigationToken && this.renderer.orbit) {
+      this.renderer.orbit.enabled = false;
+    }
     this.#notify();
     return this.status();
   }
@@ -206,13 +216,22 @@ export class PlanarSketchController {
   cancelDraft() {
     const active = this.#active;
     if (!active || active.committing) return this.status();
-    if (active.pointerId !== null) {
+    const changed =
+      active.pointerId !== null ||
+      active.pointerType !== null ||
+      active.points.length > 0 ||
+      active.hover !== null ||
+      active.dragging ||
+      active.error !== null;
+    if (!changed) return this.status();
+    if (active.pointerId !== null && active.pointerType !== "touch") {
       this.renderer.canvas.releasePointerCapture?.(active.pointerId);
     }
     active.points = [];
     active.hover = null;
     active.dragging = false;
     active.pointerId = null;
+    active.pointerType = null;
     active.error = null;
     this.#hidePreview();
     this.#notify();
@@ -250,12 +269,8 @@ export class PlanarSketchController {
         active.points.length >= 2 &&
         !active.committing
       ),
-      frame: active
-        ? Object.freeze(structuredClone(active.frame))
-        : null,
-      settings: active
-        ? Object.freeze(structuredClone(active.settings))
-        : Object.freeze({ ...DEFAULTS }),
+      frame: active?.frame ?? null,
+      settings: active?.settings ?? DEFAULTS,
       lastResult: active?.lastResult ?? null,
       error: active?.error ?? null
     });
@@ -287,12 +302,19 @@ export class PlanarSketchController {
     const active = this.#active;
     if (!active || active.committing) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (this.renderer.isToolNavigationGesture?.(event)) {
+      this.cancelDraft();
+      return;
+    }
     const point = this.#worldPoint(event);
     if (!point) return;
     event.preventDefault();
-    event.stopImmediatePropagation();
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+    }
     active.error = null;
-    if (active.settings.mode === "point") {
+    if (active.settings.mode === "point" &&
+        event.pointerType !== "touch") {
       active.points = [point];
       this.#schedulePreview();
       this.#commit([point]);
@@ -312,10 +334,13 @@ export class PlanarSketchController {
       return;
     }
     active.pointerId = event.pointerId;
+    active.pointerType = event.pointerType || "mouse";
     active.dragging = true;
     active.points = [point];
     active.hover = point;
-    this.renderer.canvas.setPointerCapture?.(event.pointerId);
+    if (active.pointerType !== "touch") {
+      this.renderer.canvas.setPointerCapture?.(event.pointerId);
+    }
     this.#schedulePreview();
     this.#notify();
   };
@@ -323,6 +348,10 @@ export class PlanarSketchController {
   #onPointerMove = event => {
     const active = this.#active;
     if (!active || active.committing) return;
+    if (this.renderer.isToolNavigationGesture?.(event)) {
+      if (active.dragging || active.points.length) this.cancelDraft();
+      return;
+    }
     if (active.settings.mode !== "polyline" &&
         (!active.dragging || event.pointerId !== active.pointerId)) {
       return;
@@ -333,13 +362,19 @@ export class PlanarSketchController {
     const point = this.#worldPoint(event);
     if (!point) return;
     event.preventDefault();
-    event.stopImmediatePropagation();
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+    }
     active.hover = point;
     this.#schedulePreview();
   };
 
   #onPointerUp = event => {
     const active = this.#active;
+    if (active && this.renderer.isToolNavigationGesture?.(event)) {
+      if (active.dragging || active.points.length) this.cancelDraft();
+      return;
+    }
     if (!active || active.committing ||
         active.settings.mode === "polyline" ||
         !active.dragging ||
@@ -347,11 +382,14 @@ export class PlanarSketchController {
       return;
     }
     event.preventDefault();
-    event.stopImmediatePropagation();
-    this.renderer.canvas.releasePointerCapture?.(event.pointerId);
+    if (event.pointerType !== "touch") {
+      event.stopImmediatePropagation();
+      this.renderer.canvas.releasePointerCapture?.(event.pointerId);
+    }
     const point = this.#worldPoint(event) ?? active.hover;
     active.dragging = false;
     active.pointerId = null;
+    active.pointerType = null;
     if (!point) {
       this.cancelDraft();
       return;
@@ -368,7 +406,9 @@ export class PlanarSketchController {
       return;
     }
     event.preventDefault();
-    this.renderer.canvas.releasePointerCapture?.(event.pointerId);
+    if (event.pointerType !== "touch") {
+      this.renderer.canvas.releasePointerCapture?.(event.pointerId);
+    }
     this.cancelDraft();
   };
 
@@ -403,16 +443,22 @@ export class PlanarSketchController {
     });
     if (!placement?.point) return null;
     const transform = this.renderer.getTransformConfig?.() ?? {};
-    if (!transform.gridLock) return [...placement.point];
-    const step = Number(transform.translationSnap) > 0
-      ? Number(transform.translationSnap)
-      : 1;
-    const local = planarFrameCoordinates(active.frame, placement.point);
-    return [...planarFramePoint(active.frame, [
-      Math.round(local[0] / step) * step,
-      Math.round(local[1] / step) * step,
-      0
-    ])];
+    const anchor = active.settings.mode === "polyline"
+      ? active.points.at(-1) ?? null
+      : active.points[0] ?? null;
+    return [...constrainPlanarPoint({
+      frame: active.frame,
+      point: placement.point,
+      anchor,
+      gridStep: transform.gridLock
+        ? transform.translationSnap ?? 1
+        : null,
+      angleStepDegrees: transform.rotationSnapDeg,
+      axes: this.renderer.getObjectTransformAxes?.() ?? {
+        x: true,
+        y: true
+      }
+    })];
   }
 
   #commit(points) {
@@ -428,9 +474,9 @@ export class PlanarSketchController {
       const completion = {
         result,
         mode: active.settings.mode,
-        settings: structuredClone(active.settings),
-        frame: structuredClone(active.frame),
-        points: points.map(point => [...point])
+        settings: active.settings,
+        frame: active.frame,
+        points: result.points
       };
       this.#beginCommitHandoff(completion);
     } catch (error) {
@@ -506,10 +552,17 @@ export class PlanarSketchController {
     if (typeof this.sandbox?.getObject === "function") {
       return ids.every(id => Boolean(this.sandbox.getObject(id)));
     }
-    const objects = this.sandbox?.getSnapshot?.().objects;
-    if (!Array.isArray(objects)) return false;
-    const available = new Set(objects.map(object => String(object.id)));
-    return ids.every(id => available.has(String(id)));
+    const revision = Number(this.sandbox?.revision);
+    const cacheable = Number.isInteger(revision);
+    if (!cacheable || this.#visibilityRevision !== revision) {
+      const objects = this.sandbox?.getSnapshot?.().objects;
+      if (!Array.isArray(objects)) return false;
+      this.#visibilityIds = new Set(
+        objects.map(object => String(object.id))
+      );
+      this.#visibilityRevision = cacheable ? revision : null;
+    }
+    return ids.every(id => this.#visibilityIds.has(String(id)));
   }
 
   #completeCommit(completion) {
@@ -531,6 +584,7 @@ export class PlanarSketchController {
     active.hover = null;
     active.dragging = false;
     active.pointerId = null;
+    active.pointerType = null;
     if (active.settings.continuous) {
       this.#deferPreviewClear();
     } else {
@@ -554,7 +608,7 @@ export class PlanarSketchController {
   }
 
   #schedulePreview({ flush = false } = {}) {
-    this.#pendingPreview = this.#draftPoints();
+    this.#previewDirty = true;
     if (flush) {
       this.#cancelPreviewFrame();
       this.#flushPreview();
@@ -575,21 +629,21 @@ export class PlanarSketchController {
     const active = this.#active;
     if (!active) return [];
     if (active.settings.mode === "polyline") {
-      const points = active.points.map(point => [...point]);
+      const points = active.points.slice();
       if (active.hover && !near3(active.hover, points.at(-1))) {
-        points.push([...active.hover]);
+        points.push(active.hover);
       }
       return points;
     }
     return active.points.length && active.hover
-      ? [[...active.points[0]], [...active.hover]]
-      : active.points.map(point => [...point]);
+      ? [active.points[0], active.hover]
+      : active.points.slice();
   }
 
   #flushPreview() {
     const active = this.#active;
-    const points = this.#pendingPreview ?? [];
-    this.#pendingPreview = null;
+    const points = this.#previewDirty ? this.#draftPoints() : [];
+    this.#previewDirty = false;
     if (!active || !points.length) {
       this.#hidePreview();
       return;
@@ -603,8 +657,10 @@ export class PlanarSketchController {
       });
       const geometry = this.geometryRegistry.create(plan.geometry);
       this.#ensurePreview(active.settings.color);
-      this.#preview.geometry.dispose();
-      this.#preview.geometry = geometry;
+      this.#preview.geometry = updateDynamicPreviewGeometry(
+        this.#preview.geometry,
+        geometry
+      );
       this.#preview.position.fromArray(plan.position);
       this.#preview.quaternion.fromArray(plan.rotation);
       this.#preview.material.color.set(active.settings.color);
@@ -629,6 +685,7 @@ export class PlanarSketchController {
     );
     this.#preview.name = "planar-sketch-preview";
     this.#preview.renderOrder = 1498;
+    this.#preview.frustumCulled = false;
     this.#preview.visible = false;
     this.renderer.scene.add(this.#preview);
   }
@@ -675,10 +732,13 @@ export class PlanarSketchController {
   #finishInteraction({ restoreTool }) {
     const active = this.#active;
     if (!active) return;
-    if (active.pointerId !== null) {
+    if (active.pointerId !== null && active.pointerType !== "touch") {
       this.renderer.canvas.releasePointerCapture?.(active.pointerId);
     }
-    if (this.renderer.orbit) {
+    if (active.navigationToken) {
+      this.renderer.releaseToolGestureNavigation?.(active.navigationToken);
+      active.navigationToken = null;
+    } else if (this.renderer.orbit) {
       this.renderer.orbit.enabled = active.previousOrbitEnabled;
     }
     if (restoreTool) {
@@ -696,7 +756,7 @@ export class PlanarSketchController {
 
   #notify() {
     const snapshot = this.status();
-    for (const listener of [...this.#listeners]) listener(snapshot);
+    for (const listener of this.#listeners) listener(snapshot);
   }
 
   #bind(enabled) {
@@ -708,6 +768,69 @@ export class PlanarSketchController {
     canvas[method]("pointercancel", this.#onPointerCancel, true);
     globalThis[method]?.("keydown", this.#onKeyDown, true);
   }
+}
+
+function updateDynamicPreviewGeometry(current, next) {
+  if (!geometryLayoutsMatch(current, next)) {
+    current?.dispose?.();
+    markDynamicGeometry(next);
+    return next;
+  }
+  for (const name of Object.keys(next.attributes)) {
+    const target = current.getAttribute(name);
+    const source = next.getAttribute(name);
+    target.array.set(source.array);
+    target.clearUpdateRanges?.();
+    target.addUpdateRange?.(0, target.array.length);
+    target.needsUpdate = true;
+  }
+  if (current.index && next.index) {
+    current.index.array.set(next.index.array);
+    current.index.clearUpdateRanges?.();
+    current.index.addUpdateRange?.(0, current.index.array.length);
+    current.index.needsUpdate = true;
+  }
+  current.setDrawRange(next.drawRange.start, next.drawRange.count);
+  current.clearGroups();
+  for (const group of next.groups) {
+    current.addGroup(group.start, group.count, group.materialIndex);
+  }
+  next.dispose();
+  return current;
+}
+
+function geometryLayoutsMatch(left, right) {
+  if (!left || !right) return false;
+  const leftNames = Object.keys(left.attributes).sort();
+  const rightNames = Object.keys(right.attributes).sort();
+  if (leftNames.length !== rightNames.length ||
+      leftNames.some((name, index) => name !== rightNames[index])) {
+    return false;
+  }
+  for (const name of leftNames) {
+    const a = left.getAttribute(name);
+    const b = right.getAttribute(name);
+    if (!a || !b || a.itemSize !== b.itemSize ||
+        a.normalized !== b.normalized ||
+        a.array.constructor !== b.array.constructor ||
+        a.array.length !== b.array.length) {
+      return false;
+    }
+  }
+  if (Boolean(left.index) !== Boolean(right.index)) return false;
+  if (left.index && (
+      left.index.array.constructor !== right.index.array.constructor ||
+      left.index.array.length !== right.index.array.length
+  )) return false;
+  return true;
+}
+
+function markDynamicGeometry(geometry) {
+  for (const attribute of Object.values(geometry.attributes ?? {})) {
+    attribute.setUsage?.(THREE.DynamicDrawUsage);
+  }
+  geometry.index?.setUsage?.(THREE.DynamicDrawUsage);
+  return geometry;
 }
 
 export function createPlanarPrimitive({

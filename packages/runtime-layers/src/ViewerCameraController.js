@@ -1,13 +1,13 @@
 import {
   normalizeCameraProjection
-} from "./ViewerState.js";
+} from "./ViewerState.js?build=20260730-0040e";
 import {
   VIEWER_CAMERA_COMMANDS
-} from "./ViewerCameraCommands.js";
+} from "./ViewerCameraCommands.js?build=20260730-0040e";
 
 export {
   VIEWER_CAMERA_COMMANDS
-} from "./ViewerCameraCommands.js";
+} from "./ViewerCameraCommands.js?build=20260730-0040e";
 
 const EPSILON = 1e-9;
 const DEG_TO_RAD = Math.PI / 180;
@@ -17,6 +17,7 @@ export class ViewerCameraController {
 
   #applying = false;
   #disposeSurface = () => {};
+  #initialCamera = null;
 
   constructor({ viewer, surface } = {}) {
     if (!viewer?.snapshot || !viewer?.update) {
@@ -37,6 +38,7 @@ export class ViewerCameraController {
       viewer.snapshot().camera,
       surface.readNavigationCamera()
     );
+    this.#initialCamera = initial;
     this.#commit(initial);
 
     if (typeof surface.subscribeNavigationCamera === "function") {
@@ -56,6 +58,7 @@ export class ViewerCameraController {
       command,
       args,
       {
+        initialCamera: this.#initialCamera,
         selectionBounds: () =>
           this.surface.readSelectionBounds?.() ?? null
       }
@@ -84,6 +87,7 @@ export class ViewerCameraController {
         intent.command,
         intent.args,
         {
+          initialCamera: this.#initialCamera,
           selectionBounds: () =>
             this.surface.readSelectionBounds?.() ?? null
         }
@@ -214,6 +218,9 @@ export function reduceNavigationCamera(
 
     case "viewer.camera.interpolate":
       return interpolateCamera(camera, input);
+
+    case "viewer.camera.reset":
+      return normalizeNavigationCamera(context.initialCamera ?? camera);
 
     case "viewer.camera.restore":
       return normalizeNavigationCamera(input.camera ?? input);

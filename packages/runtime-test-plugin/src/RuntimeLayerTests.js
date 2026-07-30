@@ -20,7 +20,7 @@ import {
   EditorSession,
   SimulationClock,
   SimulationBridge
-} from "../../runtime-layers/src/index.js?build=20260725-0029f1";
+} from "../../runtime-layers/src/index.js?build=20260730-0040e";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
@@ -142,7 +142,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260729-0039g2";
+} from "../../devtools/src/DevConsole.js?build=20260730-0040e";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -173,6 +173,9 @@ import {
   screenSelectionGestureContains
 } from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260729-0039g2";
 import {
+  ToolGestureNavigation
+} from "../../renderer-three/src/ToolGestureNavigation.js?build=20260730-0040e";
+import {
   MeshEditController,
   applyMeshTopologyOperation,
   affineDeltaWorld,
@@ -200,14 +203,23 @@ import {
   planarFrameCoordinates,
   planarFrameFromPoints,
   planarFramePoint
-} from "../../edit-context/src/index.js?build=20260729-0040a";
+} from "../../edit-context/src/index.js?build=20260730-0040e";
 import {
   PlanarSketchController,
   createPlanarPrimitive
-} from "../../planar-authoring/src/index.js?build=20260729-0040a";
+} from "../../planar-authoring/src/index.js?build=20260730-0040e";
+import {
+  ObjectPlacementController
+} from "../../object-placement/src/index.js?build=20260730-0040e";
+import {
+  MeasurementController,
+  formatMeasurementResult,
+  measureAngle,
+  measureDistance
+} from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260729-0040a";
+} from "../../editor-commands/src/EditorCommands.js?build=20260730-0040e";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -223,8 +235,9 @@ import {
 import {
   deriveHudContext,
   geometryToolIcon,
-  geometryToolPriority
-} from "../../edit-hud/src/index.js?build=20260729-0040a";
+  geometryToolPriority,
+  normalizeHudDimensions
+} from "../../edit-hud/src/index.js?build=20260730-0040e";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -241,7 +254,7 @@ import {
   samplePathFrames,
   samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "../../spatial-references/src/index.js?build=20260729-0040a";
+} from "../../spatial-references/src/index.js?build=20260730-0040e";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -271,7 +284,7 @@ import {
   UiActionRegistry,
   UiRefreshCoordinator,
   normalizeShortcutChord
-} from "../../ui-widgets/src/index.js?build=20260729-0039g2";
+} from "../../ui-widgets/src/index.js?build=20260730-0040e";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260720-0028c";
@@ -436,6 +449,26 @@ export function createRuntimeLayerTests() {
         });
         assertDeepEqual(fixture.meshEditor.status().snap.modes, ["vertex", "face"]);
         assertEqual(fixture.meshEditor.status().snap.enabled, true);
+        context.dispose();
+      },
+
+      "grade e ângulo compartilham passos explícitos em 2D e 3D"() {
+        const fixture = createEditContextFixture();
+        const context = new EditContextController(fixture);
+        context.setSnap({
+          enabled: true,
+          grid: true,
+          angle: true,
+          gridStep: 0.25,
+          angleStepDegrees: 15
+        });
+        const status = context.status();
+        assertNear(status.snap.gridStep, 0.25);
+        assertNear(status.snap.angleStepDegrees, 15);
+        assertEqual(status.snap.angle, true);
+        assertNear(fixture.renderer.transformConfig.translationSnap, 0.25);
+        assertNear(fixture.renderer.transformConfig.rotationSnapDeg, 15);
+        assertEqual(fixture.renderer.transformConfig.gridLock, true);
         context.dispose();
       },
 
@@ -977,6 +1010,192 @@ export function createRuntimeLayerTests() {
         assertEqual(controller.status().active, true);
         assertEqual(controller.status().pointCount, 0);
         controller.dispose();
+      },
+
+      "segundo toque cancela o rascunho 2D sem publicar geometria"() {
+        const renderer = createPathSketchRendererStub();
+        const calls = [];
+        const controller = new PlanarSketchController({
+          renderer,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          createObject(args) {
+            calls.push(structuredClone(args));
+            return { changed: true, id: `planar-${calls.length}` };
+          }
+        });
+        controller.begin({
+          mode: "line",
+          planeSource: "viewer",
+          continuous: true
+        });
+        renderer.canvas.emit(
+          "pointerdown",
+          pathPointerEvent(21, 10, 20, { pointerType: "touch" })
+        );
+        renderer.canvas.emit(
+          "pointerdown",
+          pathPointerEvent(22, 40, 30, { pointerType: "touch" })
+        );
+        renderer.canvas.emit(
+          "pointerup",
+          pathPointerEvent(21, 12, 22, { pointerType: "touch" })
+        );
+        renderer.canvas.emit(
+          "pointerup",
+          pathPointerEvent(22, 42, 32, { pointerType: "touch" })
+        );
+        assertEqual(calls.length, 0);
+        assertEqual(controller.status().active, true);
+        assertEqual(controller.status().pointCount, 0);
+        controller.dispose();
+      }
+    },
+
+    "object-placement": {
+      "segundo toque navega sem criar o objeto apontado"() {
+        const renderer = createPathSketchRendererStub();
+        const calls = [];
+        const controller = new ObjectPlacementController({
+          renderer,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          createObject(args) {
+            calls.push(structuredClone(args));
+            return { changed: true, id: `placed-${calls.length}` };
+          }
+        });
+        controller.begin({
+          geometry: {
+            type: "box",
+            size: [1, 1, 1],
+            segments: [1, 1, 1]
+          },
+          continuous: true
+        });
+        renderer.canvas.emit(
+          "pointerdown",
+          pathPointerEvent(25, 10, 20, { pointerType: "touch" })
+        );
+        renderer.canvas.emit(
+          "pointerdown",
+          pathPointerEvent(26, 40, 30, { pointerType: "touch" })
+        );
+        renderer.canvas.emit(
+          "pointerup",
+          pathPointerEvent(25, 12, 22, { pointerType: "touch" })
+        );
+        renderer.canvas.emit(
+          "pointerup",
+          pathPointerEvent(26, 42, 32, { pointerType: "touch" })
+        );
+        assertEqual(calls.length, 0);
+        renderer.canvas.emit(
+          "pointerdown",
+          pathPointerEvent(27, 20, 30)
+        );
+        renderer.canvas.emit(
+          "pointerup",
+          pathPointerEvent(27, 30, 40)
+        );
+        assertEqual(calls.length, 1);
+        controller.dispose();
+      }
+    },
+
+    "measurement-tools": {
+      "régua e transferidor calculam resultados locais determinísticos"() {
+        const distance = measureDistance([0, 0, 0], [3, 4, 0]);
+        const angle = measureAngle(
+          [0, 0, 0],
+          [2, 0, 0],
+          [0, 3, 0]
+        );
+        assertNear(distance.distance, 5);
+        assertDeepEqual(distance.delta, [3, 4, 0]);
+        assertNear(angle.angleDegrees, 90);
+        assertEqual(formatMeasurementResult(angle), "90°");
+      },
+
+      "régua permanece local ao viewer e segundo toque não confirma"() {
+        const renderer = createPathSketchRendererStub();
+        const controller = new MeasurementController({ renderer });
+        controller.begin({ mode: "ruler" });
+        renderer.canvas.emit(
+          "pointerdown",
+          pathPointerEvent(31, 0, 0)
+        );
+        renderer.canvas.emit(
+          "pointerup",
+          pathPointerEvent(31, 30, 40)
+        );
+        assertNear(controller.status().result.distance, 5);
+        controller.clear();
+        renderer.canvas.emit(
+          "pointerdown",
+          pathPointerEvent(32, 10, 10, { pointerType: "touch" })
+        );
+        renderer.canvas.emit(
+          "pointerdown",
+          pathPointerEvent(33, 30, 30, { pointerType: "touch" })
+        );
+        renderer.canvas.emit(
+          "pointerup",
+          pathPointerEvent(32, 10, 10, { pointerType: "touch" })
+        );
+        renderer.canvas.emit(
+          "pointerup",
+          pathPointerEvent(33, 30, 30, { pointerType: "touch" })
+        );
+        assertEqual(controller.status().result, null);
+        assertEqual(controller.status().pointCount, 0);
+        controller.dispose();
+      },
+
+      "dois dedos navegam e três orbitam o foco durante ferramenta"() {
+        const canvas = createPointerCanvasFixture();
+        const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1000);
+        camera.position.set(0, 0, 10);
+        const orbit = {
+          enabled: false,
+          target: new THREE.Vector3(0, 0, 0),
+          touches: {
+            ONE: THREE.TOUCH.ROTATE,
+            TWO: THREE.TOUCH.DOLLY_ROTATE
+          },
+          enableRotate: true,
+          minPolarAngle: 0,
+          maxPolarAngle: Math.PI,
+          update() {}
+        };
+        const navigation = new ToolGestureNavigation({
+          canvas,
+          orbit,
+          camera
+        });
+        const original = {
+          enabled: orbit.enabled,
+          one: orbit.touches.ONE,
+          two: orbit.touches.TWO
+        };
+        const token = navigation.acquire("test");
+        canvas.emit("pointerdown", touchPointer(1, 10, 10));
+        assertEqual(navigation.status().mode, "tool");
+        canvas.emit("pointerdown", touchPointer(2, 30, 10));
+        assertEqual(navigation.status().mode, "pan-zoom");
+        canvas.emit("pointerdown", touchPointer(3, 20, 30));
+        const before = camera.position.toArray();
+        canvas.emit("pointermove", touchPointer(3, 40, 40));
+        assertEqual(navigation.status().mode, "orbit");
+        assertEqual(
+          before.some((value, index) =>
+            Math.abs(value - camera.position.toArray()[index]) > 1e-8
+          ),
+          true
+        );
+        navigation.release(token);
+        assertEqual(orbit.enabled, original.enabled);
+        assertEqual(orbit.touches.ONE, original.one);
+        assertEqual(orbit.touches.TWO, original.two);
+        navigation.dispose();
       }
     },
 
@@ -1484,6 +1703,20 @@ export function createRuntimeLayerTests() {
     },
 
     "hud-context": {
+      "dimensões do HUD não possuem teto artificial"() {
+        assertDeepEqual(
+          normalizeHudDimensions({ columns: 48, rows: 32 }),
+          { columns: 48, rows: 32 }
+        );
+        assertDeepEqual(
+          normalizeHudDimensions(
+            { columns: 0, rows: "inválido" },
+            { columns: 9, rows: 5 }
+          ),
+          { columns: 9, rows: 5 }
+        );
+      },
+
       "seleção de objetos promove ações de edição"() {
         const result = deriveHudContext({
           state: { meshActive: false },
@@ -5655,6 +5888,25 @@ export function createRuntimeLayerTests() {
         controller.dispose();
       },
 
+      "reset da câmera restaura exatamente o estado inicial do viewer"() {
+        const surface = createCameraSurfaceFixture();
+        const initial = navigationCameraFixture({
+          position: [3, 4, 12],
+          focusDistance: 7,
+          fov: 63
+        });
+        const viewer = new ViewerState({ camera: initial });
+        const controller = new ViewerCameraController({ viewer, surface });
+        const expected = controller.snapshot();
+        controller.execute("viewer.camera.move", {
+          delta: [8, -3, 2]
+        });
+        controller.execute("viewer.camera.projection.set", { fov: 91 });
+        const reset = controller.execute("viewer.camera.reset");
+        assertDeepEqual(reset, expected);
+        controller.dispose();
+      },
+
       "sequência aplica uma única vista final na superfície"() {
         const surface = createCameraSurfaceFixture();
         const viewer = new ViewerState({
@@ -5760,7 +6012,8 @@ export function createRuntimeLayerTests() {
         const results = console.execute([
           "camera lookat 0 1 0",
           "camera orbit 30 -10",
-          "camera frame 1.25"
+          "camera frame 1.25",
+          "camera reset"
         ].join("\n"));
 
         assert(results.every(result => result.ok));
@@ -5769,7 +6022,8 @@ export function createRuntimeLayerTests() {
           [
             "viewer.camera.look-at",
             "viewer.camera.orbit",
-            "viewer.camera.frame-selection"
+            "viewer.camera.frame-selection",
+            "viewer.camera.reset"
           ]
         );
       },
@@ -13789,6 +14043,75 @@ assets: {
         assertEqual(listeners.get("pointerdown").size, 0);
       },
 
+      "segundo toque entrega o gesto à navegação e não conclui seleção"() {
+        const listeners = new Map();
+        const canvas = {
+          addEventListener(type, listener) {
+            const values = listeners.get(type) ?? new Set();
+            values.add(listener);
+            listeners.set(type, values);
+          },
+          removeEventListener(type, listener) {
+            listeners.get(type)?.delete(listener);
+          },
+          getBoundingClientRect() {
+            return { left: 0, top: 0, width: 200, height: 100 };
+          },
+          setPointerCapture() {},
+          releasePointerCapture() {}
+        };
+        const element = {
+          hidden: true,
+          dataset: {},
+          style: {},
+          querySelector() { return null; }
+        };
+        const completed = [];
+        const activeTouches = new Set();
+        const navigation = {
+          acquireToolGestureNavigation() { return "selection-token"; },
+          releaseToolGestureNavigation() {},
+          isToolNavigationGesture(event) {
+            if (event.type === "pointerdown") {
+              activeTouches.add(event.pointerId);
+            }
+            if (event.type === "pointerup" || event.type === "pointercancel") {
+              activeTouches.delete(event.pointerId);
+            }
+            return activeTouches.size >= 2;
+          }
+        };
+        const marquee = new SelectionMarquee({
+          canvas,
+          element,
+          navigation,
+          onComplete: value => completed.push(value)
+        });
+        const emit = (type, pointerId, x, y) => {
+          const event = {
+            type,
+            pointerId,
+            pointerType: "touch",
+            button: 0,
+            clientX: x,
+            clientY: y,
+            preventDefault() {},
+            stopImmediatePropagation() {},
+            getCoalescedEvents() { return [this]; }
+          };
+          for (const listener of [...(listeners.get(type) ?? [])]) {
+            listener(event);
+          }
+        };
+        marquee.setEnabled(true);
+        emit("pointerdown", 1, 10, 10);
+        emit("pointerdown", 2, 50, 30);
+        emit("pointerup", 1, 12, 12);
+        emit("pointerup", 2, 110, 80);
+        assertEqual(completed.length, 0);
+        marquee.dispose();
+      },
+
       "borracha publica uma única exclusão para todos os atingidos"() {
         const editor = new EditorState();
         const calls = [];
@@ -14312,6 +14635,7 @@ function createPathToolFixture() {
 
 function createPathSketchRendererStub() {
   const listeners = new Map();
+  const activeTouches = new Set();
   const canvas = {
     addEventListener(type, listener) {
       const entries = listeners.get(type) ?? new Set();
@@ -14322,6 +14646,7 @@ function createPathSketchRendererStub() {
       listeners.get(type)?.delete(listener);
     },
     emit(type, event) {
+      event.type = type;
       for (const listener of listeners.get(type) ?? []) listener(event);
     },
     getBoundingClientRect() {
@@ -14349,6 +14674,25 @@ function createPathSketchRendererStub() {
     setTransformMode(next) {
       mode = String(next);
     },
+    acquireToolGestureNavigation() {
+      return Object.freeze({ owner: "test-tool" });
+    },
+    releaseToolGestureNavigation() {
+      activeTouches.clear();
+      return true;
+    },
+    isToolNavigationGesture(event) {
+      if (event.pointerType !== "touch") return false;
+      if (event.type === "pointerdown") {
+        activeTouches.add(event.pointerId);
+      } else if (
+        event.type === "pointerup" ||
+        event.type === "pointercancel"
+      ) {
+        activeTouches.delete(event.pointerId);
+      }
+      return activeTouches.size >= 2;
+    },
     getEditPlane() {
       return null;
     },
@@ -14375,10 +14719,49 @@ function createPathSketchRendererStub() {
   };
 }
 
-function pathPointerEvent(pointerId, clientX, clientY) {
+function createPointerCanvasFixture() {
+  const listeners = new Map();
+  return {
+    addEventListener(type, listener) {
+      const values = listeners.get(type) ?? new Set();
+      values.add(listener);
+      listeners.set(type, values);
+    },
+    removeEventListener(type, listener) {
+      listeners.get(type)?.delete(listener);
+    },
+    emit(type, event) {
+      event.type = type;
+      for (const listener of [...(listeners.get(type) ?? [])]) {
+        listener(event);
+      }
+    },
+    getBoundingClientRect() {
+      return { left: 0, top: 0, width: 200, height: 100 };
+    }
+  };
+}
+
+function touchPointer(pointerId, clientX, clientY) {
   return {
     pointerId,
-    pointerType: "mouse",
+    pointerType: "touch",
+    clientX,
+    clientY,
+    preventDefault() {},
+    stopImmediatePropagation() {}
+  };
+}
+
+function pathPointerEvent(
+  pointerId,
+  clientX,
+  clientY,
+  { pointerType = "mouse" } = {}
+) {
+  return {
+    pointerId,
+    pointerType,
     button: 0,
     clientX,
     clientY,

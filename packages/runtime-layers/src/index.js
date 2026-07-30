@@ -8,7 +8,7 @@ export {
   cameraSnapshot,
   normalizeNavigationCamera,
   reduceNavigationCamera
-} from "./ViewerCameraController.js";
+} from "./ViewerCameraController.js?build=20260730-0040e";
 export {
   CameraObjectService,
   cameraSnapshotFromNode,

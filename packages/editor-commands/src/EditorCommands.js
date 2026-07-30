@@ -16,6 +16,7 @@ export function createEditorCommands({
   pathSketch = null,
   planarSketch = null,
   objectPlacement = null,
+  measurement = null,
   canMutateProject = () => true
 }) {
   const commands = new CommandRegistry();
@@ -30,6 +31,7 @@ export function createEditorCommands({
     if (objectPlacement?.active) objectPlacement.cancel();
     if (pathSketch?.status?.().active) pathSketch.cancel();
     if (planarSketch?.status?.().active) planarSketch.cancel();
+    if (measurement?.status?.().active) measurement.cancel();
     toolLifecycle?.cancelAction();
   };
   const configured = (toolId, args, execute) => {
@@ -472,6 +474,7 @@ export function createEditorCommands({
   if (pathSketch) {
     commands
       .register("path.sketch.begin", args => {
+        if (measurement?.status?.().active) measurement.cancel();
         toolLifecycle?.activateAction("path.sketch");
         try {
           return configured("path.sketch", args, invocation =>
@@ -504,6 +507,7 @@ export function createEditorCommands({
     commands
       .register("planar.sketch.begin", (args = {}) => {
         requireObjectMode("desenhar geometria 2D");
+        if (measurement?.status?.().active) measurement.cancel();
         if (objectPlacement?.active) objectPlacement.cancel();
         if (pathSketch?.status?.().active) pathSketch.cancel();
         toolLifecycle?.activateAction("planar.sketch");
@@ -556,6 +560,7 @@ export function createEditorCommands({
     commands
       .register("object.placement.begin", args => {
         requireObjectMode("posicionar objetos");
+        if (measurement?.status?.().active) measurement.cancel();
         toolLifecycle?.activateAction("object.place");
         try {
           return objectPlacement.begin({
@@ -572,6 +577,27 @@ export function createEditorCommands({
         toolLifecycle?.cancelAction("object.place");
         return result;
       }, { category: "object-placement", mutates: false });
+  }
+
+  if (measurement) {
+    commands
+      .register("measurement.begin", (args = {}) => {
+        if (objectPlacement?.active) objectPlacement.cancel();
+        if (pathSketch?.status?.().active) pathSketch.cancel();
+        if (planarSketch?.status?.().active) planarSketch.cancel();
+        toolLifecycle?.cancelAction();
+        return measurement.begin(args);
+      }, { category: "measurement", mutates: false })
+      .register("measurement.clear", () =>
+        measurement.clear(), {
+          category: "measurement",
+          mutates: false
+        })
+      .register("measurement.cancel", () =>
+        measurement.cancel(), {
+          category: "measurement",
+          mutates: false
+        });
   }
 
   if (meshEditor) {

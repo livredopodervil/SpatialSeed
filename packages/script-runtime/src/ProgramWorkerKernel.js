@@ -11,7 +11,7 @@ import {
 import {
   CAMERA_PLAN_COMMANDS,
   createCameraPlanningFacade
-} from "./CameraPlanningFacade.js";
+} from "./CameraPlanningFacade.js?build=20260730-0040e";
 
 const MAX_SOURCE_LENGTH = 100000;
 

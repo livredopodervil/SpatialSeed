@@ -88,6 +88,10 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   paramétrica e plano lógico preparado incrementalmente antes do commit;
 - planos independentes de visualização e edição, visualização 2D autoritativa e
   órbita em ponto travado.
+- planos independentes de desenho, edição direta de pivô no HUD e ferramentas
+  2D fundamentais sobre planos arbitrários;
+- navegação multitoque preservada durante ferramentas, HUD sem teto artificial,
+  snap de grade/ângulo compartilhado, régua, transferidor e reset do viewer.
 
 ## Invariantes
 
@@ -149,17 +153,16 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente a correção `0039g2` — traço após undo, cor afim em todas as
-geometrias, pincel/laço/borracha e custo constante no gesto — em mobile e
-avançar em incrementos independentes:
+Validar visualmente o incremento `0040b` em mobile — `pan/pinch` durante
+ferramentas, órbita com três dedos, HUD amplo, snap, régua, transferidor e reset
+do viewer — e avançar em incrementos independentes:
 
 1. redefinição paramétrica pelo Inspector, com preview e commit atômico;
-2. pivô/origem no HUD e grid configurável por plano;
-3. núcleo planar, estilos de caminho e ferramentas 2D fundamentais;
-4. régua, transferidor e compasso como referências transformadoras;
-5. referências vinculadas por grafo de modificadores, sem ciclos e com
+2. trim, extend, offset, fillet e constraints geométricas 2D;
+3. compasso, cotas persistentes e medições como referências transformadoras;
+4. referências vinculadas por grafo de modificadores, sem ciclos e com
    invalidação incremental;
-6. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
+5. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
 
 Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PATH_REFERENCES_0037A.md`,
@@ -167,6 +170,8 @@ Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/AFFINE_PATH_BRUSH_0039F.md`,
 `docs/INCREMENTAL_PATH_BRUSH_0039G.md`,
 `docs/SELECTION_GESTURES_0039G2.md`,
+`docs/PLANAR_AUTHORING_0040A.md`,
+`docs/MEASUREMENT_INPUT_0040B.md`,
 `docs/TOOL_PARAMETERS_PATH_DRAW_0039D.md` e
 `docs/EDIT_INTERACTION_0038B.md`.
 

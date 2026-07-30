@@ -36,6 +36,11 @@ export function createDefaultEditToolRegistry({
           { value: "world-xz", label: "Mundo XZ" },
           { value: "world-yz", label: "Mundo YZ" }
         ], "locked-or-viewer"),
+        enumParameter("anchorPolicy", "Âncora da família", [
+          { value: "first", label: "Início do caminho" },
+          { value: "bounds", label: "Centro dos limites" },
+          { value: "world", label: "Origem do mundo" }
+        ], "first", { when: { mode: "array" } }),
         enumParameter("curveType", "Interpolação", CURVES, "centripetal"),
         numberParameter(
           "inputSamplePixels",

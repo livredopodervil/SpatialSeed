@@ -32,7 +32,7 @@ export {
 export {
   CAMERA_PLAN_COMMANDS,
   createCameraPlanningFacade
-} from "./CameraPlanningFacade.js";
+} from "./CameraPlanningFacade.js?build=20260730-0040e";
 export {
   SpatialPlanCommitService
 } from "./SpatialPlanCommitService.js";

@@ -1,3 +1,5 @@
+const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
+
 export class Sandbox {
   #baseState;
   #state;
@@ -9,6 +11,7 @@ export class Sandbox {
   #subscribers = new Set();
   #objectsById = new Map();
   #objectPositions = new Map();
+  #objectPositionsValid = true;
   #performance = {
     dispatches: 0,
     lastReducerMs: 0,
@@ -16,7 +19,19 @@ export class Sandbox {
     lastNotificationMs: 0,
     maximumNotificationMs: 0,
     lastDispatchMs: 0,
-    maximumDispatchMs: 0
+    maximumDispatchMs: 0,
+    preparedDispatches: 0,
+    lastCommandPreparationMs: 0,
+    maximumCommandPreparationMs: 0,
+    undos: 0,
+    redos: 0,
+    lastUndoMs: 0,
+    maximumUndoMs: 0,
+    lastRedoMs: 0,
+    maximumRedoMs: 0,
+    objectIndexRebuilds: 0,
+    objectIndexObjectsVisited: 0,
+    subscriberVisits: 0
   };
 
   constructor(region, reducer) {
@@ -47,26 +62,47 @@ export class Sandbox {
   dispatch(command) {
     const dispatchStartedAt = performanceNow();
     const before = this.#state;
+    const preparationStartedAt = performanceNow();
+    const prepared = isPreparedImmutableCommand(command);
+    /*
+     * Comandos preparados preservam identidade e imutabilidade do produtor
+     * até o histórico. Comandos comuns continuam isolados por cópia.
+     */
+    const reducerCommand = prepared
+      ? deepFreeze(command)
+      : structuredClone(command);
+    const historyCommand = prepared
+      ? reducerCommand
+      : structuredClone(command);
+    const commandPreparationMs = performanceNow() - preparationStartedAt;
     const reducerStartedAt = performanceNow();
     const result = this.reducer(
       before,
-      structuredClone(command),
+      reducerCommand,
       this.#reducerContext()
     );
     if (!result || result.state === before) return false;
     const reducerMs = performanceNow() - reducerStartedAt;
+    const changes = this.#materializeChanges(
+      result.changes ?? [],
+      before,
+      result.state
+    );
+    const inverseChanges = invertObjectChanges(changes);
 
     this.#undo.push({
       state: before,
-      command: structuredClone(command)
+      command: historyCommand,
+      forwardChanges: changes,
+      inverseChanges
     });
     this.#redo.length = 0;
-    this.#commands.push(structuredClone(command));
+    this.#commands.push(historyCommand);
     this.#state = result.state;
     this.#revision += 1;
-    this.#updateObjectIndex(result.changes ?? []);
+    this.#updateObjectIndex(changes);
     const notificationStartedAt = performanceNow();
-    this.#notify(result.changes ?? []);
+    this.#notify(changes);
     const notificationMs = performanceNow() - notificationStartedAt;
     const dispatchMs = performanceNow() - dispatchStartedAt;
     this.#performance.dispatches += 1;
@@ -85,45 +121,72 @@ export class Sandbox {
       this.#performance.maximumDispatchMs,
       dispatchMs
     );
+    if (prepared) this.#performance.preparedDispatches += 1;
+    this.#performance.lastCommandPreparationMs = commandPreparationMs;
+    this.#performance.maximumCommandPreparationMs = Math.max(
+      this.#performance.maximumCommandPreparationMs,
+      commandPreparationMs
+    );
     return true;
   }
 
   undo() {
+    const startedAt = performanceNow();
     const entry = this.#undo.pop();
     if (!entry) return false;
 
+    const after = this.#state;
     this.#redo.push({
-      state: this.#state,
-      command: entry.command
+      state: after,
+      command: entry.command,
+      forwardChanges: entry.forwardChanges,
+      inverseChanges: entry.inverseChanges
     });
     this.#state = entry.state;
     this.#commands.pop();
     this.#revision += 1;
-    this.#rebuildObjectIndex();
-    this.#notify([{ type: "sandbox-undo" }]);
+    const changes = entry.inverseChanges?.length
+      ? entry.inverseChanges
+      : [{ type: "sandbox-undo" }];
+    this.#updateObjectIndex(changes);
+    this.#notify(changes);
+    const elapsed = performanceNow() - startedAt;
+    this.#performance.undos += 1;
+    this.#performance.lastUndoMs = elapsed;
+    this.#performance.maximumUndoMs = Math.max(
+      this.#performance.maximumUndoMs,
+      elapsed
+    );
     return true;
   }
 
   redo() {
+    const startedAt = performanceNow();
     const entry = this.#redo.pop();
     if (!entry) return false;
 
-    const result = this.reducer(
-      this.#state,
-      entry.command,
-      this.#reducerContext()
-    );
-    if (!result || result.state === this.#state) return false;
-
+    const before = this.#state;
     this.#undo.push({
-      state: this.#state,
-      command: entry.command
+      state: before,
+      command: entry.command,
+      forwardChanges: entry.forwardChanges,
+      inverseChanges: entry.inverseChanges
     });
-    this.#state = result.state;
-    this.#commands.push(structuredClone(entry.command));
+    this.#state = entry.state;
+    this.#commands.push(entry.command);
     this.#revision += 1;
-    this.#updateObjectIndex(result.changes ?? []);
-    this.#notify(result.changes ?? [{ type: "sandbox-redo" }]);
+    const changes = entry.forwardChanges?.length
+      ? entry.forwardChanges
+      : [{ type: "sandbox-redo" }];
+    this.#updateObjectIndex(changes);
+    this.#notify(changes);
+    const elapsed = performanceNow() - startedAt;
+    this.#performance.redos += 1;
+    this.#performance.lastRedoMs = elapsed;
+    this.#performance.maximumRedoMs = Math.max(
+      this.#performance.maximumRedoMs,
+      elapsed
+    );
     return true;
   }
 
@@ -267,6 +330,7 @@ export class Sandbox {
       dirty: this.dirty,
       canUndo: this.canUndo,
       canRedo: this.canRedo,
+      subscriberCount: this.#subscribers.size,
       performance: Object.freeze({ ...this.#performance })
     });
   }
@@ -289,6 +353,7 @@ export class Sandbox {
 
   #notify(changes) {
     const snapshot = this.getSnapshot();
+    this.#performance.subscriberVisits += this.#subscribers.size;
     for (const listener of this.#subscribers) {
       try {
         listener(snapshot, changes);
@@ -299,12 +364,15 @@ export class Sandbox {
   }
 
   #rebuildObjectIndex() {
+    this.#performance.objectIndexRebuilds += 1;
+    this.#performance.objectIndexObjectsVisited += this.#state.objects.length;
     this.#objectsById.clear();
     this.#objectPositions.clear();
     for (const [index, object] of this.#state.objects.entries()) {
       this.#objectsById.set(String(object.id), object);
       this.#objectPositions.set(String(object.id), index);
     }
+    this.#objectPositionsValid = true;
   }
 
   #reducerContext() {
@@ -314,53 +382,162 @@ export class Sandbox {
     });
   }
 
+  #materializeChanges(rawChanges, before, after) {
+    const list = Array.isArray(rawChanges) ? rawChanges : [];
+    const supported = new Set([
+      "object-created",
+      "object-deleted",
+      "object-transform",
+      "object-updated"
+    ]);
+    if (!list.length || list.some(change => !supported.has(change?.type))) {
+      return list;
+    }
+
+    const createdCount = list.filter(
+      change => change.type === "object-created"
+    ).length;
+    const createdOffset = after.objects.length - createdCount;
+    let createdIndex = 0;
+    const materialized = [];
+
+    for (const change of list) {
+      const id = String(change.objectId ?? change.object?.id ?? "");
+      if (!id) return list;
+      const previousObject = this.#objectsById.get(id) ?? null;
+      let object = change.object ?? null;
+
+      let objectPosition = null;
+      if (change.type === "object-created") {
+        const position = createdOffset + createdIndex;
+        createdIndex += 1;
+        objectPosition = position;
+        object ??= after.objects[position] ?? null;
+      } else if (change.type !== "object-deleted" && !object) {
+        const position = this.#objectPositionsValid
+          ? this.#objectPositions.get(id)
+          : undefined;
+        object = Number.isInteger(position)
+          ? after.objects[position] ?? null
+          : null;
+        if (!object || String(object.id) !== id) {
+          object = after.objects.find(candidate => String(candidate.id) === id) ?? null;
+        }
+      }
+
+      if (change.type !== "object-deleted" && !object) return list;
+      materialized.push(Object.freeze({
+        ...change,
+        objectId: id,
+        ...(object ? { object } : {}),
+        ...(Number.isInteger(objectPosition) ? { objectPosition } : {}),
+        ...(previousObject ? { previousObject } : {})
+      }));
+    }
+    return Object.freeze(materialized);
+  }
+
   #updateObjectIndex(changes) {
     const list = Array.isArray(changes) ? changes : [];
     const supported = new Set([
       "object-created",
+      "object-deleted",
       "object-transform",
       "object-updated"
     ]);
-    if (
-      !list.length ||
-      list.some(change => !supported.has(change?.type))
-    ) {
+    if (!list.length || list.some(change => !supported.has(change?.type))) {
       this.#rebuildObjectIndex();
       return;
     }
 
-    const created = list.filter(change => change.type === "object-created");
-    const createdOffset = this.#state.objects.length - created.length;
-    let createdIndex = 0;
     for (const change of list) {
-      const id = String(change.objectId ?? "");
+      const id = String(change.objectId ?? change.object?.id ?? "");
       if (!id) {
         this.#rebuildObjectIndex();
         return;
       }
-      if (change.type === "object-created") {
-        const position = createdOffset + createdIndex;
-        createdIndex += 1;
-        const object = change.object ?? this.#state.objects[position];
-        if (!object || String(object.id) !== id) {
-          this.#rebuildObjectIndex();
-          return;
-        }
-        this.#objectsById.set(id, object);
-        this.#objectPositions.set(id, position);
+      if (change.type === "object-deleted") {
+        this.#objectsById.delete(id);
+        this.#objectPositions.delete(id);
+        this.#objectPositionsValid = false;
         continue;
       }
-      const position = this.#objectPositions.get(id);
-      const object = Number.isInteger(position)
-        ? this.#state.objects[position]
-        : null;
+      const object = change.object;
       if (!object || String(object.id) !== id) {
         this.#rebuildObjectIndex();
         return;
       }
       this.#objectsById.set(id, object);
+      if (change.type === "object-created" && this.#objectPositionsValid) {
+        const position = Number(change.objectPosition);
+        if (Number.isInteger(position) && position >= 0) {
+          this.#objectPositions.set(id, position);
+        } else {
+          this.#objectPositionsValid = false;
+        }
+      }
     }
   }
+
+}
+
+function isPreparedImmutableCommand(command) {
+  return Boolean(
+    command &&
+    typeof command === "object" &&
+    command.preparedImmutable === PREPARED_COMMAND_MARKER
+  );
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+  Object.freeze(value);
+  for (const child of Object.values(value)) deepFreeze(child);
+  return value;
+}
+
+function invertObjectChanges(changes) {
+  if (!Array.isArray(changes) || !changes.length) return Object.freeze([]);
+  const inverse = [];
+  for (let index = changes.length - 1; index >= 0; index -= 1) {
+    const change = changes[index];
+    const id = String(change?.objectId ?? "");
+    if (!id) return Object.freeze([]);
+    if (change.type === "object-created") {
+      inverse.push(Object.freeze({
+        type: "object-deleted",
+        objectId: id,
+        previousObject: change.object,
+        object: change.object
+      }));
+      continue;
+    }
+    if (change.type === "object-deleted") {
+      const object = change.previousObject ?? change.object;
+      if (!object) return Object.freeze([]);
+      inverse.push(Object.freeze({
+        type: "object-created",
+        objectId: id,
+        object
+      }));
+      continue;
+    }
+    if (["object-transform", "object-updated"].includes(change.type)) {
+      const object = change.previousObject;
+      if (!object) return Object.freeze([]);
+      inverse.push(Object.freeze({
+        type: "object-updated",
+        objectId: id,
+        object,
+        previousObject: change.object
+      }));
+      continue;
+    }
+    return Object.freeze([]);
+  }
+  return Object.freeze(inverse);
 }
 
 function validateState(value) {
