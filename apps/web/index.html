@@ -206,6 +206,7 @@
         <label><input type="checkbox" data-edit-hud-group-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="reference" checked> Pivô e planos</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="appearance" checked> Aparência</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="planar" checked> Ferramentas 2D</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="measure" checked> Medição</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="lifecycle" checked> Continuidade</label>
@@ -285,6 +286,14 @@
       <label title="Âncora das famílias desenhadas"><select id="edit-hud-anchor-policy" aria-label="Âncora da criação"><option value="first">Início</option><option value="bounds">Centro</option><option value="world">Mundo</option></select></label>
       <label title="Definir plano de edição pela seleção ou viewer"><input id="edit-hud-edit-plane" type="checkbox"><span>⌗</span></label>
       <label title="Definir plano de desenho pela seleção ou viewer"><input id="edit-hud-drawing-plane" type="checkbox"><span>✎</span></label>
+    </div>
+    <div class="edit-hud-group edit-hud-appearance" data-edit-hud-group="appearance" aria-label="Cor e material">
+      <label class="edit-hud-appearance-target" title="Alvo da aparência"><select id="edit-hud-appearance-target" aria-label="Alvo da aparência"><option value="selection">Seleção</option><option value="tool">Ferramenta</option><option value="both">Ambos</option></select></label>
+      <label class="edit-hud-appearance-color" title="Cor"><input id="edit-hud-appearance-color" type="color" value="#6699cc" aria-label="Cor da aparência"><span>●</span></label>
+      <label class="edit-hud-appearance-color-action" title="Aplicação da cor"><select id="edit-hud-appearance-color-action" aria-label="Aplicação da cor"><option value="auto">Cor automática</option><option value="uniform">Uniformizar</option><option value="tint">Matizar</option></select></label>
+      <label class="edit-hud-appearance-material" title="Material"><select id="edit-hud-appearance-material" aria-label="Material"><option value="mixed" disabled>Misto</option><option value="inherit">Automático</option><option value="unlit">Não iluminado</option><option value="standard">Padrão</option><option value="physical">Físico</option></select></label>
+      <label class="edit-hud-appearance-opacity" title="Opacidade"><input id="edit-hud-appearance-opacity" type="range" min="0" max="1" step="0.01" value="1" aria-label="Opacidade"><span id="edit-hud-appearance-opacity-value">100%</span></label>
+      <small class="edit-hud-appearance-state" id="edit-hud-appearance-state" aria-live="polite">Sem seleção</small>
     </div>
     <div class="edit-hud-group" data-edit-hud-group="planar" aria-label="Ferramentas de desenho e edição 2D">
       <button type="button" data-planar-tool="point" title="Ponto 2D">·</button>
@@ -1280,6 +1289,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260730-0040g"></script>
+<script type="module" src="./boot.js?build=20260730-0041a"></script>
 </body>
 </html>

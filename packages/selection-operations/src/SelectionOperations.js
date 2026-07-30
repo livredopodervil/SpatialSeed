@@ -16,10 +16,15 @@ import {
 import {
   explicitInstanceFamilyEstimatedBytes,
   packAnchoredExplicitInstanceFamily
-} from "../../procedural-families/src/index.js?build=20260730-0040h";
+} from "../../procedural-families/src/index.js?build=20260730-0041a";
+import {
+  appearanceBindingForObject,
+  compactUniformFamilyColors,
+  normalizeAppearanceBinding
+} from "../../appearance-binding/src/index.js?build=20260730-0041b";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v5";
+  static apiVersion = "selection-operations-v6";
 
   constructor({
     editor,
@@ -95,7 +100,8 @@ export class SelectionOperations {
     rotation = [0, 0, 0, 1],
     placement = null,
     color = "#6699cc",
-    material = null
+    material = null,
+    appearanceBinding = null
   } = {}) {
     if (!this.geometryRegistry) {
       throw new Error("Registro de geometrias indisponível.");
@@ -116,7 +122,15 @@ export class SelectionOperations {
       position: [...(frame?.origin ?? position)],
       rotation: [...(frame?.rotation ?? rotation)],
       geometry: descriptor,
-      ...this.#creationAppearance(color, material)
+      ...this.#creationAppearance(color, material),
+      ...(appearanceBinding
+        ? {
+            appearanceBinding: normalizeAppearanceBinding(
+              appearanceBinding,
+              { fallbackColor: color }
+            )
+          }
+        : {})
     });
 
     if (changed) this.#selectIds([id]);
@@ -211,6 +225,7 @@ export class SelectionOperations {
     colors = null,
     color = "#6699cc",
     material = null,
+    appearanceBinding = null,
     source = "geometry-instances",
     generator = null,
     anchorPolicy = "first",
@@ -241,13 +256,40 @@ export class SelectionOperations {
     const instanceColors = colors === null || colors === undefined
       ? null
       : normalizeInstanceColors(colors, instances.length);
+    const compactedColors = instanceColors
+      ? compactUniformFamilyColors(instanceColors)
+      : Object.freeze({
+          colors: null,
+          appearanceBinding: normalizeAppearanceBinding(null, {
+            fallbackColor: color
+          })
+        });
+    const requestedAppearance = appearanceBinding ?? {};
+    const resolvedAppearanceBinding = normalizeAppearanceBinding({
+      ...compactedColors.appearanceBinding,
+      ...requestedAppearance,
+      ...(instanceColors
+        ? {
+            colorMode: compactedColors.appearanceBinding.colorMode,
+            ...(compactedColors.appearanceBinding.uniformColor
+              ? {
+                  uniformColor:
+                    compactedColors.appearanceBinding.uniformColor
+                }
+              : {})
+          }
+        : {})
+    }, {
+      family: null,
+      fallbackColor: color
+    });
     const appearance = this.#creationAppearance(color, material);
     const index = this.sandbox.objectCount + 1;
     const label = this.geometryRegistry.label(descriptor.type);
     const baseName = name || `${label} ${index}`;
     const id = crypto.randomUUID();
     const anchored = packAnchoredExplicitInstanceFamily(instances, {
-      colors: instanceColors,
+      colors: compactedColors.colors,
       anchorPolicy,
       anchor,
       generator: {
@@ -265,6 +307,7 @@ export class SelectionOperations {
       position: anchored.origin,
       geometry: descriptor,
       family,
+      appearanceBinding: resolvedAppearanceBinding,
       source: String(source),
       ...(appearance.appearanceId
         ? { appearanceId: appearance.appearanceId }
@@ -280,6 +323,9 @@ export class SelectionOperations {
       familyId: id,
       familyOrigin: anchored.origin,
       anchorPolicy: anchored.anchorPolicy,
+      colorMode: resolvedAppearanceBinding.colorMode,
+      materialMode: resolvedAppearanceBinding.materialMode,
+      opacityMultiplier: resolvedAppearanceBinding.opacityMultiplier,
       logicalObjectCount: 1,
       estimatedTransformBytes:
         explicitInstanceFamilyEstimatedBytes(family),
@@ -953,7 +999,8 @@ export class SelectionOperations {
       }
       const appearanceKey = JSON.stringify([
         object.appearanceId ?? null,
-        object.material ?? null
+        object.material ?? null,
+        appearanceBindingForObject(object)
       ]);
       const key = `${this.geometryRegistry.key(descriptor)}|${appearanceKey}`;
       let group = groups.get(key);
@@ -976,6 +1023,12 @@ export class SelectionOperations {
         )
           ? members.map(object => object.instanceState.color)
           : null;
+        const compactedColors = colors
+          ? compactUniformFamilyColors(colors)
+          : Object.freeze({
+              colors: null,
+              appearanceBinding: appearanceBindingForObject(members[0])
+            });
         const anchored = packAnchoredExplicitInstanceFamily(
           members.map(object => ({
             position: [...(object.position ?? [0, 0, 0])],
@@ -983,7 +1036,7 @@ export class SelectionOperations {
             scale: [...(object.scale ?? [1, 1, 1])]
           })),
           {
-            colors,
+            colors: compactedColors.colors,
             generator: {
               type: "selection-compaction-v1",
               coordinateSpace: "family-local-v1",
@@ -1000,6 +1053,7 @@ export class SelectionOperations {
           position: anchored.origin,
           geometry: group.descriptor,
           family,
+          appearanceBinding: compactedColors.appearanceBinding,
           ...(first.appearanceId
             ? { appearanceId: first.appearanceId }
             : { material: structuredClone(first.material ?? { color: "#6699cc" }) })
@@ -1399,6 +1453,13 @@ export class SelectionOperations {
   }
 
   #selectIds(ids) {
+    /*
+     * A seleção de um objeto recém-criado ou duplicado deve voltar ao domínio
+     * de transformação da geometria. Manter pivot.editing ativo fazia o gizmo
+     * mover somente o pivô; assim a duplicação nunca publicava object-transform
+     * e o histórico de Repetir não era consolidado.
+     */
+    this.editor.setPivotEditing?.(false);
     this.editor.selection.replaceMany(
       ids.map(id => ({
         kind: "object",

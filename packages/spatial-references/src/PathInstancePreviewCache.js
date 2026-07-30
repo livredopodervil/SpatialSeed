@@ -3,7 +3,7 @@ import * as THREE from "three";
 const DEFAULT_MAXIMUM_INSTANCES = 4096;
 
 export class PathInstancePreviewCache {
-  static apiVersion = "path-instance-preview-cache-v2";
+  static apiVersion = "path-instance-preview-cache-v3";
 
   #batches = [];
   #brushKey = null;
@@ -75,13 +75,10 @@ export class PathInstancePreviewCache {
     );
     for (const entry of normalized.entries) {
       const geometry = this.geometryRegistry.create(entry.geometry);
-      const material = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        depthTest: false,
-        depthWrite: false,
-        transparent: true,
-        opacity: 0.58
-      });
+      const material = createPreviewMaterial(
+        normalized.materialMode,
+        0.58 * normalized.opacityMultiplier
+      );
       const capacity =
         this.#copyCapacity * entry.sourceWorldMatrices.length;
       const mesh = new THREE.InstancedMesh(geometry, material, capacity);
@@ -324,7 +321,61 @@ function normalizeBrush(brush, geometryRegistry) {
       entry.sourceWorldMatrices
     ]))
   );
-  return Object.freeze({ key, entries: Object.freeze(entries) });
+  const binding = brush.appearanceBinding ?? {};
+  const materialMode = normalizeMaterialMode(binding.materialMode ?? "inherit");
+  const opacityMultiplier = finiteRange(
+    binding.opacityMultiplier ?? 1,
+    0,
+    1,
+    "opacityMultiplier"
+  );
+  return Object.freeze({
+    key,
+    entries: Object.freeze(entries),
+    materialMode,
+    opacityMultiplier
+  });
+}
+
+function createPreviewMaterial(mode, opacity) {
+  const common = {
+    color: 0xffffff,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    opacity
+  };
+  if (mode === "physical") {
+    return new THREE.MeshPhysicalMaterial({
+      ...common,
+      roughness: 0.45,
+      metalness: 0
+    });
+  }
+  if (mode === "standard") {
+    return new THREE.MeshStandardMaterial({
+      ...common,
+      roughness: 0.6,
+      metalness: 0
+    });
+  }
+  return new THREE.MeshBasicMaterial(common);
+}
+
+function normalizeMaterialMode(value) {
+  const mode = String(value ?? "inherit").trim().toLowerCase();
+  if (!["inherit", "unlit", "standard", "physical"].includes(mode)) {
+    throw new RangeError(`Material de preview desconhecido: ${value}.`);
+  }
+  return mode;
+}
+
+function finiteRange(value, minimum, maximum, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < minimum || number > maximum) {
+    throw new RangeError(`${label} deve estar entre ${minimum} e ${maximum}.`);
+  }
+  return number;
 }
 
 function normalizeColor(value) {

@@ -9,19 +9,22 @@ import {
   ViewerCameraController,
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260730-0040g";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260730-0040h";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260730-0041a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260730-0041b1";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260730-0040e";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260730-0040h";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260730-0041b";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260730-0040e";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
 import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260730-0040e";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260727-0037c";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
+import {
+  AppearanceBindingService
+} from "../../../packages/appearance-binding/src/index.js?build=20260730-0041b";
 import {
   classifyChanges,
   SceneProjectionScheduler
@@ -91,13 +94,13 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260730-0040h";
+} from "../../../packages/edit-hud/src/index.js?build=20260730-0041b";
 import {
   ToolLifecycleController,
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../../packages/edit-tools/src/index.js?build=20260730-0040h";
+} from "../../../packages/edit-tools/src/index.js?build=20260730-0041b";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260730-0040e";
@@ -112,7 +115,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260730-0040h";
+} from "../../../packages/spatial-references/src/index.js?build=20260730-0041b";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -486,6 +489,8 @@ export async function createWebRuntime({
               geometryType: settings.geometryType,
               sourceGeometry: settings.sourceGeometry,
               sourceColor: settings.sourceColor,
+              materialMode: settings.materialMode,
+              opacityMultiplier: settings.opacityMultiplier,
               spacingMode: settings.spacingMode,
               spacingWorld: settings.spacingWorld,
               spacingScale: settings.spacingScale,
@@ -522,7 +527,9 @@ export async function createWebRuntime({
               closed: settings.closed,
               curveType: settings.curveType,
               tension: settings.tension,
-              color: settings.color
+              color: settings.color,
+              materialMode: settings.materialMode,
+              opacityMultiplier: settings.opacityMultiplier
             },
             label: "Criar tubo desenhado"
           };
@@ -601,6 +608,11 @@ export async function createWebRuntime({
     appearanceRuntime,
     registry: propertyRegistry
   });
+  const appearanceBindings = new AppearanceBindingService({
+    sandbox,
+    selection: editor.selection,
+    appearanceRuntime
+  });
 
   const commands = createEditorCommands({
     editor,
@@ -632,6 +644,48 @@ export async function createWebRuntime({
       return selectionOperations.compactSelectedInstances(args);
     },
     { category: "selection", mutates: true }
+  );
+  commands.register(
+    "appearance.selection.patch",
+    args => {
+      viewerCoordinator.requireAuthority("alterar a aparência da seleção");
+      return appearanceBindings.patchSelection(args);
+    },
+    { category: "appearance", mutates: true }
+  );
+  commands.register(
+    "appearance.object.patch",
+    ({ targetIds, ...args } = {}) => {
+      viewerCoordinator.requireAuthority("alterar a aparência de objetos");
+      if (!Array.isArray(targetIds) || !targetIds.length) {
+        throw new TypeError("appearance.object.patch exige targetIds.");
+      }
+      return appearanceBindings.patchSelection({ targetIds, ...args });
+    },
+    { category: "appearance", mutates: true }
+  );
+  commands.register(
+    "appearance.family.color-mode.set",
+    args => {
+      viewerCoordinator.requireAuthority("alterar o modo de cor da família");
+      return appearanceBindings.setFamilyColorMode(args);
+    },
+    { category: "appearance", mutates: true }
+  );
+  commands.register(
+    "appearance.material.bind",
+    ({ targetIds = null, appearanceId = undefined, materialPatch = null,
+       binding = {} } = {}) => {
+      viewerCoordinator.requireAuthority("vincular material à seleção");
+      return appearanceBindings.patchSelection({
+        targetIds,
+        appearanceId,
+        materialPatch,
+        binding,
+        source: "appearance.material.bind"
+      });
+    },
+    { category: "appearance", mutates: true }
   );
   commands.register(
     "pivot.reference.set",
@@ -1034,6 +1088,11 @@ export async function createWebRuntime({
     } = {}) =>
       propertyService.inspectSelection({ targetScope })
     )
+    .register("selection.appearance.inspect", ({
+      targetIds = null
+    } = {}) =>
+      appearanceBindings.inspectSelection({ targetIds })
+    )
     .register("selection.actions.describe", () => ({
       canGroup: !editor.selection.empty,
       canUngroup: selectionOperations.canUngroup()
@@ -1386,6 +1445,14 @@ export async function createWebRuntime({
       materialModels: ["standard", "physical"],
       opticalEffects: ["transmission", "dispersion", "iridescence"]
     }))
+    .register("appearanceBinding", () => ({
+      apiVersion: AppearanceBindingService.apiVersion,
+      colorModes: ["inherit", "uniform", "per-instance"],
+      materialModes: ["inherit", "unlit", "standard", "physical"],
+      uniformFamilyEdit: "constant-time",
+      perInstanceTint: "constant-time",
+      persistence: "scene-object"
+    }))
     .register("pathReferences", () => ({
       apiVersion: SpatialReferenceResolver.apiVersion,
       toolApiVersion: PathToolService.apiVersion,
@@ -1600,6 +1667,7 @@ export async function createWebRuntime({
       geometryRegistry,
       propertyRegistry,
       propertyService,
+      appearanceBindings,
       experimentRegistry,
       experimentService,
       experimentActionService,

@@ -2,14 +2,14 @@ import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
-} from "./HudContextHeuristics.js?build=20260729-0040a";
+} from "./HudContextHeuristics.js?build=20260730-0041b";
 
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 const GEOMETRY_CREATION_STORAGE_KEY = "spatialseed.geometry.creation.defaults.v1";
 const STATIC_GROUP_ORDER = Object.freeze([
   "subject", "tool", "quick", "selection", "frame", "axes",
-  "snap", "navigation", "reference", "planar", "measure", "lifecycle",
+  "snap", "navigation", "reference", "appearance", "planar", "measure", "lifecycle",
   "creation", "actions", "session"
 ]);
 const STATIC_ACTION_ORDER = Object.freeze([
@@ -35,6 +35,8 @@ const DEFAULT_PREFERENCES = Object.freeze({
   rows: 2,
   tapHints: true,
   adaptiveOrder: true,
+  appearanceTarget: "selection",
+  appearanceColorAction: "auto",
   left: 12,
   defaults: {
     extrude: 1,
@@ -52,6 +54,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
     snap: true,
     navigation: true,
     reference: true,
+    appearance: true,
     planar: true,
     measure: true,
     lifecycle: true,
@@ -62,7 +65,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
 });
 
 export class EditHud {
-  static apiVersion = "edit-hud-v1";
+  static apiVersion = "edit-hud-v2";
 
   #unsubscribe = null;
   #unsubscribeHistory = null;
@@ -218,6 +221,7 @@ export class EditHud {
     this.root.title = description;
     const mesh = this.query("mesh.edit.status");
     const selection = this.query("selection.snapshot");
+    this.#refreshAppearanceControls(selection);
     const planar = this.query("planar.sketch.status") ?? {};
     const measurement = this.query("measurement.status") ?? {};
     const selectedObjectIds = selection.members?.map(
@@ -422,6 +426,42 @@ export class EditHud {
         patch: { anchorPolicy: event.target.value }
       })
     );
+    this.#element("edit-hud-appearance-target").addEventListener(
+      "change",
+      event => {
+        this.#preferences.appearanceTarget = event.target.value;
+        this.#savePreferences();
+        this.#refreshAppearanceControls(
+          this.query("selection.snapshot")
+        );
+      }
+    );
+    this.#element("edit-hud-appearance-color-action").addEventListener(
+      "change",
+      event => {
+        this.#preferences.appearanceColorAction = event.target.value;
+        this.#savePreferences();
+        this.#refreshAppearanceControls(
+          this.query("selection.snapshot")
+        );
+      }
+    );
+    this.#element("edit-hud-appearance-color").addEventListener(
+      "change",
+      event => this.#applyAppearanceColor(event.target.value)
+    );
+    this.#element("edit-hud-appearance-material").addEventListener(
+      "change",
+      event => this.#applyAppearanceMaterial(event.target.value)
+    );
+    this.#element("edit-hud-appearance-opacity").addEventListener(
+      "input",
+      event => this.#updateAppearanceOpacityLabel(event.target.value)
+    );
+    this.#element("edit-hud-appearance-opacity").addEventListener(
+      "change",
+      event => this.#applyAppearanceOpacity(event.target.value)
+    );
     for (const button of this.root.querySelectorAll("[data-planar-tool]")) {
       button.addEventListener("click", () => this.#execute(
         "planar.sketch.begin",
@@ -580,8 +620,13 @@ export class EditHud {
     action("edit-hud-ungroup", "selection.ungroup");
     this.#element("edit-hud-duplicate").addEventListener("click", () => {
       const active = Boolean(this.query("mesh.edit.status").active);
-      this.#execute(active ? "mesh.topology.apply" : "selection.duplicate",
-        active ? { operation: "duplicate" } : {});
+      const result = this.#execute(
+        active ? "mesh.topology.apply" : "selection.duplicate",
+        active ? { operation: "duplicate" } : {}
+      );
+      if (!active && result?.changed) {
+        this.#execute("edit.context.tool.set", { mode: "translate" });
+      }
     });
     this.#element("edit-hud-delete").addEventListener("click", () => {
       const active = Boolean(this.query("mesh.edit.status").active);
@@ -1044,6 +1089,10 @@ export class EditHud {
     this.#element("edit-hud-rows").value = String(p.rows);
     this.#element("edit-hud-tap-hints").checked = p.tapHints !== false;
     this.#element("edit-hud-adaptive-order").checked = p.adaptiveOrder !== false;
+    this.#element("edit-hud-appearance-target").value =
+      normalizeAppearanceTarget(p.appearanceTarget);
+    this.#element("edit-hud-appearance-color-action").value =
+      normalizeAppearanceColorAction(p.appearanceColorAction);
     this.#element("edit-hud-default-extrude").value = String(p.defaults.extrude);
     this.#element("edit-hud-default-inset").value = String(p.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(p.defaults.pathRadius);
@@ -1291,6 +1340,216 @@ export class EditHud {
     }
   }
 
+  #refreshAppearanceControls(selection = null) {
+    const target = normalizeAppearanceTarget(
+      this.#preferences.appearanceTarget
+    );
+    const colorAction = normalizeAppearanceColorAction(
+      this.#preferences.appearanceColorAction
+    );
+    const selectedCount = selection?.members?.length ?? 0;
+    const selectionAppearance = this.query(
+      "selection.appearance.inspect"
+    ) ?? { count: 0 };
+    const tool = this.query("edit.tool.parameters.get", {
+      toolId: "path.sketch"
+    })?.values ?? {};
+    const toolColor = tool.mode === "array" && tool.sourceMode === "catalog"
+      ? tool.sourceColor ?? "#6699cc"
+      : tool.color ?? "#70c8ff";
+    const toolMaterial = normalizeMaterialMode(tool.materialMode ?? "inherit");
+    const toolOpacity = finiteRangeValue(
+      tool.opacityMultiplier ?? 1,
+      0,
+      1,
+      1
+    );
+    const selectionColor = selectionAppearance.colorMode?.value === "per-instance"
+      ? selectionAppearance.tint?.value ?? "#ffffff"
+      : selectionAppearance.effectiveColor?.value ?? null;
+    const selectionMaterial = selectionAppearance.materialMode?.mixed
+      ? "mixed"
+      : normalizeMaterialMode(
+          selectionAppearance.materialMode?.value ??
+          selectionAppearance.effectiveMaterialMode?.value ??
+          "inherit"
+        );
+    const selectionEffectiveMaterial = selectionAppearance.effectiveMaterialMode?.mixed
+      ? "mixed"
+      : normalizeMaterialMode(
+          selectionAppearance.effectiveMaterialMode?.value ?? selectionMaterial
+        );
+    const toolEffectiveMaterial = toolMaterial === "inherit"
+      ? tool.mode === "array" && tool.sourceMode === "catalog"
+        ? "unlit"
+        : "standard"
+      : toolMaterial;
+    const selectionOpacity = selectionAppearance.opacityMultiplier?.mixed
+      ? null
+      : selectionAppearance.opacityMultiplier?.value;
+
+    const values = [];
+    if (target === "tool" || target === "both") {
+      values.push({
+        source: "tool",
+        color: toolColor,
+        material: toolMaterial,
+        opacity: toolOpacity
+      });
+    }
+    if ((target === "selection" || target === "both") && selectedCount) {
+      values.push({
+        source: "selection",
+        color: selectionColor,
+        material: selectionMaterial,
+        opacity: selectionOpacity
+      });
+    }
+
+    const colorState = aggregateHudValues(
+      values.map(value => value.color).filter(Boolean)
+    );
+    const materialState = aggregateHudValues(
+      values.map(value => value.material).filter(Boolean)
+    );
+    const opacityState = aggregateHudValues(
+      values.map(value => value.opacity).filter(value => value !== null && value !== undefined),
+      { numeric: true }
+    );
+
+    const colorControl = this.#element("edit-hud-appearance-color");
+    const materialControl = this.#element("edit-hud-appearance-material");
+    const opacityControl = this.#element("edit-hud-appearance-opacity");
+    const unavailable = target === "selection" && !selectedCount;
+    colorControl.disabled = unavailable;
+    materialControl.disabled = unavailable;
+    opacityControl.disabled = unavailable;
+    this.#element("edit-hud-appearance-color-action").disabled = unavailable;
+
+    if (this.root.ownerDocument.activeElement !== colorControl &&
+        colorState.value && /^#[0-9a-f]{6}$/i.test(colorState.value)) {
+      colorControl.value = colorState.value;
+    }
+    colorControl.dataset.mixed = colorState.mixed ? "true" : "false";
+
+    if (this.root.ownerDocument.activeElement !== materialControl) {
+      materialControl.value = materialState.mixed
+        ? "mixed"
+        : normalizeMaterialMode(materialState.value ?? "inherit");
+    }
+    materialControl.dataset.mixed = materialState.mixed ? "true" : "false";
+
+    if (this.root.ownerDocument.activeElement !== opacityControl &&
+        opacityState.value !== null) {
+      opacityControl.value = String(opacityState.value);
+    }
+    opacityControl.dataset.mixed = opacityState.mixed ? "true" : "false";
+    this.#updateAppearanceOpacityLabel(
+      opacityState.value ?? opacityControl.value,
+      opacityState.mixed
+    );
+
+    this.#element("edit-hud-appearance-target").value = target;
+    this.#element("edit-hud-appearance-color-action").value = colorAction;
+    const stateLabel = this.#element("edit-hud-appearance-state");
+    if (unavailable) {
+      stateLabel.textContent = "Seleção vazia";
+    } else if (values.length > 1 &&
+        (colorState.mixed || materialState.mixed || opacityState.mixed)) {
+      stateLabel.textContent = "Ferramenta e seleção diferem";
+    } else if (selectionAppearance.colorMode?.mixed) {
+      stateLabel.textContent = `${selectedCount} objetos · cores mistas · ${
+        materialModeLabel(selectionEffectiveMaterial)
+      }`;
+    } else if (selectionAppearance.colorMode?.value === "per-instance") {
+      stateLabel.textContent = `${selectedCount} objetos · cor por instância · ${
+        materialModeLabel(selectionEffectiveMaterial)
+      }`;
+    } else if (target === "tool") {
+      stateLabel.textContent = `Próximos traços · ${
+        materialModeLabel(toolEffectiveMaterial)
+      }`;
+    } else {
+      stateLabel.textContent = `${selectedCount} objeto${
+        selectedCount === 1 ? "" : "s"
+      } · ${materialModeLabel(selectionEffectiveMaterial)}`;
+    }
+  }
+
+  #applyAppearanceColor(value) {
+    const color = normalizeHudColor(value);
+    const target = normalizeAppearanceTarget(
+      this.#preferences.appearanceTarget
+    );
+    if (target === "tool" || target === "both") {
+      this.#execute("edit.tool.parameters.set", {
+        toolId: "path.sketch",
+        patch: { color, sourceColor: color }
+      });
+    }
+    if (target === "selection" || target === "both") {
+      const appearance = this.query("selection.appearance.inspect") ?? {};
+      if (Number(appearance.count ?? 0) > 0) {
+        const action = normalizeAppearanceColorAction(
+          this.#preferences.appearanceColorAction
+        );
+        const useTint = action === "tint" ||
+          (action === "auto" && appearance.colorMode?.value === "per-instance");
+        this.#execute("appearance.selection.patch", {
+          binding: useTint ? { tint: color } : { color }
+        });
+      }
+    }
+    this.#refreshAppearanceControls(this.query("selection.snapshot"));
+  }
+
+  #applyAppearanceMaterial(value) {
+    const materialMode = normalizeMaterialMode(value);
+    const target = normalizeAppearanceTarget(
+      this.#preferences.appearanceTarget
+    );
+    if (target === "tool" || target === "both") {
+      this.#execute("edit.tool.parameters.set", {
+        toolId: "path.sketch",
+        patch: { materialMode }
+      });
+    }
+    if ((target === "selection" || target === "both") &&
+        (this.query("selection.snapshot")?.members?.length ?? 0) > 0) {
+      this.#execute("appearance.material.bind", {
+        binding: { materialMode }
+      });
+    }
+    this.#refreshAppearanceControls(this.query("selection.snapshot"));
+  }
+
+  #applyAppearanceOpacity(value) {
+    const opacityMultiplier = finiteRangeValue(value, 0, 1, 1);
+    const target = normalizeAppearanceTarget(
+      this.#preferences.appearanceTarget
+    );
+    if (target === "tool" || target === "both") {
+      this.#execute("edit.tool.parameters.set", {
+        toolId: "path.sketch",
+        patch: { opacityMultiplier }
+      });
+    }
+    if ((target === "selection" || target === "both") &&
+        (this.query("selection.snapshot")?.members?.length ?? 0) > 0) {
+      this.#execute("appearance.selection.patch", {
+        binding: { opacityMultiplier }
+      });
+    }
+    this.#refreshAppearanceControls(this.query("selection.snapshot"));
+  }
+
+  #updateAppearanceOpacityLabel(value, mixed = false) {
+    const output = this.#element("edit-hud-appearance-opacity-value");
+    output.textContent = mixed
+      ? "misto"
+      : `${Math.round(finiteRangeValue(value, 0, 1, 1) * 100)}%`;
+  }
+
   #reportError(message) {
     this.#element("edit-hud-status").textContent = String(message);
     this.root.dataset.error = "true";
@@ -1385,6 +1644,11 @@ export class EditHud {
 
 const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-resize": ["Redimensionar HUD", "Arraste para ajustar rapidamente o número de colunas e linhas da grade de ferramentas."],
+  "edit-hud-appearance-target": ["Alvo da aparência", "Escolhe se cor, material e opacidade alteram a seleção, os próximos traços ou ambos."],
+  "edit-hud-appearance-color": ["Cor", "Aplica uma cor uniforme ou uma matização conforme o modo escolhido."],
+  "edit-hud-appearance-color-action": ["Modo da cor", "Automático preserva variações por instância; Uniformizar substitui a variação; Matizar preserva a variação."],
+  "edit-hud-appearance-material": ["Material", "Escolhe material automático, não iluminado, padrão ou físico sem reconstruir a geometria."],
+  "edit-hud-appearance-opacity": ["Opacidade", "Altera a opacidade em uma única entrada de histórico ao soltar o controle."],
   "edit-hud-pivot-edit": ["Editar pivô", "Ativa o manipulador do pivô sem deslocar a geometria do objeto selecionado."],
   "edit-hud-edit-plane": ["Plano de edição", "Captura um referencial independente para transformações e edição de componentes."],
   "edit-hud-drawing-plane": ["Plano de desenho", "Captura o plano onde pontos e formas 2D serão criados; não altera a câmera nem o plano de edição."],
@@ -1527,6 +1791,61 @@ function resolveHudHint(control) {
   }
   const title = control.getAttribute("title") || control.getAttribute("aria-label") || "Ferramenta";
   return { title, description: title };
+}
+
+function normalizeAppearanceTarget(value) {
+  const target = String(value ?? "selection").trim().toLowerCase();
+  return ["selection", "tool", "both"].includes(target)
+    ? target
+    : "selection";
+}
+
+function normalizeAppearanceColorAction(value) {
+  const action = String(value ?? "auto").trim().toLowerCase();
+  return ["auto", "uniform", "tint"].includes(action)
+    ? action
+    : "auto";
+}
+
+function normalizeMaterialMode(value) {
+  const mode = String(value ?? "inherit").trim().toLowerCase();
+  return ["inherit", "unlit", "standard", "physical"].includes(mode)
+    ? mode
+    : "inherit";
+}
+
+function materialModeLabel(value) {
+  return ({
+    inherit: "Automático",
+    unlit: "Não iluminado",
+    standard: "Padrão",
+    physical: "Físico",
+    mixed: "Materiais mistos"
+  })[value] ?? "Material";
+}
+
+function normalizeHudColor(value) {
+  const color = String(value ?? "").trim().toLowerCase();
+  if (!/^#[0-9a-f]{6}$/.test(color)) {
+    throw new TypeError(`Cor inválida: ${value}.`);
+  }
+  return color;
+}
+
+function finiteRangeValue(value, minimum, maximum, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return clamp(number, minimum, maximum);
+}
+
+function aggregateHudValues(values, { numeric = false } = {}) {
+  if (!values.length) return { mixed: false, value: null };
+  const first = values[0];
+  const equal = numeric
+    ? value => Math.abs(Number(value) - Number(first)) <= 1e-9
+    : value => String(value) === String(first);
+  const mixed = values.some(value => !equal(value));
+  return { mixed, value: mixed ? null : first };
 }
 
 function describeState(state) {

@@ -1921,3 +1921,107 @@ html[data-toolbar-layout="vertical"] #selection-panel{
 }
 #measurement-readout[hidden]{display:none}
 .mesh-form-wide{grid-column:1/-1}
+
+/* 0041b1 — controles de aparência ocupam células reais do HUD */
+.edit-hud-appearance > label,
+.edit-hud-appearance > small {
+  box-sizing:border-box;
+  width:100%!important;
+  min-width:0!important;
+  min-height:var(--edit-hud-cell)!important;
+  height:var(--edit-hud-cell)!important;
+  margin:0!important;
+  overflow:hidden;
+  place-self:stretch;
+}
+.edit-hud-appearance > label {
+  display:flex!important;
+  align-items:center;
+  gap:4px;
+  padding:2px 4px!important;
+  color:#dcecff;
+  background:#0b1724;
+  border:1px solid #ffffff17;
+  border-radius:8px;
+}
+.edit-hud-appearance-target,
+.edit-hud-appearance-color-action,
+.edit-hud-appearance-material {
+  grid-column:span 3;
+}
+.edit-hud-appearance-color {
+  grid-column:span 1;
+  padding:1px!important;
+}
+.edit-hud-appearance-opacity {
+  grid-column:span 4;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 2.65rem;
+  align-items:center;
+}
+.edit-hud-appearance-state {
+  grid-column:span 3;
+  display:block;
+  padding:7px 6px 0;
+  color:#9db2c8;
+  font-size:10px;
+  line-height:1;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+.edit-hud-appearance select,
+.edit-hud-appearance input {
+  box-sizing:border-box;
+  min-width:0;
+  max-width:100%;
+}
+.edit-hud-appearance select {
+  width:100%;
+  height:calc(var(--edit-hud-cell) - 6px);
+  padding:0 18px 0 4px;
+  border:0;
+  color:#e8f2ff;
+  background:#0b1724;
+  font-size:11px;
+}
+.edit-hud-appearance-color input[type="color"] {
+  position:static;
+  width:100%;
+  height:100%;
+  padding:1px;
+  border:0;
+  border-radius:6px;
+  background:transparent;
+  opacity:1;
+  pointer-events:auto;
+}
+.edit-hud-appearance-color > span {
+  display:none;
+}
+.edit-hud-appearance-opacity input[type="range"] {
+  width:100%;
+  height:100%;
+  margin:0;
+}
+.edit-hud-appearance-opacity > span {
+  min-width:0;
+  overflow:hidden;
+  text-align:right;
+  font-size:10px;
+  text-overflow:clip;
+}
+#edit-hud[data-orientation="vertical"] .edit-hud-appearance-target,
+#edit-hud[data-orientation="vertical"] .edit-hud-appearance-color-action,
+#edit-hud[data-orientation="vertical"] .edit-hud-appearance-material,
+#edit-hud[data-orientation="vertical"] .edit-hud-appearance-state {
+  grid-column:span 3;
+}
+#edit-hud[data-orientation="vertical"] .edit-hud-appearance-opacity {
+  grid-column:span 4;
+}
+#edit-hud[data-size="compact"] .edit-hud-appearance select {
+  font-size:9px;
+}
+#edit-hud[data-size="large"] .edit-hud-appearance select {
+  font-size:12px;
+}

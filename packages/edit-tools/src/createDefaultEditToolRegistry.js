@@ -99,6 +99,17 @@ export function createDefaultEditToolRegistry({
         colorParameter("sourceColor", "Cor do pincel", "#6699cc", {
           when: { mode: "array", sourceMode: "catalog" }
         }),
+        enumParameter("materialMode", "Material do traço", [
+          { value: "inherit", label: "Automático / herdado" },
+          { value: "unlit", label: "Não iluminado" },
+          { value: "standard", label: "Padrão" },
+          { value: "physical", label: "Físico" }
+        ], "inherit"),
+        numberParameter("opacityMultiplier", "Opacidade do traço", 1, {
+          minimum: 0,
+          maximum: 1,
+          step: 0.01
+        }),
         enumParameter("spacingMode", "Distribuição do pincel", [
           { value: "auto", label: "Automática pelo tamanho" },
           { value: "world", label: "Distância no mundo" }

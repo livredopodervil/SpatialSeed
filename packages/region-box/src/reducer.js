@@ -8,7 +8,10 @@ import {
 } from "../../scene-hierarchy/src/index.js";
 import {
   normalizeExplicitInstanceFamily
-} from "../../procedural-families/src/index.js?build=20260730-0040h";
+} from "../../procedural-families/src/index.js?build=20260730-0041a";
+import {
+  normalizeAppearanceBinding
+} from "../../appearance-binding/src/index.js?build=20260730-0041a";
 
 function updateById(objects, id, updater) {
   const index = objects.findIndex(object => object.id === id);
@@ -70,19 +73,30 @@ function applyObjectPatch(object, patch = {}) {
   }
 
   if ("appearanceId" in patch) {
-    next.appearanceId = patch.appearanceId;
+    next.appearanceId = String(patch.appearanceId);
     delete next.material;
   } else if (patch.material) {
-    next.material = {
+    next.material = Object.freeze({
       ...(object.material ?? {}),
       ...patch.material,
       texture: patch.material.texture
-        ? {
+        ? Object.freeze({
             ...((object.material ?? {}).texture ?? {}),
             ...patch.material.texture
-          }
+          })
         : (object.material ?? {}).texture
-    };
+    });
+  }
+
+  if ("appearanceBinding" in patch) {
+    next.appearanceBinding = normalizeAppearanceBinding(
+      patch.appearanceBinding,
+      {
+        family: next.family,
+        fallbackColor: next.material?.color ?? object.material?.color ?? "#ffffff",
+        instanceColor: next.instanceState?.color ?? null
+      }
+    );
   }
 
   return next;
@@ -372,9 +386,16 @@ export function boxRegionReducer(state, command, context = {}) {
           ? { appearanceId: String(command.appearanceId) }
           : {
               material: Object.freeze({
-                color: normalizeHexColor(command.color ?? "#6699cc")
+                ...(command.material ? structuredClone(command.material) : {}),
+                color: normalizeHexColor(
+                  command.material?.color ?? command.color ?? "#6699cc"
+                )
               })
             }),
+        appearanceBinding: normalizeAppearanceBinding(
+          command.appearanceBinding,
+          { family, fallbackColor: command.color ?? "#6699cc" }
+        ),
         instanceState: Object.freeze({}),
         source: String(command.source ?? "instance-family")
       });
@@ -410,9 +431,19 @@ export function boxRegionReducer(state, command, context = {}) {
           ? { appearanceId: String(command.appearanceId) }
           : {
               material: Object.freeze({
-                color: command.color ?? "#6699cc"
+                ...(command.material ? structuredClone(command.material) : {}),
+                color: normalizeHexColor(
+                  command.material?.color ?? command.color ?? "#6699cc"
+                )
               })
             }),
+        appearanceBinding: normalizeAppearanceBinding(
+          command.appearanceBinding,
+          {
+            fallbackColor: command.material?.color ?? command.color ?? "#6699cc",
+            instanceColor: command.instanceState?.color ?? null
+          }
+        ),
         instanceState: freezeInstanceState(
           command.instanceState
         )
@@ -820,6 +851,10 @@ function freezeInstanceFamilyObject(command = {}, context = {}, ignoredIds = new
             )
           })
         }),
+    appearanceBinding: normalizeAppearanceBinding(
+      command.appearanceBinding,
+      { family, fallbackColor: command.material?.color ?? command.color ?? "#6699cc" }
+    ),
     instanceState: Object.freeze({}),
     source: String(command.source ?? "instance-family")
   });
