@@ -1,7 +1,7 @@
 export {
   LocalViewerCoordinator,
   createSharedViewerUrl
-} from "./LocalViewerCoordinator.js";
+} from "./LocalViewerCoordinator.js?build=20260730-0040f";
 export {
   LocalViewerSessionDirectory
 } from "./LocalViewerSessionDirectory.js";

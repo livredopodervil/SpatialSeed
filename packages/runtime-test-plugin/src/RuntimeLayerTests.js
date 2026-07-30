@@ -20,7 +20,7 @@ import {
   EditorSession,
   SimulationClock,
   SimulationBridge
-} from "../../runtime-layers/src/index.js?build=20260729-0040b";
+} from "../../runtime-layers/src/index.js?build=20260730-0040e";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
@@ -142,7 +142,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260729-0040b";
+} from "../../devtools/src/DevConsole.js?build=20260730-0040e";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -174,7 +174,7 @@ import {
 } from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260729-0039g2";
 import {
   ToolGestureNavigation
-} from "../../renderer-three/src/ToolGestureNavigation.js?build=20260729-0040b";
+} from "../../renderer-three/src/ToolGestureNavigation.js?build=20260730-0040e";
 import {
   MeshEditController,
   applyMeshTopologyOperation,
@@ -203,23 +203,23 @@ import {
   planarFrameCoordinates,
   planarFrameFromPoints,
   planarFramePoint
-} from "../../edit-context/src/index.js?build=20260729-0040b";
+} from "../../edit-context/src/index.js?build=20260730-0040e";
 import {
   PlanarSketchController,
   createPlanarPrimitive
-} from "../../planar-authoring/src/index.js?build=20260729-0040b";
+} from "../../planar-authoring/src/index.js?build=20260730-0040e";
 import {
   ObjectPlacementController
-} from "../../object-placement/src/index.js?build=20260729-0040b";
+} from "../../object-placement/src/index.js?build=20260730-0040e";
 import {
   MeasurementController,
   formatMeasurementResult,
   measureAngle,
   measureDistance
-} from "../../measurement-tools/src/index.js?build=20260729-0040b";
+} from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260729-0040b";
+} from "../../editor-commands/src/EditorCommands.js?build=20260730-0040e";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -237,7 +237,7 @@ import {
   geometryToolIcon,
   geometryToolPriority,
   normalizeHudDimensions
-} from "../../edit-hud/src/index.js?build=20260729-0040b";
+} from "../../edit-hud/src/index.js?build=20260730-0040e";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -254,7 +254,7 @@ import {
   samplePathFrames,
   samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "../../spatial-references/src/index.js?build=20260729-0040b";
+} from "../../spatial-references/src/index.js?build=20260730-0040e";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -284,7 +284,7 @@ import {
   UiActionRegistry,
   UiRefreshCoordinator,
   normalizeShortcutChord
-} from "../../ui-widgets/src/index.js?build=20260729-0040b";
+} from "../../ui-widgets/src/index.js?build=20260730-0040e";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260720-0028c";

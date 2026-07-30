@@ -2,8 +2,10 @@ export class InstanceBatchIndex {
   #objectToIndex = new Map();
   #indexToObject = [];
   #free = [];
+  #highestOccupied = -1;
 
   get size() { return this.#objectToIndex.size; }
+  get activeSpan() { return this.#highestOccupied + 1; }
   has(objectId) { return this.#objectToIndex.has(String(objectId)); }
   indexOf(objectId) { return this.#objectToIndex.get(String(objectId)) ?? -1; }
   objectAt(index) { return this.#indexToObject[index] ?? null; }
@@ -14,6 +16,7 @@ export class InstanceBatchIndex {
     const index = this.#free.length ? this.#free.pop() : this.#indexToObject.length;
     this.#objectToIndex.set(id, index);
     this.#indexToObject[index] = id;
+    this.#highestOccupied = Math.max(this.#highestOccupied, index);
     return index;
   }
 
@@ -24,6 +27,12 @@ export class InstanceBatchIndex {
     this.#objectToIndex.delete(id);
     this.#indexToObject[index] = null;
     this.#free.push(index);
+    if (index === this.#highestOccupied) {
+      while (this.#highestOccupied >= 0 &&
+             this.#indexToObject[this.#highestOccupied] === null) {
+        this.#highestOccupied -= 1;
+      }
+    }
     return { removed: true, index };
   }
 
@@ -31,9 +40,15 @@ export class InstanceBatchIndex {
     this.#objectToIndex.clear();
     this.#indexToObject.length = 0;
     this.#free.length = 0;
+    this.#highestOccupied = -1;
   }
 
   stats() {
-    return Object.freeze({ size: this.size, capacity: this.#indexToObject.length, free: this.#free.length });
+    return Object.freeze({
+      size: this.size,
+      capacity: this.#indexToObject.length,
+      activeSpan: this.activeSpan,
+      free: this.#free.length
+    });
   }
 }

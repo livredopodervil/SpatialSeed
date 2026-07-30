@@ -65,6 +65,8 @@ export class EditHud {
   static apiVersion = "edit-hud-v1";
 
   #unsubscribe = null;
+  #unsubscribeHistory = null;
+  #historyFrame = null;
   #preferences = structuredClone(DEFAULT_PREFERENCES);
   #drag = null;
   #resize = null;
@@ -77,7 +79,14 @@ export class EditHud {
   #suppressedClick = null;
   #fitFrame = null;
 
-  constructor({ root, query, execute, subscribe, openWorkspace = null }) {
+  constructor({
+    root,
+    query,
+    execute,
+    subscribe,
+    subscribeHistory = null,
+    openWorkspace = null
+  }) {
     if (!root) throw new TypeError("EditHud exige root.");
     if (typeof query !== "function" || typeof execute !== "function") {
       throw new TypeError("EditHud exige query e execute.");
@@ -92,11 +101,23 @@ export class EditHud {
     this.#bind();
     this.#applyPreferences();
     this.#unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
+    this.#unsubscribeHistory = subscribeHistory?.(() =>
+      this.#scheduleHistoryRefresh()
+    ) ?? null;
     this.refresh();
   }
 
   dispose() {
     this.#unsubscribe?.();
+    this.#unsubscribeHistory?.();
+    if (this.#historyFrame !== null) {
+      if (typeof globalThis.cancelAnimationFrame === "function") {
+        globalThis.cancelAnimationFrame(this.#historyFrame);
+      } else {
+        globalThis.clearTimeout?.(this.#historyFrame);
+      }
+      this.#historyFrame = null;
+    }
     this.#listeners(false);
     this.#clearHintTimer();
     this.#clearHintHideTimer();
@@ -176,14 +197,14 @@ export class EditHud {
     this.#element("edit-hud-point-lock").checked = Boolean(state.pointLock);
     this.#element("edit-hud-pivot-edit").dataset.active =
       state.pivotEditing ? "true" : "false";
+    this.#element("edit-hud-pivot-policy").value =
+      state.pivot?.policy ?? "median";
+    this.#element("edit-hud-pivot-reference").value =
+      state.pivot?.reference ?? "absolute";
     this.#element("edit-hud-keep-tool").checked = Boolean(state.keepToolActive);
     this.#element("edit-hud-repeat").disabled = !state.canRepeat;
     this.#element("edit-hud-repeat").dataset.active = state.canRepeat ? "true" : "false";
-    const projectHistory = state.meshActive
-      ? { canUndo: state.canUndo, canRedo: state.canRedo }
-      : this.query("history.status");
-    this.#element("edit-hud-undo").disabled = !projectHistory.canUndo;
-    this.#element("edit-hud-redo").disabled = !projectHistory.canRedo;
+    this.refreshHistory(state);
     this.#element("edit-hud-apply").disabled = !state.meshActive || state.stale;
     this.#element("edit-hud-cancel").disabled = !state.meshActive;
     const sessionGroup = this.root.querySelector('[data-edit-hud-group="session"]');
@@ -248,6 +269,26 @@ export class EditHud {
         : "false";
     this.#element("edit-hud-measure-clear").disabled =
       !measurement.active && !measurement.result;
+  }
+
+  refreshHistory(snapshot = null) {
+    const state = snapshot ?? this.query("edit.context.status");
+    const projectHistory = state?.meshActive
+      ? { canUndo: state.canUndo, canRedo: state.canRedo }
+      : this.query("history.status");
+    this.#element("edit-hud-undo").disabled = !projectHistory?.canUndo;
+    this.#element("edit-hud-redo").disabled = !projectHistory?.canRedo;
+  }
+
+  #scheduleHistoryRefresh() {
+    if (this.#historyFrame !== null) return;
+    const run = () => {
+      this.#historyFrame = null;
+      this.refreshHistory();
+    };
+    this.#historyFrame = typeof globalThis.requestAnimationFrame === "function"
+      ? globalThis.requestAnimationFrame(run)
+      : globalThis.setTimeout(run, 16);
   }
 
   #bind() {
@@ -368,6 +409,18 @@ export class EditHud {
     );
     this.#element("edit-hud-pivot-edit").addEventListener("click", () =>
       this.#execute("pivot.edit.toggle")
+    );
+    this.#element("edit-hud-pivot-policy").addEventListener("change", event =>
+      this.#execute("pivot.policy", { policy: event.target.value })
+    );
+    this.#element("edit-hud-pivot-reference").addEventListener("change", event =>
+      this.#execute("pivot.reference.set", { reference: event.target.value })
+    );
+    this.#element("edit-hud-anchor-policy").addEventListener("change", event =>
+      this.#execute("edit.tool.parameters.set", {
+        toolId: "path.sketch",
+        patch: { anchorPolicy: event.target.value }
+      })
     );
     for (const button of this.root.querySelectorAll("[data-planar-tool]")) {
       button.addEventListener("click", () => this.#execute(
@@ -1226,7 +1279,8 @@ export class EditHud {
     for (const [toolId, parameterId, controlId] of [
       ["mesh.extrude", "distance", "edit-hud-default-extrude"],
       ["mesh.inset", "amount", "edit-hud-default-inset"],
-      ["path.sketch", "radius", "edit-hud-default-path-radius"]
+      ["path.sketch", "radius", "edit-hud-default-path-radius"],
+      ["path.sketch", "anchorPolicy", "edit-hud-anchor-policy"]
     ]) {
       const result = this.query("edit.tool.parameters.get", { toolId });
       const control = this.#element(controlId);

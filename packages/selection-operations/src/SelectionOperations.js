@@ -13,6 +13,10 @@ import {
   matrixFromObject,
   decomposeMatrix
 } from "./AffineRepeat.js?build=20260715-0021d";
+import {
+  explicitInstanceFamilyEstimatedBytes,
+  packAnchoredExplicitInstanceFamily
+} from "../../procedural-families/src/index.js?build=20260730-0040h";
 
 export class SelectionOperations {
   static apiVersion = "selection-operations-v5";
@@ -43,6 +47,15 @@ export class SelectionOperations {
     this.pendingPublication = null;
     this.lastDuplicate = null;
     this.repeatHistoryRevision = 0;
+    this.localityDiagnostics = {
+      explicitSceneScans: 0,
+      sceneObjectsVisited: 0,
+      hierarchyBuilds: 0,
+      selectedObjectsVisited: 0,
+      compactions: 0,
+      objectsCompacted: 0,
+      familyObjectsCreated: 0
+    };
 
     this.unsubscribeSandbox = this.sandbox.subscribe((state, changes) => {
       this.#resolvePendingPublication(state);
@@ -54,6 +67,10 @@ export class SelectionOperations {
             this.#observeCoordination(snapshot)
           )
         : () => {};
+  }
+
+  getLocalityDiagnostics() {
+    return Object.freeze({ ...this.localityDiagnostics });
   }
 
   createBox({ name = null, position = [0, 1, 0], size = [2, 2, 2], color = "#6699cc" } = {}) {
@@ -131,11 +148,9 @@ export class SelectionOperations {
     const frame = placement === null ? null : resolvePlacementFrame(placement);
     const seedPosition = [...(frame?.origin ?? position)];
     const seedRotation = [...(frame?.rotation ?? rotation)];
-    const id = crypto.randomUUID();
-    const index = this.sandbox.getSnapshot().objects.length + 1;
+    const index = this.sandbox.objectCount + 1;
     const baseName = name || `${this.geometryRegistry.label(descriptor.type)} ${index}`;
     const seedTransform = {
-      id,
       position: seedPosition,
       rotation: seedRotation,
       scale: [1, 1, 1]
@@ -167,51 +182,25 @@ export class SelectionOperations {
             )
           );
     } else if (copies > 0) {
-      transforms = Array.from({ length: copies }, (_, copyIndex) => ({
-        index: copyIndex,
+      transforms = Array.from({ length: copies }, () => ({
         position: [...seedTransform.position],
         rotation: [...seedTransform.rotation],
         scale: [...seedTransform.scale]
       }));
     }
 
-    const appearance = this.#creationAppearance(color);
-    const seed = {
-      ...seedTransform,
-      kind: descriptor.type,
+    return this.createGeometryInstances({
       name: baseName,
       geometry: descriptor,
-      ...(appearance.appearanceId
-        ? { appearanceId: appearance.appearanceId }
-        : { material: { color: appearance.color } }),
-      instanceState: {}
-    };
-    const created = [seed, ...transforms.map((transform, copyIndex) => ({
-      ...structuredClone(seed),
-      id: crypto.randomUUID(),
-      name: copyName(baseName, copyIndex),
-      position: [...transform.position],
-      rotation: [...transform.rotation],
-      scale: [...transform.scale]
-    }))];
-    const changed = this.sandbox.dispatch({
-      type: "selection.duplicate",
+      preparedInstances: [seedTransform, ...transforms],
+      color,
       source: "geometry-affine-series",
-      sourceIds: [id],
-      copyCount: copies,
-      affineOperations: structuredClone(resolvedOperations),
-      objects: created
+      generator: {
+        type: "affine-series-v1",
+        count: total,
+        operations: structuredClone(resolvedOperations)
+      }
     });
-
-    if (changed) this.#selectIds([created.at(-1).id]);
-    return {
-      changed,
-      id,
-      geometry: descriptor,
-      count: total,
-      createdIds: created.map(object => object.id),
-      activeId: created.at(-1).id
-    };
   }
 
   createGeometryInstances({
@@ -222,7 +211,10 @@ export class SelectionOperations {
     colors = null,
     color = "#6699cc",
     material = null,
-    source = "geometry-instances"
+    source = "geometry-instances",
+    generator = null,
+    anchorPolicy = "first",
+    anchor = null
   } = {}) {
     if (!this.geometryRegistry) {
       throw new Error("Registro de geometrias indisponível.");
@@ -237,61 +229,62 @@ export class SelectionOperations {
         "A criação instanciada exige matrizes ou transformações preparadas."
       );
     }
-    if (sourceInstances.length < 1 || sourceInstances.length > 10000) {
+    if (sourceInstances.length < 1 || sourceInstances.length > 100000) {
       throw new RangeError(
-        "A criação instanciada exige entre 1 e 10000 transformações."
+        "A criação instanciada exige entre 1 e 100000 transformações."
       );
     }
     const instances = usesPrepared
-      ? normalizePreparedInstances(
-          sourceInstances,
-          typeof this.sandbox.getObject === "function"
-            ? id => Boolean(this.sandbox.getObject(id))
-            : this.sandbox.getSnapshot().objects
-        )
+      ? normalizePreparedInstances(sourceInstances)
       : transformsFromWorldMatrices(sourceInstances);
     const descriptor = this.geometryRegistry.normalize(geometry);
     const instanceColors = colors === null || colors === undefined
       ? null
       : normalizeInstanceColors(colors, instances.length);
     const appearance = this.#creationAppearance(color, material);
-    const index = this.sandbox.getSnapshot().objects.length + 1;
+    const index = this.sandbox.objectCount + 1;
     const label = this.geometryRegistry.label(descriptor.type);
     const baseName = name || `${label} ${index}`;
-    const created = instances.map((instance, copyIndex) => {
-      return {
-        id: instance.id,
-        kind: descriptor.type,
-        name: copyIndex === 0
-          ? baseName
-          : copyName(baseName, copyIndex - 1),
-        position: instance.position,
-        rotation: instance.rotation,
-        scale: instance.scale,
-        geometry: descriptor,
-        ...(appearance.appearanceId
-          ? { appearanceId: appearance.appearanceId }
-          : { material: { color: appearance.color } }),
-        instanceState: instanceColors
-          ? { color: instanceColors[copyIndex] }
-          : {}
-      };
+    const id = crypto.randomUUID();
+    const anchored = packAnchoredExplicitInstanceFamily(instances, {
+      colors: instanceColors,
+      anchorPolicy,
+      anchor,
+      generator: {
+        ...(generator ?? { type: "explicit-instance-family-v1" }),
+        coordinateSpace: "family-local-v2",
+        anchorPolicy
+      }
     });
-    const changed = this.sandbox.dispatch({
-      type: "selection.duplicate",
+    const family = anchored.family;
+    const command = deepFreezeCommand({
+      type: "instance-family.create",
+      preparedImmutable: "spatialseed-prepared-command-v1",
+      id,
+      name: baseName,
+      position: anchored.origin,
+      geometry: descriptor,
+      family,
       source: String(source),
-      sourceIds: [],
-      copyCount: created.length,
-      objects: created
+      ...(appearance.appearanceId
+        ? { appearanceId: appearance.appearanceId }
+        : { color: appearance.color })
     });
-    if (changed) this.#selectIds([created.at(-1).id]);
+    const changed = this.sandbox.dispatch(command);
+    if (changed) this.#selectIds([id]);
     return Object.freeze({
       changed,
       tool: "geometry-instances",
       geometry: descriptor,
-      count: created.length,
-      createdIds: Object.freeze(created.map(object => object.id)),
-      activeIds: Object.freeze([created.at(-1).id])
+      count: family.count,
+      familyId: id,
+      familyOrigin: anchored.origin,
+      anchorPolicy: anchored.anchorPolicy,
+      logicalObjectCount: 1,
+      estimatedTransformBytes:
+        explicitInstanceFamilyEstimatedBytes(family),
+      createdIds: Object.freeze([id]),
+      activeIds: Object.freeze([id])
     });
   }
 
@@ -912,6 +905,148 @@ export class SelectionOperations {
     });
   }
 
+  compactSelectedInstances({ objectIds = null, minimumGroupSize = 2 } = {}) {
+    if (!this.geometryRegistry) {
+      throw new Error("Registro de geometrias indisponível.");
+    }
+    const minimum = Number(minimumGroupSize);
+    if (!Number.isInteger(minimum) || minimum < 2) {
+      throw new RangeError("Grupo mínimo de compactação deve ser >= 2.");
+    }
+    const requestedIds = Array.isArray(objectIds) && objectIds.length
+      ? objectIds.map(String)
+      : this.editor.selection.snapshot().members
+          .map(member => String(member.objectId));
+    if (requestedIds.length < minimum) {
+      return Object.freeze({
+        changed: false,
+        reason: "insufficient-selection",
+        requested: requestedIds.length
+      });
+    }
+
+    const requested = new Set(requestedIds);
+    const state = this.sandbox.getSnapshot();
+    this.localityDiagnostics.explicitSceneScans += 1;
+    this.localityDiagnostics.sceneObjectsVisited += state.objects.length;
+    this.localityDiagnostics.selectedObjectsVisited += requested.size;
+    const hasChildren = new Set();
+    for (const object of state.objects) {
+      const parentId = object.parentId === null || object.parentId === undefined
+        ? null
+        : String(object.parentId);
+      if (parentId && requested.has(parentId)) hasChildren.add(parentId);
+    }
+
+    const groups = new Map();
+    for (const id of requested) {
+      const object = this.#objectById(id);
+      if (!object || hasChildren.has(id) || object.parentId) continue;
+      if (["group", "camera", "light", "instance-family"].includes(object.kind)) {
+        continue;
+      }
+      let descriptor;
+      try {
+        descriptor = this.geometryRegistry.describeLegacyObject(object);
+      } catch {
+        continue;
+      }
+      const appearanceKey = JSON.stringify([
+        object.appearanceId ?? null,
+        object.material ?? null
+      ]);
+      const key = `${this.geometryRegistry.key(descriptor)}|${appearanceKey}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = { descriptor, appearanceKey, objects: [] };
+        groups.set(key, group);
+      }
+      group.objects.push(object);
+    }
+
+    const families = [];
+    const removeIds = [];
+    for (const group of groups.values()) {
+      if (group.objects.length < minimum) continue;
+      for (let offset = 0; offset < group.objects.length; offset += 100000) {
+        const members = group.objects.slice(offset, offset + 100000);
+        if (members.length < minimum) continue;
+        const colors = members.every(object =>
+          /^#[0-9a-f]{6}$/i.test(String(object.instanceState?.color ?? ""))
+        )
+          ? members.map(object => object.instanceState.color)
+          : null;
+        const anchored = packAnchoredExplicitInstanceFamily(
+          members.map(object => ({
+            position: [...(object.position ?? [0, 0, 0])],
+            rotation: [...(object.rotation ?? [0, 0, 0, 1])],
+            scale: [...(object.scale ?? [1, 1, 1])]
+          })),
+          {
+            colors,
+            generator: {
+              type: "selection-compaction-v1",
+              coordinateSpace: "family-local-v1",
+              sourceRevision: this.sandbox.revision,
+              sourceCount: members.length
+            }
+          }
+        );
+        const family = anchored.family;
+        const first = members[0];
+        families.push({
+          id: crypto.randomUUID(),
+          name: `${first.name ?? this.geometryRegistry.label(group.descriptor.type)} × ${members.length}`,
+          position: anchored.origin,
+          geometry: group.descriptor,
+          family,
+          ...(first.appearanceId
+            ? { appearanceId: first.appearanceId }
+            : { material: structuredClone(first.material ?? { color: "#6699cc" }) })
+        });
+        removeIds.push(...members.map(object => String(object.id)));
+      }
+    }
+
+    if (!families.length) {
+      return Object.freeze({
+        changed: false,
+        reason: "no-compatible-groups",
+        requested: requestedIds.length
+      });
+    }
+    const command = deepFreezeCommand({
+      type: "instance-family.compact-many",
+      preparedImmutable: "spatialseed-prepared-command-v1",
+      removeIds,
+      families,
+      source: "selection-compaction"
+    });
+    const changed = this.sandbox.dispatch(command);
+    const familyIds = families.map(family => family.id);
+    if (changed) {
+      this.localityDiagnostics.compactions += 1;
+      this.localityDiagnostics.objectsCompacted += removeIds.length;
+      this.localityDiagnostics.familyObjectsCreated += familyIds.length;
+      this.#selectIds(familyIds);
+    }
+    return Object.freeze({
+      changed,
+      removedLogicalObjects: removeIds.length,
+      createdFamilyObjects: familyIds.length,
+      instanceCount: families.reduce(
+        (total, item) => total + item.family.count,
+        0
+      ),
+      estimatedTransformBytes: families.reduce(
+        (total, item) =>
+          total + explicitInstanceFamilyEstimatedBytes(item.family),
+        0
+      ),
+      familyIds: Object.freeze(familyIds)
+    });
+  }
+
   dispose() {
     this.unsubscribeSandbox?.();
     this.unsubscribeCoordination?.();
@@ -951,6 +1086,8 @@ export class SelectionOperations {
     this.#selectIds(publication.selectionIds);
 
     if (publication.kind === "plain") {
+      this.localityDiagnostics.hierarchyBuilds += 1;
+      this.localityDiagnostics.sceneObjectsVisited += state.objects.length;
       const hierarchy = new HierarchyIndex(state.objects);
       this.pendingDuplicate = {
         sourceIds: [...publication.sourceIds],
@@ -1042,6 +1179,8 @@ export class SelectionOperations {
       return;
     }
 
+    this.localityDiagnostics.explicitSceneScans += 1;
+    this.localityDiagnostics.sceneObjectsVisited += state.objects.length;
     const byId = new Map(
       state.objects.map(object => [
         object.id,
@@ -1061,6 +1200,8 @@ export class SelectionOperations {
       return;
     }
 
+    this.localityDiagnostics.hierarchyBuilds += 1;
+    this.localityDiagnostics.sceneObjectsVisited += state.objects.length;
     const hierarchy = new HierarchyIndex(state.objects);
     const deltaMatrices = this.pendingDuplicate.duplicateIds.map(id => {
       const before = this.pendingDuplicate.initialWorldMatrices[id];
@@ -1328,40 +1469,18 @@ function transformsFromWorldMatrices(worldMatrices) {
         `Matriz mundial inválida na cópia ${copyIndex + 1}.`
       );
     }
-    return Object.freeze({
-      id: crypto.randomUUID(),
-      ...decomposeMatrix(
-        new THREE.Matrix4().fromArray(matrix.map(Number))
-      )
-    });
+    return Object.freeze(decomposeMatrix(
+      new THREE.Matrix4().fromArray(matrix.map(Number))
+    ));
   });
 }
 
-function normalizePreparedInstances(instances, existingObjects) {
-  const existingHas = typeof existingObjects === "function"
-    ? existingObjects
-    : (() => {
-        const ids = new Set(
-          existingObjects.map(object => String(object.id))
-        );
-        return id => ids.has(String(id));
-      })();
-  const reserved = new Set();
-  return instances.map((instance, copyIndex) => {
-    const id = String(instance?.id ?? "").trim();
-    if (!id || existingHas(id) || reserved.has(id)) {
-      throw new Error(
-        `ID preparado inválido ou duplicado na cópia ${copyIndex + 1}.`
-      );
-    }
-    reserved.add(id);
-    return Object.freeze({
-      id,
-      position: instanceVector(instance.position, 3, "posição", copyIndex),
-      rotation: instanceVector(instance.rotation, 4, "rotação", copyIndex),
-      scale: instanceVector(instance.scale, 3, "escala", copyIndex)
-    });
-  });
+function normalizePreparedInstances(instances) {
+  return instances.map((instance, copyIndex) => Object.freeze({
+    position: instanceVector(instance?.position, 3, "posição", copyIndex),
+    rotation: instanceVector(instance?.rotation, 4, "rotação", copyIndex),
+    scale: instanceVector(instance?.scale, 3, "escala", copyIndex)
+  }));
 }
 
 function instanceVector(value, length, name, copyIndex) {
@@ -1394,6 +1513,15 @@ function normalizeInstanceColors(colors, count) {
     }
     return color;
   });
+}
+
+function deepFreezeCommand(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) {
+    return value;
+  }
+  Object.freeze(value);
+  for (const child of Object.values(value)) deepFreezeCommand(child);
+  return value;
 }
 
 function copyName(name, copyIndex) {

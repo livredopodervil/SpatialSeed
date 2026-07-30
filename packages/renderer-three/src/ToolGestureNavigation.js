@@ -1,9 +1,10 @@
 import * as THREE from "three";
 
 const SINGLE_TOUCH_DISABLED = -1;
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 export class ToolGestureNavigation {
-  static apiVersion = "tool-gesture-navigation-v1";
+  static apiVersion = "tool-gesture-navigation-v2";
 
   #canvas;
   #orbit;
@@ -12,9 +13,19 @@ export class ToolGestureNavigation {
   #touches = new Map();
   #navigationPointers = new Set();
   #previousOrbit = null;
-  #threeTouchCentroid = null;
+  #threeTouchX = 0;
+  #threeTouchY = 0;
+  #hasThreeTouchCentroid = false;
+  #pendingOrbitX = 0;
+  #pendingOrbitY = 0;
+  #orbitFrame = null;
   #canRotate;
   #onCameraChanged;
+  #offset = new THREE.Vector3();
+  #up = new THREE.Vector3();
+  #toY = new THREE.Quaternion();
+  #fromY = new THREE.Quaternion();
+  #spherical = new THREE.Spherical();
 
   constructor({
     canvas,
@@ -71,13 +82,14 @@ export class ToolGestureNavigation {
   release(token) {
     if (!this.#owners.delete(token)) return false;
     if (this.#owners.size) return true;
+    this.#cancelOrbitFrame();
     if (this.#previousOrbit) {
       this.#orbit.enabled = this.#previousOrbit.enabled;
       this.#orbit.touches.ONE = this.#previousOrbit.one;
       this.#orbit.touches.TWO = this.#previousOrbit.two;
     }
     this.#previousOrbit = null;
-    this.#threeTouchCentroid = null;
+    this.#hasThreeTouchCentroid = false;
     return true;
   }
 
@@ -106,6 +118,7 @@ export class ToolGestureNavigation {
 
   dispose() {
     this.#bind(false);
+    this.#cancelOrbitFrame();
     this.#owners.clear();
     this.#touches.clear();
     this.#navigationPointers.clear();
@@ -115,20 +128,20 @@ export class ToolGestureNavigation {
       this.#orbit.touches.TWO = this.#previousOrbit.two;
     }
     this.#previousOrbit = null;
-    this.#threeTouchCentroid = null;
+    this.#hasThreeTouchCentroid = false;
   }
 
   #onPointerDown = event => {
     if (String(event.pointerType ?? "") !== "touch") return;
-    this.#touches.set(event.pointerId, pointerPosition(event));
+    const position = this.#touches.get(event.pointerId) ?? { x: 0, y: 0 };
+    updatePointerPosition(position, event);
+    this.#touches.set(event.pointerId, position);
     if (this.#touches.size >= 2) {
       for (const pointerId of this.#touches.keys()) {
         this.#navigationPointers.add(pointerId);
       }
     }
-    this.#threeTouchCentroid = this.#touches.size >= 3
-      ? centroid(this.#touches.values())
-      : null;
+    this.#captureCentroid();
   };
 
   #onPointerMove = event => {
@@ -138,15 +151,30 @@ export class ToolGestureNavigation {
     ) {
       return;
     }
-    this.#touches.set(event.pointerId, pointerPosition(event));
+    updatePointerPosition(this.#touches.get(event.pointerId), event);
     if (!this.active || this.#touches.size < 3) return;
-    const next = centroid(this.#touches.values());
-    const previous = this.#threeTouchCentroid ?? next;
-    this.#threeTouchCentroid = next;
-    const dx = next.x - previous.x;
-    const dy = next.y - previous.y;
+
+    let x = 0;
+    let y = 0;
+    for (const point of this.#touches.values()) {
+      x += point.x;
+      y += point.y;
+    }
+    const count = Math.max(1, this.#touches.size);
+    x /= count;
+    y /= count;
+    const previousX = this.#hasThreeTouchCentroid ? this.#threeTouchX : x;
+    const previousY = this.#hasThreeTouchCentroid ? this.#threeTouchY : y;
+    this.#threeTouchX = x;
+    this.#threeTouchY = y;
+    this.#hasThreeTouchCentroid = true;
+
+    const dx = x - previousX;
+    const dy = y - previousY;
     if ((dx || dy) && this.#canRotate()) {
-      this.#orbitAroundTarget(dx, dy);
+      this.#pendingOrbitX += dx;
+      this.#pendingOrbitY += dy;
+      this.#scheduleOrbitFrame();
     }
     event.preventDefault?.();
     event.stopImmediatePropagation?.();
@@ -155,13 +183,71 @@ export class ToolGestureNavigation {
   #onPointerEnd = event => {
     if (String(event.pointerType ?? "") !== "touch") return;
     this.#touches.delete(event.pointerId);
-    this.#threeTouchCentroid = this.#touches.size >= 3
-      ? centroid(this.#touches.values())
-      : null;
-    globalThis.queueMicrotask?.(() => {
+    if (this.#touches.size < 3) {
+      this.#hasThreeTouchCentroid = false;
+      this.#cancelOrbitFrame();
+    } else {
+      this.#captureCentroid();
+    }
+    const releasePointer = () => {
       this.#navigationPointers.delete(event.pointerId);
-    });
+    };
+    if (typeof globalThis.queueMicrotask === "function") {
+      globalThis.queueMicrotask(releasePointer);
+    } else {
+      Promise.resolve().then(releasePointer);
+    }
   };
+
+  #captureCentroid() {
+    if (this.#touches.size < 3) {
+      this.#hasThreeTouchCentroid = false;
+      return;
+    }
+    let x = 0;
+    let y = 0;
+    for (const point of this.#touches.values()) {
+      x += point.x;
+      y += point.y;
+    }
+    const count = Math.max(1, this.#touches.size);
+    this.#threeTouchX = x / count;
+    this.#threeTouchY = y / count;
+    this.#hasThreeTouchCentroid = true;
+  }
+
+  #scheduleOrbitFrame() {
+    if (this.#orbitFrame !== null) return;
+    if (typeof globalThis.requestAnimationFrame !== "function") {
+      this.#flushOrbitFrame();
+      return;
+    }
+    this.#orbitFrame = globalThis.requestAnimationFrame(() => {
+      this.#orbitFrame = null;
+      this.#flushOrbitFrame();
+    });
+  }
+
+  #flushOrbitFrame() {
+    const dx = this.#pendingOrbitX;
+    const dy = this.#pendingOrbitY;
+    this.#pendingOrbitX = 0;
+    this.#pendingOrbitY = 0;
+    if (!dx && !dy) return;
+    this.#orbitAroundTarget(dx, dy);
+  }
+
+  #cancelOrbitFrame() {
+    if (
+      this.#orbitFrame !== null &&
+      typeof globalThis.cancelAnimationFrame === "function"
+    ) {
+      globalThis.cancelAnimationFrame(this.#orbitFrame);
+    }
+    this.#orbitFrame = null;
+    this.#pendingOrbitX = 0;
+    this.#pendingOrbitY = 0;
+  }
 
   #orbitAroundTarget(dx, dy) {
     const rect = this.#canvas.getBoundingClientRect?.() ?? {
@@ -170,16 +256,15 @@ export class ToolGestureNavigation {
     };
     const width = Math.max(1, Number(rect.width) || 1);
     const height = Math.max(1, Number(rect.height) || 1);
-    const offset = this.#camera.position.clone().sub(this.#orbit.target);
+    const offset = this.#offset
+      .copy(this.#camera.position)
+      .sub(this.#orbit.target);
     if (offset.lengthSq() <= 1e-18) return;
-    const up = this.#camera.up.clone().normalize();
-    const toY = new THREE.Quaternion().setFromUnitVectors(
-      up,
-      new THREE.Vector3(0, 1, 0)
-    );
-    const fromY = toY.clone().invert();
-    const spherical = new THREE.Spherical().setFromVector3(
-      offset.applyQuaternion(toY)
+    const up = this.#up.copy(this.#camera.up).normalize();
+    this.#toY.setFromUnitVectors(up, WORLD_UP);
+    this.#fromY.copy(this.#toY).invert();
+    const spherical = this.#spherical.setFromVector3(
+      offset.applyQuaternion(this.#toY)
     );
     spherical.theta -= dx * Math.PI * 2 / width;
     spherical.phi -= dy * Math.PI / height;
@@ -195,12 +280,12 @@ export class ToolGestureNavigation {
     spherical.makeSafe();
     offset
       .setFromSpherical(spherical)
-      .applyQuaternion(fromY);
+      .applyQuaternion(this.#fromY);
     this.#camera.position.copy(this.#orbit.target).add(offset);
     this.#camera.lookAt(this.#orbit.target);
     this.#camera.updateMatrixWorld?.(true);
-    this.#orbit.update?.();
     this.#onCameraChanged();
+    this.#orbit.update?.();
   }
 
   #bind(enabled) {
@@ -212,24 +297,8 @@ export class ToolGestureNavigation {
   }
 }
 
-function pointerPosition(event) {
-  return Object.freeze({
-    x: Number(event.clientX ?? event.pageX ?? 0),
-    y: Number(event.clientY ?? event.pageY ?? 0)
-  });
-}
-
-function centroid(points) {
-  const values = [...points];
-  const total = values.reduce(
-    (result, point) => ({
-      x: result.x + point.x,
-      y: result.y + point.y
-    }),
-    { x: 0, y: 0 }
-  );
-  return Object.freeze({
-    x: total.x / Math.max(1, values.length),
-    y: total.y / Math.max(1, values.length)
-  });
+function updatePointerPosition(target, event) {
+  target.x = Number(event.clientX ?? event.pageX ?? 0);
+  target.y = Number(event.clientY ?? event.pageY ?? 0);
+  return target;
 }

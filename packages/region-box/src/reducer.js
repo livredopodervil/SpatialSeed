@@ -6,6 +6,9 @@ import {
   reparentPreservingWorld,
   ungroupNodes
 } from "../../scene-hierarchy/src/index.js";
+import {
+  normalizeExplicitInstanceFamily
+} from "../../procedural-families/src/index.js?build=20260730-0040h";
 
 function updateById(objects, id, updater) {
   const index = objects.findIndex(object => object.id === id);
@@ -281,6 +284,111 @@ export function boxRegionReducer(state, command, context = {}) {
       return {
         state: Object.freeze({ ...state, objects }),
         changes: [{ type: "object-created", objectId: id, object }]
+      };
+    }
+
+    case "instance-family.compact-many": {
+      if (!Array.isArray(command.removeIds) ||
+          !Array.isArray(command.families) ||
+          !command.families.length) {
+        throw new TypeError("Compactação procedural inválida.");
+      }
+      const removeIds = command.removeIds.map(id => String(id ?? "").trim());
+      if (removeIds.some(id => !id) || new Set(removeIds).size !== removeIds.length) {
+        throw new Error("IDs removidos pela compactação são inválidos.");
+      }
+      const removedSet = new Set(removeIds);
+      const removedObjects = removeIds.map(id =>
+        typeof context.getObject === "function"
+          ? context.getObject(id)
+          : state.objects.find(object => String(object.id) === id)
+      );
+      if (removedObjects.some(object => !object)) {
+        throw new Error("A compactação referencia objetos inexistentes.");
+      }
+      const familyObjects = command.families.map(item =>
+        freezeInstanceFamilyObject(item, context, removedSet)
+      );
+      const familyIds = new Set(familyObjects.map(object => object.id));
+      if (familyIds.size !== familyObjects.length) {
+        throw new Error("IDs de famílias compactadas estão duplicados.");
+      }
+      const objects = Object.freeze([
+        ...state.objects.filter(object => !removedSet.has(String(object.id))),
+        ...familyObjects
+      ]);
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [
+          ...removeIds.map(objectId => ({
+            type: "object-deleted",
+            objectId,
+            source: command.source ?? "selection-compaction"
+          })),
+          ...familyObjects.map(object => ({
+            type: "object-created",
+            objectId: object.id,
+            object,
+            source: command.source ?? "selection-compaction"
+          }))
+        ]
+      };
+    }
+
+    case "instance-family.create": {
+      const id = String(command.id ?? "").trim();
+      if (!id) {
+        throw new TypeError("Família procedural exige id.");
+      }
+      const exists = typeof context.hasObject === "function"
+        ? context.hasObject(id)
+        : state.objects.some(object => String(object.id) === id);
+      if (exists) throw new Error(`Duplicate object id: ${id}`);
+      const geometry = freezeGeometry(command.geometry);
+      const family = normalizeExplicitInstanceFamily(command.family);
+      const object = Object.freeze({
+        id,
+        kind: "instance-family",
+        name: String(command.name ?? id),
+        parentId: command.parentId ?? null,
+        position: freezeVector(
+          command.position ?? [0, 0, 0],
+          3,
+          "Posição da família inválida."
+        ),
+        rotation: freezeVector(
+          command.rotation ?? [0, 0, 0, 1],
+          4,
+          "Rotação da família inválida."
+        ),
+        scale: freezeVector(
+          command.scale ?? [1, 1, 1],
+          3,
+          "Escala da família inválida."
+        ),
+        geometry,
+        family,
+        ...(command.appearanceId
+          ? { appearanceId: String(command.appearanceId) }
+          : {
+              material: Object.freeze({
+                color: normalizeHexColor(command.color ?? "#6699cc")
+              })
+            }),
+        instanceState: Object.freeze({}),
+        source: String(command.source ?? "instance-family")
+      });
+      return {
+        state: Object.freeze({
+          ...state,
+          objects: Object.freeze([...state.objects, object])
+        }),
+        changes: [{
+          type: "object-created",
+          objectId: id,
+          object,
+          source: command.source ?? "instance-family"
+        }]
       };
     }
 
@@ -668,6 +776,52 @@ function freezeCamera(value = {}) {
     near,
     far,
     focusDistance
+  });
+}
+
+function freezeInstanceFamilyObject(command = {}, context = {}, ignoredIds = new Set()) {
+  const id = String(command.id ?? "").trim();
+  if (!id) throw new TypeError("Família procedural exige id.");
+  const exists = typeof context.hasObject === "function"
+    ? context.hasObject(id) && !ignoredIds.has(id)
+    : false;
+  if (exists) throw new Error(`Duplicate object id: ${id}`);
+  const geometry = freezeGeometry(command.geometry);
+  const family = normalizeExplicitInstanceFamily(command.family);
+  return Object.freeze({
+    id,
+    kind: "instance-family",
+    name: String(command.name ?? id),
+    parentId: command.parentId ?? null,
+    position: freezeVector(
+      command.position ?? [0, 0, 0],
+      3,
+      "Posição da família inválida."
+    ),
+    rotation: freezeVector(
+      command.rotation ?? [0, 0, 0, 1],
+      4,
+      "Rotação da família inválida."
+    ),
+    scale: freezeVector(
+      command.scale ?? [1, 1, 1],
+      3,
+      "Escala da família inválida."
+    ),
+    geometry,
+    family,
+    ...(command.appearanceId
+      ? { appearanceId: String(command.appearanceId) }
+      : {
+          material: Object.freeze({
+            ...(command.material ? structuredClone(command.material) : {}),
+            color: normalizeHexColor(
+              command.material?.color ?? command.color ?? "#6699cc"
+            )
+          })
+        }),
+    instanceState: Object.freeze({}),
+    source: String(command.source ?? "instance-family")
   });
 }
 

@@ -1,19 +1,20 @@
 import * as THREE from "three";
 import {
   normalizePlanarFrame
-} from "../../edit-context/src/PlanarFrame.js?build=20260729-0040b";
+} from "../../edit-context/src/PlanarFrame.js?build=20260730-0040e";
 import {
   constrainPlanarPoint
-} from "../../planar-authoring/src/PlanarConstraints.js?build=20260729-0040b";
+} from "../../planar-authoring/src/PlanarConstraints.js?build=20260730-0040e";
 
 const MODES = Object.freeze(["ruler", "protractor"]);
 
 export class MeasurementController {
-  static apiVersion = "measurement-controller-v1";
+  static apiVersion = "measurement-controller-v2";
 
   #active = null;
   #listeners = new Set();
   #overlay;
+  #renderFrame = null;
 
   constructor({ renderer } = {}) {
     if (!renderer?.canvas || !renderer?.scene ||
@@ -64,28 +65,41 @@ export class MeasurementController {
     if (!this.#active.navigationToken && this.renderer.orbit) {
       this.renderer.orbit.enabled = false;
     }
-    this.#render();
+    this.#renderNow();
     this.#notify();
     return this.status();
   }
 
   clear() {
-    if (!this.#active) return this.status();
+    const active = this.#active;
+    if (!active) return this.status();
+    const changed =
+      active.pointerId !== null ||
+      active.points.length > 0 ||
+      active.hover !== null ||
+      active.result !== null;
+    if (!changed) return this.status();
     this.#cancelPointer();
-    this.#active.points = [];
-    this.#active.hover = null;
-    this.#active.result = null;
-    this.#render();
+    active.points = [];
+    active.hover = null;
+    active.result = null;
+    this.#renderNow();
     this.#notify();
     return this.status();
   }
 
   cancelDraft() {
-    if (!this.#active) return this.status();
+    const active = this.#active;
+    if (!active) return this.status();
+    const changed =
+      active.pointerId !== null ||
+      active.points.length > 0 ||
+      active.hover !== null;
+    if (!changed) return this.status();
     this.#cancelPointer();
-    this.#active.points = [];
-    this.#active.hover = null;
-    this.#render();
+    active.points = [];
+    active.hover = null;
+    this.#renderNow();
     this.#notify();
     return this.status();
   }
@@ -137,6 +151,7 @@ export class MeasurementController {
 
   dispose() {
     this.cancel();
+    this.#cancelRenderFrame();
     this.#bind(false);
     this.renderer.scene.remove(this.#overlay);
     this.#overlay.geometry.dispose();
@@ -166,7 +181,7 @@ export class MeasurementController {
     active.pointerId = event.pointerId;
     active.pointerType = event.pointerType || "mouse";
     active.hover = point;
-    this.#render();
+    this.#renderNow();
     this.#notify();
   };
 
@@ -185,7 +200,7 @@ export class MeasurementController {
       event.stopImmediatePropagation();
     }
     active.hover = point;
-    this.#render();
+    this.#scheduleRender();
   };
 
   #onPointerUp = event => {
@@ -224,7 +239,7 @@ export class MeasurementController {
         );
       }
     }
-    this.#render();
+    this.#renderNow();
     this.#notify();
   };
 
@@ -271,15 +286,39 @@ export class MeasurementController {
 
   #cancelPointer() {
     const active = this.#active;
-    if (!active) return;
-    if (active.pointerId !== null && active.pointerType !== "touch") {
+    if (!active || active.pointerId === null) return false;
+    if (active.pointerType !== "touch") {
       this.renderer.canvas.releasePointerCapture?.(active.pointerId);
     }
     active.pointerId = null;
     active.pointerType = null;
+    return true;
   }
 
-  #render() {
+  #scheduleRender() {
+    if (this.#renderFrame !== null) return;
+    if (typeof globalThis.requestAnimationFrame !== "function") {
+      this.#renderNow();
+      return;
+    }
+    this.#renderFrame = globalThis.requestAnimationFrame(() => {
+      this.#renderFrame = null;
+      this.#renderNow();
+    });
+  }
+
+  #cancelRenderFrame() {
+    if (
+      this.#renderFrame !== null &&
+      typeof globalThis.cancelAnimationFrame === "function"
+    ) {
+      globalThis.cancelAnimationFrame(this.#renderFrame);
+    }
+    this.#renderFrame = null;
+  }
+
+  #renderNow() {
+    this.#cancelRenderFrame();
     const active = this.#active;
     if (!active) {
       this.#overlay.visible = false;
@@ -296,13 +335,23 @@ export class MeasurementController {
         points.push([...points[0]], [...active.hover]);
       }
     }
-    const flat = measurementLinePoints(active.mode, points).flat();
-    this.#overlay.geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(flat, 3)
-    );
-    this.#overlay.geometry.computeBoundingSphere();
-    this.#overlay.visible = flat.length >= 6;
+    const linePoints = measurementLinePoints(active.mode, points);
+    const attribute = this.#overlay.geometry.getAttribute("position");
+    const array = attribute.array;
+    let offset = 0;
+    for (const point of linePoints) {
+      array[offset++] = point[0];
+      array[offset++] = point[1];
+      array[offset++] = point[2];
+    }
+    while (offset < array.length) array[offset++] = 0;
+    const vertexCount = linePoints.length;
+    this.#overlay.geometry.setDrawRange(0, vertexCount);
+    attribute.needsUpdate = true;
+    if (vertexCount >= 2) {
+      this.#overlay.geometry.computeBoundingSphere();
+    }
+    this.#overlay.visible = vertexCount >= 2;
   }
 
   #notify() {
@@ -368,8 +417,13 @@ export function formatMeasurementResult(result) {
 }
 
 function createOverlay() {
+  const geometry = new THREE.BufferGeometry();
+  const position = new THREE.BufferAttribute(new Float32Array(12), 3);
+  position.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute("position", position);
+  geometry.setDrawRange(0, 0);
   const line = new THREE.LineSegments(
-    new THREE.BufferGeometry(),
+    geometry,
     new THREE.LineBasicMaterial({
       color: 0x3de0ff,
       depthTest: false,

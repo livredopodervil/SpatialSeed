@@ -2,7 +2,7 @@ import {
   inclinePlanarFrame,
   normalizePlanarFrame,
   planarFrameFromPoints
-} from "./PlanarFrame.js?build=20260729-0040b";
+} from "./PlanarFrame.js?build=20260730-0040e";
 
 const SUBJECT_LEVELS = Object.freeze(["object", "vertex", "edge", "face"]);
 const TOOLS = Object.freeze(["navigate", "select", "translate", "rotate", "scale"]);

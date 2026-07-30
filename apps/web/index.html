@@ -278,8 +278,11 @@
       <label title="Orbitar ponto travado"><input id="edit-hud-point-lock" type="checkbox"><span>⊙</span></label>
       <button id="edit-hud-view-reset" type="button" title="Restaurar câmera do viewer">⌂</button>
     </div>
-    <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="reference" aria-label="Pivô e planos">
+    <div class="edit-hud-group edit-hud-checks" data-edit-hud-group="reference" aria-label="Pivô, âncora e planos">
       <button id="edit-hud-pivot-edit" type="button" title="Editar pivô da seleção">⊕</button>
+      <label title="Política do pivô"><select id="edit-hud-pivot-policy" aria-label="Política do pivô"><option value="median">Mediana</option><option value="bounds">Limites</option><option value="active">Ativo</option><option value="custom">Personalizado</option></select></label>
+      <label title="Referência do pivô personalizado"><select id="edit-hud-pivot-reference" aria-label="Referência do pivô"><option value="absolute">Mundo</option><option value="active-relative">Relativo ao ativo</option></select></label>
+      <label title="Âncora das famílias desenhadas"><select id="edit-hud-anchor-policy" aria-label="Âncora da criação"><option value="first">Início</option><option value="bounds">Centro</option><option value="world">Mundo</option></select></label>
       <label title="Definir plano de edição pela seleção ou viewer"><input id="edit-hud-edit-plane" type="checkbox"><span>⌗</span></label>
       <label title="Definir plano de desenho pela seleção ou viewer"><input id="edit-hud-drawing-plane" type="checkbox"><span>✎</span></label>
     </div>
@@ -1277,6 +1280,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260729-0040b"></script>
+<script type="module" src="./boot.js?build=20260730-0040g"></script>
 </body>
 </html>

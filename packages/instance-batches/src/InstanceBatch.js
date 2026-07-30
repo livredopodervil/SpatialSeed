@@ -26,7 +26,7 @@ export class InstanceBatch {
     const index = this.index.allocate(objectId);
     this.mesh.setMatrixAt(index, normalizeMatrix(matrix));
     this.mesh.count = Math.max(this.mesh.count, index + 1);
-    this.mesh.instanceMatrix.needsUpdate = true;
+    markAttributeRange(this.mesh.instanceMatrix, index * 16, 16);
 
     if (attributes.color !== undefined) {
       this.setColorAt(index, attributes.color);
@@ -40,7 +40,7 @@ export class InstanceBatch {
     const index = this.index.indexOf(objectId);
     if (index < 0) return false;
     this.mesh.setMatrixAt(index, normalizeMatrix(matrix));
-    this.mesh.instanceMatrix.needsUpdate = true;
+    markAttributeRange(this.mesh.instanceMatrix, index * 16, 16);
     this.#boundsDirty = true;
     return true;
   }
@@ -63,7 +63,7 @@ export class InstanceBatch {
 
     this.mesh.setColorAt(index, normalizeColor(color));
     this.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.instanceColor.needsUpdate = true;
+    markAttributeRange(this.mesh.instanceColor, index * 3, 3);
     return true;
   }
 
@@ -77,8 +77,16 @@ export class InstanceBatch {
   remove(objectId) {
     const released = this.index.release(objectId);
     if (!released.removed) return released;
-    this.mesh.setMatrixAt(released.index, new THREE.Matrix4().makeScale(0, 0, 0));
-    this.mesh.instanceMatrix.needsUpdate = true;
+    this.mesh.setMatrixAt(
+      released.index,
+      new THREE.Matrix4().makeScale(0, 0, 0)
+    );
+    markAttributeRange(
+      this.mesh.instanceMatrix,
+      released.index * 16,
+      16
+    );
+    this.mesh.count = this.index.activeSpan;
 
     if (this.mesh.instanceColor) {
       this.setColorAt(released.index, 0xffffff);
@@ -152,6 +160,18 @@ export function updateAbsoluteInstanceColor(
       desired.b / base.b
     )
   });
+}
+
+
+function markAttributeRange(attribute, start, count) {
+  if (!attribute) return;
+  if (typeof attribute.addUpdateRange === "function") {
+    attribute.addUpdateRange(start, count);
+  } else if (attribute.updateRange) {
+    attribute.updateRange.offset = start;
+    attribute.updateRange.count = count;
+  }
+  attribute.needsUpdate = true;
 }
 
 function normalizeCapacity(value) {

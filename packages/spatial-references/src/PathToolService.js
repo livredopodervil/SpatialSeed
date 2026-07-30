@@ -25,10 +25,26 @@ import {
 
 const ARRAY_BRUSH_PLAN_TYPE = "array-brush-stroke-plan";
 const ARRAY_BRUSH_PLAN_VERSION = 1;
+const PATH_CREATE_PLAN_TYPE = "path-create-plan";
+const PATH_CREATE_PLAN_VERSION = 1;
+const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 
 export class PathToolService {
-  static apiVersion = "path-tool-service-v5";
+  static apiVersion = "path-tool-service-v6";
   #issuedArrayBrushPlans = new WeakSet();
+  #issuedPathCreatePlans = new WeakSet();
+  #sceneCacheRevision = null;
+  #sceneCacheState = null;
+  #sceneCacheHierarchy = null;
+  #localityDiagnostics = {
+    sceneCacheHits: 0,
+    sceneHierarchyBuilds: 0,
+    sceneObjectsVisited: 0,
+    sourceCapsulesBuilt: 0,
+    sourceObjectsCaptured: 0,
+    catalogInstancesPrepared: 0,
+    selectionObjectsPrepared: 0
+  };
 
   constructor({
     resolver,
@@ -52,6 +68,10 @@ export class PathToolService {
     this.requireObjectMode = requireObjectMode;
   }
 
+  getLocalityDiagnostics() {
+    return Object.freeze({ ...this.#localityDiagnostics });
+  }
+
   listReferences(options = {}) {
     return this.resolver.listObjects(options);
   }
@@ -64,7 +84,14 @@ export class PathToolService {
     throw new RangeError(`Tipo de referência desconhecido: ${kind}.`);
   }
 
-  createPath({
+  createPath(options = {}) {
+    return this.commitPathCreatePlan({
+      plan: this.preparePathCreatePlan(options),
+      preserveSelection: Boolean(options.preserveSelection)
+    });
+  }
+
+  preparePathCreatePlan({
     points,
     name = "Caminho",
     radius = 0.08,
@@ -73,41 +100,78 @@ export class PathToolService {
     closed = false,
     curveType = "centripetal",
     tension = 0.5,
-    color = "#70c8ff",
-    preserveSelection = false
+    color = "#70c8ff"
   } = {}) {
-    const normalizedCurveType = String(curveType ?? "centripetal").toLowerCase();
+    const normalizedCurveType = String(
+      curveType ?? "centripetal"
+    ).toLowerCase();
     const sourcePoints = this.prepareSketchPoints({
       points,
       curveType: normalizedCurveType,
       tension
     });
     const localized = localizedPoints(sourcePoints);
+    const geometry = this.resolver.geometryRegistry.normalize({
+      type: "tube",
+      points: localized.points,
+      tubularSegments: integerAtLeast(
+        tubularSegments,
+        2,
+        "tubularSegments"
+      ),
+      radius: positive(radius, "radius"),
+      radialSegments: integerAtLeast(
+        radialSegments,
+        3,
+        "radialSegments"
+      ),
+      closed: Boolean(closed),
+      curveType: normalizedCurveType,
+      tension: finite(tension, "tension")
+    });
+    const plan = deepFreeze({
+      type: PATH_CREATE_PLAN_TYPE,
+      version: PATH_CREATE_PLAN_VERSION,
+      name: String(name ?? "Caminho"),
+      position: localized.origin,
+      geometry,
+      color: colorValue(color),
+      points: sourcePoints,
+      pointCount: localized.points.length,
+      curveType: normalizedCurveType,
+      closed: Boolean(closed)
+    });
+    this.#issuedPathCreatePlans.add(plan);
+    return plan;
+  }
+
+  commitPathCreatePlan({
+    plan,
+    preserveSelection = false
+  } = {}) {
+    this.#assertCanMutate("criar caminho");
+    const validated = validatePathCreatePlan(plan, {
+      issued: this.#issuedPathCreatePlans.has(plan)
+    });
     const previousSelection = preserveSelection
       ? this.editor.selection.snapshot()
       : null;
     const result = this.selectionOperations.createGeometry({
-      name,
-      position: localized.origin,
-      geometry: {
-        type: "tube",
-        points: localized.points,
-        tubularSegments: integerAtLeast(tubularSegments, 2, "tubularSegments"),
-        radius: positive(radius, "radius"),
-        radialSegments: integerAtLeast(radialSegments, 3, "radialSegments"),
-        closed: Boolean(closed),
-        curveType: normalizedCurveType,
-        tension: finite(tension, "tension")
-      },
-      color
+      name: validated.name,
+      position: validated.position,
+      geometry: validated.geometry,
+      color: validated.color
     });
-    if (previousSelection) restoreSelection(this.editor.selection, previousSelection);
+    if (previousSelection) {
+      restoreSelection(this.editor.selection, previousSelection);
+    }
     return Object.freeze({
       ...result,
       tool: "path-create",
-      pointCount: localized.points.length,
-      curveType: normalizedCurveType,
-      closed: Boolean(closed)
+      pointCount: validated.pointCount,
+      curveType: validated.curveType,
+      closed: validated.closed,
+      preparedPlan: true
     });
   }
 
@@ -411,8 +475,7 @@ export class PathToolService {
   }
 
   captureArraySource({ sourceIds = null, excludeIds = [] } = {}) {
-    const state = this.sandbox.getSnapshot();
-    const hierarchy = new HierarchyIndex(state.objects);
+    const { hierarchy } = this.#sceneSnapshot();
     return this.#arraySourceIds({ sourceIds, excludeIds, hierarchy });
   }
 
@@ -474,8 +537,7 @@ export class PathToolService {
         "A fonte do pincel deve ser selection ou catalog."
       );
     }
-    const state = this.sandbox.getSnapshot();
-    const hierarchy = new HierarchyIndex(state.objects);
+    const { state, hierarchy } = this.#sceneSnapshot();
     const rootIds = this.#arraySourceIds({
       sourceIds,
       excludeIds: [],
@@ -542,6 +604,20 @@ export class PathToolService {
       rootId,
       ...hierarchy.descendantsOf(rootId)
     ]);
+    const rootSet = new Set(rootIds);
+    const sourceObjects = sourceNodeIds.map(objectId => {
+      const source = structuredClone(hierarchy.node(objectId));
+      if (!rootSet.has(objectId)) return Object.freeze(source);
+      return Object.freeze({
+        ...source,
+        parentId: null,
+        ...matrixTransform(
+          new THREE.Matrix4().fromArray(hierarchy.worldMatrixOf(objectId))
+        )
+      });
+    });
+    this.#localityDiagnostics.sourceCapsulesBuilt += 1;
+    this.#localityDiagnostics.sourceObjectsCaptured += sourceObjects.length;
     const referenceRotation = worldRotation(
       hierarchy.worldMatrixOf(rootIds[0])
     );
@@ -561,6 +637,7 @@ export class PathToolService {
       sourceRevision: this.sandbox.revision,
       sourceIds: rootIds,
       sourceNodeIds: Object.freeze(sourceNodeIds),
+      sourceObjects: Object.freeze(sourceObjects),
       sourceGeometry: null,
       sourceColor: null,
       sourceName: rootIds.length === 1
@@ -602,8 +679,8 @@ export class PathToolService {
         .map(String)
     );
     const ownAppendOnlyCommit =
-      currentRevision === previousRevision + 1 &&
-      created.size > 0 &&
+      currentRevision > previousRevision &&
+      created.size >= currentRevision - previousRevision &&
       [...created].every(id => !sourceNodes.has(id));
 
     /*
@@ -741,6 +818,35 @@ export class PathToolService {
     return plan;
   }
 
+  rebaseArrayBrushPlan({
+    plan,
+    brush,
+    createdIds = []
+  } = {}) {
+    const validated = validateArrayBrushPlan(plan, brush, {
+      issued: this.#issuedArrayBrushPlans.has(plan)
+    });
+    const nextBrush = this.rebaseArrayBrush({ brush, createdIds });
+    if (nextBrush.key !== brush.key) {
+      throw new Error(
+        "A fonte do pincel mudou durante a fila de publicação."
+      );
+    }
+    if (nextBrush.sourceRevision === validated.sourceRevision) {
+      return Object.freeze({ plan: validated, brush: nextBrush });
+    }
+    const nextPlan = deepFreeze({
+      ...validated,
+      sourceRevision: nextBrush.sourceRevision,
+      path: {
+        ...validated.path,
+        sourceRevision: nextBrush.sourceRevision
+      }
+    });
+    this.#issuedArrayBrushPlans.add(nextPlan);
+    return Object.freeze({ plan: nextPlan, brush: nextBrush });
+  }
+
   arrayBrushAlongPoints({
     points,
     brush,
@@ -775,7 +881,7 @@ export class PathToolService {
     return this.commitArrayBrushPlan({ plan, brush });
   }
 
-  commitArrayBrushPlan({ plan, brush } = {}) {
+  commitArrayBrushPlan({ plan, brush, anchorPolicy = "first" } = {}) {
     this.#assertCanMutate("distribuir um pincel no caminho desenhado");
     const validated = validateArrayBrushPlan(plan, brush, {
       issued: this.#issuedArrayBrushPlans.has(plan)
@@ -808,7 +914,19 @@ export class PathToolService {
         preparedInstances: validated.draft.instances,
         colors,
         color: brush.sourceColor,
-        source: "path-brush-catalog"
+        source: "path-brush-catalog",
+        anchorPolicy,
+        generator: {
+          type: "path-array-v1",
+          shading: "unlit",
+          anchorPolicy,
+          path: structuredClone(validated.path),
+          spacing: validated.spacing,
+          requestedCount: validated.requestedCount,
+          sourceGeometry: structuredClone(brush.sourceGeometry),
+          sourceColor: brush.sourceColor,
+          brushKey: brush.key
+        }
       });
       return Object.freeze({
         ...result,
@@ -819,21 +937,38 @@ export class PathToolService {
         reference: summary(resolvedPath)
       });
     }
-    const currentBrush = this.captureArrayBrush({
-      sourceMode: "selection",
-      sourceIds: brush.sourceIds
-    });
-    if (currentBrush.key !== brush.key) {
-      throw new Error(
-        "A fonte do pincel mudou durante o desenho; arme a ferramenta novamente."
-      );
-    }
+    /*
+     * O plano foi emitido pelo serviço e pertence exatamente à revisão atual.
+     * Recapturar a seleção aqui reconstruía o HierarchyIndex de toda a cena no
+     * pointerup, embora nenhuma mutação pudesse ter ocorrido desde o preview.
+     * A igualdade de revisão torna essa segunda validação redundante.
+     */
     return this.#commitSelectionBrush({
       resolvedPath,
       brush,
       draft: validated.draft,
       spacing: validated.spacing
     });
+  }
+
+  #sceneSnapshot() {
+    const revision = Number(this.sandbox.revision);
+    if (this.#sceneCacheState && this.#sceneCacheHierarchy &&
+        this.#sceneCacheRevision === revision) {
+      this.#localityDiagnostics.sceneCacheHits += 1;
+      return {
+        state: this.#sceneCacheState,
+        hierarchy: this.#sceneCacheHierarchy
+      };
+    }
+    const state = this.sandbox.getSnapshot();
+    this.#localityDiagnostics.sceneHierarchyBuilds += 1;
+    this.#localityDiagnostics.sceneObjectsVisited += state.objects.length;
+    const hierarchy = new HierarchyIndex(state.objects);
+    this.#sceneCacheRevision = revision;
+    this.#sceneCacheState = state;
+    this.#sceneCacheHierarchy = hierarchy;
+    return { state, hierarchy };
   }
 
   #arraySourceIds({ sourceIds, excludeIds, hierarchy }) {
@@ -1022,8 +1157,7 @@ export class PathToolService {
     twistDegrees,
     includePathObject
   }) {
-    const state = this.sandbox.getSnapshot();
-    const hierarchy = new HierarchyIndex(state.objects);
+    const { state, hierarchy } = this.#sceneSnapshot();
     const excluded = includePathObject || !resolvedPath.objectId
       ? []
       : [resolvedPath.objectId];
@@ -1082,11 +1216,12 @@ export class PathToolService {
         index < reusedPreparedCopies
           ? previous[index]
           : Object.freeze({
-              id: previous[index]?.id ?? crypto.randomUUID(),
               ...matrixTransform(matrix),
               color: colors[index]
             })
       );
+      this.#localityDiagnostics.catalogInstancesPrepared +=
+        copies - reusedPreparedCopies;
       return Object.freeze({
         type: "catalog-instance-draft",
         instances: Object.freeze(instances),
@@ -1117,8 +1252,11 @@ export class PathToolService {
       });
     }
 
-    const state = this.sandbox.getSnapshot();
-    const hierarchy = new HierarchyIndex(state.objects);
+    const sourceObjects = brush.sourceObjects ?? [];
+    if (!sourceObjects.length) {
+      throw new Error("O pincel selecionado não possui cápsula de origem.");
+    }
+    const hierarchy = new HierarchyIndex(sourceObjects);
     const rootIds = this.#arraySourceIds({
       sourceIds: brush.sourceIds,
       excludeIds: [],
@@ -1137,7 +1275,7 @@ export class PathToolService {
         ));
       }
     );
-    const cloned = cloneHierarchySubtrees(state.objects, {
+    const cloned = cloneHierarchySubtrees(sourceObjects, {
       rootIds,
       copies: tailCount,
       createId: ({ sourceId, copyIndex }) =>
@@ -1167,12 +1305,12 @@ export class PathToolService {
         });
       });
     });
-    const combined = applyWorldTransforms(
-      [...state.objects, ...cloned.objects],
+    const transformed = applyWorldTransforms(
+      cloned.objects,
       desired
     );
     const transformedById = new Map(
-      combined.map(object => [object.id, object])
+      transformed.map(object => [object.id, object])
     );
     const colorsBySourceId = brushColorsBySourceId(
       brush,
@@ -1200,6 +1338,8 @@ export class PathToolService {
         objects: Object.freeze(objects)
       });
     });
+    this.#localityDiagnostics.selectionObjectsPrepared +=
+      preparedTail.reduce((total, copy) => total + copy.objects.length, 0);
     return selectionDraft({
       copies: [...stableCopies, ...preparedTail],
       reusedPreparedCopies,
@@ -1504,15 +1644,17 @@ export class PathToolService {
     }
     const copies = draft.copies.length;
     const rootIds = brush.sourceIds;
-    const changed = this.sandbox.dispatch({
+    const command = deepFreeze({
       type: "selection.duplicate",
       source: "path-brush-selection",
       sourceIds: rootIds,
       copyCount: copies,
       spacing,
       pathReference: summary(resolvedPath),
-      objects: draft.objects
+      objects: draft.objects,
+      preparedImmutable: PREPARED_COMMAND_MARKER
     });
+    const changed = this.sandbox.dispatch(command);
     if (changed) {
       const lastRoots = draft.copies.at(-1).rootIds;
       this.editor.selection.replaceMany(lastRoots.map(objectId => ({
@@ -1881,6 +2023,31 @@ function arrayBrushMutableTailCopies(curveType) {
   if (type === "polyline") return 2;
   if (type === "bezier") return 6;
   return 4;
+}
+
+
+function validatePathCreatePlan(plan, { issued = false } = {}) {
+  if (plan?.type !== PATH_CREATE_PLAN_TYPE ||
+      plan?.version !== PATH_CREATE_PLAN_VERSION) {
+    throw new TypeError("Plano preparado de caminho inválido.");
+  }
+  if (!issued || !Object.isFrozen(plan)) {
+    throw new Error(
+      "O plano preparado de caminho não foi emitido por este serviço."
+    );
+  }
+  if (!Array.isArray(plan.position) || plan.position.length !== 3 ||
+      !plan.position.every(value => Number.isFinite(Number(value)))) {
+    throw new TypeError("Posição do plano preparado inválida.");
+  }
+  if (!plan.geometry || plan.geometry.type !== "tube") {
+    throw new TypeError("Geometria do plano preparado inválida.");
+  }
+  if (!Array.isArray(plan.points) || plan.points.length < 2 ||
+      !Number.isInteger(plan.pointCount) || plan.pointCount < 2) {
+    throw new RangeError("Plano preparado exige ao menos dois pontos.");
+  }
+  return plan;
 }
 
 function validateArrayBrushPlan(plan, brush, { issued = false } = {}) {

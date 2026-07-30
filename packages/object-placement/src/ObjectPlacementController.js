@@ -223,7 +223,13 @@ export class ObjectPlacementController {
 
   #cancelPointer() {
     const active = this.#active;
-    if (!active) return;
+    if (!active) return false;
+    const changed =
+      active.pointerId !== null ||
+      active.pointerType !== null ||
+      active.lastPlacement !== null ||
+      Boolean(this.#preview?.visible);
+    if (!changed) return false;
     if (active.pointerId !== null && active.pointerType !== "touch") {
       this.renderer.canvas.releasePointerCapture?.(active.pointerId);
     }
@@ -232,6 +238,7 @@ export class ObjectPlacementController {
     active.lastPlacement = null;
     if (this.#preview) this.#preview.visible = false;
     this.#notify();
+    return true;
   }
 
   #onKeyDown = event => {
