@@ -73,7 +73,14 @@ import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
   normalizeExplicitInstanceFamily
-} from "../../procedural-families/src/index.js?build=20260730-0040h";
+} from "../../procedural-families/src/index.js?build=20260730-0041a";
+import {
+  appearanceBindingForObject,
+  appearanceBindingIdentity,
+  effectiveAppearanceColor,
+  familyColorAt,
+  multiplyHexColors
+} from "../../appearance-binding/src/index.js?build=20260730-0041a";
 
 export class ThreeRegionRenderer {
   static apiVersion = "renderer-three-navigation-camera-v5";
@@ -409,7 +416,19 @@ export class ThreeRegionRenderer {
       else if (this.#session) this.#commitSession();
     });
     this.transform.addEventListener("mouseDown", () => this.#beginSession());
-    this.transform.addEventListener("objectChange", () => this.#previewSession());
+    this.transform.addEventListener("objectChange", () => {
+      if (!this.#session) {
+        /*
+         * TransformControls altera o objeto anexado antes de emitir
+         * objectChange. Se uma sessão não pôde ser aberta, restauramos a
+         * âncora imediatamente para que o gizmo não pareça editar um pivô
+         * sem alvo.
+         */
+        this.#rebuildAnchor();
+        return;
+      }
+      this.#previewSession();
+    });
     this.transform.addEventListener("mouseUp", () => this.#commitSession());
 
     canvas.addEventListener("pointerdown", event => {
@@ -1978,6 +1997,7 @@ export class ThreeRegionRenderer {
       proxy.userData.appearanceId = object.appearanceId;
       proxy.userData.instanceColor =
         object.instanceState?.color ?? null;
+      proxy.userData.appearanceBinding = appearanceBindingForObject(object);
       this.#meshes.set(object.id, proxy);
       this.#incrementalDiagnostics.objectsCreated += 1;
     } else {
@@ -1986,6 +2006,7 @@ export class ThreeRegionRenderer {
 
     proxy.userData.size = object.size ? [...object.size] : [0,0,0];
     proxy.userData.canonicalWorldMatrix = [...worldMatrix];
+    proxy.userData.appearanceBinding = appearanceBindingForObject(object);
 
     if (
       !this.#session &&
@@ -2115,22 +2136,42 @@ export class ThreeRegionRenderer {
 
   #upsertFamilyVisual(object, proxy) {
     const family = normalizeExplicitInstanceFamily(object.family);
+    const binding = appearanceBindingForObject(object);
     const descriptor = this.#geometryRegistry.describeLegacyObject(object);
     const renderProfile = this.#geometryRegistry.renderProfile(descriptor);
     const geometryKey = this.#geometryRegistry.key(descriptor);
+    const materialRequest = renderMaterialRequest(object, binding, {
+      applyBinding: false
+    });
     const materialIdentity = JSON.stringify([
-      object.appearanceId ?? null,
-      object.material ?? null,
-      renderProfile.side
+      materialRequest.appearanceId ?? null,
+      materialRequest.material ?? null,
+      renderProfile.side,
+      binding.materialMode,
+      binding.opacityMultiplier
     ]);
+    const bindingIdentity = appearanceBindingIdentity(binding, { family });
     const current = this.#familyVisuals.get(object.id);
     if (
       current &&
       current.family === object.family &&
-      current.geometryKey === geometryKey &&
-      current.materialIdentity === materialIdentity
+      current.geometryKey === geometryKey
     ) {
+      if (current.materialIdentity !== materialIdentity) {
+        this.#replaceFamilyMaterial(current, {
+          object,
+          family,
+          binding,
+          renderProfile,
+          materialRequest,
+          materialIdentity
+        });
+      }
+      if (current.bindingIdentity !== bindingIdentity) {
+        this.#applyFamilyAppearance(current, binding);
+      }
       proxy.userData.familyVisual = true;
+      proxy.userData.appearanceBinding = binding;
       if (proxy.parent !== this.scene) this.scene.add(proxy);
       return current;
     }
@@ -2141,24 +2182,17 @@ export class ThreeRegionRenderer {
       () => this.#geometryRegistry.create(descriptor)
     );
     const material = this.#materialCache.acquire({
-      appearanceId: object.appearanceId,
-      material: object.material,
+      ...materialRequest,
       renderProfile
     });
     let mesh = null;
-    let ownsMaterial = false;
-    let meshMaterial = material.value.material;
+    let meshMaterial = null;
     try {
-      const unlit = family.generator?.shading === "unlit";
-      if (family.colors && unlit) {
-        meshMaterial = createUnlitFamilyMaterial(meshMaterial);
-        ownsMaterial = true;
-      } else if (family.colors && typeof meshMaterial?.clone === "function") {
-        meshMaterial = meshMaterial.clone();
-        ownsMaterial = true;
-        /* instanceColor multiplica a cor-base; branco preserva a cor absoluta. */
-        meshMaterial.color?.set?.(0xffffff);
-      }
+      const preparedMaterial = createFamilyDisplayMaterial(
+        material.value.material,
+        { object, family, binding }
+      );
+      meshMaterial = preparedMaterial.material;
       mesh = new THREE.InstancedMesh(
         geometry.value,
         meshMaterial,
@@ -2182,11 +2216,12 @@ export class ThreeRegionRenderer {
       proxy.userData.size = conservativeBounds.getSize(
         new THREE.Vector3()
       ).toArray();
+      proxy.userData.familyVisual = true;
+      proxy.userData.appearanceBinding = binding;
       mesh.boundingBox = conservativeBounds.clone();
       mesh.boundingSphere = conservativeBounds.getBoundingSphere(
         new THREE.Sphere()
       );
-      proxy.userData.familyVisual = true;
       proxy.add(mesh);
       if (proxy.parent !== this.scene) this.scene.add(proxy);
       const visual = {
@@ -2200,7 +2235,11 @@ export class ThreeRegionRenderer {
         geometryKey: geometry.key,
         materialKey: material.key,
         materialIdentity,
-        ownsMaterial,
+        binding,
+        bindingIdentity,
+        baseColor: preparedMaterial.baseColor,
+        baseOpacity: preparedMaterial.baseOpacity,
+        ownsMaterial: true,
         nextIndex: 0,
         building: true,
         transform: {
@@ -2220,6 +2259,7 @@ export class ThreeRegionRenderer {
       this.#incrementalDiagnostics.familyInstances += family.count;
       this.#incrementalDiagnostics.familyEstimatedBytes +=
         visual.estimatedBytes;
+      this.#applyFamilyAppearance(visual, binding);
       /* Um pequeno prefixo torna o visual e a seleção disponíveis no mesmo
          turno da criação; o restante continua cooperativo entre quadros. */
       this.#fillFamilyVisualChunk(visual, Math.min(32, family.count));
@@ -2227,11 +2267,94 @@ export class ThreeRegionRenderer {
       return visual;
     } catch (error) {
       if (mesh) mesh.dispose?.();
-      if (ownsMaterial) meshMaterial?.dispose?.();
+      meshMaterial?.dispose?.();
       this.#resourceCache.releaseGeometry(geometry.key);
       this.#materialCache.release(material.key);
       throw error;
     }
+  }
+
+  #replaceFamilyMaterial(
+    visual,
+    { object, family, binding, renderProfile, materialRequest, materialIdentity }
+  ) {
+    const material = this.#materialCache.acquire({
+      ...materialRequest,
+      renderProfile
+    });
+    let prepared = null;
+    try {
+      prepared = createFamilyDisplayMaterial(
+        material.value.material,
+        { object, family, binding }
+      );
+      const previousMaterial = visual.mesh.material;
+      const previousKey = visual.materialKey;
+      visual.mesh.material = prepared.material;
+      visual.materialKey = material.key;
+      visual.materialIdentity = materialIdentity;
+      visual.baseColor = prepared.baseColor;
+      visual.baseOpacity = prepared.baseOpacity;
+      visual.ownsMaterial = true;
+      previousMaterial?.dispose?.();
+      this.#materialCache.release(previousKey);
+      this.#applyFamilyAppearance(visual, binding);
+      return true;
+    } catch (error) {
+      prepared?.material?.dispose?.();
+      this.#materialCache.release(material.key);
+      throw error;
+    }
+  }
+
+  #applyFamilyAppearance(visual, binding) {
+    const previousMode = visual.binding?.colorMode ?? null;
+    visual.binding = binding;
+    visual.bindingIdentity = appearanceBindingIdentity(binding, {
+      family: visual.normalizedFamily
+    });
+    const material = visual.mesh.material;
+    const color = binding.colorMode === "per-instance"
+      ? binding.tint
+      : binding.colorMode === "uniform"
+        ? multiplyHexColors(binding.uniformColor, binding.tint)
+        : multiplyHexColors(visual.baseColor, binding.tint);
+    material.color?.set?.(color);
+    const opacity = Math.max(
+      0,
+      Math.min(1, Number(visual.baseOpacity ?? 1) * binding.opacityMultiplier)
+    );
+    const transparent = opacity < 1 || Boolean(material.alphaMap);
+    if (material.opacity !== opacity || material.transparent !== transparent) {
+      material.opacity = opacity;
+      material.transparent = transparent;
+      material.needsUpdate = true;
+    }
+    if (binding.colorMode === "per-instance") {
+      if (!visual.normalizedFamily.colors) {
+        throw new Error(
+          `Família ${visual.objectId} não possui cores por instância.`
+        );
+      }
+      if (previousMode !== "per-instance" || !visual.mesh.instanceColor) {
+        for (let index = 0; index < visual.nextIndex; index += 1) {
+          visual.color.set(
+            familyColorAt(visual.normalizedFamily, index)
+          );
+          visual.mesh.setColorAt(index, visual.color);
+        }
+        if (visual.mesh.instanceColor) {
+          visual.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+          visual.mesh.instanceColor.needsUpdate = true;
+        }
+        material.needsUpdate = true;
+      }
+    } else if (visual.mesh.instanceColor) {
+      visual.mesh.instanceColor = null;
+      material.needsUpdate = true;
+    }
+    visual.proxy.userData.appearanceBinding = binding;
+    return true;
   }
 
   #queueFamilyBuild(objectId) {
@@ -2314,7 +2437,10 @@ export class ThreeRegionRenderer {
         visual.scale
       );
       visual.mesh.setMatrixAt(index, visual.matrix);
-      if (visual.transform.color !== null) {
+      if (
+        visual.binding.colorMode === "per-instance" &&
+        visual.transform.color !== null
+      ) {
         visual.color.setHex(visual.transform.color);
         visual.mesh.setColorAt(index, visual.color);
       }
@@ -2705,12 +2831,17 @@ export class ThreeRegionRenderer {
   }
 
   #batchKeyFor(object) {
-    const descriptor=this.#geometryRegistry.describeLegacyObject(object);
-    const renderProfile=this.#geometryRegistry.renderProfile(descriptor);
+    const descriptor = this.#geometryRegistry.describeLegacyObject(object);
+    const renderProfile = this.#geometryRegistry.renderProfile(descriptor);
+    const binding = appearanceBindingForObject(object);
+    const materialRequest = renderMaterialRequest(object, binding);
     return JSON.stringify([
       this.#geometryRegistry.key(descriptor),
-      object.appearanceId,
-      renderProfile.side
+      materialRequest.appearanceId ?? null,
+      materialRequest.material ?? null,
+      renderProfile.side,
+      binding.materialMode,
+      binding.opacityMultiplier
     ]);
   }
 
@@ -2725,9 +2856,9 @@ export class ThreeRegionRenderer {
         geometryKey,
         () => this.#geometryRegistry.create(descriptor)
       );
+      const binding = appearanceBindingForObject(object);
       const material = this.#materialCache.acquire({
-        appearanceId: object.appearanceId,
-        material: object.material,
+        ...renderMaterialRequest(object, binding),
         renderProfile
       });
 
@@ -2824,10 +2955,16 @@ export class ThreeRegionRenderer {
 
     if (!batch) return false;
 
-    const desired =
-      proxy.userData.instanceColor ??
-      batch.material?.color ??
-      0xffffff;
+    const baseColor = batch.material?.color?.isColor
+      ? `#${batch.material.color.getHexString()}`
+      : "#ffffff";
+    const desired = effectiveAppearanceColor(
+      proxy.userData.appearanceBinding,
+      {
+        baseColor,
+        instanceColor: proxy.userData.instanceColor
+      }
+    );
 
     return this.#setInstanceColor(objectId, desired);
   }
@@ -3002,9 +3139,10 @@ export class ThreeRegionRenderer {
 
     }
 
-    const previewIds=projectedSelectionIds(
+    const selectedIds = members.map(member => String(member.objectId));
+    const previewIds = projectedSelectionIdsWithFallback(
       this.#hierarchy,
-      members.map(member => member.objectId)
+      selectedIds
     );
     for (const previewId of previewIds) {
       const previewMesh=this.#meshes.get(previewId);
@@ -3013,6 +3151,29 @@ export class ThreeRegionRenderer {
       previewObjects.set(previewId,{
         matrixWorld:previewMesh.matrixWorld.clone()
       });
+    }
+
+    /*
+     * A projeção incremental pode criar o proxy visual antes de a
+     * reconstrução ociosa da hierarquia registrar o novo objeto. Nesse
+     * intervalo, a própria raiz selecionada é um alvo de preview válido.
+     */
+    if (!previewObjects.size) {
+      for (const [objectId, snapshot] of objects) {
+        previewObjects.set(objectId, {
+          matrixWorld: snapshot.matrixWorld.clone()
+        });
+      }
+    }
+
+    if (!objects.size || !previewObjects.size) {
+      const diagnostics=this.#transformLifecycleDiagnostics;
+      diagnostics.lastError={
+        code:"TRANSFORM_TARGET_UNAVAILABLE",
+        message:"A seleção ainda não possui proxy transformável."
+      };
+      this.#rebuildAnchor();
+      return;
     }
 
     this.#session = {
@@ -5096,6 +5257,84 @@ function explicitFamilyConservativeBounds(geometry, family) {
   return new THREE.Box3(minimum, maximum);
 }
 
+function renderMaterialRequest(
+  object,
+  binding,
+  { applyBinding = true } = {}
+) {
+  if (!applyBinding) {
+    return {
+      appearanceId: object.appearanceId,
+      material: object.material
+    };
+  }
+  const materialMode = binding?.materialMode ?? "inherit";
+  const opacityMultiplier = Number(binding?.opacityMultiplier ?? 1);
+  if (materialMode === "inherit" && Math.abs(opacityMultiplier - 1) <= 1e-12) {
+    return {
+      appearanceId: object.appearanceId,
+      material: object.material
+    };
+  }
+  const material = structuredClone(object.material ?? { color: "#ffffff" });
+  if (materialMode !== "inherit") material.model = materialMode;
+  const baseOpacity = Number(material.opacity ?? 1);
+  material.opacity = Math.max(0, Math.min(1, baseOpacity * opacityMultiplier));
+  material.transparent = Boolean(material.transparent) || material.opacity < 1;
+  return { appearanceId: null, material };
+}
+
+function createFamilyDisplayMaterial(source, { family, binding }) {
+  const baseColor = source?.color?.isColor
+    ? `#${source.color.getHexString()}`
+    : "#ffffff";
+  const baseOpacity = Number(source?.opacity ?? 1);
+  const inheritedUnlit = family.generator?.shading === "unlit";
+  const forceUnlit = binding.materialMode === "unlit" ||
+    (binding.materialMode === "inherit" && inheritedUnlit);
+  let material = forceUnlit
+    ? createUnlitFamilyMaterial(source)
+    : source?.clone?.() ?? createUnlitFamilyMaterial(source);
+  if (
+    binding.materialMode === "standard" &&
+    (!material.isMeshStandardMaterial || material.isMeshPhysicalMaterial)
+  ) {
+    material.dispose?.();
+    material = createStandardFamilyMaterial(source, false);
+  } else if (
+    binding.materialMode === "physical" &&
+    !material.isMeshPhysicalMaterial
+  ) {
+    material.dispose?.();
+    material = createStandardFamilyMaterial(source, true);
+  }
+  material.name = `${source?.name ?? "family"}-appearance`;
+  return { material, baseColor, baseOpacity };
+}
+
+function createStandardFamilyMaterial(source, physical) {
+  const MaterialType = physical
+    ? THREE.MeshPhysicalMaterial
+    : THREE.MeshStandardMaterial;
+  return new MaterialType({
+    color: source?.color?.isColor ? source.color.clone() : 0xffffff,
+    map: source?.map ?? null,
+    alphaMap: source?.alphaMap ?? null,
+    normalMap: source?.normalMap ?? null,
+    roughnessMap: source?.roughnessMap ?? null,
+    metalnessMap: source?.metalnessMap ?? null,
+    roughness: Number(source?.roughness ?? 0.6),
+    metalness: Number(source?.metalness ?? 0),
+    transparent: Boolean(source?.transparent),
+    opacity: Number(source?.opacity ?? 1),
+    alphaTest: Number(source?.alphaTest ?? 0),
+    side: source?.side ?? THREE.FrontSide,
+    depthTest: source?.depthTest !== false,
+    depthWrite: source?.depthWrite !== false,
+    wireframe: Boolean(source?.wireframe)
+  });
+}
+
 function createUnlitFamilyMaterial(source) {
   const material = new THREE.MeshBasicMaterial({
     color: 0xffffff,
@@ -5303,6 +5542,49 @@ function normalizePreviewTransforms(transforms = []) {
       worldMatrix: Object.freeze(worldMatrix.map(Number))
     });
   });
+}
+
+function projectedSelectionIdsWithFallback(hierarchy, ids = []) {
+  const result = [];
+  const seen = new Set();
+  const known = [];
+  const pending = [];
+
+  for (const rawId of ids) {
+    const id = String(rawId);
+    if (!id || seen.has(id)) continue;
+    if (hierarchy?.has?.(id)) known.push(id);
+    else pending.push(id);
+  }
+
+  if (known.length) {
+    try {
+      for (const id of projectedSelectionIds(hierarchy, known)) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        result.push(id);
+      }
+    } catch {
+      /*
+       * A hierarquia é uma projeção derivada e pode estar entre revisões.
+       * Uma falha nessa leitura não deve impedir a transformação dos proxies
+       * já existentes.
+       */
+      for (const id of known) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        result.push(id);
+      }
+    }
+  }
+
+  for (const id of pending) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
+  }
+
+  return Object.freeze(result);
 }
 
 function createPreviewId() {

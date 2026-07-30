@@ -22,6 +22,9 @@ import {
   compilePathBrushColorModifier,
   evaluatePathBrushColorModifier
 } from "./PathBrushColor.js?build=20260729-0039g";
+import {
+  normalizeAppearanceBinding
+} from "../../appearance-binding/src/index.js?build=20260730-0041b";
 
 const ARRAY_BRUSH_PLAN_TYPE = "array-brush-stroke-plan";
 const ARRAY_BRUSH_PLAN_VERSION = 1;
@@ -30,7 +33,7 @@ const PATH_CREATE_PLAN_VERSION = 1;
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 
 export class PathToolService {
-  static apiVersion = "path-tool-service-v6";
+  static apiVersion = "path-tool-service-v7";
   #issuedArrayBrushPlans = new WeakSet();
   #issuedPathCreatePlans = new WeakSet();
   #sceneCacheRevision = null;
@@ -100,7 +103,9 @@ export class PathToolService {
     closed = false,
     curveType = "centripetal",
     tension = 0.5,
-    color = "#70c8ff"
+    color = "#70c8ff",
+    materialMode = "inherit",
+    opacityMultiplier = 1
   } = {}) {
     const normalizedCurveType = String(
       curveType ?? "centripetal"
@@ -136,6 +141,12 @@ export class PathToolService {
       position: localized.origin,
       geometry,
       color: colorValue(color),
+      appearanceBinding: normalizeAppearanceBinding({
+        colorMode: "uniform",
+        uniformColor: colorValue(color),
+        materialMode,
+        opacityMultiplier
+      }, { fallbackColor: colorValue(color) }),
       points: sourcePoints,
       pointCount: localized.points.length,
       curveType: normalizedCurveType,
@@ -160,7 +171,8 @@ export class PathToolService {
       name: validated.name,
       position: validated.position,
       geometry: validated.geometry,
-      color: validated.color
+      color: validated.color,
+      appearanceBinding: validated.appearanceBinding
     });
     if (previousSelection) {
       restoreSelection(this.editor.selection, previousSelection);
@@ -391,6 +403,8 @@ export class PathToolService {
     geometryType = "box",
     sourceGeometry = null,
     sourceColor = "#6699cc",
+    materialMode = "inherit",
+    opacityMultiplier = 1,
     spacingMode = "auto",
     spacingWorld = 1,
     spacingScale = 1,
@@ -420,7 +434,9 @@ export class PathToolService {
         sourceIds,
         geometryType,
         geometry: sourceGeometry,
-        color: sourceColor
+        color: sourceColor,
+        materialMode,
+        opacityMultiplier
       });
       const spacing = this.resolveArrayBrushSpacing({
         brush: captured,
@@ -484,7 +500,9 @@ export class PathToolService {
     sourceIds = null,
     geometryType = "box",
     geometry = null,
-    color = "#6699cc"
+    color = "#6699cc",
+    materialMode = "inherit",
+    opacityMultiplier = 1
   } = {}) {
     const mode = String(sourceMode ?? "selection").toLowerCase();
     if (mode === "catalog") {
@@ -503,10 +521,18 @@ export class PathToolService {
         descriptor,
         new THREE.Matrix4()
       );
+      const appearanceBinding = normalizeAppearanceBinding({
+        colorMode: "uniform",
+        uniformColor: normalizedColor,
+        materialMode,
+        opacityMultiplier
+      }, { fallbackColor: normalizedColor });
       const key = JSON.stringify([
         "catalog",
         this.resolver.geometryRegistry.key(descriptor),
-        normalizedColor
+        normalizedColor,
+        appearanceBinding.materialMode,
+        appearanceBinding.opacityMultiplier
       ]);
       return Object.freeze({
         key,
@@ -516,6 +542,7 @@ export class PathToolService {
         sourceNodeIds: Object.freeze([]),
         sourceGeometry: descriptor,
         sourceColor: normalizedColor,
+        appearanceBinding,
         sourceName: this.resolver.geometryRegistry.label(descriptor.type),
         pivot: Object.freeze([0, 0, 0]),
         referenceRotation: Object.freeze([0, 0, 0, 1]),
@@ -914,6 +941,7 @@ export class PathToolService {
         preparedInstances: validated.draft.instances,
         colors,
         color: brush.sourceColor,
+        appearanceBinding: brush.appearanceBinding,
         source: "path-brush-catalog",
         anchorPolicy,
         generator: {

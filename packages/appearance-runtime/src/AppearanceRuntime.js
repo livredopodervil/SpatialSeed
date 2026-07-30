@@ -1,6 +1,9 @@
 import {
   AppearanceGraph
 } from "../../appearance-graph/src/index.js";
+import {
+  appearanceBindingForObject
+} from "../../appearance-binding/src/index.js?build=20260730-0041a";
 
 export class AppearanceRuntime {
   #resolved = new Map();
@@ -136,6 +139,7 @@ export class AppearanceRuntime {
       return Object.freeze(structuredClone(object));
     }
 
+    const appearanceBinding = appearanceBindingForObject(object);
     if (object.material) {
       const created = this.internLegacyMaterial(
         object.material,
@@ -144,7 +148,8 @@ export class AppearanceRuntime {
 
       const result = {
         ...structuredClone(object),
-        appearanceId: created.appearanceId
+        appearanceId: created.appearanceId,
+        appearanceBinding
       };
 
       delete result.material;
@@ -152,7 +157,10 @@ export class AppearanceRuntime {
     }
 
     if (object.appearanceId) {
-      return Object.freeze(structuredClone(object));
+      return Object.freeze({
+        ...structuredClone(object),
+        appearanceBinding
+      });
     }
 
     throw new Error(`Objeto sem material: ${object.id}.`);
@@ -171,10 +179,14 @@ export class AppearanceRuntime {
 
   projectObject(object) {
     if (isLogicalSceneNode(object)) return object;
-    if (object.material) return object;
+    const appearanceBinding = appearanceBindingForObject(object);
+    if (object.material) {
+      return { ...object, appearanceBinding };
+    }
 
     return {
       ...object,
+      appearanceBinding,
       material: this.legacyMaterial(object.appearanceId)
     };
   }
@@ -184,10 +196,12 @@ export class AppearanceRuntime {
       ...scene,
       objects: (scene.objects ?? []).map(object => {
         if (isLogicalSceneNode(object)) return object;
-        if (object.material) return object;
+        const appearanceBinding = appearanceBindingForObject(object);
+        if (object.material) return { ...object, appearanceBinding };
 
         return {
           ...object,
+          appearanceBinding,
           material: this.legacyMaterial(object.appearanceId)
         };
       })

@@ -8,6 +8,7 @@ const BASE_GROUP_ORDER = Object.freeze([
   "snap",
   "navigation",
   "reference",
+  "appearance",
   "planar",
   "lifecycle",
   "creation",
@@ -115,25 +116,25 @@ export function deriveHudContext({
   let groupOrder;
   if (actionActive) {
     groupOrder = [
-      "quick", "lifecycle", "planar", "creation", "tool", "selection",
+      "quick", "lifecycle", "planar", "appearance", "creation", "tool", "selection",
       "subject", "actions", "axes", "snap", "frame", "reference",
       "navigation", "session"
     ];
   } else if (meshActive) {
     groupOrder = [
-      "subject", "selection", "quick", "tool", "actions", "axes", "snap",
+      "subject", "selection", "quick", "tool", "actions", "appearance", "axes", "snap",
       "frame", "reference", "planar", "navigation", "lifecycle",
       "creation", "session"
     ];
   } else if (hasSelection) {
     groupOrder = [
-      "selection", "quick", "actions", "tool", "subject", "creation",
+      "selection", "quick", "appearance", "actions", "tool", "subject", "creation",
       "planar", "reference", "frame", "axes", "snap", "navigation",
       "lifecycle", "session"
     ];
   } else {
     groupOrder = [
-      "creation", "planar", "tool", "selection", "quick", "subject",
+      "creation", "appearance", "planar", "tool", "selection", "quick", "subject",
       "reference", "frame", "axes", "snap", "navigation", "lifecycle",
       "actions", "session"
     ];

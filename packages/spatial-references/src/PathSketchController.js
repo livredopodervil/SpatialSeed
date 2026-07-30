@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import {
   PathInstancePreviewCache
-} from "./PathInstancePreviewCache.js?build=20260730-0040g";
+} from "./PathInstancePreviewCache.js?build=20260730-0041b";
 import {
   constrainPlanarPoint
 } from "../../planar-authoring/src/PlanarConstraints.js?build=20260730-0040e";
@@ -30,6 +30,8 @@ const DEFAULTS = Object.freeze({
   geometryType: "box",
   sourceGeometry: Object.freeze({}),
   sourceColor: "#6699cc",
+  materialMode: "inherit",
+  opacityMultiplier: 1,
   spacingMode: "auto",
   spacingWorld: 1,
   spacingScale: 1,
@@ -48,7 +50,7 @@ const DEFAULTS = Object.freeze({
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v6";
+  static apiVersion = "path-sketch-controller-v7";
 
   #active = null;
   #listeners = new Set();
@@ -165,7 +167,9 @@ export class PathSketchController {
           sourceMode: settings.sourceMode,
           geometryType: settings.geometryType,
           geometry: settings.sourceGeometry,
-          color: settings.sourceColor
+          color: settings.sourceColor,
+          materialMode: settings.materialMode,
+          opacityMultiplier: settings.opacityMultiplier
         })
       : null;
     if (brush) this.#previewArrayCache.configure(brush);
@@ -296,7 +300,9 @@ export class PathSketchController {
           : null,
         geometryType: settings.geometryType,
         geometry: settings.sourceGeometry,
-        color: settings.sourceColor
+        color: settings.sourceColor,
+        materialMode: settings.materialMode,
+        opacityMultiplier: settings.opacityMultiplier
       });
       this.#previewArrayCache.configure(brush);
     } else if (settings.mode !== "array") {
@@ -868,7 +874,9 @@ export class PathSketchController {
           closed: active.settings.closed,
           curveType: active.settings.curveType,
           tension: active.settings.tension,
-          color: active.settings.color
+          color: active.settings.color,
+          materialMode: active.settings.materialMode,
+          opacityMultiplier: active.settings.opacityMultiplier
         });
         active.pathPlan = pathPlan;
         active.arrayPlan = null;
@@ -887,7 +895,12 @@ export class PathSketchController {
           this.#previewTube.geometry,
           geometry
         );
-        this.#previewTube.material.color.set(active.settings.color);
+        this.#previewTube.material = updatePreviewMaterial(
+          this.#previewTube.material,
+          active.settings.materialMode,
+          active.settings.color,
+          0.66 * active.settings.opacityMultiplier
+        );
         this.#previewTube.visible = true;
         active.previewCount = 1;
         active.previewTruncated = false;
@@ -1135,7 +1148,9 @@ export class PathSketchController {
         closed: job.settings.closed,
         curveType: job.settings.curveType,
         tension: job.settings.tension,
-        color: job.settings.color
+        color: job.settings.color,
+        materialMode: job.settings.materialMode,
+        opacityMultiplier: job.settings.opacityMultiplier
       });
       job.points = job.plan.points;
     }
@@ -1637,6 +1652,13 @@ function normalizeSettings(value) {
     geometryType: String(value.geometryType ?? "box").toLowerCase(),
     sourceGeometry: geometryDescriptor(value.sourceGeometry),
     sourceColor: String(value.sourceColor ?? "#6699cc"),
+    materialMode: String(value.materialMode ?? "inherit").toLowerCase(),
+    opacityMultiplier: finiteRange(
+      value.opacityMultiplier ?? 1,
+      0,
+      1,
+      "opacityMultiplier"
+    ),
     spacingMode: String(value.spacingMode ?? "auto").toLowerCase(),
     spacingWorld: positive(value.spacingWorld, "spacingWorld"),
     spacingScale: positive(value.spacingScale, "spacingScale"),
@@ -1666,6 +1688,13 @@ function normalizeSettings(value) {
   if (!["selection", "catalog"].includes(result.sourceMode)) {
     throw new RangeError("A fonte do pincel deve ser selection ou catalog.");
   }
+  if (!["inherit", "unlit", "standard", "physical"].includes(
+    result.materialMode
+  )) {
+    throw new RangeError(
+      "O material deve ser herdado, não iluminado, padrão ou físico."
+    );
+  }
   if (!["auto", "world"].includes(result.spacingMode)) {
     throw new RangeError("O espaçamento deve ser auto ou world.");
   }
@@ -1691,7 +1720,9 @@ function brushSettingsKey(settings) {
     settings.sourceMode,
     settings.sourceMode === "catalog" ? settings.geometryType : null,
     settings.sourceMode === "catalog" ? settings.sourceGeometry : null,
-    settings.sourceMode === "catalog" ? settings.sourceColor : null
+    settings.sourceMode === "catalog" ? settings.sourceColor : null,
+    settings.sourceMode === "catalog" ? settings.materialMode : null,
+    settings.sourceMode === "catalog" ? settings.opacityMultiplier : null
   ]);
 }
 
@@ -1855,14 +1886,50 @@ function createPreviewPoints() {
   return points;
 }
 
-function createPreviewTube() {
-  const material = new THREE.MeshBasicMaterial({
-    color: 0x70c8ff,
+function createPreviewMaterial(mode, color, opacity) {
+  const common = {
+    color,
     depthTest: false,
     depthWrite: false,
     transparent: true,
-    opacity: 0.62
-  });
+    opacity
+  };
+  if (mode === "physical") {
+    return new THREE.MeshPhysicalMaterial({
+      ...common,
+      roughness: 0.45,
+      metalness: 0
+    });
+  }
+  if (mode === "standard") {
+    return new THREE.MeshStandardMaterial({
+      ...common,
+      roughness: 0.6,
+      metalness: 0
+    });
+  }
+  return new THREE.MeshBasicMaterial(common);
+}
+
+function updatePreviewMaterial(current, mode, color, opacity) {
+  const expected = mode === "physical"
+    ? "MeshPhysicalMaterial"
+    : mode === "standard"
+      ? "MeshStandardMaterial"
+      : "MeshBasicMaterial";
+  if (current?.type !== expected) {
+    current?.dispose?.();
+    return createPreviewMaterial(mode, color, opacity);
+  }
+  current.color.set(color);
+  current.opacity = opacity;
+  current.transparent = opacity < 1;
+  current.needsUpdate = true;
+  return current;
+}
+
+function createPreviewTube() {
+  const material = createPreviewMaterial("inherit", "#70c8ff", 0.62);
   const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
   mesh.name = "path-sketch-preview-tube";
   mesh.renderOrder = 1499;
@@ -1890,6 +1957,16 @@ function nonNegative(value, name) {
 function finite(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number)) throw new TypeError(`${name} inválido.`);
+  return number;
+}
+
+function finiteRange(value, minimum, maximum, name) {
+  const number = finite(value, name);
+  if (number < minimum || number > maximum) {
+    throw new RangeError(
+      `${name} deve estar entre ${minimum} e ${maximum}.`
+    );
+  }
   return number;
 }
 
