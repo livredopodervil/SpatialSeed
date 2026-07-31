@@ -9,7 +9,7 @@ const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 const GEOMETRY_CREATION_STORAGE_KEY = "spatialseed.geometry.creation.defaults.v1";
 const STATIC_GROUP_ORDER = Object.freeze([
   "subject", "tool", "quick", "selection", "frame", "axes",
-  "snap", "navigation", "reference", "appearance", "planar", "measure", "lifecycle",
+  "snap", "navigation", "reference", "drawing-target", "appearance", "planar", "measure", "lifecycle",
   "creation", "actions", "session"
 ]);
 const STATIC_ACTION_ORDER = Object.freeze([
@@ -37,6 +37,12 @@ const DEFAULT_PREFERENCES = Object.freeze({
   adaptiveOrder: true,
   appearanceTarget: "selection",
   appearanceColorAction: "auto",
+  drawingTargetSource: "viewer",
+  drawingHelperSize: 12,
+  drawingHelperOpacity: 0.18,
+  surfaceFrontFacesOnly: true,
+  surfaceLockObject: true,
+  surfaceMaximumJump: 0,
   left: 12,
   defaults: {
     extrude: 1,
@@ -54,6 +60,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
     snap: true,
     navigation: true,
     reference: true,
+    "drawing-target": true,
     appearance: true,
     planar: true,
     measure: true,
@@ -65,7 +72,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
 });
 
 export class EditHud {
-  static apiVersion = "edit-hud-v2";
+  static apiVersion = "edit-hud-v3";
 
   #unsubscribe = null;
   #unsubscribeHistory = null;
@@ -197,6 +204,67 @@ export class EditHud {
     this.#element("edit-hud-edit-plane").checked = Boolean(state.editPlane);
     this.#element("edit-hud-drawing-plane").checked =
       Boolean(state.drawingPlane);
+    const drawingTarget = this.query("drawing.target.status") ?? {};
+    this.root.dataset.drawingTargetActive = drawingTarget.active
+      ? "true"
+      : "false";
+    this.root.dataset.drawingTargetEditing = drawingTarget.editing
+      ? "true"
+      : "false";
+    const sourceControl = this.#element("edit-hud-drawing-target-source");
+    const sourceValue = drawingTarget.active
+      ? drawingTarget.source
+      : this.#preferences.drawingTargetSource;
+    if ([...sourceControl.options].some(option => option.value === sourceValue)) {
+      sourceControl.value = sourceValue;
+    }
+    this.#element("edit-hud-drawing-target-helper").checked =
+      drawingTarget.helperVisible !== false;
+    this.#element("edit-hud-drawing-target-edit").dataset.active =
+      drawingTarget.editing ? "true" : "false";
+    const surfaceTargetActive = drawingTarget.type === "surface";
+    this.root.dataset.drawingTargetType = surfaceTargetActive
+      ? "surface"
+      : "plane";
+    this.#element("edit-hud-drawing-target-edit").disabled =
+      !drawingTarget.active || surfaceTargetActive;
+    this.#element("edit-hud-drawing-target-translate").dataset.active =
+      drawingTarget.gizmoMode === "translate" ? "true" : "false";
+    this.#element("edit-hud-drawing-target-rotate").dataset.active =
+      drawingTarget.gizmoMode === "rotate" ? "true" : "false";
+    this.#element("edit-hud-drawing-target-translate").disabled =
+      !drawingTarget.active || surfaceTargetActive;
+    this.#element("edit-hud-drawing-target-rotate").disabled =
+      !drawingTarget.active || surfaceTargetActive;
+    this.#element("edit-hud-drawing-target-clear").disabled =
+      !drawingTarget.active;
+    const offsetControl = this.#element("edit-hud-drawing-target-offset");
+    if (this.root.ownerDocument.activeElement !== offsetControl) {
+      offsetControl.value = String(drawingTarget.offset ?? 0);
+    }
+    const surface = drawingTarget.surfaceTarget ?? {};
+    this.#element("edit-hud-surface-front-faces").checked =
+      surfaceTargetActive
+        ? surface.frontFacesOnly !== false
+        : this.#preferences.surfaceFrontFacesOnly !== false;
+    this.#element("edit-hud-surface-lock-object").checked =
+      surfaceTargetActive
+        ? surface.lockObject !== false
+        : this.#preferences.surfaceLockObject !== false;
+    const jumpControl = this.#element("edit-hud-surface-maximum-jump");
+    if (this.root.ownerDocument.activeElement !== jumpControl) {
+      jumpControl.value = String(
+        surfaceTargetActive && !surface.automaticMaximumJump
+          ? surface.maximumJump ?? 0
+          : this.#preferences.surfaceMaximumJump ?? 0
+      );
+    }
+    const surfaceState = this.#element("edit-hud-surface-state");
+    surfaceState.textContent = surfaceTargetActive
+      ? `${surface.objectIds?.length ?? 0} alvo(s) · ${
+          surface.automaticMaximumJump ? "salto auto" : "salto fixo"
+        }`
+      : "Plano";
     this.#element("edit-hud-point-lock").checked = Boolean(state.pointLock);
     this.#element("edit-hud-pivot-edit").dataset.active =
       state.pivotEditing ? "true" : "false";
@@ -403,12 +471,132 @@ export class EditHud {
       event => {
         this.#execute(
           event.target.checked
-            ? "drawing.plane.set"
-            : "drawing.plane.clear",
+            ? "drawing.target.set"
+            : "drawing.target.clear",
           event.target.checked
-            ? { source: this.#quickPlaneSource() }
+            ? this.#drawingTargetArguments({
+                source: this.#quickPlaneSource()
+              })
             : {}
         );
+      }
+    );
+    this.#element("edit-hud-drawing-target-source").addEventListener(
+      "change",
+      event => {
+        this.#preferences.drawingTargetSource = event.target.value;
+        this.#savePreferences();
+      }
+    );
+    this.#element("edit-hud-drawing-target-set").addEventListener(
+      "click",
+      () => this.#execute(
+        "drawing.target.set",
+        this.#drawingTargetArguments()
+      )
+    );
+    this.#element("edit-hud-surface-front-faces").addEventListener(
+      "change",
+      event => {
+        this.#preferences.surfaceFrontFacesOnly = event.target.checked;
+        this.#savePreferences();
+        this.#refreshSurfaceTargetIfActive();
+      }
+    );
+    this.#element("edit-hud-surface-lock-object").addEventListener(
+      "change",
+      event => {
+        this.#preferences.surfaceLockObject = event.target.checked;
+        this.#savePreferences();
+        this.#refreshSurfaceTargetIfActive();
+      }
+    );
+    this.#element("edit-hud-surface-maximum-jump").addEventListener(
+      "change",
+      event => {
+        this.#preferences.surfaceMaximumJump = Math.max(
+          0,
+          Number(event.target.value) || 0
+        );
+        this.#savePreferences();
+        this.#refreshSurfaceTargetIfActive();
+      }
+    );
+    this.#element("edit-hud-drawing-target-helper").addEventListener(
+      "change",
+      event => {
+        const status = this.query("drawing.target.status") ?? {};
+        if (!status.active && event.target.checked) {
+          this.#execute("drawing.target.set", this.#drawingTargetArguments());
+          return;
+        }
+        this.#execute("drawing.target.helper.set", {
+          visible: event.target.checked,
+          size: this.#preferences.drawingHelperSize,
+          opacity: this.#preferences.drawingHelperOpacity
+        });
+      }
+    );
+    this.#element("edit-hud-drawing-target-edit").addEventListener(
+      "click",
+      () => this.#execute("drawing.target.edit.toggle")
+    );
+    this.#element("edit-hud-drawing-target-translate").addEventListener(
+      "click",
+      () => this.#execute("drawing.target.gizmo.set", {
+        mode: "translate"
+      })
+    );
+    this.#element("edit-hud-drawing-target-rotate").addEventListener(
+      "click",
+      () => this.#execute("drawing.target.gizmo.set", {
+        mode: "rotate"
+      })
+    );
+    this.#element("edit-hud-drawing-target-offset").addEventListener(
+      "change",
+      event => this.#execute("drawing.target.offset.set", {
+        offset: Number(event.target.value)
+      })
+    );
+    this.#element("edit-hud-drawing-target-clear").addEventListener(
+      "click",
+      () => this.#execute("drawing.target.clear")
+    );
+    this.#element("edit-hud-drawing-helper-size").addEventListener(
+      "change",
+      event => {
+        this.#preferences.drawingHelperSize = Math.max(
+          0.1,
+          Number(event.target.value) || 12
+        );
+        this.#savePreferences();
+        const status = this.query("drawing.target.status") ?? {};
+        if (status.active) {
+          this.#execute("drawing.target.helper.set", {
+            visible: status.helperVisible,
+            size: this.#preferences.drawingHelperSize,
+            opacity: this.#preferences.drawingHelperOpacity
+          });
+        }
+      }
+    );
+    this.#element("edit-hud-drawing-helper-opacity").addEventListener(
+      "input",
+      event => {
+        this.#preferences.drawingHelperOpacity = Math.min(
+          0.9,
+          Math.max(0.02, Number(event.target.value) || 0.18)
+        );
+        this.#savePreferences();
+        const status = this.query("drawing.target.status") ?? {};
+        if (status.active) {
+          this.#execute("drawing.target.helper.set", {
+            visible: status.helperVisible,
+            size: this.#preferences.drawingHelperSize,
+            opacity: this.#preferences.drawingHelperOpacity
+          });
+        }
       }
     );
     this.#element("edit-hud-pivot-edit").addEventListener("click", () =>
@@ -515,6 +703,12 @@ export class EditHud {
     this.#element("edit-hud-size").value = this.#preferences.size;
     this.#element("edit-hud-opacity").value = String(this.#preferences.opacity);
     this.#element("edit-hud-columns").value = String(this.#preferences.columns);
+    this.#element("edit-hud-drawing-helper-size").value = String(
+      this.#preferences.drawingHelperSize
+    );
+    this.#element("edit-hud-drawing-helper-opacity").value = String(
+      this.#preferences.drawingHelperOpacity
+    );
     this.#element("edit-hud-rows").value = String(this.#preferences.rows);
     this.#element("edit-hud-tap-hints").checked = this.#preferences.tapHints !== false;
     this.#element("edit-hud-adaptive-order").checked = this.#preferences.adaptiveOrder !== false;
@@ -1087,6 +1281,12 @@ export class EditHud {
     this.#element("edit-hud-opacity").value = String(p.opacity);
     this.#element("edit-hud-columns").value = String(p.columns);
     this.#element("edit-hud-rows").value = String(p.rows);
+    this.#element("edit-hud-drawing-helper-size").value = String(
+      p.drawingHelperSize
+    );
+    this.#element("edit-hud-drawing-helper-opacity").value = String(
+      p.drawingHelperOpacity
+    );
     this.#element("edit-hud-tap-hints").checked = p.tapHints !== false;
     this.#element("edit-hud-adaptive-order").checked = p.adaptiveOrder !== false;
     this.#element("edit-hud-appearance-target").value =
@@ -1585,6 +1785,36 @@ export class EditHud {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(this.#preferences));
   }
 
+  #drawingTargetArguments({ source = null } = {}) {
+    return {
+      source: source ?? this.#element("edit-hud-drawing-target-source").value,
+      offset: Number(this.#element("edit-hud-drawing-target-offset").value) || 0,
+      helperVisible: this.#element("edit-hud-drawing-target-helper").checked,
+      helperSize: this.#preferences.drawingHelperSize,
+      helperOpacity: this.#preferences.drawingHelperOpacity,
+      helperGrid: true,
+      frontFacesOnly: this.#element(
+        "edit-hud-surface-front-faces"
+      ).checked,
+      lockObject: this.#element(
+        "edit-hud-surface-lock-object"
+      ).checked,
+      maximumJump: Math.max(
+        0,
+        Number(this.#element("edit-hud-surface-maximum-jump").value) || 0
+      )
+    };
+  }
+
+  #refreshSurfaceTargetIfActive() {
+    const status = this.query("drawing.target.status") ?? {};
+    if (status.type !== "surface") return;
+    this.#execute("drawing.target.set", {
+      ...this.#drawingTargetArguments({ source: "surface-selection" }),
+      objectIds: status.surfaceTarget?.objectIds ?? null
+    });
+  }
+
   #quickPlaneSource() {
     const mesh = this.query("mesh.edit.status") ?? {};
     if (mesh.active && mesh.componentMode === "face" &&
@@ -1652,6 +1882,14 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-pivot-edit": ["Editar pivô", "Ativa o manipulador do pivô sem deslocar a geometria do objeto selecionado."],
   "edit-hud-edit-plane": ["Plano de edição", "Captura um referencial independente para transformações e edição de componentes."],
   "edit-hud-drawing-plane": ["Plano de desenho", "Captura o plano onde pontos e formas 2D serão criados; não altera a câmera nem o plano de edição."],
+  "edit-hud-drawing-target-source": ["Fonte do alvo", "Escolhe vista, plano mundial, objeto, face, três pontos ou plano de edição."],
+  "edit-hud-drawing-target-set": ["Definir alvo", "Cria e trava o plano de desenho usando a fonte escolhida."],
+  "edit-hud-drawing-target-helper": ["Mostrar helper", "Mostra ou oculta o plano transparente, grade e normal."],
+  "edit-hud-drawing-target-edit": ["Editar helper", "Ativa o gizmo local do plano sem selecionar um objeto da cena."],
+  "edit-hud-drawing-target-translate": ["Mover plano", "Configura o gizmo do helper para translação."],
+  "edit-hud-drawing-target-rotate": ["Girar plano", "Configura o gizmo do helper para rotação local."],
+  "edit-hud-drawing-target-offset": ["Offset do plano", "Desloca o plano ao longo de sua normal sem alterar a orientação."],
+  "edit-hud-drawing-target-clear": ["Liberar alvo", "Remove o plano travado e retorna o desenho ao plano implícito do viewer."],
   "edit-hud-planar-finish": ["Concluir polilinha", "Publica todos os pontos da polilinha como uma única geometria e uma única etapa de undo."],
   "edit-hud-planar-back": ["Remover último ponto", "Retira somente o último ponto ainda não publicado da polilinha 2D."],
   "edit-hud-planar-edit": ["Editar 2D", "Entra na edição de vértices do objeto selecionado usando o plano de edição quando definido."],

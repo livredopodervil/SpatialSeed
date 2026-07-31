@@ -206,6 +206,7 @@
         <label><input type="checkbox" data-edit-hud-group-toggle="snap" checked> Snap</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="navigation" checked> Travas</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="reference" checked> Pivô e planos</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="drawing-target" checked> Alvo de desenho</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="appearance" checked> Aparência</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="planar" checked> Ferramentas 2D</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="measure" checked> Medição</label>
@@ -220,6 +221,8 @@
         <label>Raio de caminho <input id="edit-hud-default-path-radius" type="number" min="0.001" step="0.01" value="0.08"></label>
         <label>Passo da grade <input id="edit-hud-grid-step" type="number" min="0.000001" step="0.1" value="1"></label>
         <label>Passo angular <input id="edit-hud-angle-step" type="number" min="0.000001" max="180" step="1" value="15"></label>
+        <label>Tamanho do plano <input id="edit-hud-drawing-helper-size" type="number" min="0.1" step="0.5" value="12"></label>
+        <label>Opacidade do plano <input id="edit-hud-drawing-helper-opacity" type="range" min="0.02" max="0.9" step="0.02" value="0.18"></label>
       </div>
       <p class="edit-hud-help-note">Toque curto executa. Pressione e segure para ver nome e explicação. O botão ? ativa um modo de consulta que não executa as ferramentas.</p>
       <button id="edit-hud-reset" type="button">Restaurar HUD</button>
@@ -286,6 +289,20 @@
       <label title="Âncora das famílias desenhadas"><select id="edit-hud-anchor-policy" aria-label="Âncora da criação"><option value="first">Início</option><option value="bounds">Centro</option><option value="world">Mundo</option></select></label>
       <label title="Definir plano de edição pela seleção ou viewer"><input id="edit-hud-edit-plane" type="checkbox"><span>⌗</span></label>
       <label title="Definir plano de desenho pela seleção ou viewer"><input id="edit-hud-drawing-plane" type="checkbox"><span>✎</span></label>
+    </div>
+    <div class="edit-hud-group edit-hud-drawing-target" data-edit-hud-group="drawing-target" aria-label="Alvo e plano de desenho">
+      <label class="edit-hud-drawing-source" title="Fonte do plano de desenho"><select id="edit-hud-drawing-target-source" aria-label="Fonte do plano de desenho"><option value="viewer">Vista</option><option value="world-xy">XY</option><option value="world-xz">XZ</option><option value="world-yz">YZ</option><option value="object">Objeto</option><option value="face">Face</option><option value="three-points">3 pontos</option><option value="edit-plane">Plano de edição</option><option value="surface-selection">Superfície</option><option value="custom" disabled>Personalizado</option></select></label>
+      <button id="edit-hud-drawing-target-set" type="button" title="Definir e travar o plano de desenho">◎</button>
+      <label class="edit-hud-drawing-helper-toggle" title="Mostrar helper transparente"><input id="edit-hud-drawing-target-helper" type="checkbox" checked><span>▱</span></label>
+      <button id="edit-hud-drawing-target-edit" type="button" title="Editar posição e orientação do helper">✥</button>
+      <button id="edit-hud-drawing-target-translate" type="button" title="Mover helper">↔</button>
+      <button id="edit-hud-drawing-target-rotate" type="button" title="Girar helper">↻</button>
+      <label class="edit-hud-drawing-offset" title="Offset ao longo da normal da superfície ou plano"><input id="edit-hud-drawing-target-offset" type="number" step="0.01" value="0" aria-label="Offset do alvo"><span>↥</span></label>
+      <button id="edit-hud-drawing-target-clear" type="button" title="Liberar alvo de desenho">×</button>
+      <label class="edit-hud-surface-front" title="Aceitar apenas faces voltadas para a câmera"><input id="edit-hud-surface-front-faces" type="checkbox" checked><span>◐</span></label>
+      <label class="edit-hud-surface-lock" title="Não saltar entre objetos durante o mesmo gesto"><input id="edit-hud-surface-lock-object" type="checkbox" checked><span>🔒</span></label>
+      <label class="edit-hud-surface-jump" title="Distância máxima entre amostras; zero usa valor automático"><input id="edit-hud-surface-maximum-jump" type="number" min="0" step="0.01" value="0" aria-label="Salto máximo na superfície"><span>↯</span></label>
+      <small id="edit-hud-surface-state" class="edit-hud-surface-state" aria-live="polite">Plano</small>
     </div>
     <div class="edit-hud-group edit-hud-appearance" data-edit-hud-group="appearance" aria-label="Cor e material">
       <label class="edit-hud-appearance-target" title="Alvo da aparência"><select id="edit-hud-appearance-target" aria-label="Alvo da aparência"><option value="selection">Seleção</option><option value="tool">Ferramenta</option><option value="both">Ambos</option></select></label>
@@ -1289,6 +1306,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260730-0041a"></script>
+<script type="module" src="./boot.js?build=20260730-0042c1"></script>
 </body>
 </html>

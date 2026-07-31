@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260730-0041b1",
-  "channel": "fix/0041b1-hud-transform"
+  "build": "20260730-0042c1",
+  "channel": "fix/0042c1-renderer-api-contract"
 }

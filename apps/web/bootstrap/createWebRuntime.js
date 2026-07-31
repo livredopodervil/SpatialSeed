@@ -10,7 +10,7 @@ import {
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260730-0041a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260730-0041b1";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260730-0042c";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260730-0040e";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
@@ -94,7 +94,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260730-0041b";
+} from "../../../packages/edit-hud/src/index.js?build=20260730-0042c";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -105,8 +105,11 @@ import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260730-0040e";
 import {
+  DrawingTargetController
+} from "../../../packages/drawing-target/src/index.js?build=20260730-0042c";
+import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260730-0040g";
+} from "../../../packages/planar-authoring/src/index.js?build=20260730-0042c";
 import {
   MeasurementController
 } from "../../../packages/measurement-tools/src/index.js?build=20260730-0040e";
@@ -115,7 +118,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260730-0041b";
+} from "../../../packages/spatial-references/src/index.js?build=20260730-0042c";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -134,7 +137,7 @@ import {
   createIndependentProjectUrl
 } from "../../../packages/local-viewers/src/index.js?build=20260730-0040f";
 
-const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v5";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v6";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({
@@ -272,7 +275,7 @@ export async function createWebRuntime({
     requestedId: locationParameters.get("sandbox")
   });
   const sandboxId = sandboxIdentity.current();
-  const projectService = new ProjectService({
+  let projectService = new ProjectService({
     sandbox: baseSandbox,
     editor,
     renderer,
@@ -460,6 +463,10 @@ export async function createWebRuntime({
     meshEditor,
     toolLifecycle
   });
+  const drawingTarget = new DrawingTargetController({
+    renderer,
+    editContext
+  });
   const pathTools = new PathToolService({
     resolver: spatialReferences,
     selectionOperations,
@@ -478,7 +485,18 @@ export async function createWebRuntime({
     renderer,
     pathTools,
     geometryRegistry,
-    onCompleted: ({ settings, points, sourceIds, frame }) => {
+    drawingTarget,
+    onCompleted: ({
+      settings,
+      points,
+      sourceIds,
+      frame,
+      preparedPlan,
+      targetType
+    }) => {
+      const effectiveCurveType = preparedPlan?.path?.curveType ??
+        preparedPlan?.curveType ??
+        (targetType === "surface" ? "polyline" : settings.curveType);
       const repeatable = settings.mode === "array"
         ? {
             id: "path.array.points.create",
@@ -496,7 +514,7 @@ export async function createWebRuntime({
               spacingScale: settings.spacingScale,
               align: settings.align,
               closed: settings.closed,
-              curveType: settings.curveType,
+              curveType: effectiveCurveType,
               tension: settings.tension,
               twistDegrees: settings.twistDegrees,
               initialNormal: frame.normal,
@@ -525,7 +543,7 @@ export async function createWebRuntime({
               ),
               radialSegments: settings.radialSegments,
               closed: settings.closed,
-              curveType: settings.curveType,
+              curveType: effectiveCurveType,
               tension: settings.tension,
               color: settings.color,
               materialMode: settings.materialMode,
@@ -543,6 +561,7 @@ export async function createWebRuntime({
     renderer,
     geometryRegistry,
     sandbox,
+    drawingTarget,
     createObject: args =>
       commandsRef.execute("object.create.configured", args),
     onCompleted: ({ mode, settings, frame, points }) => {
@@ -569,6 +588,48 @@ export async function createWebRuntime({
     onEnded: () => toolLifecycle.cancelAction("object.place")
   });
   const measurement = new MeasurementController({ renderer });
+  let drawingTargetFrameKey = null;
+  const unsubscribeDrawingTargetTools = drawingTarget.subscribe(snapshot => {
+    const frameKey = JSON.stringify({
+      type: snapshot.type,
+      frame: snapshot.frame ?? null,
+      surface: snapshot.surfaceTarget
+        ? {
+            objectIds: snapshot.surfaceTarget.objectIds,
+            frontFacesOnly: snapshot.surfaceTarget.frontFacesOnly,
+            lockObject: snapshot.surfaceTarget.lockObject,
+            maximumJump: snapshot.surfaceTarget.maximumJump,
+            offset: snapshot.surfaceTarget.offset
+          }
+        : null
+    });
+    if (frameKey === drawingTargetFrameKey) return;
+    drawingTargetFrameKey = frameKey;
+    pathSketch.refreshDrawingFrame?.();
+    planarSketch.refreshDrawingFrame?.();
+  });
+
+  const resetTransientAuthoring = ({ operation }) => {
+    const path = pathSketch.resetForProjectChange({
+      reason: `project:${String(operation)}`
+    });
+    for (const controller of [planarSketch, objectPlacement, measurement]) {
+      const active = controller?.active ?? controller?.status?.().active;
+      if (!active || typeof controller.cancel !== "function") continue;
+      try {
+        controller.cancel();
+      } catch {
+        // O reset do caminho já protege a cena transitória crítica.
+      }
+    }
+    drawingTarget.resetForProjectChange();
+    toolLifecycle.cancelAction();
+    return path;
+  };
+  projectService = withProjectTransientReset(
+    projectService,
+    resetTransientAuthoring
+  );
 
   const sandboxRecovery = new SandboxRecoveryController({
     sandbox: baseSandbox,
@@ -635,6 +696,57 @@ export async function createWebRuntime({
       viewerCoordinator.requireAuthority(action)
   });
   commandsRef = commands;
+  commands.register(
+    "drawing.target.set",
+    args => drawingTarget.set(args),
+    { category: "drawing", mutates: false }
+  );
+  commands.register(
+    "drawing.target.surface.capture",
+    args => drawingTarget.set({
+      ...args,
+      source: "surface-selection"
+    }),
+    { category: "drawing", mutates: false }
+  );
+  commands.register(
+    "drawing.target.clear",
+    () => drawingTarget.clear(),
+    { category: "drawing", mutates: false }
+  );
+  commands.register(
+    "drawing.target.helper.set",
+    args => drawingTarget.setHelper(args),
+    { category: "drawing", mutates: false }
+  );
+  commands.register(
+    "drawing.target.offset.set",
+    ({ offset = 0 } = {}) => drawingTarget.setOffset(offset),
+    { category: "drawing", mutates: false }
+  );
+  const setDrawingTargetEditing = enabled => {
+    if (enabled) {
+      if (pathSketch.active) pathSketch.cancel();
+      if (planarSketch.active) planarSketch.cancel();
+      toolLifecycle.cancelAction();
+    }
+    return drawingTarget.setEditing(enabled);
+  };
+  commands.register(
+    "drawing.target.edit.set",
+    ({ enabled = true } = {}) => setDrawingTargetEditing(Boolean(enabled)),
+    { category: "drawing", mutates: false }
+  );
+  commands.register(
+    "drawing.target.edit.toggle",
+    () => setDrawingTargetEditing(!drawingTarget.status().editing),
+    { category: "drawing", mutates: false }
+  );
+  commands.register(
+    "drawing.target.gizmo.set",
+    ({ mode = "translate" } = {}) => drawingTarget.setGizmoMode(mode),
+    { category: "drawing", mutates: false }
+  );
   commands.register(
     "selection.instances.compact",
     args => {
@@ -1163,6 +1275,12 @@ export async function createWebRuntime({
     .register("path.sketch.status", () =>
       pathSketch.status()
     )
+    .register("path.sketch.transients", ({ scanScene = true } = {}) =>
+      pathSketch.transientStatus({ scanScene })
+    )
+    .register("drawing.target.status", () =>
+      drawingTarget.status()
+    )
     .register("planar.sketch.status", () =>
       planarSketch.status()
     )
@@ -1314,15 +1432,21 @@ export async function createWebRuntime({
       const unsubscribeToolParameters = toolParameters.subscribe(() =>
         listener(editContext.status())
       );
+      const unsubscribeDrawingTarget = drawingTarget.subscribe(() =>
+        listener(editContext.status())
+      );
       return () => {
         unsubscribeContext();
         unsubscribeToolParameters();
+        unsubscribeDrawingTarget();
       };
     },
     subscribeHistory: listener => sandbox.subscribe(() => listener())
   });
   runtime.onDispose(() => renderer.disposeToolGestureNavigation());
   runtime.onDispose(() => editHud.dispose());
+  runtime.onDispose(unsubscribeDrawingTargetTools);
+  runtime.onDispose(() => drawingTarget.dispose());
   runtime.onDispose(() => objectPlacement.dispose());
   runtime.onDispose(() => selectionOperations.dispose());
   runtime.onDispose(() => toolParameters.dispose());
@@ -1463,6 +1587,22 @@ export async function createWebRuntime({
       brushOrientation: ["preserve", "plane", "path"],
       affineBrushVariables: PATH_BRUSH_AFFINE_VARIABLES,
       persistence: "snapshot"
+    }))
+    .register("drawingTarget", () => ({
+      apiVersion: DrawingTargetController.apiVersion,
+      sources: drawingTarget.status().supportedSources,
+      helper: "transparent-editable",
+      gizmoModes: ["translate", "rotate"],
+      targetTypes: ["plane", "surface"],
+      surfaceProjection: {
+        mode: "filtered-screen-ray",
+        frontFacesOnly: true,
+        continuityLock: true,
+        barycentricMetadata: true,
+        consumers: ["path-sketch", "array-brush"]
+      },
+      consumers: ["path-sketch", "planar-sketch", "measurement"],
+      persistence: "local-ephemeral"
     }))
     .register("measurement", () => ({
       apiVersion: MeasurementController.apiVersion,
@@ -1657,6 +1797,7 @@ export async function createWebRuntime({
       meshEditor,
       meshEditPanel,
       editContext,
+      drawingTarget,
       pathTools,
       pathSketch,
       planarSketch,
@@ -1687,6 +1828,30 @@ export async function createWebRuntime({
       }),
       connectUiDiagnostics
     })
+  });
+}
+
+function withProjectTransientReset(projectService, beforeReplace) {
+  const replacementMethods = new Set([
+    "newProject",
+    "openText",
+    "restoreRecovery"
+  ]);
+  const methods = new Map();
+  return new Proxy(projectService, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      if (methods.has(property)) return methods.get(property);
+      const bound = replacementMethods.has(property)
+        ? (...args) => {
+            beforeReplace({ operation: String(property), args });
+            return value.apply(target, args);
+          }
+        : value.bind(target);
+      methods.set(property, bound);
+      return bound;
+    }
   });
 }
 
