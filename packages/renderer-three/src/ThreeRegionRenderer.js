@@ -1749,7 +1749,20 @@ export class ThreeRegionRenderer {
      * Operações de grupo/reparent continuam pelo caminho completo acima.
      */
     this.#incrementalDiagnostics.skippedHierarchyBuilds += 1;
+    this.#scheduleHierarchyRefresh(state);
     this.#finishLocalizedSceneUpdate();
+  }
+
+  #refreshHierarchyForTargets(targetIds) {
+    const hasMismatch = targetIds.some(id =>
+      this.#objectsById.has(id) !== this.#hierarchy.has(id)
+    );
+    if (!hasMismatch || !this.#lastState?.objects) return false;
+    this.#incrementalDiagnostics.hierarchyObjectsVisited +=
+      this.#lastState.objects.length;
+    this.#hierarchy = new HierarchyIndex(this.#lastState.objects);
+    this.#incrementalDiagnostics.deferredHierarchyBuilds += 1;
+    return true;
   }
 
   hasObjectVisual(objectId) {
@@ -1855,9 +1868,11 @@ export class ThreeRegionRenderer {
     if (this.#animationTargetIds.size) {
       throw new Error("Já existe uma sobreposição de animação ativa.");
     }
-    const requested = [...new Set(
-      targetIds.map(value => String(value)).filter(id => this.#hierarchy.has(id))
+    const normalizedTargetIds = [...new Set(
+      targetIds.map(value => String(value)).filter(Boolean)
     )];
+    this.#refreshHierarchyForTargets(normalizedTargetIds);
+    const requested = normalizedTargetIds.filter(id => this.#hierarchy.has(id));
     const roots = this.#hierarchy.canonicalizeSelection(requested);
     if (!["selection", "objects"].includes(targetMode)) {
       throw new RangeError(`Modo de alvos de animação desconhecido: ${targetMode}.`);

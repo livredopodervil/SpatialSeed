@@ -50,6 +50,7 @@ export class SelectionOperations {
     this.onRepeatableChanged = onRepeatableChanged;
     this.pendingDuplicate = null;
     this.pendingPublication = null;
+    this.pendingRepeatCount = 0;
     this.lastDuplicate = null;
     this.repeatHistoryRevision = 0;
     this.localityDiagnostics = {
@@ -485,7 +486,8 @@ export class SelectionOperations {
       selectionIds: duplicateIds,
       sourceIds: [...cloned.sourceRootIds],
       duplicateIds,
-      pivotBefore: this.#selectionPivot(sourceObjects)
+      pivotBefore: this.#selectionPivot(sourceObjects),
+      stagedObjects: duplicates
     });
 
     let changed;
@@ -683,6 +685,20 @@ export class SelectionOperations {
       );
     }
     if (!this.lastDuplicate?.deltaMatrix) {
+      const awaitingTransform = Boolean(
+        this.pendingPublication?.kind === "plain" &&
+        Number(this.pendingPublication.stagedTransformCount ?? 0) > 0 ||
+        Number(this.pendingDuplicate?.queuedTransformCount ?? 0) > 0
+      );
+      if (awaitingTransform) {
+        this.pendingRepeatCount += repeats;
+        return {
+          changed: true,
+          repeatCount: repeats,
+          repeatDeferred: true,
+          reason: "awaiting-repeat-history"
+        };
+      }
       return {
         changed: false,
         reason: "no-repeat-history"
@@ -864,7 +880,7 @@ export class SelectionOperations {
   }
 
   setSelectionPosition(position) {
-    const objects = this.#selectedObjects();
+    const objects = this.#transformTargetObjects();
     const pivot = this.#effectivePivot(objects);
 
     return this.translate(
@@ -875,7 +891,7 @@ export class SelectionOperations {
   }
 
   translate(delta) {
-    const objects = this.#selectedObjects();
+    const objects = this.#transformTargetObjects();
     return this.#dispatchTransforms(
       objects.map(object => ({
         id: object.id,
@@ -888,7 +904,7 @@ export class SelectionOperations {
   }
 
   rotateEuler(degrees) {
-    const objects = this.#selectedObjects();
+    const objects = this.#transformTargetObjects();
     const pivot = new THREE.Vector3().fromArray(this.#effectivePivot(objects));
     const euler = new THREE.Euler(
       THREE.MathUtils.degToRad(degrees[0]),
@@ -904,7 +920,7 @@ export class SelectionOperations {
   }
 
   scaleBy(factors) {
-    const objects = this.#selectedObjects();
+    const objects = this.#transformTargetObjects();
     const pivot = new THREE.Vector3().fromArray(this.#effectivePivot(objects));
     const delta = aroundPivot(
       new THREE.Matrix4().makeScale(factors[0], factors[1], factors[2]),
@@ -1107,6 +1123,7 @@ export class SelectionOperations {
     this.unsubscribeSandbox = () => {};
     this.unsubscribeCoordination = () => {};
     this.pendingPublication = null;
+    this.pendingRepeatCount = 0;
   }
 
   #beginPendingPublication(publication) {
@@ -1153,7 +1170,10 @@ export class SelectionOperations {
             [...hierarchy.worldMatrixOf(id)]
           ])
         ),
-        transformedIds: []
+        transformedIds: [],
+        queuedTransformCount: Number(
+          publication.stagedTransformCount ?? 0
+        )
       };
       return true;
     }
@@ -1175,6 +1195,7 @@ export class SelectionOperations {
     const publication = this.pendingPublication;
     if (!publication) return false;
     this.pendingPublication = null;
+    this.pendingRepeatCount = 0;
     this.pendingDuplicate =
       structuredClone(publication.rollback.pendingDuplicate);
     this.#setLastDuplicate(
@@ -1274,6 +1295,7 @@ export class SelectionOperations {
         !matricesNear(candidate,deltaMatrix)
       )
     ) {
+      this.pendingRepeatCount = 0;
       this.#setLastDuplicate(null);
       return;
     }
@@ -1294,6 +1316,13 @@ export class SelectionOperations {
         deltaMatrix.toArray(),
       matrixSpace: "world"
     });
+    this.pendingDuplicate.queuedTransformCount = Math.max(
+      0,
+      Number(this.pendingDuplicate.queuedTransformCount ?? 0) - 1
+    );
+    if (this.pendingDuplicate.queuedTransformCount === 0) {
+      this.#flushPendingRepeat();
+    }
   }
 
   #applyMatrixToSelection(objects, delta, source) {
@@ -1308,7 +1337,10 @@ export class SelectionOperations {
 
   #dispatchTransforms(transforms, source) {
     const repeatHistoryBefore = this.repeatHistoryRevision;
-    const composingDuplicate = Boolean(this.pendingDuplicate);
+    const composingDuplicate = Boolean(
+      this.pendingDuplicate ||
+      this.pendingPublication?.kind === "plain"
+    );
     const changed = this.sandbox.dispatch({
       type: "selection.transform",
       source,
@@ -1318,6 +1350,9 @@ export class SelectionOperations {
     });
     const repeatHistoryChanged =
       this.repeatHistoryRevision !== repeatHistoryBefore;
+    if (changed && !repeatHistoryChanged) {
+      this.#stagePendingTransforms(transforms);
+    }
     return {
       changed,
       transforms: structuredClone(transforms),
@@ -1331,6 +1366,70 @@ export class SelectionOperations {
         ? { repeatDeferred: true }
         : {})
     };
+  }
+
+  #transformTargetObjects() {
+    const publication = this.pendingPublication;
+    if (
+      publication?.kind === "plain" &&
+      Array.isArray(publication.stagedObjects) &&
+      publication.selectionIds?.length
+    ) {
+      const byId = new Map(
+        publication.stagedObjects.map(object => [String(object.id), object])
+      );
+      const targets = publication.selectionIds.map(id => byId.get(String(id)));
+      if (targets.every(Boolean)) return targets;
+    }
+    return this.#selectedObjects();
+  }
+
+  #stagePendingTransforms(transforms) {
+    const publication = this.pendingPublication;
+    if (
+      publication?.kind === "plain" &&
+      Array.isArray(publication.stagedObjects)
+    ) {
+      const updates = new Map(
+        transforms.map(transform => [String(transform.id), transform])
+      );
+      let changed = false;
+      publication.stagedObjects = publication.stagedObjects.map(object => {
+        const transform = updates.get(String(object.id));
+        if (!transform) return object;
+        changed = true;
+        return {
+          ...object,
+          position: [...transform.position],
+          rotation: [...transform.rotation],
+          scale: [...transform.scale]
+        };
+      });
+      if (changed) {
+        publication.stagedTransformCount =
+          Number(publication.stagedTransformCount ?? 0) + 1;
+      }
+      return changed;
+    }
+    if (this.pendingDuplicate) {
+      this.pendingDuplicate.queuedTransformCount =
+        Number(this.pendingDuplicate.queuedTransformCount ?? 0) + 1;
+      return true;
+    }
+    return false;
+  }
+
+  #flushPendingRepeat() {
+    const count = this.pendingRepeatCount;
+    if (!(count > 0) || !this.lastDuplicate?.deltaMatrix) return false;
+    this.pendingRepeatCount = 0;
+    try {
+      return this.repeat(count).changed;
+    } catch (error) {
+      this.pendingRepeatCount = count;
+      console.error("Deferred selection repeat failed", error);
+      return false;
+    }
   }
 
   #selectedObjects({ fallbackIds = [] } = {}) {
@@ -1355,6 +1454,18 @@ export class SelectionOperations {
   }
 
   #activeObject() {
+    const publication = this.pendingPublication;
+    if (
+      publication?.kind === "plain" &&
+      Array.isArray(publication.stagedObjects) &&
+      publication.selectionIds?.length
+    ) {
+      const activeId = String(publication.selectionIds.at(-1));
+      const staged = publication.stagedObjects.find(
+        object => String(object.id) === activeId
+      );
+      if (staged) return staged;
+    }
     const id = this.editor.selection.snapshot().activeMember?.objectId;
     if (!id) throw new Error("A seleção está vazia.");
     const object = this.#objectById(id);

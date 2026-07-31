@@ -92,7 +92,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260729-0039g2";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260731-0043x";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -5192,6 +5192,65 @@ export function createRuntimeLayerTests() {
           target.list().map(entry => entry.name),
           ["city", "tower"]
         );
+      },
+
+      "metadados declarativos de UI são normalizados e preservados"() {
+        const catalog = new ProcedureCatalog();
+        const document = {
+          schemaVersion: PROCEDURE_LIBRARY_SCHEMA_VERSION,
+          procedures: [{
+            name: "architecture.colonnade",
+            source: "({count=8}={}) => count",
+            ui: {
+              label: "Colunata",
+              group: "Arquitetura",
+              icon: "|||",
+              commit: "review",
+              parameters: [{
+                id: "count",
+                type: "integer",
+                label: "Colunas",
+                default: 8,
+                min: 1,
+                max: 500
+              }, {
+                id: "color",
+                type: "color",
+                label: "Cor",
+                default: "#D8C7A2"
+              }]
+            }
+          }]
+        };
+
+        catalog.importDocument(document);
+        const description = catalog.describeUi();
+
+        assertEqual(description.groups.length, 1);
+        assertEqual(description.groups[0].label, "Arquitetura");
+        assertEqual(
+          description.groups[0].procedures[0].parameters[0].step,
+          1
+        );
+        assertEqual(
+          description.groups[0].procedures[0].parameters[1].default,
+          "#d8c7a2"
+        );
+        assertEqual(catalog.snapshot().uiProcedureCount, 1);
+
+        catalog.define(
+          "architecture.colonnade",
+          "({count=8}={}) => count * 2",
+          { replace: true }
+        );
+        assertEqual(
+          catalog.get("architecture.colonnade").ui.label,
+          "Colunata"
+        );
+
+        const roundtrip = new ProcedureCatalog();
+        roundtrip.importDocument(catalog.exportDocument());
+        assertDeepEqual(roundtrip.exportDocument(), catalog.exportDocument());
       },
 
       "importação conflitante é atômica"() {
@@ -13663,6 +13722,50 @@ assets: {
               object => object.id === id
             )
           )
+        );
+      },
+
+      "transformação imediata após duplicate compõe o histórico de repeat"() {
+        const fixture = createSelectionRepeatFixture({ delayed: true });
+        const duplicated = fixture.operations.duplicate();
+        const moved = fixture.operations.translate([2, 0, 0]);
+
+        assertEqual(duplicated.publicationPending, true);
+        assertEqual(moved.changed, true);
+        assertEqual(moved.repeatDeferred, true);
+        assertDeepEqual(
+          moved.transforms.map(transform => transform.id),
+          duplicated.duplicateIds
+        );
+
+        const repeated = fixture.operations.repeat(4);
+        assertEqual(repeated.changed, true);
+        assertEqual(repeated.repeatDeferred, true);
+        assertEqual(repeated.reason, "awaiting-repeat-history");
+
+        fixture.flush();
+        assertEqual(
+          fixture.operations.getState().pendingPublication,
+          null
+        );
+        fixture.flush();
+
+        const history = fixture.operations.getState();
+        assert(history.lastDuplicate?.deltaMatrix);
+        assertEqual(history.pendingPublication?.kind, "repeat");
+
+        fixture.flush();
+        assertEqual(
+          fixture.operations.getState().pendingPublication,
+          null
+        );
+        assertEqual(
+          fixture.editor.selection.snapshot().members.length,
+          1
+        );
+        assertEqual(
+          fixture.sandbox.getSnapshot().objects.length,
+          6
         );
       },
 

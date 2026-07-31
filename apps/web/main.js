@@ -21,6 +21,7 @@ export async function startApplication(
     meshEditPanelRoot: $("mesh-edit-panel"),
     editHudRoot: $("edit-hud"),
     procedureEditorRoot: $("procedure-editor-root"),
+    procedureCatalogUiRoot: $("procedure-catalog-ui-root"),
     inspectorRoot: $("inspector-panel"),
     buildInfo,
     uiConfiguration

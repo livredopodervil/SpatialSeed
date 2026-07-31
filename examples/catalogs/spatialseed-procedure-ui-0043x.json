@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "spatial-seed-procedure-library-v1",
+  "procedures": [
+    {
+      "name": "architecture.colonnade",
+      "source": "({count=8,spacing=2.5,height=5,width=0.6,depth=0.6,origin=[0,0,0],axis=\"x\",color=\"#d8c7a2\"}={}) => {\n  const n=max(1,min(500,floor(count)));\n  for(let i=0;i<n;i+=1){\n    const position=[origin[0],origin[1]+height/2,origin[2]];\n    if(axis===\"z\") position[2]+=i*spacing;\n    else position[0]+=i*spacing;\n    spatial.create(\"box\",{\n      name:`Coluna ${i+1}`,\n      size:[width,height,depth],\n      position,\n      color\n    });\n  }\n  return {type:\"colonnade\",count:n,axis};\n}",
+      "ui": {
+        "label": "Colunata",
+        "description": "Cria uma sequência parametrizada de colunas retangulares.",
+        "icon": "▥",
+        "group": "Arquitetura",
+        "order": 10,
+        "commit": "review",
+        "parameters": [
+          {
+            "id": "count",
+            "type": "integer",
+            "label": "Colunas",
+            "default": 8,
+            "min": 1,
+            "max": 500
+          },
+          {
+            "id": "spacing",
+            "type": "number",
+            "label": "Espaçamento",
+            "default": 2.5,
+            "min": 0.1,
+            "step": 0.1
+          },
+          {
+            "id": "height",
+            "type": "number",
+            "label": "Altura",
+            "default": 5,
+            "min": 0.01,
+            "step": 0.1
+          },
+          {
+            "id": "width",
+            "type": "number",
+            "label": "Largura",
+            "default": 0.6,
+            "min": 0.01,
+            "step": 0.05
+          },
+          {
+            "id": "depth",
+            "type": "number",
+            "label": "Profundidade",
+            "default": 0.6,
+            "min": 0.01,
+            "step": 0.05
+          },
+          {
+            "id": "origin",
+            "type": "vector3",
+            "label": "Origem",
+            "default": [
+              0,
+              0,
+              0
+            ],
+            "step": 0.1
+          },
+          {
+            "id": "axis",
+            "type": "select",
+            "label": "Eixo",
+            "default": "x",
+            "options": [
+              {
+                "value": "x",
+                "label": "X"
+              },
+              {
+                "value": "z",
+                "label": "Z"
+              }
+            ]
+          },
+          {
+            "id": "color",
+            "type": "color",
+            "label": "Cor",
+            "default": "#d8c7a2"
+          }
+        ]
+      }
+    },
+    {
+      "name": "camera.catalog-view",
+      "source": "({target=[0,2,0],distance=18,yaw=35,pitch=-20}={}) => camera.orbit({target,distance,yawDegrees:yaw,pitchDegrees:pitch})",
+      "ui": {
+        "label": "Enquadrar catálogo",
+        "description": "Posiciona a câmera em torno do alvo informado.",
+        "icon": "◉",
+        "group": "Câmera",
+        "order": 10,
+        "commit": "immediate",
+        "parameters": [
+          {
+            "id": "target",
+            "type": "vector3",
+            "label": "Alvo",
+            "default": [
+              0,
+              2,
+              0
+            ],
+            "step": 0.1
+          },
+          {
+            "id": "distance",
+            "type": "number",
+            "label": "Distância",
+            "default": 18,
+            "min": 0.1,
+            "step": 0.5
+          },
+          {
+            "id": "yaw",
+            "type": "number",
+            "label": "Azimute",
+            "default": 35,
+            "step": 1
+          },
+          {
+            "id": "pitch",
+            "type": "number",
+            "label": "Inclinação",
+            "default": -20,
+            "min": -89,
+            "max": 89,
+            "step": 1
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -10,12 +10,12 @@ import {
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260730-0041a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260730-0042c";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260731-0043x";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260730-0040e";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260730-0041b";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0043x";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260730-0040e";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
@@ -53,13 +53,16 @@ import {
   SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
-} from "../../../packages/script-runtime/src/index.js?build=20260730-0040e";
+} from "../../../packages/script-runtime/src/index.js?build=20260731-0043x";
 import {
   BrowserProcedureCatalogStore
 } from "../procedures/BrowserProcedureCatalogStore.js?build=20260716-0026i";
 import {
   ProcedureCatalogEditor
 } from "../../../packages/procedure-editor/src/index.js?build=20260716-0026j";
+import {
+  ProcedureCatalogUiPanel
+} from "../../../packages/catalog-ui/src/index.js?build=20260731-0043x";
 import {
   ExperimentActionService,
   ExperimentRegistry,
@@ -150,6 +153,7 @@ export async function createWebRuntime({
   meshEditPanelRoot,
   editHudRoot,
   procedureEditorRoot,
+  procedureCatalogUiRoot,
   inspectorRoot,
   onConsoleOutput,
   buildInfo,
@@ -1091,6 +1095,25 @@ export async function createWebRuntime({
     geometryTypes: geometryRegistry.list(),
     maxCommands: 10000
   });
+  const procedureCatalog = new ProcedureCatalog({
+    storage: new BrowserProcedureCatalogStore()
+  });
+  commands.register(
+    "procedure.plan.prepare",
+    ({ name, parameters = {}, seed = 0 } = {}) =>
+      programSession.run({
+        runId: `procedure-ui-${crypto.randomUUID()}`,
+        baseVersion: sandbox.revision,
+        seed,
+        source: procedureCatalog.invocationSource(name, parameters),
+        mode: "program"
+      }),
+    {
+      category: "procedures",
+      mutates: false,
+      asynchronous: true
+    }
+  );
   const experimentProgramSession = new ProgramSessionController({
     workerFactory: () => createBrowserProgramSessionWorker(),
     timeoutMs: 5000,
@@ -1192,6 +1215,9 @@ export async function createWebRuntime({
       canUndo: Boolean(sandbox.canUndo),
       canRedo: Boolean(sandbox.canRedo)
     }))
+    .register("procedure.catalog.ui.describe", () =>
+      procedureCatalog.describeUi()
+    )
     .register("properties.describe", () =>
       propertyRegistry.describe()
     )
@@ -1458,14 +1484,18 @@ export async function createWebRuntime({
   runtime.onDispose(() => editContext.dispose());
   runtime.onDispose(() => meshEditor.dispose());
 
-  const procedureCatalog = new ProcedureCatalog({
-    storage: new BrowserProcedureCatalogStore()
-  });
   const procedureCatalogEditor = new ProcedureCatalogEditor({
     root: procedureEditorRoot,
     catalog: procedureCatalog
   });
+  const procedureCatalogUiPanel = new ProcedureCatalogUiPanel({
+    root: procedureCatalogUiRoot,
+    catalog: procedureCatalog,
+    query: (id, args) => runtime.query(id, args),
+    execute: (id, args) => runtime.execute(id, args)
+  });
   runtime.onDispose(() => procedureCatalogEditor.dispose());
+  runtime.onDispose(() => procedureCatalogUiPanel.dispose());
   runtime.onDispose(() => programSession.dispose());
   runtime.onDispose(() => experimentProgramSession.dispose());
   runtime.onDispose(() => cameraController.dispose());
@@ -1789,6 +1819,7 @@ export async function createWebRuntime({
       devConsole,
       procedureCatalog,
       procedureCatalogEditor,
+      procedureCatalogUiPanel,
       objectInspector,
       geometryCreationPanel,
       experimentPanel,
