@@ -92,7 +92,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260731-0043x";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260731-0043x1";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -174,7 +174,7 @@ import {
 } from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260729-0039g2";
 import {
   ToolGestureNavigation
-} from "../../renderer-three/src/ToolGestureNavigation.js?build=20260730-0040e";
+} from "../../renderer-three/src/ToolGestureNavigation.js?build=20260731-0043x1";
 import {
   MeshEditController,
   applyMeshTopologyOperation,
@@ -254,7 +254,7 @@ import {
   samplePathFrames,
   samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "../../spatial-references/src/index.js?build=20260730-0040e";
+} from "../../spatial-references/src/index.js?build=20260731-0043x1";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -6604,6 +6604,8 @@ export function createRuntimeLayerTests() {
           createId: () => "camera-pending-rejected"
         });
         network.pause("sync");
+        // Operações compactas são outra forma de sincronização autoritativa.
+        network.pause("operation");
         pair.authority.coordinated.dispatch({
           type: "object.create",
           id: "authority-before-camera",
@@ -6775,6 +6777,8 @@ export function createRuntimeLayerTests() {
         const network = createLocalViewerNetwork();
         const pair = await createLocalViewerPair({ network });
         network.pause("sync");
+        // Operações compactas são outra forma de sincronização autoritativa.
+        network.pause("operation");
         pair.authority.coordinated.dispatch({
           type: "object.create",
           id: "authority-first",

@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260731-0043x",
-  "channel": "fix/0043x-animation-repeat-catalog-ui"
+  "build": "20260731-0043x1",
+  "channel": "fix/0043x1-regression-suite"
 }

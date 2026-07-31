@@ -10,17 +10,17 @@ import {
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260730-0041a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260731-0043x";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260731-0043x1";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260730-0040e";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0043x";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0043x1";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260730-0040e";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260730-0040e";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260731-0043x1";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -121,7 +121,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260730-0042c";
+} from "../../../packages/spatial-references/src/index.js?build=20260731-0043x1";
 import {
   BrowserSandboxIdentity,
   createSandboxId,

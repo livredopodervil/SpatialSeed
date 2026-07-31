@@ -24,7 +24,7 @@ import {
 } from "../../appearance-binding/src/index.js?build=20260730-0041b";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v6";
+  static apiVersion = "selection-operations-v7";
 
   constructor({
     editor,
@@ -250,6 +250,7 @@ export class SelectionOperations {
         "A criação instanciada exige entre 1 e 100000 transformações."
       );
     }
+
     const instances = usesPrepared
       ? normalizePreparedInstances(sourceInstances)
       : transformsFromWorldMatrices(sourceInstances);
@@ -257,81 +258,71 @@ export class SelectionOperations {
     const instanceColors = colors === null || colors === undefined
       ? null
       : normalizeInstanceColors(colors, instances.length);
-    const compactedColors = instanceColors
-      ? compactUniformFamilyColors(instanceColors)
-      : Object.freeze({
-          colors: null,
-          appearanceBinding: normalizeAppearanceBinding(null, {
-            fallbackColor: color
-          })
-        });
-    const requestedAppearance = appearanceBinding ?? {};
-    const resolvedAppearanceBinding = normalizeAppearanceBinding({
-      ...compactedColors.appearanceBinding,
-      ...requestedAppearance,
-      ...(instanceColors
-        ? {
-            colorMode: compactedColors.appearanceBinding.colorMode,
-            ...(compactedColors.appearanceBinding.uniformColor
-              ? {
-                  uniformColor:
-                    compactedColors.appearanceBinding.uniformColor
-                }
-              : {})
-          }
-        : {})
-    }, {
-      family: null,
-      fallbackColor: color
-    });
+    const requestedAppearance = normalizeAppearanceBinding(
+      appearanceBinding,
+      { fallbackColor: color }
+    );
     const appearance = this.#creationAppearance(color, material);
     const index = this.sandbox.objectCount + 1;
     const label = this.geometryRegistry.label(descriptor.type);
     const baseName = name || `${label} ${index}`;
-    const id = crypto.randomUUID();
-    const anchored = packAnchoredExplicitInstanceFamily(instances, {
-      colors: compactedColors.colors,
-      anchorPolicy,
-      anchor,
-      generator: {
-        ...(generator ?? { type: "explicit-instance-family-v1" }),
-        coordinateSpace: "family-local-v2",
-        anchorPolicy
-      }
+    /*
+     * Cada cópia continua sendo um objeto lógico endereçável. O renderer pode
+     * agrupá-las em lotes instanciados por geometria/aparência, sem reduzir o
+     * contrato público a um único id de família.
+     */
+    const ids = sourceInstances.map(instance =>
+      String(instance?.id ?? "").trim() || crypto.randomUUID()
+    );
+    const objects = instances.map((instance, instanceIndex) => {
+      const instanceColor = instanceColors?.[instanceIndex] ?? null;
+      return Object.freeze({
+        id: ids[instanceIndex],
+        name: instances.length === 1
+          ? baseName
+          : `${baseName} ${instanceIndex + 1}`,
+        kind: descriptor.type,
+        position: Object.freeze([...instance.position]),
+        rotation: Object.freeze([...instance.rotation]),
+        scale: Object.freeze([...instance.scale]),
+        geometry: descriptor,
+        ...appearance,
+        appearanceBinding: requestedAppearance,
+        instanceState: Object.freeze(
+          instanceColor ? { color: instanceColor } : {}
+        )
+      });
     });
-    const family = anchored.family;
     const command = deepFreezeCommand({
-      type: "instance-family.create",
+      type: "selection.duplicate",
       preparedImmutable: "spatialseed-prepared-command-v1",
-      id,
-      name: baseName,
-      position: anchored.origin,
-      geometry: descriptor,
-      family,
-      appearanceBinding: resolvedAppearanceBinding,
       source: String(source),
-      ...(appearance.appearanceId
-        ? { appearanceId: appearance.appearanceId }
-        : { color: appearance.color })
+      sourceIds: [],
+      copyCount: instances.length,
+      geometryInstances: true,
+      anchorPolicy,
+      ...(anchor ? { anchor: structuredClone(anchor) } : {}),
+      ...(generator ? { generator: structuredClone(generator) } : {}),
+      objects
     });
     const changed = this.sandbox.dispatch(command);
-    if (changed) this.#selectIds([id]);
+    if (changed) this.#selectIds([ids.at(-1)]);
     return Object.freeze({
       changed,
       tool: "geometry-instances",
       geometry: descriptor,
-      count: family.count,
-      familyId: id,
-      familyOrigin: anchored.origin,
-      anchorPolicy: anchored.anchorPolicy,
-      colorMode: resolvedAppearanceBinding.colorMode,
-      materialMode: resolvedAppearanceBinding.materialMode,
-      opacityMultiplier: resolvedAppearanceBinding.opacityMultiplier,
-      logicalObjectCount: 1,
-      estimatedTransformBytes:
-        explicitInstanceFamilyEstimatedBytes(family),
-      createdIds: Object.freeze([id]),
-      activeIds: Object.freeze([id])
+      count: instances.length,
+      familyId: null,
+      familyOrigin: null,
+      anchorPolicy,
+      colorMode: requestedAppearance.colorMode,
+      materialMode: requestedAppearance.materialMode,
+      opacityMultiplier: requestedAppearance.opacityMultiplier,
+      logicalObjectCount: instances.length,
+      estimatedTransformBytes: instances.length * 80,
+      createdIds: Object.freeze([...ids]),
+      activeIds: Object.freeze(ids.length ? [ids.at(-1)] : []),
+      activeId: ids.at(-1) ?? null
     });
   }
 
@@ -1140,7 +1131,9 @@ export class SelectionOperations {
       }
     };
     this.pendingDuplicate = null;
-    this.#setLastDuplicate(null);
+    if (publication.kind !== "repeat") {
+      this.#setLastDuplicate(null);
+    }
   }
 
   #resolvePendingPublication(state) {

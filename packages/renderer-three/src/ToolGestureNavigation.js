@@ -4,7 +4,7 @@ const SINGLE_TOUCH_DISABLED = -1;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 export class ToolGestureNavigation {
-  static apiVersion = "tool-gesture-navigation-v2";
+  static apiVersion = "tool-gesture-navigation-v3";
 
   #canvas;
   #orbit;
@@ -174,7 +174,9 @@ export class ToolGestureNavigation {
     if ((dx || dy) && this.#canRotate()) {
       this.#pendingOrbitX += dx;
       this.#pendingOrbitY += dy;
-      this.#scheduleOrbitFrame();
+      /* O gesto precisa mover a câmera no próprio pointermove; adiar para o
+         próximo frame fazia a ferramenta consumir o estado ainda antigo. */
+      this.#flushOrbitFrame();
     }
     event.preventDefault?.();
     event.stopImmediatePropagation?.();

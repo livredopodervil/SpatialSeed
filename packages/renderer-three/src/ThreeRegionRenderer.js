@@ -68,7 +68,7 @@ import {
 } from "./ScreenSelectionGesture.js?build=20260729-0039g2";
 import {
   ToolGestureNavigation
-} from "./ToolGestureNavigation.js?build=20260730-0040e";
+} from "./ToolGestureNavigation.js?build=20260731-0043x1";
 import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,

@@ -50,7 +50,7 @@ const DEFAULTS = Object.freeze({
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v9";
+  static apiVersion = "path-sketch-controller-v10";
 
   #active = null;
   #listeners = new Set();
@@ -683,6 +683,7 @@ export class PathSketchController {
     active.pointerId = null;
     active.pointerType = null;
     try {
+      this.#flushPendingResultPreview();
       const hadPendingPreview = this.#pendingPreviewPoints !== null;
       const currentPlan = active.settings.mode === "array"
         ? active.arrayPlan
@@ -725,8 +726,8 @@ export class PathSketchController {
         handoff: this.#sealResultPreview(active.settings.mode),
         sealedAt: nowMs()
       };
-      this.#enqueueCommit(job, { notify: false });
       this.#resetAfterSealedStroke(active);
+      this.#enqueueCommit(job, { notify: false });
       const elapsed = nowMs() - startedAt;
       this.#commitDiagnostics.lastPointerUpMs = elapsed;
       this.#commitDiagnostics.maximumPointerUpMs = Math.max(
@@ -1148,6 +1149,17 @@ export class PathSketchController {
   #sealResultPreview(mode) {
     this.#cancelPendingPreview();
     if (mode === "array") {
+      const coordinated = typeof this.pathTools.sandbox?.coordinationStatus ===
+        "function";
+      if (this.#active?.settings?.continuous && !coordinated) {
+        return {
+          kind: "array-reusable",
+          projectEpoch: this.#projectEpoch,
+          disposed: false,
+          group: this.#previewArrayGroup,
+          cache: this.#previewArrayCache
+        };
+      }
       const handoff = {
         kind: "array",
         projectEpoch: this.#projectEpoch,
@@ -1256,7 +1268,11 @@ export class PathSketchController {
     }
     this.#commitQueue.push(job);
     this.#commitDiagnostics.sealedStrokes += 1;
-    this.#scheduleCommitDrain();
+    if (job.planReady && !job.preprocessingPending && !this.#active?.drawing) {
+      this.#drainCommitQueue({ allowPreparation: false });
+    } else {
+      this.#scheduleCommitDrain();
+    }
     if (notify) this.#notify();
   }
 
@@ -1505,6 +1521,27 @@ export class PathSketchController {
     this.#scheduleCommitDrain();
   }
 
+  #releaseCommittedHandoff(job) {
+    this.#disposeHandoff(job.handoff);
+    if (!this.#active?.drawing &&
+        !this.#active?.arrayPlan &&
+        !this.#active?.pathPlan) {
+      this.#clearResultPreview();
+    }
+  }
+
+  #scheduleVisualRelease(job) {
+    const schedule = callback => {
+      const id = globalThis.requestAnimationFrame(() => {
+        const index = this.#handoffFrames.indexOf(id);
+        if (index >= 0) this.#handoffFrames.splice(index, 1);
+        callback();
+      });
+      this.#handoffFrames.push(id);
+    };
+    schedule(() => schedule(() => this.#releaseCommittedHandoff(job)));
+  }
+
   #recordOwnCommitRevision(revision, createdIds) {
     const existing = this.#ownCommitRevisions.find(
       entry => entry.revision === revision
@@ -1646,11 +1683,19 @@ export class PathSketchController {
     } catch (error) {
       completionError = error;
     }
-    this.#disposeHandoff(job.handoff);
+    const hasVisualObserver =
+      typeof this.renderer.hasObjectVisual === "function" ||
+      typeof this.renderer.subscribeObjectVisuals === "function";
+    if (!hasVisualObserver &&
+        typeof globalThis.requestAnimationFrame === "function") {
+      this.#scheduleVisualRelease(job);
+    } else {
+      this.#releaseCommittedHandoff(job);
+    }
     if (this.#active) {
       this.#active.lastResult = completion.result;
       this.#active.error = completionError
-        ? `Traço publicado; falha no pós-processamento: ${
+        ? `Traço publicado; falha ao registrar repetição: ${
             completionError?.message ?? String(completionError)
           }`
         : null;
@@ -1676,6 +1721,10 @@ export class PathSketchController {
     if (handoff.kind === "array") {
       this.renderer.scene.remove(handoff.group);
       handoff.cache?.dispose?.();
+      return;
+    }
+    if (handoff.kind === "array-reusable") {
+      handoff.cache?.clear?.();
       return;
     }
     if (handoff.kind === "tube") {

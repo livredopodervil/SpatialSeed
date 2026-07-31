@@ -33,7 +33,7 @@ const PATH_CREATE_PLAN_VERSION = 1;
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 
 export class PathToolService {
-  static apiVersion = "path-tool-service-v7";
+  static apiVersion = "path-tool-service-v8";
   #issuedArrayBrushPlans = new WeakSet();
   #issuedPathCreatePlans = new WeakSet();
   #sceneCacheRevision = null;
@@ -1244,6 +1244,7 @@ export class PathToolService {
         index < reusedPreparedCopies
           ? previous[index]
           : Object.freeze({
+              id: previous[index]?.id ?? crypto.randomUUID(),
               ...matrixTransform(matrix),
               color: colors[index]
             })
