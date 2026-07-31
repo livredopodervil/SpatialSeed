@@ -50,7 +50,7 @@ const DEFAULTS = Object.freeze({
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v7";
+  static apiVersion = "path-sketch-controller-v9";
 
   #active = null;
   #listeners = new Set();
@@ -62,6 +62,7 @@ export class PathSketchController {
   #previewArrayGroup;
   #previewArrayCache;
   #preprocessPool;
+  #drawingTarget = null;
   #inputPositionArray = new Float32Array(0);
   #inputPositionAttribute = null;
   #inputCapacity = 0;
@@ -75,6 +76,8 @@ export class PathSketchController {
   #commitDrainHandle = null;
   #commitDrainDeferredAt = null;
   #commitSequence = 0;
+  #projectEpoch = 0;
+  #lastProjectReset = null;
   #ownCommitRevisions = [];
   #commitDiagnostics = {
     sealedStrokes: 0,
@@ -99,13 +102,19 @@ export class PathSketchController {
     preparedQueueJobs: 0,
     lastPrepareMs: 0,
     maximumPrepareMs: 0,
-    forcedDrainsWithInput: 0
+    forcedDrainsWithInput: 0,
+    projectResets: 0,
+    staleWorkerResults: 0,
+    purgedSceneTransients: 0,
+    publicationsCancelledByUndo: 0,
+    handoffsReleasedByUndo: 0
   };
 
   constructor({
     renderer,
     pathTools,
     geometryRegistry = pathTools?.resolver?.geometryRegistry,
+    drawingTarget = null,
     onCompleted = () => {},
     onEnded = () => {}
   }) {
@@ -121,6 +130,7 @@ export class PathSketchController {
     this.renderer = renderer;
     this.pathTools = pathTools;
     this.geometryRegistry = geometryRegistry;
+    this.#drawingTarget = drawingTarget;
     this.onCompleted = onCompleted;
     this.onEnded = onEnded;
     this.#previewLine = createPreviewLine();
@@ -155,7 +165,13 @@ export class PathSketchController {
       requested.inputSamplePixels = requested.spacingPixels;
     }
     const settings = normalizeSettings({ ...DEFAULTS, ...requested });
-    const frame = resolveFrame(this.renderer, settings.planeSource);
+    const drawingTargetStatus = this.#drawingTarget?.status?.() ?? null;
+    const targetType = drawingTargetStatus?.type === "surface"
+      ? "surface"
+      : "plane";
+    const frame = targetType === "surface"
+      ? surfaceFallbackFrame(this.renderer, drawingTargetStatus)
+      : resolveFrame(this.renderer, settings.planeSource);
     const affineModifier = settings.mode === "array"
       ? this.pathTools.compileArrayBrushModifier(settings)
       : null;
@@ -193,6 +209,14 @@ export class PathSketchController {
           })
         : null,
       frame,
+      targetType,
+      surfaceTarget: targetType === "surface"
+        ? drawingTargetStatus.surfaceTarget
+        : null,
+      surfacePlacements: [],
+      lastSurfacePlacement: null,
+      surfaceHits: 0,
+      surfaceMisses: 0,
       plane: new THREE.Plane(
         new THREE.Vector3().fromArray(frame.normal).normalize(),
         -new THREE.Vector3().fromArray(frame.normal)
@@ -246,6 +270,8 @@ export class PathSketchController {
         this.#pendingCommits.values().next().value?.requestId ?? null,
       queuedCommits: this.#commitQueue.length,
       commitDiagnostics: Object.freeze({ ...this.#commitDiagnostics }),
+      projectEpoch: this.#projectEpoch,
+      transientResources: this.transientStatus({ scanScene: false }),
       preprocess: this.#preprocessPool.status(),
       pointCount: active?.points.length ?? 0,
       mode: active?.settings.mode ?? null,
@@ -258,6 +284,10 @@ export class PathSketchController {
       planDiagnostics: active?.arrayPlan?.diagnostics ?? null,
       previewResources: this.#previewArrayCache.status(),
       planeSource: active?.settings.planeSource ?? null,
+      drawingTargetType: active?.targetType ?? null,
+      surfaceTarget: active?.surfaceTarget ?? null,
+      surfaceHits: active?.surfaceHits ?? 0,
+      surfaceMisses: active?.surfaceMisses ?? 0,
       frame: active?.frame ?? null,
       settings: active?.settings ?? DEFAULTS,
       lastResult: active?.lastResult ?? null,
@@ -271,6 +301,33 @@ export class PathSketchController {
       ...this.#active.settings,
       continuous: Boolean(enabled)
     });
+    this.#notify();
+    return this.status();
+  }
+
+  refreshDrawingFrame() {
+    const active = this.#active;
+    if (!active || active.drawing || active.points.length) return this.status();
+    const target = this.#drawingTarget?.status?.() ?? null;
+    active.targetType = target?.type === "surface" ? "surface" : "plane";
+    active.surfaceTarget = active.targetType === "surface"
+      ? target.surfaceTarget
+      : null;
+    active.surfacePlacements = [];
+    active.lastSurfacePlacement = null;
+    const frame = active.targetType === "surface"
+      ? surfaceFallbackFrame(this.renderer, target)
+      : resolveFrame(this.renderer, active.settings.planeSource);
+    active.frame = frame;
+    active.plane = new THREE.Plane(
+      new THREE.Vector3().fromArray(frame.normal).normalize(),
+      -new THREE.Vector3().fromArray(frame.normal)
+        .normalize()
+        .dot(new THREE.Vector3().fromArray(frame.origin))
+    );
+    active.arrayPlan = null;
+    active.pathPlan = null;
+    this.#clearResultPreview();
     this.#notify();
     return this.status();
   }
@@ -337,6 +394,89 @@ export class PathSketchController {
     this.#listeners.add(listener);
     listener(this.status());
     return () => this.#listeners.delete(listener);
+  }
+
+  transientStatus({ scanScene = true } = {}) {
+    const trackedHandoffs =
+      this.#commitQueue.length + this.#pendingCommits.size;
+    const scene = scanScene
+      ? scanPathSketchTransients(this.renderer.scene, {
+          retained: new Set([
+            this.#previewTube,
+            this.#previewArrayGroup,
+            this.#previewLine,
+            this.#previewPoints
+          ])
+        })
+      : null;
+    return Object.freeze({
+      projectEpoch: this.#projectEpoch,
+      active: Boolean(this.#active),
+      queuedCommits: this.#commitQueue.length,
+      pendingPublications: this.#pendingCommits.size,
+      trackedHandoffs,
+      previewTubeVisible: Boolean(this.#previewTube?.visible),
+      previewArrayObjects: this.#previewArrayGroup?.children?.length ?? 0,
+      scene,
+      lastProjectReset: this.#lastProjectReset
+    });
+  }
+
+  resetForProjectChange({ reason = "project-replaced" } = {}) {
+    const previousEpoch = this.#projectEpoch;
+    this.#projectEpoch += 1;
+    this.#cancelCommitDrain();
+    this.#cancelPendingPreview();
+    this.#cancelPreviewHandoff({ clear: true });
+
+    const pending = [...this.#pendingCommits.values()];
+    this.#pendingCommits.clear();
+    this.#clearCommitObservers();
+    const queued = this.#commitQueue.splice(0);
+    for (const publication of pending) {
+      this.#disposeHandoff(publication.job?.handoff);
+    }
+    for (const job of queued) this.#disposeHandoff(job.handoff);
+
+    if (this.#active) {
+      this.#finishInteraction({ restoreTool: false });
+      this.#active = null;
+      try {
+        this.onEnded({ reason: String(reason) });
+      } catch {
+        // A troca de projeto permanece autoritativa mesmo se a UI falhar.
+      }
+    }
+    this.#clearInputPreview();
+    this.#clearResultPreview();
+    resetPreviewTransform(this.#previewTube);
+    this.#previewArrayGroup.position.set(0, 0, 0);
+    this.#previewArrayGroup.quaternion.identity();
+    this.#previewArrayGroup.scale.set(1, 1, 1);
+    this.#previewArrayGroup.updateMatrixWorld(true);
+    this.#ownCommitRevisions = [];
+
+    const purged = purgePathSketchTransients(this.renderer.scene, {
+      retained: new Set([
+        this.#previewTube,
+        this.#previewArrayGroup,
+        this.#previewLine,
+        this.#previewPoints
+      ])
+    });
+    this.#commitDiagnostics.projectResets += 1;
+    this.#commitDiagnostics.purgedSceneTransients += purged;
+    this.#lastProjectReset = Object.freeze({
+      reason: String(reason),
+      previousEpoch,
+      projectEpoch: this.#projectEpoch,
+      queuedJobsCancelled: queued.length,
+      publicationsCancelled: pending.length,
+      sceneTransientsPurged: purged,
+      at: new Date().toISOString()
+    });
+    this.#notify();
+    return this.#lastProjectReset;
   }
 
   dispose() {
@@ -409,6 +549,9 @@ export class PathSketchController {
     active.error = null;
     active.points = [point];
     active.screenPoints = [[event.clientX, event.clientY]];
+    active.surfacePlacements = active.lastSurfacePlacement
+      ? [active.lastSurfacePlacement]
+      : [];
     active.packedPoints = new Float32Array(
       INITIAL_PACKED_POINT_CAPACITY * 3
     );
@@ -555,6 +698,7 @@ export class PathSketchController {
         : currentPlan?.points;
       const job = {
         id: ++this.#commitSequence,
+        projectEpoch: this.#projectEpoch,
         mode: active.settings.mode,
         plan: currentPlan,
         rawPoints,
@@ -575,6 +719,9 @@ export class PathSketchController {
           : rawPoints,
         sourceIds: active.sourceIds,
         frame: active.frame,
+        targetType: active.targetType,
+        surfaceTarget: active.surfaceTarget,
+        surfacePlacements: active.surfacePlacements,
         handoff: this.#sealResultPreview(active.settings.mode),
         sealedAt: nowMs()
       };
@@ -591,6 +738,8 @@ export class PathSketchController {
       active.error = error?.message ?? String(error);
       active.points = [];
       active.screenPoints = [];
+      active.surfacePlacements = [];
+      active.lastSurfacePlacement = null;
       active.packedPoints = new Float32Array(
         INITIAL_PACKED_POINT_CAPACITY * 3
       );
@@ -632,6 +781,9 @@ export class PathSketchController {
       if (!point || near3(point, active.points.at(-1))) continue;
       active.points.push(point);
       active.screenPoints.push([sample.clientX, sample.clientY]);
+      if (active.lastSurfacePlacement) {
+        active.surfacePlacements.push(active.lastSurfacePlacement);
+      }
       this.#appendPackedPoint(active, point);
       accepted += 1;
     }
@@ -693,6 +845,8 @@ export class PathSketchController {
     active.drawing = false;
     active.points = [];
     active.screenPoints = [];
+    active.surfacePlacements = [];
+    active.lastSurfacePlacement = null;
     active.packedPoints = new Float32Array(
       INITIAL_PACKED_POINT_CAPACITY * 3
     );
@@ -713,6 +867,28 @@ export class PathSketchController {
   };
 
   #worldPoint(event) {
+    const active = this.#active;
+    if (active?.targetType === "surface") {
+      const placement = this.#drawingTarget?.resolvePointerPlacement?.({
+        clientX: event.clientX,
+        clientY: event.clientY,
+        previous: active.lastSurfacePlacement,
+        target: active.surfaceTarget
+      });
+      if (!placement?.point) {
+        active.surfaceMisses += 1;
+        return null;
+      }
+      active.surfaceHits += 1;
+      active.lastSurfacePlacement = placement;
+      if (!active.surfacePlacements.length) {
+        active.frame = frameFromSurfacePlacement(
+          placement,
+          this.renderer.camera
+        );
+      }
+      return [...placement.point];
+    }
     const rect = this.renderer.canvas.getBoundingClientRect();
     this.#pointer.set(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
@@ -720,15 +896,15 @@ export class PathSketchController {
     );
     this.#raycaster.setFromCamera(this.#pointer, this.renderer.camera);
     const point = this.#raycaster.ray.intersectPlane(
-      this.#active.plane,
+      active.plane,
       new THREE.Vector3()
     );
     if (!point) return null;
     const transform = this.renderer.getTransformConfig?.() ?? {};
     return [...constrainPlanarPoint({
-      frame: this.#active.frame,
+      frame: active.frame,
       point: point.toArray(),
-      anchor: this.#active.points.at(-1) ?? null,
+      anchor: active.points.at(-1) ?? null,
       gridStep: transform.gridLock
         ? transform.translationSnap ?? 1
         : null,
@@ -833,10 +1009,14 @@ export class PathSketchController {
       return;
     }
     try {
-      const prepared = active.settings.mode === "array"
+      const surfaceTarget = active.targetType === "surface";
+      const curveType = surfaceTarget
+        ? "polyline"
+        : active.settings.curveType;
+      const prepared = active.settings.mode === "array" || surfaceTarget
         ? this.pathTools.prepareSketchPoints({
             points,
-            curveType: active.settings.curveType,
+            curveType,
             tension: active.settings.tension
           })
         : prepareFreehandPoints(points, active.settings);
@@ -848,7 +1028,7 @@ export class PathSketchController {
           spacing: active.resolvedSpacing,
           align: active.settings.align,
           closed: active.settings.closed,
-          curveType: active.settings.curveType,
+          curveType,
           tension: active.settings.tension,
           twistDegrees: active.settings.twistDegrees,
           initialNormal: active.frame.normal,
@@ -872,7 +1052,7 @@ export class PathSketchController {
           ),
           radialSegments: active.settings.radialSegments,
           closed: active.settings.closed,
-          curveType: active.settings.curveType,
+          curveType,
           tension: active.settings.tension,
           color: active.settings.color,
           materialMode: active.settings.materialMode,
@@ -901,6 +1081,7 @@ export class PathSketchController {
           active.settings.color,
           0.66 * active.settings.opacityMultiplier
         );
+        applyPathPlanTransform(this.#previewTube, pathPlan);
         this.#previewTube.visible = true;
         active.previewCount = 1;
         active.previewTruncated = false;
@@ -936,6 +1117,7 @@ export class PathSketchController {
   #clearResultPreview() {
     this.#cancelPendingPreview();
     this.#previewTube.visible = false;
+    resetPreviewTransform(this.#previewTube);
     this.#clearArrayPreview();
     if (this.#active) {
       this.#active.arrayPlan = null;
@@ -968,6 +1150,8 @@ export class PathSketchController {
     if (mode === "array") {
       const handoff = {
         kind: "array",
+        projectEpoch: this.#projectEpoch,
+        disposed: false,
         group: this.#previewArrayGroup,
         cache: this.#previewArrayCache
       };
@@ -988,6 +1172,8 @@ export class PathSketchController {
     }
     const handoff = {
       kind: "tube",
+      projectEpoch: this.#projectEpoch,
+      disposed: false,
       mesh: this.#previewTube
     };
     handoff.mesh.name = `path-sketch-tube-handoff-${
@@ -1006,6 +1192,8 @@ export class PathSketchController {
     active.drawing = false;
     active.points = [];
     active.screenPoints = [];
+    active.surfacePlacements = [];
+    active.lastSurfacePlacement = null;
     active.packedPoints = new Float32Array(
       INITIAL_PACKED_POINT_CAPACITY * 3
     );
@@ -1022,6 +1210,10 @@ export class PathSketchController {
   }
 
   #enqueueCommit(job, { notify = true } = {}) {
+    if (job.projectEpoch !== this.#projectEpoch) {
+      this.#disposeHandoff(job.handoff);
+      return;
+    }
     if (this.#commitQueue.length >= 64) {
       this.#disposeHandoff(job.handoff);
       throw new Error(
@@ -1034,14 +1226,29 @@ export class PathSketchController {
         points: job.rawPoints,
         packedPoints: job.packedPoints,
         pointCount: job.packedPointCount,
-        settings: job.settings,
+        settings: job.targetType === "surface"
+          ? {
+              ...job.settings,
+              simplify: 0,
+              smoothIterations: 0,
+              curveType: "polyline"
+            }
+          : job.settings,
         mode: job.mode
       }).then(points => {
+        if (job.projectEpoch !== this.#projectEpoch) {
+          this.#commitDiagnostics.staleWorkerResults += 1;
+          return;
+        }
         job.preprocessedPoints = points;
         job.preprocessingPending = false;
         this.#commitDiagnostics.workerPreparedStrokes += 1;
         this.#scheduleCommitDrain();
       }).catch(error => {
+        if (job.projectEpoch !== this.#projectEpoch) {
+          this.#commitDiagnostics.staleWorkerResults += 1;
+          return;
+        }
         job.preprocessingError = error;
         job.preprocessingPending = false;
         this.#scheduleCommitDrain();
@@ -1106,13 +1313,15 @@ export class PathSketchController {
     }
     if (!job.needsPreparation && job.plan) return job.plan;
     const sourcePoints = job.preprocessedPoints ?? job.rawPoints;
+    const surfaceTarget = job.targetType === "surface";
+    const curveType = surfaceTarget ? "polyline" : job.settings.curveType;
     if (!job.preprocessedPoints) {
       this.#commitDiagnostics.synchronousPreparedStrokes += 1;
     }
     if (job.mode === "array") {
       const prepared = this.pathTools.prepareSketchPoints({
         points: sourcePoints,
-        curveType: job.settings.curveType,
+        curveType,
         tension: job.settings.tension
       });
       job.plan = this.pathTools.previewArrayBrush({
@@ -1121,7 +1330,7 @@ export class PathSketchController {
         spacing: job.resolvedSpacing,
         align: job.settings.align,
         closed: job.settings.closed,
-        curveType: job.settings.curveType,
+        curveType,
         tension: job.settings.tension,
         twistDegrees: job.settings.twistDegrees,
         initialNormal: job.frame.normal,
@@ -1134,8 +1343,15 @@ export class PathSketchController {
       });
       job.points = job.plan.path.points;
     } else {
-      const prepared = job.preprocessedPoints ??
-        prepareFreehandPoints(sourcePoints, job.settings);
+      const prepared = job.preprocessedPoints ?? (
+        surfaceTarget
+          ? this.pathTools.prepareSketchPoints({
+              points: sourcePoints,
+              curveType,
+              tension: job.settings.tension
+            })
+          : prepareFreehandPoints(sourcePoints, job.settings)
+      );
       job.plan = this.pathTools.preparePathCreatePlan({
         points: prepared,
         name: job.settings.name || "Tubo desenhado",
@@ -1146,7 +1362,7 @@ export class PathSketchController {
         ),
         radialSegments: job.settings.radialSegments,
         closed: job.settings.closed,
-        curveType: job.settings.curveType,
+        curveType,
         tension: job.settings.tension,
         color: job.settings.color,
         materialMode: job.settings.materialMode,
@@ -1160,6 +1376,10 @@ export class PathSketchController {
   }
 
   #drainCommitQueue({ allowPreparation = true } = {}) {
+    while (this.#commitQueue[0]?.projectEpoch !== this.#projectEpoch) {
+      const stale = this.#commitQueue.shift();
+      this.#disposeHandoff(stale?.handoff);
+    }
     const head = this.#commitQueue[0];
     if (!head) return;
 
@@ -1229,6 +1449,9 @@ export class PathSketchController {
         points: job.points,
         sourceIds: job.sourceIds,
         frame: job.frame,
+        targetType: job.targetType,
+        surfaceTarget: job.surfaceTarget,
+        surfacePlacements: job.surfacePlacements,
         preparedPlan: plan
       });
       this.#beginCommitHandoff(job, completion);
@@ -1244,6 +1467,10 @@ export class PathSketchController {
   }
 
   #beginCommitHandoff(job, completion) {
+    if (job.projectEpoch !== this.#projectEpoch) {
+      this.#disposeHandoff(job.handoff);
+      return;
+    }
     const createdIds = resultCreatedIds(completion?.result);
     if (!completion?.result?.changed || !createdIds.length) {
       this.#disposeHandoff(job.handoff);
@@ -1265,7 +1492,10 @@ export class PathSketchController {
       createdIds,
       requestId,
       revisionAfterDispatch,
-      dispatchedAt: nowMs()
+      dispatchedAt: nowMs(),
+      projectEpoch: job.projectEpoch,
+      accepted: !requestId,
+      logicalSeen: this.#committedObjectsPresent(createdIds)
     };
     this.#pendingCommits.set(job.id, pending);
     this.#ensureCommitObservers();
@@ -1322,7 +1552,25 @@ export class PathSketchController {
 
   #observePendingCommits() {
     for (const pending of [...this.#pendingCommits.values()]) {
-      if (!this.#committedObjectsVisible(pending.createdIds)) continue;
+      if (pending.projectEpoch !== this.#projectEpoch) {
+        this.#pendingCommits.delete(pending.id);
+        this.#disposeHandoff(pending.job?.handoff);
+        continue;
+      }
+      const present = this.#committedObjectsPresent(pending.createdIds);
+      if (present) pending.logicalSeen = true;
+      /*
+       * Um undo pode remover o objeto lógico antes que uma geometria muito
+       * grande termine de nascer no renderer. Nesse caso o handoff nunca deve
+       * aguardar um visual que já não pode existir.
+       */
+      if (!present && pending.accepted && pending.logicalSeen) {
+        this.#cancelPendingPublicationByRemoval(pending);
+        continue;
+      }
+      if (!present || !this.#committedVisualsPresent(pending.createdIds)) {
+        continue;
+      }
       this.#completeCommittedStroke(pending);
     }
   }
@@ -1335,6 +1583,7 @@ export class PathSketchController {
     );
     if (!pending) return;
     if (outcome.status === "accepted") {
+      pending.accepted = true;
       const revision = Number(this.pathTools.sandbox?.revision);
       if (Number.isInteger(revision)) {
         this.#recordOwnCommitRevision(revision, pending.createdIds);
@@ -1350,22 +1599,35 @@ export class PathSketchController {
     );
   }
 
-  #committedObjectsVisible(createdIds) {
+  #committedObjectsPresent(createdIds) {
     const getObject = this.pathTools.sandbox?.getObject;
     if (typeof getObject === "function") {
-      const inSandbox = createdIds.every(id =>
+      return createdIds.every(id =>
         Boolean(getObject.call(this.pathTools.sandbox, id))
       );
-      if (!inSandbox) return false;
-      if (typeof this.renderer.hasObjectVisual === "function") {
-        return createdIds.every(id => this.renderer.hasObjectVisual(id));
-      }
-      return true;
     }
     const objects = this.pathTools.sandbox?.getSnapshot?.().objects;
     if (!Array.isArray(objects)) return false;
     const available = new Set(objects.map(object => String(object.id)));
     return createdIds.every(id => available.has(String(id)));
+  }
+
+  #committedVisualsPresent(createdIds) {
+    if (typeof this.renderer.hasObjectVisual !== "function") return true;
+    return createdIds.every(id => this.renderer.hasObjectVisual(id));
+  }
+
+  #cancelPendingPublicationByRemoval(pending) {
+    if (!this.#pendingCommits.delete(pending.id)) return;
+    this.#disposeHandoff(pending.job?.handoff);
+    this.#commitDiagnostics.publicationsCancelledByUndo += 1;
+    this.#commitDiagnostics.handoffsReleasedByUndo += 1;
+    if (this.#active && this.#active.lastResult === pending.completion?.result) {
+      this.#active.lastResult = null;
+    }
+    this.#clearCommitObserversIfIdle();
+    this.#scheduleCommitDrain();
+    this.#notify();
   }
 
   #completeCommittedStroke(pending) {
@@ -1409,7 +1671,8 @@ export class PathSketchController {
   }
 
   #disposeHandoff(handoff) {
-    if (!handoff) return;
+    if (!handoff || handoff.disposed) return;
+    handoff.disposed = true;
     if (handoff.kind === "array") {
       this.renderer.scene.remove(handoff.group);
       handoff.cache?.dispose?.();
@@ -1473,6 +1736,84 @@ export class PathSketchController {
     canvas[method]("pointercancel", this.#onPointerCancel, true);
     globalThis[method]("keydown", this.#onKeyDown, true);
   }
+}
+
+function applyPathPlanTransform(mesh, plan) {
+  const position = Array.isArray(plan?.position)
+    ? plan.position
+    : [0, 0, 0];
+  mesh.position.fromArray(position);
+  mesh.quaternion.identity();
+  mesh.scale.set(1, 1, 1);
+  mesh.updateMatrixWorld(true);
+}
+
+function resetPreviewTransform(object) {
+  if (!object) return;
+  object.position.set(0, 0, 0);
+  object.quaternion.identity();
+  object.scale.set(1, 1, 1);
+  object.updateMatrixWorld(true);
+}
+
+function isPathSketchHandoff(object) {
+  const name = String(object?.name ?? "");
+  return Boolean(object?.userData?.pathSketchHandoff) ||
+    name.startsWith("path-sketch-tube-handoff-") ||
+    name.startsWith("path-sketch-array-handoff-");
+}
+
+function scanPathSketchTransients(scene, { retained = new Set() } = {}) {
+  let handoffs = 0;
+  let stalePreviews = 0;
+  scene?.traverse?.(object => {
+    if (retained.has(object)) return;
+    if (isPathSketchHandoff(object)) handoffs += 1;
+    else if (String(object?.name ?? "").startsWith("path-sketch-")) {
+      stalePreviews += 1;
+    }
+  });
+  return Object.freeze({ handoffs, stalePreviews });
+}
+
+function purgePathSketchTransients(scene, { retained = new Set() } = {}) {
+  const roots = [];
+  scene?.traverse?.(object => {
+    if (retained.has(object) || !isPathSketchHandoff(object)) return;
+    if (roots.some(root => isDescendantOf(object, root))) return;
+    roots.push(object);
+  });
+  for (const object of roots) {
+    object.parent?.remove?.(object);
+    disposeTransientTree(object);
+  }
+  return roots.length;
+}
+
+function isDescendantOf(object, ancestor) {
+  let current = object?.parent ?? null;
+  while (current) {
+    if (current === ancestor) return true;
+    current = current.parent ?? null;
+  }
+  return false;
+}
+
+function disposeTransientTree(root) {
+  const geometries = new Set();
+  const materials = new Set();
+  root?.traverse?.(object => {
+    if (object.geometry) geometries.add(object.geometry);
+    const list = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+    for (const material of list) {
+      if (material) materials.add(material);
+    }
+    object.dispose?.();
+  });
+  for (const geometry of geometries) geometry.dispose?.();
+  for (const material of materials) material.dispose?.();
 }
 
 function resolveFrame(renderer, source) {
@@ -1626,6 +1967,46 @@ function vector3(value, name) {
   const result = value.map(Number);
   if (!result.every(Number.isFinite)) throw new TypeError(`${name} inválido.`);
   return result;
+}
+
+function surfaceFallbackFrame(renderer, status = null) {
+  const placement = status?.lastSurfacePlacement;
+  if (placement?.point && placement?.normal) {
+    return frameFromSurfacePlacement(placement, renderer.camera);
+  }
+  return resolveFrame(renderer, "locked-or-viewer");
+}
+
+function frameFromSurfacePlacement(placement, camera) {
+  const origin = new THREE.Vector3().fromArray(placement.point);
+  const normal = new THREE.Vector3().fromArray(placement.normal).normalize();
+  let xAxis = placement.tangent
+    ? new THREE.Vector3().fromArray(placement.tangent)
+    : new THREE.Vector3(1, 0, 0);
+  xAxis.addScaledVector(normal, -xAxis.dot(normal));
+  if (xAxis.lengthSq() <= 1e-18 && camera?.quaternion) {
+    xAxis.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    xAxis.addScaledVector(normal, -xAxis.dot(normal));
+  }
+  if (xAxis.lengthSq() <= 1e-18) {
+    xAxis = Math.abs(normal.y) < 0.9
+      ? new THREE.Vector3(0, 1, 0).cross(normal)
+      : new THREE.Vector3(1, 0, 0).cross(normal);
+  }
+  xAxis.normalize();
+  const yAxis = normal.clone().cross(xAxis).normalize();
+  const quaternion = new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(xAxis, yAxis, normal)
+  );
+  return Object.freeze({
+    origin: Object.freeze(origin.toArray()),
+    normal: Object.freeze(normal.toArray()),
+    xAxis: Object.freeze(xAxis.toArray()),
+    yAxis: Object.freeze(yAxis.toArray()),
+    quaternion: Object.freeze(quaternion.toArray()),
+    source: "surface-selection",
+    linked: true
+  });
 }
 
 function normalizeSettings(value) {

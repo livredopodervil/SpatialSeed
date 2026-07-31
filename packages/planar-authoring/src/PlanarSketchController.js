@@ -46,11 +46,13 @@ export class PlanarSketchController {
   #commitObservers = [];
   #visibilityRevision = null;
   #visibilityIds = new Set();
+  #drawingTarget = null;
 
   constructor({
     renderer,
     geometryRegistry,
     sandbox = null,
+    drawingTarget = null,
     createObject,
     onCompleted = () => {},
     onEnded = () => {}
@@ -74,6 +76,7 @@ export class PlanarSketchController {
     this.renderer = renderer;
     this.geometryRegistry = geometryRegistry;
     this.sandbox = sandbox;
+    this.#drawingTarget = drawingTarget;
     this.createObject = createObject;
     this.onCompleted = onCompleted;
     this.onEnded = onEnded;
@@ -86,6 +89,12 @@ export class PlanarSketchController {
 
   begin(options = {}) {
     if (this.#active) this.cancel();
+    if (this.#drawingTarget?.status?.().type === "surface") {
+      throw new Error(
+        "O alvo de superfície aceita caminhos e tubos nesta etapa; " +
+        "a projeção de primitivas 2D entra no casting 0042d."
+      );
+    }
     const settings = normalizeSettings({ ...DEFAULTS, ...options });
     const frame = resolveDrawingFrame(
       this.renderer,
@@ -165,6 +174,30 @@ export class PlanarSketchController {
       ...this.#active.settings,
       continuous: Boolean(enabled)
     });
+    this.#notify();
+    return this.status();
+  }
+
+  refreshDrawingFrame() {
+    const active = this.#active;
+    if (!active || active.dragging || active.points.length || active.committing) {
+      return this.status();
+    }
+    if (this.#drawingTarget?.status?.().type === "surface") {
+      active.error =
+        "Primitivas 2D não são projetadas diretamente no 0042c; use caminho/tubo.";
+      active.hover = null;
+      this.#hidePreview();
+      this.#notify();
+      return this.status();
+    }
+    active.frame = resolveDrawingFrame(
+      this.renderer,
+      active.settings.planeSource,
+      null
+    );
+    active.hover = null;
+    this.#hidePreview();
     this.#notify();
     return this.status();
   }
@@ -435,6 +468,7 @@ export class PlanarSketchController {
 
   #worldPoint(event) {
     const active = this.#active;
+    if (this.#drawingTarget?.status?.().type === "surface") return null;
     const placement = this.renderer.resolvePointerPlacement({
       clientX: event.clientX,
       clientY: event.clientY,

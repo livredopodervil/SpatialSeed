@@ -2025,3 +2025,181 @@ html[data-toolbar-layout="vertical"] #selection-panel{
 #edit-hud[data-size="large"] .edit-hud-appearance select {
   font-size:12px;
 }
+
+/* 0042b — alvo de desenho, helper e controles sem sobreposição */
+.edit-hud-drawing-target > label,
+.edit-hud-drawing-target > button {
+  box-sizing:border-box;
+  min-width:0!important;
+  min-height:var(--edit-hud-cell)!important;
+  height:var(--edit-hud-cell)!important;
+  margin:0!important;
+  overflow:hidden;
+  place-self:stretch;
+}
+.edit-hud-drawing-target > label {
+  display:flex!important;
+  align-items:center;
+  padding:2px 4px!important;
+  color:#dcecff;
+  background:#0b1724;
+  border:1px solid #ffffff17;
+  border-radius:8px;
+}
+.edit-hud-drawing-source {
+  grid-column:span 3;
+  width:100%!important;
+}
+.edit-hud-drawing-source select {
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  height:calc(var(--edit-hud-cell) - 6px);
+  padding:0 18px 0 4px;
+  border:0;
+  color:#e8f2ff;
+  background:#0b1724;
+  font-size:11px;
+}
+.edit-hud-drawing-offset {
+  grid-column:span 3;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 1.25rem;
+  gap:3px;
+}
+.edit-hud-drawing-offset input {
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  height:calc(var(--edit-hud-cell) - 7px);
+  padding:0 3px;
+  color:#e8f2ff;
+  background:#07131f;
+  border:1px solid #ffffff18;
+  border-radius:5px;
+  font-size:10px;
+}
+.edit-hud-drawing-offset > span {
+  display:grid;
+  place-items:center;
+  min-width:0;
+}
+#edit-hud[data-drawing-target-active="true"] #edit-hud-drawing-target-set,
+#edit-hud[data-drawing-target-editing="true"] #edit-hud-drawing-target-edit {
+  color:#fff;
+  border-color:#62d7ffaa;
+  background:#184963;
+  box-shadow:0 0 12px #48c8ff55;
+}
+#edit-hud[data-size="compact"] .edit-hud-drawing-source select {
+  font-size:9px;
+}
+#edit-hud[data-size="large"] .edit-hud-drawing-source select {
+  font-size:12px;
+}
+.edit-hud-group[data-edit-hud-group="drawing-target"]>* {
+  --hud-sector-rgb:68,194,236;
+}
+.edit-hud-drawing-helper-toggle {
+  position:relative;
+  width:var(--edit-hud-cell)!important;
+  padding:0!important;
+}
+.edit-hud-drawing-helper-toggle > input {
+  position:absolute;
+  width:1px;
+  height:1px;
+  opacity:0;
+  pointer-events:none;
+}
+.edit-hud-drawing-helper-toggle > span {
+  display:grid;
+  width:100%;
+  height:100%;
+  place-items:center;
+}
+.edit-hud-drawing-helper-toggle > input:checked + span {
+  color:#fff;
+  background:#184963;
+  box-shadow:inset 0 0 0 1px #62d7ffaa;
+}
+
+/* 0042c — superfície capturada, continuidade e projeção direta */
+.edit-hud-surface-front,
+.edit-hud-surface-lock {
+  position:relative;
+  width:var(--edit-hud-cell)!important;
+  padding:0!important;
+}
+.edit-hud-surface-front > input,
+.edit-hud-surface-lock > input {
+  position:absolute;
+  width:1px;
+  height:1px;
+  opacity:0;
+  pointer-events:none;
+}
+.edit-hud-surface-front > span,
+.edit-hud-surface-lock > span {
+  display:grid;
+  width:100%;
+  height:100%;
+  place-items:center;
+}
+.edit-hud-surface-front > input:checked + span,
+.edit-hud-surface-lock > input:checked + span {
+  color:#fff;
+  background:#184963;
+  box-shadow:inset 0 0 0 1px #62d7ffaa;
+}
+.edit-hud-surface-jump {
+  grid-column:span 3;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 1.25rem;
+  gap:3px;
+}
+.edit-hud-surface-jump input {
+  box-sizing:border-box;
+  width:100%;
+  min-width:0;
+  height:calc(var(--edit-hud-cell) - 7px);
+  padding:0 3px;
+  color:#e8f2ff;
+  background:#07131f;
+  border:1px solid #ffffff18;
+  border-radius:5px;
+  font-size:10px;
+}
+.edit-hud-surface-jump > span {
+  display:grid;
+  place-items:center;
+  min-width:0;
+}
+.edit-hud-surface-state {
+  grid-column:span 4;
+  box-sizing:border-box;
+  display:flex;
+  align-items:center;
+  min-width:0;
+  min-height:var(--edit-hud-cell);
+  padding:3px 6px;
+  overflow:hidden;
+  color:#9fdcf3;
+  background:#07131f;
+  border:1px solid #ffffff12;
+  border-radius:7px;
+  font-size:9px;
+  line-height:1.1;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+#edit-hud[data-drawing-target-type="surface"] .edit-hud-drawing-source,
+#edit-hud[data-drawing-target-type="surface"] .edit-hud-surface-state {
+  border-color:#62d7ff66;
+  box-shadow:inset 0 0 0 1px #62d7ff22;
+}
+#edit-hud[data-drawing-target-type="plane"] .edit-hud-surface-front,
+#edit-hud[data-drawing-target-type="plane"] .edit-hud-surface-lock,
+#edit-hud[data-drawing-target-type="plane"] .edit-hud-surface-jump {
+  opacity:0.5;
+}

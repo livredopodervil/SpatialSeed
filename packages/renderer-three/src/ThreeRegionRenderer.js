@@ -83,7 +83,7 @@ import {
 } from "../../appearance-binding/src/index.js?build=20260730-0041a";
 
 export class ThreeRegionRenderer {
-  static apiVersion = "renderer-three-navigation-camera-v5";
+  static apiVersion = "renderer-three-navigation-camera-v6";
   #meshes = new Map();
   #cameraVisuals = new Map();
   #lightVisuals = new Map();
@@ -124,6 +124,7 @@ export class ThreeRegionRenderer {
   #editorToolNavigationToken = null;
   #editPlane = null;
   #drawingPlane = null;
+  #surfaceRaycastProbe = new THREE.Mesh();
   #navigationDefaults = {
     enableRotate: true,
     enablePan: true,
@@ -198,7 +199,13 @@ export class ThreeRegionRenderer {
     familyBuildChunks: 0,
     familyBuildDeferredForInput: 0,
     familyBuildForcedProgress: 0,
-    familyBuildMaximumChunkMs: 0
+    familyBuildMaximumChunkMs: 0,
+    surfaceTargetCaptures: 0,
+    surfaceRaycasts: 0,
+    surfaceRaycastObjectVisits: 0,
+    surfaceHits: 0,
+    surfaceMisses: 0,
+    surfaceJumpRejections: 0
   };
   #transformLifecycleDiagnostics = {
     sessionsStarted:0,
@@ -1184,6 +1191,156 @@ export class ThreeRegionRenderer {
   setDrawingPlane(frame = null) {
     this.#drawingPlane = frame ? normalizeNavigationPlane(frame) : null;
     return this.getDrawingPlane();
+  }
+
+  captureDrawingSurfaceTarget({
+    objectIds = null,
+    frontFacesOnly = true,
+    lockObject = true,
+    maximumJump = 0,
+    offset = 0
+  } = {}) {
+    const requested = Array.isArray(objectIds) && objectIds.length
+      ? objectIds.map(String)
+      : (this.#selectionSnapshot?.members ?? [])
+          .map(member => String(member.objectId));
+    if (!requested.length) {
+      throw new Error(
+        "Selecione ao menos uma geometria para travar a superfície."
+      );
+    }
+    const expanded = projectedSelectionIdsWithFallback(
+      this.#hierarchy,
+      requested
+    );
+    const surfaceIds = [...new Set(expanded.filter(id =>
+      this.#familyVisuals.has(id) || this.#batchManager.hasObject(id)
+    ))];
+    if (!surfaceIds.length) {
+      throw new Error(
+        "A seleção não contém geometria renderizável para projeção."
+      );
+    }
+    const bounds = new THREE.Box3().makeEmpty();
+    for (const id of surfaceIds) {
+      const objectBounds = this.#worldBoundsForObjectId(id);
+      if (objectBounds && !objectBounds.isEmpty()) bounds.union(objectBounds);
+    }
+    const diagonal = bounds.isEmpty()
+      ? 1
+      : bounds.getSize(new THREE.Vector3()).length();
+    const requestedJump = Number(maximumJump);
+    const resolvedJump = Number.isFinite(requestedJump) && requestedJump > 0
+      ? requestedJump
+      : Math.max(diagonal * 0.12, 0.25);
+    const resolvedOffset = Number(offset);
+    if (!Number.isFinite(resolvedOffset)) {
+      throw new TypeError("Offset da superfície inválido.");
+    }
+    this.#incrementalDiagnostics.surfaceTargetCaptures += 1;
+    return Object.freeze({
+      version: "drawing-surface-target-v1",
+      type: "surface",
+      objectIds: Object.freeze(surfaceIds),
+      sourceObjectIds: Object.freeze([...new Set(requested)]),
+      frontFacesOnly: Boolean(frontFacesOnly),
+      lockObject: Boolean(lockObject),
+      maximumJump: resolvedJump,
+      automaticMaximumJump: !(Number.isFinite(requestedJump) && requestedJump > 0),
+      offset: resolvedOffset,
+      bounds: bounds.isEmpty()
+        ? null
+        : Object.freeze({
+            min: Object.freeze(bounds.min.toArray()),
+            max: Object.freeze(bounds.max.toArray())
+          })
+    });
+  }
+
+  resolveDrawingSurfacePlacement({
+    clientX,
+    clientY,
+    target,
+    previous = null
+  } = {}) {
+    if (target?.version !== "drawing-surface-target-v1" ||
+        !Array.isArray(target.objectIds) || !target.objectIds.length) {
+      throw new TypeError("Alvo de superfície inválido.");
+    }
+    const rect = this.canvas.getBoundingClientRect();
+    const x = Number(clientX);
+    const y = Number(clientY);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      throw new TypeError("Coordenadas do ponteiro inválidas.");
+    }
+    this.pointer.set(
+      ((x - rect.left) / rect.width) * 2 - 1,
+      -((y - rect.top) / rect.height) * 2 + 1
+    );
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    this.#incrementalDiagnostics.surfaceRaycasts += 1;
+
+    const lockedObjectId = target.lockObject && previous?.objectId
+      ? String(previous.objectId)
+      : null;
+    const candidates = [];
+    const probe = this.#surfaceRaycastProbe;
+    probe.matrixAutoUpdate = false;
+    probe.visible = true;
+
+    for (const rawId of target.objectIds) {
+      const objectId = String(rawId);
+      if (lockedObjectId && objectId !== lockedObjectId) continue;
+      this.#incrementalDiagnostics.surfaceRaycastObjectVisits += 1;
+      const family = this.#familyVisuals.get(objectId);
+      if (family?.mesh) {
+        for (const hit of this.raycaster.intersectObject(family.mesh, false)) {
+          candidates.push(surfacePlacementFromHit({
+            hit,
+            objectId,
+            ray: this.raycaster.ray,
+            target,
+            previous
+          }));
+        }
+        continue;
+      }
+      const location = this.#batchManager.locationOf(objectId);
+      const batch = location
+        ? this.#batchManager.getBatch(location.batchKey)
+        : null;
+      const proxy = this.#meshes.get(objectId);
+      if (!batch?.mesh?.geometry || !proxy) continue;
+      proxy.updateWorldMatrix?.(true, false);
+      probe.geometry = batch.mesh.geometry;
+      probe.material = batch.mesh.material;
+      probe.matrixWorld.copy(proxy.matrixWorld);
+      probe.userData.surfaceObjectId = objectId;
+      for (const hit of this.raycaster.intersectObject(probe, false)) {
+        candidates.push(surfacePlacementFromHit({
+          hit,
+          objectId,
+          ray: this.raycaster.ray,
+          target,
+          previous
+        }));
+      }
+    }
+
+    const accepted = candidates
+      .filter(Boolean)
+      .sort((left, right) => left.distance - right.distance)[0] ?? null;
+    if (!accepted) {
+      this.#incrementalDiagnostics.surfaceMisses += 1;
+      return null;
+    }
+    if (accepted.jumpRejected) {
+      this.#incrementalDiagnostics.surfaceJumpRejections += 1;
+      this.#incrementalDiagnostics.surfaceMisses += 1;
+      return null;
+    }
+    this.#incrementalDiagnostics.surfaceHits += 1;
+    return accepted;
   }
 
   resolvePointerPlacement({
@@ -5585,6 +5742,84 @@ function projectedSelectionIdsWithFallback(hierarchy, ids = []) {
   }
 
   return Object.freeze(result);
+}
+
+
+function surfacePlacementFromHit({ hit, objectId, ray, target, previous }) {
+  if (!hit?.point || !hit?.face) return null;
+  const normal = transformHitNormalToWorld(hit);
+  if (!normal || normal.lengthSq() <= 1e-18) return null;
+  normal.normalize();
+  if (target.frontFacesOnly && normal.dot(ray.direction) >= -1e-7) {
+    return null;
+  }
+  const surfacePoint = hit.point.clone();
+  const point = surfacePoint.clone().addScaledVector(
+    normal,
+    Number(target.offset) || 0
+  );
+  const previousPoint = Array.isArray(previous?.point)
+    ? new THREE.Vector3().fromArray(previous.point)
+    : null;
+  const jumpDistance = previousPoint ? point.distanceTo(previousPoint) : 0;
+  const maximumJump = Number(target.maximumJump);
+  const jumpRejected = Boolean(
+    previousPoint && Number.isFinite(maximumJump) && maximumJump > 0 &&
+    jumpDistance > maximumJump
+  );
+  const triangle = surfaceHitTriangle(hit);
+  const barycentric = triangle
+    ? triangle.getBarycoord(surfacePoint, new THREE.Vector3())
+    : null;
+  const tangent = triangle
+    ? triangle.b.clone().sub(triangle.a)
+        .addScaledVector(normal, -triangle.b.clone().sub(triangle.a).dot(normal))
+    : new THREE.Vector3(1, 0, 0);
+  if (tangent.lengthSq() <= 1e-18) {
+    tangent.set(1, 0, 0).addScaledVector(normal, -normal.x);
+  }
+  tangent.normalize();
+  return Object.freeze({
+    version: "drawing-surface-placement-v1",
+    point: Object.freeze(point.toArray()),
+    surfacePoint: Object.freeze(surfacePoint.toArray()),
+    normal: Object.freeze(normal.toArray()),
+    tangent: Object.freeze(tangent.toArray()),
+    objectId: String(objectId),
+    faceIndex: Number.isInteger(hit.faceIndex) ? hit.faceIndex : null,
+    instanceId: Number.isInteger(hit.instanceId) ? hit.instanceId : null,
+    barycentric: barycentric
+      ? Object.freeze(barycentric.toArray())
+      : null,
+    distance: Number(hit.distance) || 0,
+    jumpDistance,
+    jumpRejected,
+    source: "surface-target"
+  });
+}
+
+function surfaceHitTriangle(hit) {
+  const geometry = hit?.object?.geometry;
+  const position = geometry?.getAttribute?.("position");
+  const face = hit?.face;
+  if (!position || !face) return null;
+  const matrix = hit.object.matrixWorld.clone();
+  if (hit.object.isInstancedMesh && Number.isInteger(hit.instanceId)) {
+    const instance = new THREE.Matrix4();
+    hit.object.getMatrixAt(hit.instanceId, instance);
+    matrix.multiply(instance);
+  }
+  return new THREE.Triangle(
+    new THREE.Vector3(
+      position.getX(face.a), position.getY(face.a), position.getZ(face.a)
+    ).applyMatrix4(matrix),
+    new THREE.Vector3(
+      position.getX(face.b), position.getY(face.b), position.getZ(face.b)
+    ).applyMatrix4(matrix),
+    new THREE.Vector3(
+      position.getX(face.c), position.getY(face.c), position.getZ(face.c)
+    ).applyMatrix4(matrix)
+  );
 }
 
 function createPreviewId() {
