@@ -3,6 +3,14 @@ import {
   geometryToolIcon,
   geometryToolPriority
 } from "./HudContextHeuristics.js?build=20260730-0041b";
+import {
+  HudCustomizationController,
+  HudLayoutStore,
+  applyHudLayoutPlan,
+  discoverHudDescriptors,
+  hudLayoutSignature,
+  resolveHudLayoutPlan
+} from "../../edit-hud-layout/src/index.js?build=20260801-0046a";
 
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
@@ -73,7 +81,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
 });
 
 export class EditHud {
-  static apiVersion = "edit-hud-v3";
+  static apiVersion = "edit-hud-v4";
 
   #unsubscribe = null;
   #unsubscribeHistory = null;
@@ -89,6 +97,11 @@ export class EditHud {
   #hintHideTimer = null;
   #suppressedClick = null;
   #fitFrame = null;
+  #layoutStore = null;
+  #layoutDescriptors = [];
+  #layoutCustomizer = null;
+  #unsubscribeLayout = null;
+  #lastLayoutSignature = null;
 
   constructor({
     root,
@@ -108,6 +121,7 @@ export class EditHud {
     this.openWorkspace = openWorkspace;
     this.#loadPreferences();
     this.#buildGeometryTools();
+    this.#prepareLayoutSystem();
     this.#prepareHints();
     this.#bind();
     this.#applyPreferences();
@@ -121,6 +135,8 @@ export class EditHud {
   dispose() {
     this.#unsubscribe?.();
     this.#unsubscribeHistory?.();
+    this.#unsubscribeLayout?.();
+    this.#layoutCustomizer?.dispose?.();
     if (this.#historyFrame !== null) {
       if (typeof globalThis.cancelAnimationFrame === "function") {
         globalThis.cancelAnimationFrame(this.#historyFrame);
@@ -728,9 +744,12 @@ export class EditHud {
     this.#element("edit-hud-default-path-radius").value = String(this.#preferences.defaults.pathRadius);
     for (const checkbox of this.root.querySelectorAll("[data-edit-hud-group-toggle]")) {
       const group = checkbox.dataset.editHudGroupToggle;
-      checkbox.checked = this.#preferences.groups[group] !== false;
+      checkbox.checked = this.#familyVisibleByPreference(group);
       checkbox.addEventListener("change", () => {
         this.#preferences.groups[group] = checkbox.checked;
+        this.#layoutStore?.updateFamily(group, {
+          visibility: checkbox.checked ? "auto" : "hidden"
+        });
         this.#savePreferences();
         this.#applyPreferences();
       });
@@ -791,10 +810,14 @@ export class EditHud {
     }
     this.#element("edit-hud-reset").addEventListener("click", () => {
       this.#preferences = structuredClone(DEFAULT_PREFERENCES);
+      this.#layoutStore?.reset();
       this.#savePreferences();
       this.#applyPreferences();
       this.#refreshParameterAliases();
     });
+    this.#element("edit-hud-customize").addEventListener("click", () =>
+      this.#layoutCustomizer?.open()
+    );
     const action = (id, command, args = () => ({})) => {
       this.#element(id).addEventListener("click", () => this.#execute(command, args()));
     };
@@ -1255,10 +1278,7 @@ export class EditHud {
         : "auto";
       this.root.style.bottom = p.dock === "bottom" ? "0" : "auto";
     }
-    for (const group of this.root.querySelectorAll("[data-edit-hud-group]")) {
-      group.hidden = p.groups[group.dataset.editHudGroup] === false ||
-        group.dataset.contextHidden === "true";
-    }
+    this.#applyAdaptiveLayout(this.#heuristic);
     const visibleCells = visibleHudCellCount(this.root);
     const layout = resolveHudLayout({
       preferences: p,
@@ -1284,7 +1304,9 @@ export class EditHud {
       `${layout.columns * cellSize + Math.max(0, layout.columns - 1) * 3 + 10}px`
     );
     for (const checkbox of this.root.querySelectorAll("[data-edit-hud-group-toggle]")) {
-      checkbox.checked = p.groups[checkbox.dataset.editHudGroupToggle] !== false;
+      checkbox.checked = this.#familyVisibleByPreference(
+        checkbox.dataset.editHudGroupToggle
+      );
     }
     this.#element("edit-hud-dock").value = p.dock;
     this.#element("edit-hud-orientation").value = p.orientation;
@@ -1307,7 +1329,6 @@ export class EditHud {
     this.#element("edit-hud-default-extrude").value = String(p.defaults.extrude);
     this.#element("edit-hud-default-inset").value = String(p.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(p.defaults.pathRadius);
-    this.#applyAdaptiveLayout(this.#heuristic);
     this.#scheduleFitToViewport();
   }
 
@@ -1372,7 +1393,9 @@ export class EditHud {
       const contexts = button.dataset.hudContext.split(/\s+/).filter(Boolean);
       const inContext = contexts.some(context => tokens.has(context));
       const enabled = inContext && availability[button.id] !== false;
-      button.hidden = !inContext;
+      button.dataset.contextManaged = "true";
+      button.dataset.contextVisible = inContext ? "true" : "false";
+      button.dataset.contextAvailable = enabled ? "true" : "false";
       button.disabled = !enabled;
       button.dataset.available = enabled ? "true" : "false";
       if (inContext) visible += 1;
@@ -1388,6 +1411,73 @@ export class EditHud {
       state.activeAction === "object.place" ? "true" : "false";
     this.#element("edit-hud-draw-path").dataset.active =
       state.activeAction === "path.sketch" ? "true" : "false";
+  }
+
+  #prepareLayoutSystem() {
+    this.#layoutDescriptors = [...discoverHudDescriptors(this.root, {
+      familyOrder: STATIC_GROUP_ORDER
+    })];
+    this.#layoutStore = new HudLayoutStore({
+      familyIds: this.#layoutDescriptors.map(descriptor => descriptor.family),
+      itemIds: this.#layoutDescriptors.map(descriptor => descriptor.id),
+      familyOrder: STATIC_GROUP_ORDER,
+      itemFamilies: Object.fromEntries(
+        this.#layoutDescriptors.map(descriptor => [descriptor.id, descriptor.family])
+      ),
+      legacyPreferences: this.#preferences
+    });
+    this.#layoutCustomizer = new HudCustomizationController({
+      root: this.#element("edit-hud-customizer"),
+      store: this.#layoutStore,
+      descriptors: this.#layoutDescriptors
+    });
+    this.#unsubscribeLayout = this.#layoutStore.subscribe(() => {
+      this.#lastLayoutSignature = null;
+      this.#syncLegacyGroupPreferences();
+      this.#applyAdaptiveLayout(this.#heuristic);
+      this.#scheduleFitToViewport();
+    });
+    this.#syncLegacyGroupPreferences();
+  }
+
+  #syncLegacyGroupPreferences() {
+    const profile = this.#layoutStore?.profile?.();
+    if (!profile) return;
+    for (const group of STATIC_GROUP_ORDER) {
+      this.#preferences.groups[group] =
+        profile.families?.[group]?.visibility !== "hidden";
+    }
+  }
+
+  #familyVisibleByPreference(group) {
+    const profile = this.#layoutStore?.profile?.();
+    return profile?.families?.[group]?.visibility !== "hidden";
+  }
+
+  #layoutContext() {
+    const familyContext = {};
+    const itemContext = {};
+    for (const group of this.root.querySelectorAll("[data-edit-hud-group]")) {
+      familyContext[group.dataset.editHudGroup] = {
+        visible: group.dataset.contextHidden !== "true",
+        available: true
+      };
+    }
+    for (const descriptor of this.#layoutDescriptors) {
+      const element = descriptor.element;
+      const control = element.matches?.("button, input, select")
+        ? element
+        : element.querySelector?.("button, input, select");
+      itemContext[descriptor.id] = {
+        visible: element.dataset.contextVisible == null
+          ? familyContext[descriptor.family]?.visible !== false
+          : element.dataset.contextVisible === "true",
+        available: element.dataset.contextAvailable == null
+          ? !Boolean(control?.disabled)
+          : element.dataset.contextAvailable === "true"
+      };
+    }
+    return { familyContext, itemContext };
   }
 
   #buildGeometryTools() {
@@ -1425,31 +1515,36 @@ export class EditHud {
   }
 
   #applyAdaptiveLayout(heuristic) {
-    const strip = this.root.querySelector(".edit-hud-strip");
-    if (!strip) return;
-    const groupOrder = heuristic && this.#preferences.adaptiveOrder !== false
+    if (!this.#layoutStore || !this.#layoutDescriptors.length) return;
+    const adaptive = this.#preferences.adaptiveOrder !== false;
+    const groupOrder = heuristic && adaptive
       ? heuristic.groupOrder
       : STATIC_GROUP_ORDER;
-    for (const name of groupOrder) {
-      const group = strip.querySelector(`[data-edit-hud-group="${name}"]`);
-      if (group) strip.append(group);
-    }
-    const actions = strip.querySelector('[data-edit-hud-group="actions"]');
-    const actionOrder = heuristic && this.#preferences.adaptiveOrder !== false
+    const actionOrder = heuristic && adaptive
       ? heuristic.actionOrder
       : STATIC_ACTION_ORDER;
-    if (actions) {
-      for (const id of actionOrder) {
-        const button = actions.querySelector(`#${id}`);
-        if (button) actions.append(button);
-      }
-    }
-    this.#applyCreationLayout(heuristic);
+    const adaptiveItemOrder = [
+      ...actionOrder,
+      ...this.#creationLayoutOrder(heuristic)
+    ];
+    const { familyContext, itemContext } = this.#layoutContext();
+    const plan = resolveHudLayoutPlan({
+      descriptors: this.#layoutDescriptors,
+      profile: this.#layoutStore.profile(),
+      adaptiveGroupOrder: groupOrder,
+      adaptiveItemOrder,
+      familyContext,
+      itemContext
+    });
+    const signature = hudLayoutSignature(plan);
+    if (signature === this.#lastLayoutSignature) return;
+    applyHudLayoutPlan(plan);
+    this.#lastLayoutSignature = signature;
   }
 
-  #applyCreationLayout(heuristic) {
+  #creationLayoutOrder(heuristic) {
     const group = this.root.querySelector('[data-edit-hud-group="creation"]');
-    if (!group) return;
+    if (!group) return [];
     const geometryButtons = [...group.querySelectorAll("[data-geometry-type]")];
     const selectedType = this.#rememberedGeometryType();
     geometryButtons.sort((left, right) => {
@@ -1470,7 +1565,7 @@ export class EditHud {
     const order = heuristic?.pathReference
       ? [...referenceTools, ...geometryButtons]
       : [...geometryButtons, ...referenceTools];
-    for (const button of order) group.append(button);
+    return order.map(element => element.id);
   }
 
   #selectGeometryType(type) {

@@ -2223,3 +2223,245 @@ html[data-toolbar-layout="vertical"] #selection-panel{
 .resource-children{display:grid;gap:.08rem}
 .resource-omitted{padding:.35rem;opacity:.65;font-size:.82em}
 [data-resource-row][hidden]{display:none!important}
+
+/* 0046a: layout declarativo e personalização independente do HUD. */
+.edit-hud-config-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid #ffffff17;
+}
+
+.edit-hud-config-actions > button {
+  min-height: 34px;
+}
+
+.edit-hud-group > [data-hud-zone="fixed-start"] {
+  --hud-zone-mark: #86d8ff;
+}
+
+.edit-hud-group > [data-hud-zone="fixed-end"] {
+  --hud-zone-mark: #d4a2ff;
+}
+
+.edit-hud-group > [data-hud-pinned="true"] {
+  box-shadow:
+    inset 0 2px 0 color-mix(in srgb, var(--hud-zone-mark, #86d8ff) 72%, transparent),
+    inset 0 0 0 1px #ffffff10;
+}
+
+.edit-hud-context-actions button[data-hud-pinned="true"]:disabled,
+.edit-hud-group [data-hud-pinned="true"] button:disabled,
+.edit-hud-group label[data-hud-pinned="true"]:has(input:disabled) {
+  display: grid !important;
+  opacity: .3;
+}
+
+.hud-customizer[hidden] {
+  display: none !important;
+}
+
+.hud-customizer {
+  position: fixed;
+  inset: 0;
+  z-index: 2800;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: #02070dc7;
+  backdrop-filter: blur(5px);
+  touch-action: pan-y;
+}
+
+.hud-customizer-dialog {
+  width: min(760px, calc(100vw - 20px));
+  max-height: min(820px, calc(100dvh - 20px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #86c9ff52;
+  border-radius: 12px;
+  background: #07111df7;
+  box-shadow: 0 18px 80px #000c;
+  color: #e9f5ff;
+}
+
+.hud-customizer-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid #ffffff18;
+}
+
+.hud-customizer-dialog > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.hud-customizer-dialog > header strong {
+  font-size: 16px;
+}
+
+.hud-customizer-dialog > header small {
+  color: #a9bfd1;
+}
+
+.hud-customizer-dialog > header button {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.hud-customizer-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #ffffff12;
+}
+
+.hud-customizer-toolbar input,
+.hud-customizer-toolbar button,
+.hud-customizer select,
+.hud-customizer button {
+  min-height: 34px;
+  border: 1px solid #ffffff1f;
+  border-radius: 7px;
+  background: #102337;
+  color: #eef8ff;
+}
+
+.hud-customizer-toolbar input {
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.hud-customizer-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 10px 12px 18px;
+}
+
+.hud-customizer-family {
+  border: 1px solid #ffffff17;
+  border-radius: 9px;
+  background: #0a1827;
+}
+
+.hud-customizer-family + .hud-customizer-family {
+  margin-top: 8px;
+}
+
+.hud-customizer-family > summary {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.hud-customizer-policy,
+.hud-customizer-item-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr)) auto auto;
+  align-items: end;
+  gap: 7px;
+}
+
+.hud-customizer-policy {
+  padding: 10px;
+  border-top: 1px solid #ffffff12;
+  border-bottom: 1px solid #ffffff12;
+  background: #0c1f32;
+}
+
+.hud-customizer-select {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 11px;
+  color: #adc4d7;
+}
+
+.hud-customizer-select select {
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px;
+}
+
+.hud-customizer-move {
+  display: grid;
+  grid-template-columns: 34px 34px;
+  gap: 4px;
+}
+
+.hud-customizer-move button,
+.hud-customizer-policy > button,
+.hud-customizer-item-controls > button {
+  min-width: 34px;
+  padding: 0 7px;
+}
+
+.hud-customizer-items {
+  display: grid;
+}
+
+.hud-customizer-item {
+  display: grid;
+  grid-template-columns: minmax(140px, .8fr) minmax(0, 2fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+}
+
+.hud-customizer-item + .hud-customizer-item {
+  border-top: 1px solid #ffffff0f;
+}
+
+.hud-customizer-item-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e4f3ff;
+}
+
+@media (max-width: 680px) {
+  .hud-customizer {
+    place-items: stretch;
+    padding: 6px;
+  }
+
+  .hud-customizer-dialog {
+    width: 100%;
+    max-height: calc(100dvh - 12px);
+  }
+
+  .hud-customizer-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .hud-customizer-item {
+    grid-template-columns: 1fr;
+  }
+
+  .hud-customizer-policy,
+  .hud-customizer-item-controls {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hud-customizer-move {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.edit-hud-context-actions button[data-hud-layout-reason="always-visible"]:disabled,
+.edit-hud-group [data-hud-layout-reason="always-visible"] button:disabled,
+.edit-hud-group label[data-hud-layout-reason="always-visible"]:has(input:disabled) {
+  display: grid !important;
+  opacity: .3;
+}

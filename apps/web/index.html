@@ -225,7 +225,10 @@
         <label>Opacidade do plano <input id="edit-hud-drawing-helper-opacity" type="range" min="0.02" max="0.9" step="0.02" value="0.18"></label>
       </div>
       <p class="edit-hud-help-note">Toque curto executa. Pressione e segure para ver nome e explicação. O botão ? ativa um modo de consulta que não executa as ferramentas.</p>
-      <button id="edit-hud-reset" type="button">Restaurar HUD</button>
+      <div class="edit-hud-config-actions">
+        <button id="edit-hud-customize" type="button">Personalizar barra…</button>
+        <button id="edit-hud-reset" type="button">Restaurar HUD</button>
+      </div>
     </details>
   </div>
   <div class="edit-hud-strip">
@@ -384,6 +387,22 @@
     <strong id="edit-hud-tooltip-title"></strong>
     <span id="edit-hud-tooltip-description"></span>
   </div>
+  <section id="edit-hud-customizer" class="hud-customizer" data-open="false" hidden>
+    <div class="hud-customizer-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-hud-customizer-title">
+      <header>
+        <div>
+          <strong id="edit-hud-customizer-title">Personalizar barra</strong>
+          <small>Fixe ferramentas, oculte famílias e preserve posições.</small>
+        </div>
+        <button type="button" data-hud-customizer-close title="Fechar">×</button>
+      </header>
+      <div class="hud-customizer-toolbar">
+        <input type="search" data-hud-customizer-search placeholder="Filtrar famílias ou ferramentas" aria-label="Filtrar toolbar">
+        <button type="button" data-hud-customizer-reset>Restaurar layout</button>
+      </div>
+      <div class="hud-customizer-body" data-hud-customizer-body></div>
+    </div>
+  </section>
 </aside>
 
 <output id="measurement-readout" aria-live="polite" hidden></output>
@@ -1309,6 +1328,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260801-0045a1"></script>
+<script type="module" src="./boot.js?build=20260801-0046a"></script>
 </body>
 </html>
