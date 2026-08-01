@@ -1,7 +1,7 @@
 export {
   EditHud,
   normalizeHudDimensions
-} from "./EditHud.js?build=20260801-0046b";
+} from "./EditHud.js?build=20260801-0046c";
 export {
   deriveHudContext,
   geometryToolIcon,

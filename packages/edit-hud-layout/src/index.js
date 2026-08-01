@@ -5,9 +5,13 @@ export {
   HUD_ZONE_VALUES,
   HUD_ACTIVATION_MODES,
   HUD_SECTION_SCROLL_MODES,
+  HUD_DOCK_VALUES,
+  HUD_ORIENTATION_VALUES,
+  HUD_SIZE_VALUES,
   createDefaultHudLayoutDocument,
   normalizeHudLayoutDocument,
   normalizeHudLayoutProfile,
+  normalizeViewportPolicy,
   normalizeFamilyPolicy,
   normalizeSectionPolicy,
   normalizeItemPolicy,
@@ -19,8 +23,8 @@ export {
   familyPolicyDefaults,
   sectionPolicyDefaults,
   itemPolicyDefaults
-} from "./HudLayoutPolicy.js?build=20260801-0046b";
-export { HudLayoutStore } from "./HudLayoutStore.js?build=20260801-0046b";
+} from "./HudLayoutPolicy.js?build=20260801-0046c";
+export { HudLayoutStore } from "./HudLayoutStore.js?build=20260801-0046c";
 export {
   discoverHudDescriptors,
   applyHudLayoutPlan,
@@ -28,10 +32,10 @@ export {
   itemAtPoint,
   sectionAtPoint,
   scrollHudSection
-} from "./HudDomLayout.js?build=20260801-0046b";
+} from "./HudDomLayout.js?build=20260801-0046c";
 export {
   HudCustomizationController
-} from "./HudCustomizationController.js?build=20260801-0046b";
+} from "./HudCustomizationController.js?build=20260801-0046c";
 export {
   HudInteractionController
-} from "./HudInteractionController.js?build=20260801-0046b";
+} from "./HudInteractionController.js?build=20260801-0046c";

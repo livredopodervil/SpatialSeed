@@ -4,11 +4,12 @@ import {
   createDefaultHudLayoutDocument,
   normalizeHudLayoutDocument,
   normalizeItemPolicy,
-  normalizeSectionPolicy
-} from "./HudLayoutPolicy.js?build=20260801-0046b";
+  normalizeSectionPolicy,
+  normalizeViewportPolicy
+} from "./HudLayoutPolicy.js?build=20260801-0046c";
 
 export class HudLayoutStore {
-  static apiVersion = "hud-layout-store-v2";
+  static apiVersion = "hud-layout-store-v3";
 
   #storage;
   #key;
@@ -158,6 +159,17 @@ export class HudLayoutStore {
     return this.snapshot();
   }
 
+  updateViewport(patch = {}) {
+    const document = this.snapshot();
+    const profile = activeProfile(document);
+    profile.viewport = normalizeViewportPolicy({
+      ...(profile.viewport ?? {}),
+      ...patch
+    });
+    this.#replace(document);
+    return this.profile();
+  }
+
   addSection({ id = null, label = "Nova seção", color = "#528bff" } = {}) {
     const profile = this.profile();
     const sectionId = uniqueSectionId(
@@ -265,6 +277,31 @@ export class HudLayoutStore {
       direction,
       kind: "section"
     });
+  }
+
+  placeSection(sectionId, { before = null, after = null } = {}) {
+    const id = requiredId(sectionId, "seção");
+    const profile = this.profile();
+    const ordered = Object.keys(profile.sections)
+      .filter(candidate => candidate !== id)
+      .sort((left, right) =>
+        sectionOrderOf(profile, left, this.#sectionOrder) -
+        sectionOrderOf(profile, right, this.#sectionOrder)
+      );
+    let insertion = ordered.length;
+    if (before && ordered.includes(before)) insertion = ordered.indexOf(before);
+    if (after && ordered.includes(after)) insertion = ordered.indexOf(after) + 1;
+    ordered.splice(insertion, 0, id);
+    const document = this.snapshot();
+    const active = activeProfile(document);
+    for (const [order, candidate] of ordered.entries()) {
+      active.sections[candidate] = normalizeSectionPolicy({
+        ...(active.sections[candidate] ?? {}),
+        order
+      });
+    }
+    this.#replace(document);
+    return this.profile();
   }
 
   moveFamily(familyId, delta) {
@@ -377,8 +414,9 @@ export class HudLayoutStore {
     let parsed = null;
     try {
       const current = this.#storage?.getItem?.(this.#key);
-      const legacy = this.#storage?.getItem?.("spatialseed.edit.hud.layout.v2");
-      parsed = JSON.parse(current ?? legacy ?? "null");
+      const legacyV3 = this.#storage?.getItem?.("spatialseed.edit.hud.layout.v3");
+      const legacyV2 = this.#storage?.getItem?.("spatialseed.edit.hud.layout.v2");
+      parsed = JSON.parse(current ?? legacyV3 ?? legacyV2 ?? "null");
     } catch {
       parsed = null;
     }
@@ -409,7 +447,7 @@ export class HudLayoutStore {
 function activeProfile(document) {
   const id = document.activeProfile ?? "default";
   if (!document.profiles[id]) {
-    document.profiles[id] = { label: id, sections: {}, items: {} };
+    document.profiles[id] = { label: id, viewport: {}, sections: {}, items: {} };
   }
   return document.profiles[id];
 }

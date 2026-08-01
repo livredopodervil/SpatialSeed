@@ -1,5 +1,5 @@
-export const HUD_LAYOUT_SCHEMA_VERSION = "spatial-seed-hud-layout-v3";
-export const HUD_LAYOUT_STORAGE_KEY = "spatialseed.edit.hud.layout.v3";
+export const HUD_LAYOUT_SCHEMA_VERSION = "spatial-seed-hud-layout-v4";
+export const HUD_LAYOUT_STORAGE_KEY = "spatialseed.edit.hud.layout.v4";
 
 export const HUD_VISIBILITY_VALUES = Object.freeze([
   "inherit",
@@ -25,6 +25,21 @@ export const HUD_SECTION_SCROLL_MODES = Object.freeze([
   "rotate",
   "scroll"
 ]);
+
+export const HUD_DOCK_VALUES = Object.freeze(["floating", "top", "bottom"]);
+export const HUD_ORIENTATION_VALUES = Object.freeze(["horizontal", "vertical"]);
+export const HUD_SIZE_VALUES = Object.freeze(["compact", "normal", "large"]);
+
+const DEFAULT_VIEWPORT_POLICY = Object.freeze({
+  dock: "floating",
+  orientation: "horizontal",
+  size: "normal",
+  opacity: 0.96,
+  columns: 12,
+  rows: 6,
+  left: 12,
+  top: 96
+});
 
 const DEFAULT_SECTION_POLICY = Object.freeze({
   label: null,
@@ -107,6 +122,7 @@ export function createDefaultHudLayoutDocument({
     profiles: {
       default: {
         label: "Padrão",
+        viewport: viewportFromLegacyPreferences(legacyPreferences),
         sections,
         items
       }
@@ -199,8 +215,34 @@ export function normalizeHudLayoutProfile(value = {}, {
     label: nonEmptyString(source.label) ??
       nonEmptyString(fallback.label) ??
       readableProfileId(profileId),
+    viewport: normalizeViewportPolicy(source.viewport, fallback.viewport),
     sections: Object.freeze(sections),
     items: Object.freeze(items)
+  });
+}
+
+export function normalizeViewportPolicy(value = {}, fallback = null) {
+  const source = value && typeof value === "object" ? value : {};
+  const base = fallback && typeof fallback === "object"
+    ? fallback
+    : DEFAULT_VIEWPORT_POLICY;
+  return Object.freeze({
+    dock: HUD_DOCK_VALUES.includes(source.dock)
+      ? source.dock
+      : HUD_DOCK_VALUES.includes(base.dock) ? base.dock : DEFAULT_VIEWPORT_POLICY.dock,
+    orientation: HUD_ORIENTATION_VALUES.includes(source.orientation)
+      ? source.orientation
+      : HUD_ORIENTATION_VALUES.includes(base.orientation)
+        ? base.orientation
+        : DEFAULT_VIEWPORT_POLICY.orientation,
+    size: HUD_SIZE_VALUES.includes(source.size)
+      ? source.size
+      : HUD_SIZE_VALUES.includes(base.size) ? base.size : DEFAULT_VIEWPORT_POLICY.size,
+    opacity: boundedNumber(source.opacity, boundedNumber(base.opacity, 0.96, 0.2, 1), 0.2, 1),
+    columns: boundedInteger(source.columns, boundedInteger(base.columns, 12, 1, 512), 1, 512),
+    rows: boundedInteger(source.rows, boundedInteger(base.rows, 6, 1, 512), 1, 512),
+    left: boundedNumber(source.left, boundedNumber(base.left, 12, 0, 100000), 0, 100000),
+    top: boundedNumber(source.top, boundedNumber(base.top, 96, 0, 100000), 0, 100000)
   });
 }
 
@@ -223,8 +265,8 @@ export function normalizeSectionPolicy(value = {}, fallback = null) {
     ),
     order: nullableInteger(source.order, nullableInteger(base.order, null)),
     color: normalizeColor(source.color, normalizeColor(base.color, DEFAULT_SECTION_POLICY.color)),
-    columns: boundedInteger(source.columns, boundedInteger(base.columns, 4, 1, 24), 1, 24),
-    rows: boundedInteger(source.rows, boundedInteger(base.rows, 1, 1, 12), 1, 12),
+    columns: boundedInteger(source.columns, boundedInteger(base.columns, 4, 1, 256), 1, 256),
+    rows: boundedInteger(source.rows, boundedInteger(base.rows, 1, 1, 256), 1, 256),
     scrollMode: HUD_SECTION_SCROLL_MODES.includes(source.scrollMode)
       ? source.scrollMode
       : HUD_SECTION_SCROLL_MODES.includes(base.scrollMode)
@@ -258,8 +300,8 @@ export function normalizeItemPolicy(value = {}, fallback = null) {
       true
     ),
     order: nullableInteger(source.order, nullableInteger(base.order, null)),
-    cellWidth: boundedInteger(source.cellWidth, boundedInteger(base.cellWidth, 1, 1, 12), 1, 12),
-    cellHeight: boundedInteger(source.cellHeight, boundedInteger(base.cellHeight, 1, 1, 8), 1, 8),
+    cellWidth: boundedInteger(source.cellWidth, boundedInteger(base.cellWidth, 1, 1, 256), 1, 256),
+    cellHeight: boundedInteger(source.cellHeight, boundedInteger(base.cellHeight, 1, 1, 256), 1, 256),
     command: normalizeCommandSpec(source.command, base.command),
     activation: normalizeActivationPolicy(source.activation, base.activation)
   });
@@ -454,6 +496,27 @@ export function itemPolicyDefaults() {
   return DEFAULT_ITEM_POLICY;
 }
 
+function viewportFromLegacyPreferences(value = null) {
+  const source = value && typeof value === "object" ? value : {};
+  return normalizeViewportPolicy({
+    dock: source.dock,
+    orientation: source.orientation,
+    size: source.size,
+    opacity: source.opacity,
+    columns: source.columns,
+    rows: source.rows,
+    left: source.left,
+    top: source.top
+  });
+}
+
+function boundedNumber(value, fallback, minimum, maximum) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric)
+    ? Math.min(maximum, Math.max(minimum, numeric))
+    : fallback;
+}
+
 function migrateDocument(source) {
   if (source.schemaVersion === HUD_LAYOUT_SCHEMA_VERSION) return source;
   if (!source.profiles || typeof source.profiles !== "object") return source;
@@ -462,6 +525,7 @@ function migrateDocument(source) {
     profiles[profileId] = {
       ...profile,
       label: profile.label ?? readableProfileId(profileId),
+      viewport: profile.viewport ?? null,
       sections: profile.sections ?? profile.families ?? {},
       items: profile.items ?? {}
     };

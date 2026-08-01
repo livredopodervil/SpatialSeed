@@ -11,7 +11,7 @@ import {
   discoverHudDescriptors,
   hudLayoutSignature,
   resolveHudLayoutPlan
-} from "../../edit-hud-layout/src/index.js?build=20260801-0046b";
+} from "../../edit-hud-layout/src/index.js?build=20260801-0046c";
 
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
@@ -783,6 +783,7 @@ export class EditHud {
           pathRadius: Math.max(0.001, finiteOr(this.#element("edit-hud-default-path-radius").value, 0.08))
         };
         this.#savePreferences();
+        this.#saveHudViewportToProfile();
         const parameter = {
           "edit-hud-default-extrude": [
             "mesh.extrude",
@@ -1158,6 +1159,7 @@ export class EditHud {
     const method = enabled ? "addEventListener" : "removeEventListener";
     handle[method]("pointerdown", this.#onPointerDown);
     this.#element("edit-hud-resize")[method]("pointerdown", this.#onResizePointerDown);
+    this.#element("edit-hud-resize")[method]("dblclick", this.#onResizeMaximize);
     this.root[method]("pointerdown", this.#onHintPointerDown, true);
     this.root[method]("click", this.#onHintClickCapture, true);
     this.root[method]("click", this.#onHintClickFeedback);
@@ -1217,7 +1219,27 @@ export class EditHud {
     this.root.dataset.resizing = "false";
     this.#fitToViewport();
     this.#savePreferences();
+    this.#saveHudViewportToProfile();
     event.preventDefault();
+  };
+
+  #onResizeMaximize = event => {
+    const cell = ({ compact: 26, normal: 32, large: 42 })[this.#preferences.size] ?? 32;
+    const gap = 3;
+    const handleHeight = this.#element("edit-hud-handle")?.getBoundingClientRect?.().height ?? 34;
+    const availableWidth = this.#preferences.dock === "floating"
+      ? Math.max(cell, globalThis.innerWidth - Math.max(0, this.#preferences.left) - 4)
+      : Math.max(cell, globalThis.innerWidth - 4);
+    const availableHeight = this.#preferences.dock === "floating"
+      ? Math.max(cell, globalThis.innerHeight - Math.max(0, this.#preferences.top) - handleHeight - 4)
+      : Math.max(cell, globalThis.innerHeight - handleHeight - 4);
+    this.#preferences.columns = Math.max(1, Math.floor((availableWidth - 10) / (cell + gap)));
+    this.#preferences.rows = Math.max(1, Math.floor((availableHeight - 10) / (cell + gap)));
+    this.#savePreferences();
+    this.#saveHudViewportToProfile();
+    this.#applyPreferences();
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
   };
 
   #onPointerDown = event => {
@@ -1259,6 +1281,7 @@ export class EditHud {
     this.#drag = null;
     this.#fitToViewport();
     this.#savePreferences();
+    this.#saveHudViewportToProfile();
   };
 
   #onResize = () => {
@@ -1286,10 +1309,8 @@ export class EditHud {
       this.root.style.bottom = p.dock === "bottom" ? "0" : "auto";
     }
     this.#applyAdaptiveLayout(this.#heuristic);
-    const visibleCells = visibleHudCellCount(this.root);
     const layout = resolveHudLayout({
       preferences: p,
-      visibleCells,
       cellSize,
       viewportWidth: globalThis.innerWidth,
       viewportHeight: globalThis.innerHeight
@@ -1443,15 +1464,44 @@ export class EditHud {
       store: this.#layoutStore,
       descriptors: this.#layoutDescriptors,
       execute: (command, args) => this.#execute(command, args),
-      openItemEditor: itemId => this.#layoutCustomizer?.openItem?.(itemId)
+      openItemEditor: itemId => this.#layoutCustomizer?.openItem?.(itemId),
+      openSectionEditor: sectionId => this.#layoutCustomizer?.openSection?.(sectionId)
     });
     this.#unsubscribeLayout = this.#layoutStore.subscribe(() => {
       this.#lastLayoutSignature = null;
+      this.#adoptActiveLayoutViewport();
       this.#syncLegacyGroupPreferences();
-      this.#applyAdaptiveLayout(this.#heuristic);
+      this.#applyPreferences();
       this.#scheduleFitToViewport();
     });
+    this.#adoptActiveLayoutViewport();
     this.#syncLegacyGroupPreferences();
+  }
+
+  #adoptActiveLayoutViewport() {
+    const viewport = this.#layoutStore?.profile?.()?.viewport;
+    if (!viewport) return;
+    this.#preferences.dock = viewport.dock;
+    this.#preferences.orientation = viewport.orientation;
+    this.#preferences.size = viewport.size;
+    this.#preferences.opacity = viewport.opacity;
+    this.#preferences.columns = viewport.columns;
+    this.#preferences.rows = viewport.rows;
+    this.#preferences.left = viewport.left;
+    this.#preferences.top = viewport.top;
+  }
+
+  #saveHudViewportToProfile() {
+    this.#layoutStore?.updateViewport?.({
+      dock: this.#preferences.dock,
+      orientation: this.#preferences.orientation,
+      size: this.#preferences.size,
+      opacity: this.#preferences.opacity,
+      columns: this.#preferences.columns,
+      rows: this.#preferences.rows,
+      left: this.#preferences.left,
+      top: this.#preferences.top
+    });
   }
 
   #syncLegacyGroupPreferences() {
@@ -1994,7 +2044,7 @@ export class EditHud {
 }
 
 const HUD_HINT_DETAILS = Object.freeze({
-  "edit-hud-resize": ["Redimensionar HUD", "Arraste para ajustar rapidamente o número de colunas e linhas da grade de ferramentas."],
+  "edit-hud-resize": ["Redimensionar HUD", "Arraste para ajustar a área do HUD até o limite da tela; toque duplo para ocupar toda a área disponível."],
   "edit-hud-appearance-target": ["Alvo da aparência", "Escolhe se cor, material e opacidade alteram a seleção, os próximos traços ou ambos."],
   "edit-hud-appearance-color": ["Cor", "Aplica uma cor uniforme ou uma matização conforme o modo escolhido."],
   "edit-hud-appearance-color-action": ["Modo da cor", "Automático preserva variações por instância; Uniformizar substitui a variação; Matizar preserva a variação."],
@@ -2325,20 +2375,8 @@ function positiveInteger(value, fallback) {
   return Number.isInteger(number) && number >= 1 ? number : fallback;
 }
 
-function visibleHudCellCount(root) {
-  let count = 0;
-  for (const group of root.querySelectorAll("[data-edit-hud-group]")) {
-    if (group.hidden) continue;
-    const columns = Math.max(1, Number(group.dataset.hudSectionColumns) || 1);
-    const rows = Math.max(1, Number(group.dataset.hudSectionRows) || 1);
-    count += columns * rows;
-  }
-  return Math.max(1, count);
-}
-
 function resolveHudLayout({
   preferences,
-  visibleCells,
   cellSize,
   viewportWidth,
   viewportHeight
@@ -2353,26 +2391,16 @@ function resolveHudLayout({
     Math.floor((positiveFiniteOr(viewportHeight, 1) - 54) / (cellSize + gap))
   );
   const docked = preferences.dock !== "floating";
-  if (preferences.orientation === "vertical") {
-    const requestedRows = docked
-      ? Math.max(preferences.rows, rowsInViewport)
-      : preferences.rows;
-    const rows = Math.min(visibleCells, requestedRows);
-    const columns = Math.min(
-      preferences.columns,
-      Math.max(1, Math.ceil(visibleCells / rows))
-    );
-    return { columns, rows };
-  }
   const requestedColumns = docked
     ? Math.max(preferences.columns, columnsInViewport)
     : preferences.columns;
-  const columns = Math.min(visibleCells, requestedColumns);
-  const rows = Math.min(
-    preferences.rows,
-    Math.max(1, Math.ceil(visibleCells / columns))
-  );
-  return { columns, rows };
+  const requestedRows = preferences.orientation === "vertical" && docked
+    ? Math.max(preferences.rows, rowsInViewport)
+    : preferences.rows;
+  return {
+    columns: Math.max(1, Math.min(columnsInViewport, requestedColumns)),
+    rows: Math.max(1, Math.min(rowsInViewport, requestedRows))
+  };
 }
 
 function positiveFiniteOr(value, fallback) {
