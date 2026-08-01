@@ -24,7 +24,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260801-0046c";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260801-0046d";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -101,7 +101,15 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260801-0046c";
+} from "../../../packages/edit-hud/src/index.js?build=20260801-0046d";
+import {
+  HudComponentRegistry,
+  UiModuleRegistry
+} from "../../../packages/ui-registry/src/index.js?build=20260801-0046d";
+import {
+  UiApplicationComposer,
+  UiApplicationStore
+} from "../../../packages/ui-application/src/index.js?build=20260801-0046d";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -1790,6 +1798,17 @@ export async function createWebRuntime({
     subscribePlanarSketch: listener => planarSketch.subscribe(listener),
     subscribeToolParameters: listener => toolParameters.subscribe(listener)
   });
+  const hudComponentRegistry = new HudComponentRegistry();
+  const uiModules = new UiModuleRegistry({
+    hudComponents: hudComponentRegistry
+  });
+  const uiApplicationStore = new UiApplicationStore({
+    installedModules: []
+  });
+  const uiApplicationComposer = new UiApplicationComposer({
+    registry: uiModules,
+    store: uiApplicationStore
+  });
   const editHud = new EditHud({
     root: editHudRoot,
     query: (id, args) => runtime.query(id, args),
@@ -1808,10 +1827,16 @@ export async function createWebRuntime({
         unsubscribeDrawingTarget();
       };
     },
-    subscribeHistory: listener => sandbox.subscribe(() => listener())
+    subscribeHistory: listener => sandbox.subscribe(() => listener()),
+    hudComponentRegistry,
+    uiModuleRegistry: uiModules,
+    uiApplicationStore,
+    uiApplicationComposer,
+    commandCatalog: runtime.capabilities().commands
   });
   runtime.onDispose(() => renderer.disposeToolGestureNavigation());
   runtime.onDispose(() => editHud.dispose());
+  runtime.onDispose(() => uiApplicationComposer.dispose());
   runtime.onDispose(unsubscribeDrawingTargetTools);
   runtime.onDispose(() => drawingTarget.dispose());
   runtime.onDispose(() => objectPlacement.dispose());
@@ -2185,6 +2210,10 @@ export async function createWebRuntime({
       toolRegistry,
       toolParameters,
       editHud,
+      uiModules,
+      hudComponentRegistry,
+      uiApplicationStore,
+      uiApplicationComposer,
       geometryRegistry,
       propertyRegistry,
       propertyService,

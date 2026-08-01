@@ -11,7 +11,14 @@ import {
   discoverHudDescriptors,
   hudLayoutSignature,
   resolveHudLayoutPlan
-} from "../../edit-hud-layout/src/index.js?build=20260801-0046c";
+} from "../../edit-hud-layout/src/index.js?build=20260801-0046d";
+import {
+  HudComponentRegistry,
+  UiModuleRegistry
+} from "../../ui-registry/src/index.js?build=20260801-0046d";
+import {
+  createLegacyHudModules
+} from "../../hud-runtime/src/index.js?build=20260801-0046d";
 
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
@@ -104,6 +111,13 @@ export class EditHud {
   #layoutInteraction = null;
   #unsubscribeLayout = null;
   #lastLayoutSignature = null;
+  #hudRegistry = null;
+  #uiModules = null;
+  #commandCatalog = [];
+  #uiApplicationStore = null;
+  #uiApplicationComposer = null;
+  #unsubscribeHudRegistry = null;
+  #unsubscribeUiApplication = null;
 
   constructor({
     root,
@@ -111,7 +125,12 @@ export class EditHud {
     execute,
     subscribe,
     subscribeHistory = null,
-    openWorkspace = null
+    openWorkspace = null,
+    hudComponentRegistry = null,
+    uiModuleRegistry = null,
+    uiApplicationStore = null,
+    uiApplicationComposer = null,
+    commandCatalog = []
   }) {
     if (!root) throw new TypeError("EditHud exige root.");
     if (typeof query !== "function" || typeof execute !== "function") {
@@ -121,6 +140,11 @@ export class EditHud {
     this.query = query;
     this.execute = execute;
     this.openWorkspace = openWorkspace;
+    this.#hudRegistry = hudComponentRegistry ?? uiModuleRegistry?.hudComponents ?? new HudComponentRegistry();
+    this.#uiModules = uiModuleRegistry ?? new UiModuleRegistry({ hudComponents: this.#hudRegistry });
+    this.#commandCatalog = Array.isArray(commandCatalog) ? commandCatalog : [];
+    this.#uiApplicationStore = uiApplicationStore;
+    this.#uiApplicationComposer = uiApplicationComposer;
     this.#loadPreferences();
     this.#buildGeometryTools();
     this.#prepareLayoutSystem();
@@ -138,6 +162,8 @@ export class EditHud {
     this.#unsubscribe?.();
     this.#unsubscribeHistory?.();
     this.#unsubscribeLayout?.();
+    this.#unsubscribeHudRegistry?.();
+    this.#unsubscribeUiApplication?.();
     this.#layoutCustomizer?.dispose?.();
     this.#layoutInteraction?.dispose?.();
     if (this.#historyFrame !== null) {
@@ -1442,9 +1468,23 @@ export class EditHud {
   }
 
   #prepareLayoutSystem() {
-    this.#layoutDescriptors = [...discoverHudDescriptors(this.root, {
+    const discovered = [...discoverHudDescriptors(this.root, {
       familyOrder: STATIC_GROUP_ORDER
     })];
+    for (const legacy of createLegacyHudModules({ descriptors: discovered })) {
+      try {
+        if (!this.#uiModules.describe().modules.some(module => module.id === legacy.descriptor.id)) {
+          this.#uiModules.register(legacy.descriptor, {
+            runtimes: legacy.runtimes,
+            enabled: true
+          });
+        }
+      } catch (error) {
+        console.error(`Falha ao registrar ${legacy.descriptor.id}`, error);
+      }
+    }
+    this.#layoutDescriptors = this.#resolveLayoutDescriptors(discovered);
+    const descriptorMap = Object.fromEntries(this.#layoutDescriptors.map(descriptor => [descriptor.id, descriptor]));
     this.#layoutStore = new HudLayoutStore({
       sectionIds: this.#layoutDescriptors.map(descriptor => descriptor.family),
       itemIds: this.#layoutDescriptors.map(descriptor => descriptor.id),
@@ -1452,12 +1492,16 @@ export class EditHud {
       itemSections: Object.fromEntries(
         this.#layoutDescriptors.map(descriptor => [descriptor.id, descriptor.family])
       ),
+      itemDescriptors: descriptorMap,
       legacyPreferences: this.#preferences
     });
     this.#layoutCustomizer = new HudCustomizationController({
       root: this.#element("edit-hud-customizer"),
       store: this.#layoutStore,
-      descriptors: this.#layoutDescriptors
+      descriptors: this.#layoutDescriptors,
+      commands: this.#commandCatalog,
+      uiModules: this.#uiModules,
+      applicationStore: this.#uiApplicationStore
     });
     this.#layoutInteraction = new HudInteractionController({
       root: this.root,
@@ -1474,8 +1518,113 @@ export class EditHud {
       this.#applyPreferences();
       this.#scheduleFitToViewport();
     });
+    this.#unsubscribeHudRegistry = this.#hudRegistry.subscribe(() => this.#refreshDeclarativeCatalog());
+    this.#unsubscribeUiApplication = this.#uiApplicationComposer?.subscribe?.(snapshot => {
+      this.#applyApplicationUiProfile(snapshot);
+      this.#lastLayoutSignature = null;
+      this.#applyAdaptiveLayout(this.#heuristic);
+      this.#layoutCustomizer?.render?.();
+    }) ?? null;
+    this.#applyApplicationUiProfile(this.#uiApplicationComposer?.snapshot?.());
     this.#adoptActiveLayoutViewport();
     this.#syncLegacyGroupPreferences();
+  }
+
+  #resolveLayoutDescriptors(discovered = discoverHudDescriptors(this.root, { familyOrder: STATIC_GROUP_ORDER })) {
+    const discoveredById = new Map(discovered.map(descriptor => [descriptor.id, descriptor]));
+    return this.#hudRegistry.describe({ includeRuntime: true })
+      .map(({ descriptor, runtime }, index) => {
+        const legacyDescriptor = discoveredById.get(descriptor.id);
+        const element = runtime?.element ?? legacyDescriptor?.element ?? this.#materializeHudComponent(descriptor);
+        if (!element) return null;
+        return Object.freeze({
+          ...descriptor,
+          family: descriptor.category,
+          familyLabel: legacyDescriptor?.familyLabel ?? descriptor.metadata?.familyLabel ?? descriptor.category,
+          nativeIcon: descriptor.icon,
+          defaultFamilyIndex: legacyDescriptor?.defaultFamilyIndex ?? Math.max(0, STATIC_GROUP_ORDER.indexOf(descriptor.category)),
+          defaultItemIndex: legacyDescriptor?.defaultItemIndex ?? index,
+          element,
+          groupElement: element.closest?.("[data-edit-hud-group]") ?? null,
+          customizable: descriptor.customizable !== false
+        });
+      })
+      .filter(Boolean);
+  }
+
+  #refreshDeclarativeCatalog() {
+    if (!this.#layoutStore) return;
+    this.#layoutDescriptors = this.#resolveLayoutDescriptors();
+    const descriptorMap = Object.fromEntries(this.#layoutDescriptors.map(descriptor => [descriptor.id, descriptor]));
+    this.#layoutStore.updateCatalog({
+      sectionIds: this.#layoutDescriptors.map(descriptor => descriptor.family),
+      itemIds: this.#layoutDescriptors.map(descriptor => descriptor.id),
+      sectionOrder: STATIC_GROUP_ORDER,
+      itemSections: Object.fromEntries(this.#layoutDescriptors.map(descriptor => [descriptor.id, descriptor.family])),
+      itemDescriptors: descriptorMap
+    });
+    this.#layoutCustomizer?.setDescriptors?.(this.#layoutDescriptors);
+    this.#layoutInteraction?.setDescriptors?.(this.#layoutDescriptors);
+    this.#lastLayoutSignature = null;
+    this.#applyAdaptiveLayout(this.#heuristic);
+  }
+
+  #materializeHudComponent(descriptor) {
+    const document = this.root.ownerDocument;
+    const strip = this.root.querySelector(".edit-hud-strip");
+    if (!document || !strip) return null;
+    let group = strip.querySelector(`[data-edit-hud-group="${cssEscape(descriptor.category)}"]`);
+    if (!group) {
+      group = document.createElement("div");
+      group.className = "edit-hud-group hud-custom-section";
+      group.dataset.editHudGroup = descriptor.category;
+      group.setAttribute("aria-label", descriptor.category);
+      strip.append(group);
+    }
+    let element;
+    if (["boolean", "radio"].includes(descriptor.kind)) {
+      element = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = descriptor.kind === "radio" ? "radio" : "checkbox";
+      const icon = document.createElement("span");
+      icon.textContent = descriptor.icon ?? "✓";
+      element.append(input, icon);
+    } else if (descriptor.kind === "select") {
+      element = document.createElement("label");
+      const select = document.createElement("select");
+      select.setAttribute("aria-label", descriptor.label);
+      element.append(select);
+    } else if (["number", "integer", "range", "color", "text"].includes(descriptor.kind)) {
+      element = document.createElement("label");
+      const input = document.createElement("input");
+      input.type = descriptor.kind === "integer" ? "number" : descriptor.kind;
+      if (descriptor.kind === "integer") input.step = "1";
+      element.append(input);
+    } else {
+      element = document.createElement("button");
+      element.type = "button";
+      element.textContent = descriptor.icon ?? "•";
+    }
+    element.id = descriptor.id;
+    element.dataset.hudItem = descriptor.id;
+    element.dataset.hudFamily = descriptor.category;
+    element.title = descriptor.description ?? descriptor.label;
+    if (descriptor.action?.command) {
+      element.addEventListener("click", () =>
+        this.#execute(descriptor.action.command, structuredClone(descriptor.action.arguments ?? {}))
+      );
+    }
+    group.append(element);
+    return element;
+  }
+
+  #applyApplicationUiProfile(snapshot) {
+    const profileId = snapshot?.application?.hudProfileId;
+    if (!profileId || !this.#layoutStore) return false;
+    const exists = this.#layoutStore.profiles().some(profile => profile.id === profileId);
+    if (!exists || this.#layoutStore.activeProfileId() === profileId) return false;
+    this.#layoutStore.setActiveProfile(profileId);
+    return true;
   }
 
   #adoptActiveLayoutViewport() {
@@ -1532,13 +1681,17 @@ export class EditHud {
       const control = element.matches?.("button, input, select")
         ? element
         : element.querySelector?.("button, input, select");
+      const moduleEnabled = descriptor.sourceModule
+        ? this.#uiModules.isEnabled(descriptor.sourceModule)
+        : true;
       itemContext[descriptor.id] = {
-        visible: element.dataset.contextVisible == null
+        visible: moduleEnabled && (element.dataset.contextVisible == null
           ? familyContext[descriptor.family]?.visible !== false
-          : element.dataset.contextVisible === "true",
-        available: element.dataset.contextAvailable == null
+          : element.dataset.contextVisible === "true"),
+        available: moduleEnabled && (element.dataset.contextAvailable == null
           ? !Boolean(control?.disabled)
-          : element.dataset.contextAvailable === "true"
+          : element.dataset.contextAvailable === "true"),
+        moduleEnabled
       };
     }
     return { familyContext, itemContext };
@@ -2272,6 +2425,12 @@ function describeState(state) {
     .filter(Boolean)
     .join("+");
   return `${subject} · ${state.tool} · ${state.frameMode} · ${axes}${locks ? ` · ${locks}` : ""}`;
+}
+
+function cssEscape(value) {
+  return globalThis.CSS?.escape
+    ? globalThis.CSS.escape(String(value))
+    : String(value).replace(/["\\]/g, "\\$&");
 }
 
 function safeId(value) {
