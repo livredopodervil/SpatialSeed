@@ -12966,15 +12966,13 @@ assets: {
         const sandbox = new Sandbox(region, boxRegionReducer);
         sandbox.dispatch({
           type: "object.create",
-          object: {
-            id: "ink",
-            kind: "stroke-bundle",
-            name: "Tinta",
-            position: [0,0,0],
-            rotation: [0,0,0,1],
-            scale: [1,1,1],
-            geometry: appended
-          }
+          id: "ink",
+          kind: "stroke-bundle",
+          name: "Tinta",
+          position: [0,0,0],
+          rotation: [0,0,0,1],
+          scale: [1,1,1],
+          geometry: appended
         });
         const before = sandbox.getHistoryDiagnostics();
         const scheduler = new StrokeCompactionScheduler({

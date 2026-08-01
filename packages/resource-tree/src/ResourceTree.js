@@ -644,15 +644,28 @@ export function parseResourcePath(pathValue) {
 
 function materializeChildren(tree, path, limits) {
   const reference = parseResourcePath(path);
-  const limit = reference?.kind === "members"
+  const requestedLimit = reference?.kind === "members"
     ? limits.maxMembers
     : reference?.kind === "strokes"
       ? limits.maxStrokes
       : reference?.kind === "vertices"
         ? limits.maxVertices
-        : 10000;
-  const pageResult = tree.listChildren(path, { offset: 0, limit });
-  return pageResult.items.map(item => deepFreeze({
+        : Infinity;
+  const items = [];
+  let offset = 0;
+  while (items.length < requestedLimit) {
+    const remaining = Number.isFinite(requestedLimit)
+      ? requestedLimit - items.length
+      : MAX_PAGE_SIZE;
+    const pageResult = tree.listChildren(path, {
+      offset,
+      limit: Math.max(1, Math.min(MAX_PAGE_SIZE, remaining))
+    });
+    items.push(...pageResult.items);
+    if (pageResult.nextOffset === null || !pageResult.items.length) break;
+    offset = pageResult.nextOffset;
+  }
+  return items.map(item => deepFreeze({
     ...item,
     children: item.hasChildren
       ? materializeChildren(tree, item.path, limits)
