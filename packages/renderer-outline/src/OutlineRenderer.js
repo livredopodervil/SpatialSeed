@@ -1,7 +1,7 @@
 import {
   createVirtualResourceTree,
   parseResourcePath
-} from "../../resource-tree/src/index.js?build=20260801-0045a";
+} from "../../resource-tree/src/index.js?build=20260801-0045a1";
 
 export class OutlineRenderer {
   static apiVersion = "outline-renderer-v3";

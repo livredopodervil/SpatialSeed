@@ -16,7 +16,7 @@ import {
   appendStrokeToBundle,
   normalizeStrokeBundleDescriptor,
   rebaseStrokeBundleOrigin
-} from "../../stroke-resources/src/index.js?build=20260801-0045a";
+} from "../../stroke-resources/src/index.js?build=20260801-0045a1";
 
 function updateById(objects, id, updater) {
   const index = objects.findIndex(object => object.id === id);

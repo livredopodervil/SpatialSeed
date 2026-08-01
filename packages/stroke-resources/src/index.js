@@ -26,17 +26,17 @@ export {
   strokesTouch,
   transformStroke,
   transformStrokeBundle
-} from "./StrokeBundle.js?build=20260801-0045a";
+} from "./StrokeBundle.js?build=20260801-0045a1";
 
 export {
   DEFAULT_STROKE_COMPACTION_POLICY,
   normalizeStrokeCompactionPolicy
-} from "./StrokeCompactionPolicy.js?build=20260801-0045a";
+} from "./StrokeCompactionPolicy.js?build=20260801-0045a1";
 
 export {
   StrokeCompactionScheduler
-} from "./StrokeCompactionScheduler.js?build=20260801-0045a";
+} from "./StrokeCompactionScheduler.js?build=20260801-0045a1";
 
 export {
   StrokeFusionService
-} from "./StrokeFusionService.js?build=20260801-0045a";
+} from "./StrokeFusionService.js?build=20260801-0045a1";

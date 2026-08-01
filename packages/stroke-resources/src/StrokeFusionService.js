@@ -13,7 +13,7 @@ import {
   strokesTouch,
   transformStroke,
   transformStrokeBundle
-} from "./StrokeBundle.js?build=20260801-0045a";
+} from "./StrokeBundle.js?build=20260801-0045a1";
 
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 

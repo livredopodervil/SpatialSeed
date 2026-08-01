@@ -13,7 +13,7 @@ import { ShapeGeometryProvider } from "./providers/ShapeGeometryProvider.js";
 import { ExtrudeGeometryProvider } from "./providers/ExtrudeGeometryProvider.js";
 import { PolyhedronGeometryProvider } from "./providers/PolyhedronGeometryProvider.js";
 import { BufferGeometryProvider } from "./providers/BufferGeometryProvider.js";
-import { StrokeBundleGeometryProvider } from "./providers/StrokeBundleGeometryProvider.js?build=20260801-0045a";
+import { StrokeBundleGeometryProvider } from "./providers/StrokeBundleGeometryProvider.js?build=20260801-0045a1";
 
 export function createDefaultGeometryRegistry() {
   const registry = new GeometryRegistry()

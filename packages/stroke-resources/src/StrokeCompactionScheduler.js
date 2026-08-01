@@ -2,11 +2,11 @@ import {
   createStrokeCompactionJob,
   normalizeStrokeBundleDescriptor,
   strokeBundleCompactionStatus
-} from "./StrokeBundle.js?build=20260801-0045a";
+} from "./StrokeBundle.js?build=20260801-0045a1";
 import {
   DEFAULT_STROKE_COMPACTION_POLICY,
   normalizeStrokeCompactionPolicy
-} from "./StrokeCompactionPolicy.js?build=20260801-0045a";
+} from "./StrokeCompactionPolicy.js?build=20260801-0045a1";
 
 export class StrokeCompactionScheduler {
   static apiVersion = "stroke-compaction-scheduler-v1";

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import {
   normalizeStrokeBundleDescriptor,
   strokeBundleStrokes
-} from "../../../stroke-resources/src/index.js?build=20260801-0045a";
+} from "../../../stroke-resources/src/index.js?build=20260801-0045a1";
 import {
   TubeGeometryProvider
 } from "./TubeGeometryProvider.js?build=20260731-0044a";

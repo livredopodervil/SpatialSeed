@@ -1,6 +1,6 @@
 import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-0020b-a";
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260801-0045a";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260801-0045a1";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260729-0039g2";
 import {
@@ -9,22 +9,22 @@ import {
   ViewerCameraController,
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260801-0045a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260801-0045a";
-import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260801-0045a1";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260801-0045a1";
+import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
 import {
   createVirtualResourceTree,
   parseResourcePath
-} from "../../../packages/resource-tree/src/index.js?build=20260801-0045a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260801-0045a";
+} from "../../../packages/resource-tree/src/index.js?build=20260801-0045a1";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260801-0045a1";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0044a";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260801-0045a";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260801-0045a1";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260801-0045a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260801-0045a1";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -40,7 +40,7 @@ import {
 } from "../../../packages/property-registry/src/index.js?build=20260727-0037c";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260801-0045a";
+} from "../../../packages/geometry-registry/src/index.js?build=20260801-0045a1";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -121,7 +121,7 @@ import {
   StrokeCompactionScheduler,
   StrokeFusionService,
   replaceStrokePointInBundle
-} from "../../../packages/stroke-resources/src/index.js?build=20260801-0045a";
+} from "../../../packages/stroke-resources/src/index.js?build=20260801-0045a1";
 import {
   MeasurementController
 } from "../../../packages/measurement-tools/src/index.js?build=20260730-0040e";

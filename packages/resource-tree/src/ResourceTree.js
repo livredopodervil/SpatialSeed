@@ -2,13 +2,13 @@ import {
   normalizeExplicitInstanceFamily,
   explicitFamilyTransformAt,
   familyMemberResourcePath
-} from "../../procedural-families/src/index.js?build=20260801-0045a";
+} from "../../procedural-families/src/index.js?build=20260801-0045a1";
 import {
   normalizeStrokeBundleDescriptor,
   strokeBundleFindStroke,
   strokeBundleStrokeAt,
   strokeResourcePath
-} from "../../stroke-resources/src/StrokeBundle.js?build=20260801-0045a";
+} from "../../stroke-resources/src/StrokeBundle.js?build=20260801-0045a1";
 
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 1000;

@@ -5,15 +5,15 @@ import {
 } from "../../instance-batches/src/InstanceBatch.js?build=20260730-0040e";
 import {
   InstanceBatchManager
-} from "../../instance-batches/src/InstanceBatchManager.js?build=20260801-0045a";
+} from "../../instance-batches/src/InstanceBatchManager.js?build=20260801-0045a1";
 import {
   HeterogeneousBatchManager
-} from "./HeterogeneousBatchManager.js?build=20260801-0045a";
+} from "./HeterogeneousBatchManager.js?build=20260801-0045a1";
 import {
   normalizeStrokeBundleDescriptor,
   strokeBundleChunkDescriptor,
   strokeChunkRenderResourcePath
-} from "../../stroke-resources/src/index.js?build=20260801-0045a";
+} from "../../stroke-resources/src/index.js?build=20260801-0045a1";
 import { BatchMaterialCache } from "../../batch-material-cache/src/index.js?build=20260726-0032a";
 import {
   DEFAULT_VIEWER_RENDER_SETTINGS,
@@ -26,7 +26,7 @@ import {
   createViewerEnvironmentTexture
 } from "./ViewerEnvironment.js?build=20260726-0032a";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
-import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260801-0045a";
+import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260801-0045a1";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
 import {
   normalizeCameraProjection,
@@ -82,7 +82,7 @@ import {
   explicitInstanceFamilyEstimatedBytes,
   familyMemberResourcePath,
   normalizeExplicitInstanceFamily
-} from "../../procedural-families/src/index.js?build=20260801-0045a";
+} from "../../procedural-families/src/index.js?build=20260801-0045a1";
 import {
   appearanceBindingForObject,
   appearanceBindingIdentity,

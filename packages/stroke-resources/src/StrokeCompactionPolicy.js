@@ -1,7 +1,7 @@
 import {
   DEFAULT_STROKE_CHUNK_POLICY,
   normalizeStrokeChunkPolicy
-} from "./StrokeBundle.js?build=20260801-0045a";
+} from "./StrokeBundle.js?build=20260801-0045a1";
 
 export const DEFAULT_STROKE_COMPACTION_POLICY = Object.freeze({
   enabled: true,

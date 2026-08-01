@@ -25,7 +25,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260801-0045a";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260801-0045a1";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -50,10 +50,10 @@ import {
 } from "../../instance-batches/src/InstanceBatch.js?build=20260729-0039g2";
 import {
   InstanceBatchManager
-} from "../../instance-batches/src/InstanceBatchManager.js?build=20260801-0045a";
+} from "../../instance-batches/src/InstanceBatchManager.js?build=20260801-0045a1";
 import {
   HeterogeneousBatchManager
-} from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260801-0045a";
+} from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260801-0045a1";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -112,12 +112,12 @@ import {
   strokeBundleStrokes,
   StrokeCompactionScheduler,
   StrokeFusionService
-} from "../../stroke-resources/src/index.js?build=20260801-0045a";
+} from "../../stroke-resources/src/index.js?build=20260801-0045a1";
 import {
   buildResourceTree,
   createVirtualResourceTree,
   parseResourcePath
-} from "../../resource-tree/src/index.js?build=20260801-0045a";
+} from "../../resource-tree/src/index.js?build=20260801-0045a1";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -148,7 +148,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260801-0045a";
+} from "../../region-box/src/reducer.js?build=20260801-0045a1";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -157,7 +157,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260801-0045a";
+} from "../../geometry-registry/src/index.js?build=20260801-0045a1";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -244,7 +244,7 @@ import {
 } from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260801-0045a";
+} from "../../editor-commands/src/EditorCommands.js?build=20260801-0045a1";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
