@@ -21,6 +21,9 @@ export class Sandbox {
     lastDispatchMs: 0,
     maximumDispatchMs: 0,
     preparedDispatches: 0,
+    maintenanceDispatches: 0,
+    lastMaintenanceMs: 0,
+    maximumMaintenanceMs: 0,
     lastCommandPreparationMs: 0,
     maximumCommandPreparationMs: 0,
     undos: 0,
@@ -126,6 +129,37 @@ export class Sandbox {
     this.#performance.maximumCommandPreparationMs = Math.max(
       this.#performance.maximumCommandPreparationMs,
       commandPreparationMs
+    );
+    return true;
+  }
+
+  dispatchMaintenance(command) {
+    const startedAt = performanceNow();
+    const before = this.#state;
+    const reducerCommand = deepFreeze(command);
+    const result = this.reducer(
+      before,
+      reducerCommand,
+      this.#reducerContext()
+    );
+    if (!result || result.state === before) return false;
+
+    const changes = this.#materializeChanges(
+      result.changes ?? [],
+      before,
+      result.state
+    );
+    this.#state = result.state;
+    this.#revision += 1;
+    this.#updateObjectIndex(changes);
+    this.#notify(changes);
+
+    const elapsed = performanceNow() - startedAt;
+    this.#performance.maintenanceDispatches += 1;
+    this.#performance.lastMaintenanceMs = elapsed;
+    this.#performance.maximumMaintenanceMs = Math.max(
+      this.#performance.maximumMaintenanceMs,
+      elapsed
     );
     return true;
   }

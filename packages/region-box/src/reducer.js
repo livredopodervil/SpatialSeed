@@ -15,7 +15,7 @@ import {
 import {
   appendStrokeToBundle,
   normalizeStrokeBundleDescriptor
-} from "../../stroke-resources/src/index.js?build=20260731-0044a";
+} from "../../stroke-resources/src/index.js?build=20260801-0045a";
 
 function updateById(objects, id, updater) {
   const index = objects.findIndex(object => object.id === id);
@@ -316,7 +316,8 @@ export function boxRegionReducer(state, command, context = {}) {
       }
       const geometry = appendStrokeToBundle(
         existing.geometry,
-        command.stroke
+        command.stroke,
+        { policy: command.policy ?? null }
       );
       const object = Object.freeze({ ...existing, geometry });
       const objects = updateById(
@@ -331,6 +332,42 @@ export function boxRegionReducer(state, command, context = {}) {
           objectId,
           object,
           source: command.source ?? "stroke-bundle.append"
+        }]
+      };
+    }
+
+    case "stroke-bundle.compact": {
+      const objectId = String(command.objectId ?? "").trim();
+      if (!objectId) throw new TypeError("Compactação exige objeto-alvo.");
+      const existing = typeof context.getObject === "function"
+        ? context.getObject(objectId)
+        : state.objects.find(object => String(object.id) === objectId);
+      if (!existing || existing.kind !== "stroke-bundle") {
+        throw new Error(`Conjunto de traços inexistente: ${objectId}.`);
+      }
+      if (command.expectedGeometry &&
+          existing.geometry !== command.expectedGeometry) {
+        return { state, changes: [] };
+      }
+      const geometry = normalizeStrokeBundleDescriptor(command.geometry);
+      if (geometry === existing.geometry) return { state, changes: [] };
+      const object = Object.freeze({
+        ...existing,
+        geometry,
+        selectionAnchorPolicy: geometry.selectionAnchorPolicy,
+        ...(geometry.selectionAnchorLocal
+          ? { selectionAnchorLocal: geometry.selectionAnchorLocal }
+          : {})
+      });
+      const objects = updateById(state.objects, objectId, () => object);
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [{
+          type: "object-updated",
+          objectId,
+          object,
+          source: command.source ?? "stroke-bundle.compact",
+          maintenance: true
         }]
       };
     }
@@ -491,6 +528,16 @@ export function boxRegionReducer(state, command, context = {}) {
         ),
         geometry,
         family,
+        selectionAnchorPolicy: normalizeSelectionAnchorPolicy(
+          command.selectionAnchorPolicy ?? "bounds-center"
+        ),
+        ...(String(command.selectionAnchorPolicy ?? "bounds-center") === "custom"
+          ? { selectionAnchorLocal: freezeVector(
+              command.selectionAnchorLocal,
+              3,
+              "Âncora personalizada da família inválida."
+            ) }
+          : {}),
         ...(command.appearanceId
           ? { appearanceId: String(command.appearanceId) }
           : {
@@ -856,6 +903,14 @@ function validateIncomingHierarchy(
   }
 }
 
+function normalizeSelectionAnchorPolicy(value) {
+  const policy = String(value ?? "bounds-center").trim().toLowerCase();
+  if (!["bounds-center", "origin", "custom", "pivot"].includes(policy)) {
+    throw new RangeError(`Política de âncora desconhecida: ${policy}.`);
+  }
+  return policy;
+}
+
 function freezeGeometry(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError("Descritor de geometria inválido.");
@@ -952,6 +1007,16 @@ function freezeStrokeBundleObject(
       "Escala do conjunto de traços inválida."
     ),
     geometry,
+    selectionAnchorPolicy: normalizeSelectionAnchorPolicy(
+      command.selectionAnchorPolicy ?? geometry.selectionAnchorPolicy
+    ),
+    ...((command.selectionAnchorPolicy ?? geometry.selectionAnchorPolicy) === "custom"
+      ? { selectionAnchorLocal: freezeVector(
+          command.selectionAnchorLocal ?? geometry.selectionAnchorLocal,
+          3,
+          "Âncora personalizada do conjunto inválida."
+        ) }
+      : {}),
     ...(command.appearanceId
       ? { appearanceId: String(command.appearanceId) }
       : {
@@ -1003,6 +1068,16 @@ function freezeInstanceFamilyObject(command = {}, context = {}, ignoredIds = new
     ),
     geometry,
     family,
+    selectionAnchorPolicy: normalizeSelectionAnchorPolicy(
+      command.selectionAnchorPolicy ?? "bounds-center"
+    ),
+    ...(String(command.selectionAnchorPolicy ?? "bounds-center") === "custom"
+      ? { selectionAnchorLocal: freezeVector(
+          command.selectionAnchorLocal,
+          3,
+          "Âncora personalizada da família inválida."
+        ) }
+      : {}),
     ...(command.appearanceId
       ? { appearanceId: String(command.appearanceId) }
       : {
