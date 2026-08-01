@@ -8,6 +8,7 @@ export {
   HUD_DOCK_VALUES,
   HUD_ORIENTATION_VALUES,
   HUD_SIZE_VALUES,
+  HUD_COLLISION_VALUES,
   createDefaultHudLayoutDocument,
   normalizeHudLayoutDocument,
   normalizeHudLayoutProfile,
@@ -23,19 +24,25 @@ export {
   familyPolicyDefaults,
   sectionPolicyDefaults,
   itemPolicyDefaults
-} from "./HudLayoutPolicy.js?build=20260801-0046c";
-export { HudLayoutStore } from "./HudLayoutStore.js?build=20260801-0046c";
+} from "./HudLayoutPolicy.js?build=20260801-0046d";
+export {
+  HUD_COLLISION_MODES,
+  findGridPlacement,
+  gridLayoutHasOverlap,
+  rectanglesOverlap,
+  resolveGridLayout,
+  resolveGridMutation
+} from "./HudGridEngine.js?build=20260801-0046d";
+export { HudLayoutStore } from "./HudLayoutStore.js?build=20260801-0046d";
 export {
   discoverHudDescriptors,
   applyHudLayoutPlan,
   descriptorLabels,
+  hudCanvasCellAtPoint,
   itemAtPoint,
   sectionAtPoint,
+  sectionCellAtPoint,
   scrollHudSection
-} from "./HudDomLayout.js?build=20260801-0046c";
-export {
-  HudCustomizationController
-} from "./HudCustomizationController.js?build=20260801-0046c";
-export {
-  HudInteractionController
-} from "./HudInteractionController.js?build=20260801-0046c";
+} from "./HudDomLayout.js?build=20260801-0046d";
+export { HudCustomizationController } from "./HudCustomizationController.js?build=20260801-0046d";
+export { HudInteractionController } from "./HudInteractionController.js?build=20260801-0046d";

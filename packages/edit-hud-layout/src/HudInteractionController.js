@@ -1,14 +1,16 @@
 import {
+  hudCanvasCellAtPoint,
   itemAtPoint,
-  sectionAtPoint
-} from "./HudDomLayout.js?build=20260801-0046c";
+  sectionAtPoint,
+  sectionCellAtPoint
+} from "./HudDomLayout.js?build=20260801-0046d";
 
 const LONG_PRESS_MS = 460;
 const MOVE_TOLERANCE = 7;
 const RESIZE_HIT_SIZE = 13;
 
 export class HudInteractionController {
-  static apiVersion = "hud-interaction-controller-v2";
+  static apiVersion = "hud-interaction-controller-v3";
 
   #root;
   #store;
@@ -56,6 +58,11 @@ export class HudInteractionController {
     }
     this.#listeners.length = 0;
     this.#doneButton?.remove?.();
+  }
+
+  setDescriptors(descriptors = []) {
+    this.#descriptors = new Map(descriptors.map(descriptor => [descriptor.id, descriptor]));
+    this.synchronizeNativeState();
   }
 
   organizing() {
@@ -168,7 +175,8 @@ export class HudInteractionController {
       armed: this.#organizing,
       moved: false,
       targetSection: null,
-      targetItem: null
+      targetItem: null,
+      targetCell: null
     };
     if (this.#organizing) {
       itemElement.setPointerCapture?.(event.pointerId);
@@ -199,7 +207,8 @@ export class HudInteractionController {
       lastY: event.clientY,
       armed: true,
       moved: false,
-      targetSection: null
+      targetSection: null,
+      targetCell: null
     };
     group.setPointerCapture?.(event.pointerId);
     event.preventDefault();
@@ -218,10 +227,10 @@ export class HudInteractionController {
       element: group,
       startX: event.clientX,
       startY: event.clientY,
-      startColumns: Math.max(1, Number(policy.columns) || 1),
-      startRows: Math.max(1, Number(policy.rows) || 1),
-      columns: Math.max(1, Number(policy.columns) || 1),
-      rows: Math.max(1, Number(policy.rows) || 1),
+      startWidth: Math.max(1, Number(policy.width) || 4),
+      startHeight: Math.max(1, Number(policy.height) || 2),
+      width: Math.max(1, Number(policy.width) || 4),
+      height: Math.max(1, Number(policy.height) || 2),
       pitch: hudCellPitch(this.#root)
     };
     group.setPointerCapture?.(event.pointerId);
@@ -239,10 +248,10 @@ export class HudInteractionController {
       element,
       startX: event.clientX,
       startY: event.clientY,
-      startWidth: Math.max(1, Number(policy.cellWidth) || 1),
-      startHeight: Math.max(1, Number(policy.cellHeight) || 1),
-      width: Math.max(1, Number(policy.cellWidth) || 1),
-      height: Math.max(1, Number(policy.cellHeight) || 1),
+      startWidth: Math.max(1, Number(policy.width ?? policy.cellWidth) || 1),
+      startHeight: Math.max(1, Number(policy.height ?? policy.cellHeight) || 1),
+      width: Math.max(1, Number(policy.width ?? policy.cellWidth) || 1),
+      height: Math.max(1, Number(policy.height ?? policy.cellHeight) || 1),
       pitch: hudCellPitch(this.#root)
     };
     element.setPointerCapture?.(event.pointerId);
@@ -257,13 +266,13 @@ export class HudInteractionController {
     pointer.lastY = event.clientY;
 
     if (pointer.kind === "section-resize") {
-      pointer.columns = Math.max(1, pointer.startColumns + Math.round(
+      pointer.width = Math.max(1, pointer.startWidth + Math.round(
         (event.clientX - pointer.startX) / pointer.pitch
       ));
-      pointer.rows = Math.max(1, pointer.startRows + Math.round(
+      pointer.height = Math.max(1, pointer.startHeight + Math.round(
         (event.clientY - pointer.startY) / pointer.pitch
       ));
-      previewSectionSize(pointer.element, pointer.columns, pointer.rows);
+      previewSectionSize(pointer.element, pointer.width, pointer.height);
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -304,12 +313,17 @@ export class HudInteractionController {
 
     if (pointer.kind === "item-drag") {
       pointer.targetSection = sectionAtPoint(this.#root, event.clientX, event.clientY);
+      const group = pointer.targetSection
+        ? this.#root.querySelector(`[data-edit-hud-group="${cssEscape(pointer.targetSection)}"]`)
+        : null;
+      pointer.targetCell = group ? sectionCellAtPoint(group, event.clientX, event.clientY) : null;
       const targetItem = itemAtPoint(this.#root, event.clientX, event.clientY);
       pointer.targetItem = targetItem === pointer.itemId ? null : targetItem;
       this.#markDropTargets(pointer.targetSection, pointer.targetItem);
     } else if (pointer.kind === "section-drag") {
       const target = sectionAtPoint(this.#root, event.clientX, event.clientY);
       pointer.targetSection = target === pointer.sectionId ? null : target;
+      pointer.targetCell = hudCanvasCellAtPoint(this.#root, event.clientX, event.clientY);
       this.#markDropTargets(pointer.targetSection, null);
     }
   };
@@ -321,31 +335,32 @@ export class HudInteractionController {
     pointer.element.releasePointerCapture?.(event.pointerId);
 
     if (pointer.kind === "section-resize") {
-      this.#store.updateSection(pointer.sectionId, {
-        columns: pointer.columns,
-        rows: pointer.rows
+      this.#store.placeSectionAt(pointer.sectionId, {
+        x: Number(pointer.element.dataset.hudSectionX) || 0,
+        y: Number(pointer.element.dataset.hudSectionY) || 0,
+        width: pointer.width,
+        height: pointer.height
       });
     } else if (pointer.kind === "item-resize") {
       this.#store.updateItem(pointer.itemId, {
-        cellWidth: pointer.width,
-        cellHeight: pointer.height
+        width: pointer.width,
+        height: pointer.height
       });
     } else if (pointer.kind === "item-drag" && pointer.armed) {
       this.#suppressClickUntil = performanceNow() + 750;
       if (pointer.moved && pointer.targetSection) {
-        this.#store.placeItem(pointer.itemId, {
+        this.#store.placeItemAt(pointer.itemId, {
           section: pointer.targetSection,
-          before: pointer.targetItem
+          x: pointer.targetCell?.x ?? null,
+          y: pointer.targetCell?.y ?? null
         });
       } else {
         this.#openItemEditor?.(pointer.itemId);
       }
     } else if (pointer.kind === "section-drag") {
       this.#suppressClickUntil = performanceNow() + 500;
-      if (pointer.moved && pointer.targetSection) {
-        this.#store.placeSection(pointer.sectionId, {
-          before: pointer.targetSection
-        });
+      if (pointer.moved && pointer.targetCell) {
+        this.#store.placeSectionAt(pointer.sectionId, pointer.targetCell);
       } else {
         this.#openSectionEditor?.(pointer.sectionId);
       }
@@ -551,9 +566,11 @@ export class HudInteractionController {
   }
 }
 
-function previewSectionSize(group, columns, rows) {
-  group.style.setProperty("--hud-section-columns", String(columns));
-  group.style.setProperty("--hud-section-rows", String(rows));
+function previewSectionSize(group, width, height) {
+  const x = Math.max(0, Number(group.dataset.hudSectionX) || 0);
+  const y = Math.max(0, Number(group.dataset.hudSectionY) || 0);
+  group.style.gridColumn = `${x + 1} / span ${width}`;
+  group.style.gridRow = `${y + 1} / span ${height}`;
 }
 
 function hudCellPitch(root) {
@@ -569,6 +586,12 @@ function readNativeActive(element) {
     ? element
     : element.querySelector?.("button, input");
   return control?.dataset?.active === "true" || Boolean(control?.checked);
+}
+
+function cssEscape(value) {
+  return globalThis.CSS?.escape
+    ? globalThis.CSS.escape(String(value))
+    : String(value).replace(/["\\]/g, "\\$&");
 }
 
 function performanceNow() {
