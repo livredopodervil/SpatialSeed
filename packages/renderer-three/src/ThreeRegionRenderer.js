@@ -5,7 +5,15 @@ import {
 } from "../../instance-batches/src/InstanceBatch.js?build=20260730-0040e";
 import {
   InstanceBatchManager
-} from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
+} from "../../instance-batches/src/InstanceBatchManager.js?build=20260801-0045a";
+import {
+  HeterogeneousBatchManager
+} from "./HeterogeneousBatchManager.js?build=20260801-0045a";
+import {
+  normalizeStrokeBundleDescriptor,
+  strokeBundleChunkDescriptor,
+  strokeChunkRenderResourcePath
+} from "../../stroke-resources/src/index.js?build=20260801-0045a";
 import { BatchMaterialCache } from "../../batch-material-cache/src/index.js?build=20260726-0032a";
 import {
   DEFAULT_VIEWER_RENDER_SETTINGS,
@@ -18,7 +26,7 @@ import {
   createViewerEnvironmentTexture
 } from "./ViewerEnvironment.js?build=20260726-0032a";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
-import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260731-0044a";
+import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260801-0045a";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
 import {
   normalizeCameraProjection,
@@ -72,8 +80,9 @@ import {
 import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
+  familyMemberResourcePath,
   normalizeExplicitInstanceFamily
-} from "../../procedural-families/src/index.js?build=20260731-0044a";
+} from "../../procedural-families/src/index.js?build=20260801-0045a";
 import {
   appearanceBindingForObject,
   appearanceBindingIdentity,
@@ -88,6 +97,7 @@ export class ThreeRegionRenderer {
   #cameraVisuals = new Map();
   #lightVisuals = new Map();
   #familyVisuals = new Map();
+  #strokeVisuals = new Map();
   #familyBuildQueue = [];
   #familyBuildHandle = null;
   #familyBuildDeferredAt = null;
@@ -109,6 +119,7 @@ export class ThreeRegionRenderer {
   #shadowFloor = null;
   #lastState = null;
   #batchManager = null;
+  #heterogeneousBatchManager = null;
   #selectedVisualIds = new Set();
   #selectionOutlines = null;
   #interactionMode = "select";
@@ -306,6 +317,21 @@ export class ThreeRegionRenderer {
         batch.mesh.receiveShadow = this.#viewerRenderSettings.shadows.enabled;
         this.scene.add(batch.mesh);
         return batch;
+      }
+    });
+    this.#heterogeneousBatchManager = new HeterogeneousBatchManager({
+      onBatchCreated: batch => {
+        // BatchedMesh não calcula bounds automaticamente. Mantemos o lote
+        // visível até que uma política incremental de bounds por shard seja
+        // habilitada; isto preserva correção sem revarrer a geometria no gesto.
+        batch.mesh.frustumCulled = false;
+        batch.mesh.castShadow = this.#viewerRenderSettings.shadows.enabled;
+        batch.mesh.receiveShadow = this.#viewerRenderSettings.shadows.enabled;
+        this.scene.add(batch.mesh);
+      },
+      onBatchDeleted: batch => {
+        this.scene.remove(batch.mesh);
+        if (batch.materialKey) this.#materialCache.release(batch.materialKey);
       }
     });
 
@@ -1293,15 +1319,56 @@ export class ThreeRegionRenderer {
       if (lockedObjectId && objectId !== lockedObjectId) continue;
       this.#incrementalDiagnostics.surfaceRaycastObjectVisits += 1;
       const family = this.#familyVisuals.get(objectId);
-      if (family?.mesh) {
-        for (const hit of this.raycaster.intersectObject(family.mesh, false)) {
-          candidates.push(surfacePlacementFromHit({
-            hit,
-            objectId,
-            ray: this.raycaster.ray,
-            target,
-            previous
-          }));
+      if (family?.resourceIds?.length) {
+        const batchKeys = new Set(
+          family.resourceIds
+            .map(resourceId => this.#batchManager.locationOf(resourceId)?.batchKey)
+            .filter(Boolean)
+        );
+        for (const batchKey of batchKeys) {
+          const batch = this.#batchManager.getBatch(batchKey);
+          if (!batch) continue;
+          for (const hit of this.raycaster.intersectObject(batch.mesh, false)) {
+            if (this.#batchManager.objectFromHit(hit) !== objectId) continue;
+            candidates.push(surfacePlacementFromHit({
+              hit,
+              objectId,
+              ray: this.raycaster.ray,
+              target,
+              previous
+            }));
+          }
+        }
+        continue;
+      }
+      const heterogeneousResources =
+        this.#heterogeneousBatchManager.resourcesForOwner(objectId);
+      if (heterogeneousResources.length) {
+        const batchKeys = new Set(heterogeneousResources
+          .map(resourceId =>
+            this.#heterogeneousBatchManager.locationOf(resourceId)?.batchKey
+          )
+          .filter(Boolean));
+        for (const batchKey of batchKeys) {
+          const heterogeneousBatch = this.#heterogeneousBatchManager
+            .batches()
+            .find(item => item.key === batchKey);
+          if (!heterogeneousBatch) continue;
+          for (const hit of this.raycaster.intersectObject(
+            heterogeneousBatch.mesh,
+            false
+          )) {
+            if (this.#heterogeneousBatchManager.objectFromHit(hit) !== objectId) {
+              continue;
+            }
+            candidates.push(surfacePlacementFromHit({
+              hit,
+              objectId,
+              ray: this.raycaster.ray,
+              target,
+              previous
+            }));
+          }
         }
         continue;
       }
@@ -1362,11 +1429,13 @@ export class ThreeRegionRenderer {
     this.raycaster.setFromCamera(this.pointer, this.camera);
     if (surface) {
       const batches = this.#batchManager.batches();
-      this.#incrementalDiagnostics.raycastBatchVisits += batches.length;
+      const heterogeneousBatches = this.#heterogeneousBatchManager.batches();
+      this.#incrementalDiagnostics.raycastBatchVisits +=
+        batches.length + heterogeneousBatches.length;
       const targets = [
-        ...batches.map(batch => batch.mesh).filter(Boolean),
-        ...[...this.#familyVisuals.values()].map(visual => visual.mesh)
-      ];
+        ...batches.map(batch => batch.mesh),
+        ...heterogeneousBatches.map(batch => batch.mesh)
+      ].filter(Boolean);
       const hit = this.raycaster.intersectObjects(targets, false)[0];
       if (hit?.point) {
         const normal = hit.face?.normal
@@ -1768,7 +1837,7 @@ export class ThreeRegionRenderer {
   hasObjectVisual(objectId) {
     const id = String(objectId ?? "");
     const family = this.#familyVisuals.get(id);
-    if (family) return family.mesh.count > 0;
+    if (family) return family.resourceIds.length > 0;
     return this.#meshes.has(id);
   }
 
@@ -1914,15 +1983,41 @@ export class ThreeRegionRenderer {
       )
     );
     for (const objectId of this.#animationTargetIds) {
-      const batchKey = this.#meshes.get(objectId)?.userData.batchKey;
-      if (!batchKey || this.#animationBatchCulling.has(batchKey)) continue;
-      const batch = this.#batchManager.getBatch(batchKey);
-      if (!batch) continue;
-      this.#animationBatchCulling.set(
-        batchKey,
-        batch.mesh.frustumCulled
+      const family = this.#familyVisuals.get(String(objectId));
+      const normalBatchKeys = family
+        ? [...family.batchKeys]
+        : [this.#meshes.get(objectId)?.userData.batchKey].filter(Boolean);
+      for (const batchKey of normalBatchKeys) {
+        const storageKey = `instance:${batchKey}`;
+        if (this.#animationBatchCulling.has(storageKey)) continue;
+        const batch = this.#batchManager.getBatch(batchKey);
+        if (!batch) continue;
+        this.#animationBatchCulling.set(
+          storageKey,
+          batch.mesh.frustumCulled
+        );
+        batch.mesh.frustumCulled = false;
+      }
+      const heterogeneousBatchKeys = new Set(
+        this.#heterogeneousBatchManager.resourcesForOwner(objectId)
+          .map(resourceId =>
+            this.#heterogeneousBatchManager.locationOf(resourceId)?.batchKey
+          )
+          .filter(Boolean)
       );
-      batch.mesh.frustumCulled = false;
+      for (const batchKey of heterogeneousBatchKeys) {
+        const storageKey = `heterogeneous:${batchKey}`;
+        if (this.#animationBatchCulling.has(storageKey)) continue;
+        const batch = this.#heterogeneousBatchManager.batches().find(
+          item => item.key === batchKey
+        );
+        if (!batch) continue;
+        this.#animationBatchCulling.set(
+          storageKey,
+          batch.mesh.frustumCulled
+        );
+        batch.mesh.frustumCulled = false;
+      }
     }
     this.#animationSurfaceDiagnostics.captures += 1;
     return snapshot;
@@ -2005,8 +2100,20 @@ export class ThreeRegionRenderer {
 
     this.#animationTargetIds.clear();
     this.#animationPivotOverrides.clear();
-    for (const [batchKey, frustumCulled] of this.#animationBatchCulling) {
-      const batch = this.#batchManager.getBatch(batchKey);
+    for (const [storageKey, frustumCulled] of this.#animationBatchCulling) {
+      const normalizedKey = String(storageKey);
+      const separator = normalizedKey.indexOf(":");
+      const kind = separator >= 0
+        ? normalizedKey.slice(0, separator)
+        : "instance";
+      const batchKey = separator >= 0
+        ? normalizedKey.slice(separator + 1)
+        : normalizedKey;
+      const batch = kind === "heterogeneous"
+        ? this.#heterogeneousBatchManager.batches().find(
+            item => item.key === batchKey
+          )
+        : this.#batchManager.getBatch(batchKey);
       if (batch) batch.mesh.frustumCulled = frustumCulled;
     }
     this.#animationBatchCulling.clear();
@@ -2112,6 +2219,10 @@ export class ThreeRegionRenderer {
       batch.mesh.castShadow = settings.shadows.enabled;
       batch.mesh.receiveShadow = settings.shadows.enabled;
     }
+    for (const batch of this.#heterogeneousBatchManager?.batches?.() ?? []) {
+      batch.mesh.castShadow = settings.shadows.enabled;
+      batch.mesh.receiveShadow = settings.shadows.enabled;
+    }
 
     const environmentChanged = !previous ||
       previous.environment.enabled !== settings.environment.enabled ||
@@ -2145,11 +2256,23 @@ export class ThreeRegionRenderer {
     for (const batch of this.#batchManager.batches()) {
       if (batch.material) batch.material.needsUpdate = true;
     }
+    for (const batch of this.#heterogeneousBatchManager.batches()) {
+      if (batch.mesh?.material) batch.mesh.material.needsUpdate = true;
+    }
   }
 
   #rebuildRenderableBatches() {
     const state = this.#lastState;
+    for (const id of [...this.#familyVisuals.keys()]) {
+      this.#removeFamilyVisual(id, this.#meshes.get(id));
+    }
+    for (const id of [...this.#strokeVisuals.keys()]) {
+      this.#removeStrokeBundleVisual(id, this.#meshes.get(id));
+    }
     for (const [id, proxy] of this.#meshes) {
+      if (proxy.userData.heterogeneousBatch) {
+        this.#removeHeterogeneousObject(id, proxy);
+      }
       if (!proxy.userData.batchKey) continue;
       this.#removeFromBatch(id, proxy.userData.batchKey);
       proxy.userData.batchKey = null;
@@ -2234,6 +2357,29 @@ export class ThreeRegionRenderer {
       this.#removeFamilyVisual(object.id, proxy);
     }
 
+    if (this.#isStrokeBundleObject(object) &&
+        this.#canUseSegmentedStrokeBatch(object)) {
+      if (proxy.userData.batchKey) {
+        this.#removeFromBatch(object.id, proxy.userData.batchKey);
+        proxy.userData.batchKey = null;
+      }
+      proxy.userData.logicalOnly = false;
+      if (this.#upsertStrokeBundleVisual(object, proxy)) return;
+    } else if (proxy.userData.strokeBundleVisual) {
+      this.#removeStrokeBundleVisual(object.id, proxy);
+    }
+
+    if (this.#canUseHeterogeneousBatch(object)) {
+      if (proxy.userData.batchKey) {
+        this.#removeFromBatch(object.id, proxy.userData.batchKey);
+        proxy.userData.batchKey = null;
+      }
+      proxy.userData.logicalOnly = false;
+      if (this.#upsertHeterogeneousVisual(object, proxy)) return;
+    } else if (proxy.userData.heterogeneousBatch) {
+      this.#removeHeterogeneousObject(object.id, proxy);
+    }
+
     if (!isRenderableSceneNode(object)) {
       if (proxy.userData.batchKey) {
         this.#removeFromBatch(object.id,proxy.userData.batchKey);
@@ -2290,6 +2436,8 @@ export class ThreeRegionRenderer {
     this.#removeCameraVisual(id, proxy);
     this.#removeLightVisual(id, proxy);
     this.#removeFamilyVisual(id, proxy);
+    this.#removeStrokeBundleVisual(id, proxy);
+    this.#removeHeterogeneousObject(id, proxy);
     this.#removeFromBatch(id, proxy.userData.batchKey);
     this.#meshes.delete(id);
     this.#selectedVisualIds.delete(id);
@@ -2314,39 +2462,31 @@ export class ThreeRegionRenderer {
     const descriptor = this.#geometryRegistry.describeLegacyObject(object);
     const renderProfile = this.#geometryRegistry.renderProfile(descriptor);
     const geometryKey = this.#geometryRegistry.key(descriptor);
-    const materialRequest = renderMaterialRequest(object, binding, {
-      applyBinding: false
-    });
-    const materialIdentity = JSON.stringify([
-      materialRequest.appearanceId ?? null,
-      materialRequest.material ?? null,
-      renderProfile.side,
-      binding.materialMode,
-      binding.opacityMultiplier
-    ]);
+    const materialRequest = renderMaterialRequest(object, binding);
+    const materialIdentity = renderBatchMaterialIdentity(
+      materialRequest,
+      renderProfile,
+      binding
+    );
     const bindingIdentity = appearanceBindingIdentity(binding, { family });
+    const signature = JSON.stringify([
+      geometryKey,
+      materialIdentity,
+      this.#viewerRenderSettings.shadows.enabled
+    ]);
     const current = this.#familyVisuals.get(object.id);
     if (
       current &&
       current.family === object.family &&
-      current.geometryKey === geometryKey
+      current.signature === signature
     ) {
-      if (current.materialIdentity !== materialIdentity) {
-        this.#replaceFamilyMaterial(current, {
-          object,
-          family,
-          binding,
-          renderProfile,
-          materialRequest,
-          materialIdentity
-        });
-      }
-      if (current.bindingIdentity !== bindingIdentity) {
-        this.#applyFamilyAppearance(current, binding);
-      }
+      current.binding = binding;
+      current.bindingIdentity = bindingIdentity;
       proxy.userData.familyVisual = true;
       proxy.userData.appearanceBinding = binding;
       if (proxy.parent !== this.scene) this.scene.add(proxy);
+      this.#updateSharedFamilyMatrices(current);
+      this.#applyFamilyAppearance(current, binding);
       return current;
     }
     if (current) this.#removeFamilyVisual(object.id, proxy);
@@ -2359,26 +2499,7 @@ export class ThreeRegionRenderer {
       ...materialRequest,
       renderProfile
     });
-    let mesh = null;
-    let meshMaterial = null;
     try {
-      const preparedMaterial = createFamilyDisplayMaterial(
-        material.value.material,
-        { object, family, binding }
-      );
-      meshMaterial = preparedMaterial.material;
-      mesh = new THREE.InstancedMesh(
-        geometry.value,
-        meshMaterial,
-        family.count
-      );
-      mesh.name = `instance-family-${object.id}`;
-      mesh.userData.familyObjectId = object.id;
-      mesh.castShadow = this.#viewerRenderSettings.shadows.enabled;
-      mesh.receiveShadow = this.#viewerRenderSettings.shadows.enabled;
-      mesh.frustumCulled = false;
-      mesh.count = 0;
-      mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
       const conservativeBounds = explicitFamilyConservativeBounds(
         geometry.value,
         family
@@ -2392,33 +2513,30 @@ export class ThreeRegionRenderer {
       ).toArray();
       proxy.userData.familyVisual = true;
       proxy.userData.appearanceBinding = binding;
-      mesh.boundingBox = conservativeBounds.clone();
-      mesh.boundingSphere = conservativeBounds.getBoundingSphere(
-        new THREE.Sphere()
-      );
-      proxy.add(mesh);
       if (proxy.parent !== this.scene) this.scene.add(proxy);
+
       const visual = {
         objectId: String(object.id),
-        mesh,
         proxy,
         family: object.family,
         normalizedFamily: family,
         familyCount: family.count,
         estimatedBytes: explicitInstanceFamilyEstimatedBytes(family),
         geometryKey: geometry.key,
+        geometry: geometry.value,
         materialKey: material.key,
+        material: material.value.material,
         materialIdentity,
         binding,
         bindingIdentity,
-        baseColor: preparedMaterial.baseColor,
-        baseOpacity: preparedMaterial.baseOpacity,
-        ownsMaterial: true,
-        animationInstanceColor: null,
-        animationColorActive: false,
+        signature,
+        resourceIds: [],
+        batchKeys: new Set(),
         nextIndex: 0,
         building: true,
+        animationColorActive: false,
         transform: {
+          memberId: null,
           position: [0, 0, 0],
           rotation: [0, 0, 0, 1],
           scale: [1, 1, 1],
@@ -2427,7 +2545,8 @@ export class ThreeRegionRenderer {
         position: new THREE.Vector3(),
         quaternion: new THREE.Quaternion(),
         scale: new THREE.Vector3(),
-        matrix: new THREE.Matrix4(),
+        localMatrix: new THREE.Matrix4(),
+        worldMatrix: new THREE.Matrix4(),
         color: new THREE.Color()
       };
       this.#familyVisuals.set(object.id, visual);
@@ -2435,102 +2554,50 @@ export class ThreeRegionRenderer {
       this.#incrementalDiagnostics.familyInstances += family.count;
       this.#incrementalDiagnostics.familyEstimatedBytes +=
         visual.estimatedBytes;
-      this.#applyFamilyAppearance(visual, binding);
-      /* Um pequeno prefixo torna o visual e a seleção disponíveis no mesmo
-         turno da criação; o restante continua cooperativo entre quadros. */
       this.#fillFamilyVisualChunk(visual, Math.min(32, family.count));
       if (visual.building) this.#queueFamilyBuild(object.id);
       return visual;
     } catch (error) {
-      if (mesh) mesh.dispose?.();
-      meshMaterial?.dispose?.();
       this.#resourceCache.releaseGeometry(geometry.key);
       this.#materialCache.release(material.key);
       throw error;
     }
   }
 
-  #replaceFamilyMaterial(
-    visual,
-    { object, family, binding, renderProfile, materialRequest, materialIdentity }
-  ) {
-    const material = this.#materialCache.acquire({
-      ...materialRequest,
-      renderProfile
-    });
-    let prepared = null;
-    try {
-      prepared = createFamilyDisplayMaterial(
-        material.value.material,
-        { object, family, binding }
-      );
-      const previousMaterial = visual.mesh.material;
-      const previousKey = visual.materialKey;
-      visual.mesh.material = prepared.material;
-      visual.materialKey = material.key;
-      visual.materialIdentity = materialIdentity;
-      visual.baseColor = prepared.baseColor;
-      visual.baseOpacity = prepared.baseOpacity;
-      visual.ownsMaterial = true;
-      previousMaterial?.dispose?.();
-      this.#materialCache.release(previousKey);
-      this.#applyFamilyAppearance(visual, binding);
-      return true;
-    } catch (error) {
-      prepared?.material?.dispose?.();
-      this.#materialCache.release(material.key);
-      throw error;
-    }
-  }
-
   #applyFamilyAppearance(visual, binding) {
-    const previousMode = visual.binding?.colorMode ?? null;
     visual.binding = binding;
     visual.bindingIdentity = appearanceBindingIdentity(binding, {
       family: visual.normalizedFamily
     });
-    const material = visual.mesh.material;
-    const color = binding.colorMode === "per-instance"
-      ? binding.tint
-      : binding.colorMode === "uniform"
-        ? multiplyHexColors(binding.uniformColor, binding.tint)
-        : multiplyHexColors(visual.baseColor, binding.tint);
-    material.color?.set?.(color);
-    const opacity = Math.max(
-      0,
-      Math.min(1, Number(visual.baseOpacity ?? 1) * binding.opacityMultiplier)
-    );
-    const transparent = opacity < 1 || Boolean(material.alphaMap);
-    if (material.opacity !== opacity || material.transparent !== transparent) {
-      material.opacity = opacity;
-      material.transparent = transparent;
-      material.needsUpdate = true;
-    }
-    if (binding.colorMode === "per-instance") {
-      if (!visual.normalizedFamily.colors) {
-        throw new Error(
-          `Família ${visual.objectId} não possui cores por instância.`
-        );
-      }
-      if (previousMode !== "per-instance" || !visual.mesh.instanceColor) {
-        for (let index = 0; index < visual.nextIndex; index += 1) {
-          visual.color.set(
-            familyColorAt(visual.normalizedFamily, index)
-          );
-          visual.mesh.setColorAt(index, visual.color);
-        }
-        if (visual.mesh.instanceColor) {
-          visual.mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-          visual.mesh.instanceColor.needsUpdate = true;
-        }
-        material.needsUpdate = true;
-      }
-    } else if (visual.mesh.instanceColor) {
-      visual.mesh.instanceColor = null;
-      material.needsUpdate = true;
+    for (let index = 0; index < visual.resourceIds.length; index += 1) {
+      const resourceId = visual.resourceIds[index];
+      const desired = this.#familyMemberColor(visual, index);
+      const location = this.#batchManager.locationOf(resourceId);
+      const batch = location
+        ? this.#batchManager.getBatch(location.batchKey)
+        : null;
+      if (!batch || !desired) continue;
+      updateAbsoluteInstanceColor(batch, resourceId, desired);
+      this.#markBatchDirty(location.batchKey);
     }
     visual.proxy.userData.appearanceBinding = binding;
     return true;
+  }
+
+  #familyMemberColor(visual, index) {
+    if (visual.binding.colorMode === "per-instance") {
+      return familyColorAt(visual.normalizedFamily, index);
+    }
+    if (visual.binding.colorMode === "uniform") {
+      return multiplyHexColors(
+        visual.binding.uniformColor,
+        visual.binding.tint
+      );
+    }
+    const base = visual.material?.color?.isColor
+      ? `#${visual.material.color.getHexString()}`
+      : "#ffffff";
+    return multiplyHexColors(base, visual.binding.tint);
   }
 
   #queueFamilyBuild(objectId) {
@@ -2602,36 +2669,59 @@ export class ThreeRegionRenderer {
     const family = visual.normalizedFamily;
     const start = visual.nextIndex;
     const end = Math.min(family.count, start + maximum);
+    visual.proxy.updateMatrixWorld(true);
     for (let index = start; index < end; index += 1) {
       explicitFamilyTransformAt(family, index, visual.transform);
       visual.position.fromArray(visual.transform.position);
       visual.quaternion.fromArray(visual.transform.rotation);
       visual.scale.fromArray(visual.transform.scale);
-      visual.matrix.compose(
+      visual.localMatrix.compose(
         visual.position,
         visual.quaternion,
         visual.scale
       );
-      visual.mesh.setMatrixAt(index, visual.matrix);
-      if (
-        !visual.animationColorActive &&
-        visual.binding.colorMode === "per-instance" &&
-        visual.transform.color !== null
-      ) {
-        visual.color.setHex(visual.transform.color);
-        visual.mesh.setColorAt(index, visual.color);
-      }
+      visual.worldMatrix.multiplyMatrices(
+        visual.proxy.matrixWorld,
+        visual.localMatrix
+      );
+      const memberId = visual.transform.memberId ?? `member-${index + 1}`;
+      const resourceId = familyMemberResourcePath(
+        visual.objectId,
+        memberId
+      );
+      const cell = familyBatchSpatialCell(visual.worldMatrix, 64);
+      const baseKey = JSON.stringify([
+        "shared-family",
+        visual.signature,
+        cell
+      ]);
+      const desired = this.#familyMemberColor(visual, index);
+      const added = this.#batchManager.addSegmented({
+        resourceId,
+        ownerId: visual.objectId,
+        memberId,
+        batchBaseKey: baseKey,
+        matrix: visual.worldMatrix,
+        attributes: desired
+          ? { color: absoluteInstanceColorFactor(visual.material, desired) }
+          : {},
+        descriptor: {
+          geometry: visual.geometry,
+          material: visual.material,
+          capacity: Math.min(this.#batchCapacity, 8192)
+        },
+        metadata: Object.freeze({
+          kind: "family-member",
+          ordinal: index
+        })
+      });
+      added.batch.mesh.userData.sharedFamilyResources = true;
+      added.batch.mesh.userData.renderSignature = visual.signature;
+      visual.resourceIds[index] = resourceId;
+      visual.batchKeys.add(added.batch.key);
+      this.#markBatchDirty(added.batch.key);
     }
     visual.nextIndex = end;
-    visual.mesh.count = end;
-    if (end > start) {
-      visual.mesh.instanceMatrix.addUpdateRange?.(start * 16, (end - start) * 16);
-      visual.mesh.instanceMatrix.needsUpdate = true;
-      if (visual.mesh.instanceColor) {
-        visual.mesh.instanceColor.addUpdateRange?.(start * 3, (end - start) * 3);
-        visual.mesh.instanceColor.needsUpdate = true;
-      }
-    }
     if (start === 0 && end > 0) {
       this.#notifyObjectVisual(visual, {
         ready: true,
@@ -2641,14 +2731,42 @@ export class ThreeRegionRenderer {
       this.#updateSelectionAppearance();
     }
     if (end < family.count) return;
-
-    /* Os limites conservadores já foram calculados durante a compactação da
-       família; não percorremos novamente K matrizes no término do build. */
-    visual.mesh.frustumCulled = true;
     visual.building = false;
     this.#notifyObjectVisual(visual, { ready: true, partial: false });
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
+  }
+
+  #updateSharedFamilyMatrices(visual) {
+    if (!visual?.resourceIds?.length) return false;
+    visual.proxy.updateMatrixWorld(true);
+    let changed = false;
+    for (let index = 0; index < visual.resourceIds.length; index += 1) {
+      explicitFamilyTransformAt(
+        visual.normalizedFamily,
+        index,
+        visual.transform
+      );
+      visual.position.fromArray(visual.transform.position);
+      visual.quaternion.fromArray(visual.transform.rotation);
+      visual.scale.fromArray(visual.transform.scale);
+      visual.localMatrix.compose(
+        visual.position,
+        visual.quaternion,
+        visual.scale
+      );
+      visual.worldMatrix.multiplyMatrices(
+        visual.proxy.matrixWorld,
+        visual.localMatrix
+      );
+      const resourceId = visual.resourceIds[index];
+      const location = this.#batchManager.locationOf(resourceId);
+      if (this.#batchManager.update(resourceId, visual.worldMatrix)) {
+        changed = true;
+        this.#markBatchDirty(location?.batchKey);
+      }
+    }
+    return changed;
   }
 
   #notifyObjectVisual(visual, { ready, partial }) {
@@ -2667,7 +2785,7 @@ export class ThreeRegionRenderer {
   }
 
   #removeFamilyVisual(id, proxy = this.#meshes.get(id)) {
-    const visual = this.#familyVisuals.get(id);
+    const visual = this.#familyVisuals.get(String(id));
     this.#familyBuildQueue = this.#familyBuildQueue.filter(
       queuedId => queuedId !== String(id)
     );
@@ -2675,13 +2793,18 @@ export class ThreeRegionRenderer {
       if (proxy?.userData) proxy.userData.familyVisual = false;
       return false;
     }
-    proxy?.remove(visual.mesh);
-    this.scene.remove(proxy);
-    visual.mesh.dispose?.();
-    if (visual.ownsMaterial) visual.mesh.material?.dispose?.();
+    const removal = this.#batchManager.removeOwner(visual.objectId);
+    const batchKeys = new Set(removal.results.map(result => result.batchKey));
+    for (const batchKey of batchKeys) {
+      const batch = this.#batchManager.getBatch(batchKey);
+      if (!batch || batch.size > 0) continue;
+      this.scene.remove(batch.mesh);
+      this.#batchManager.deleteBatch(batchKey);
+      this.#dirtyBatchKeys.delete(batchKey);
+    }
     this.#resourceCache.releaseGeometry(visual.geometryKey);
     this.#materialCache.release(visual.materialKey);
-    this.#familyVisuals.delete(id);
+    this.#familyVisuals.delete(String(id));
     if (proxy?.userData) {
       proxy.userData.familyVisual = false;
       proxy.userData.localBounds = null;
@@ -3007,6 +3130,321 @@ export class ThreeRegionRenderer {
     if (batchKey) this.#dirtyBatchKeys.add(batchKey);
   }
 
+  #isStrokeBundleObject(object) {
+    return Boolean(
+      object?.kind === "stroke-bundle" ||
+      object?.geometry?.type === "stroke-bundle"
+    );
+  }
+
+  #isOpaqueBatchCandidate(object) {
+    const binding = appearanceBindingForObject(object);
+    const request = renderMaterialRequest(object, binding);
+    const opacity = Number(
+      request.material?.opacity ?? object.material?.opacity ?? 1
+    ) * Number(binding.opacityMultiplier ?? 1);
+    return opacity >= 0.999 &&
+      !Boolean(request.material?.transparent) &&
+      !Boolean(request.material?.alphaMap);
+  }
+
+  #canUseSegmentedStrokeBatch(object) {
+    return Boolean(
+      this.#heterogeneousBatchManager?.supported &&
+      this.#isStrokeBundleObject(object) &&
+      this.#isOpaqueBatchCandidate(object)
+    );
+  }
+
+  #upsertStrokeBundleVisual(object, proxy) {
+    const bundle = normalizeStrokeBundleDescriptor(
+      object.geometry?.type === "stroke-bundle"
+        ? object.geometry
+        : object.strokeBundle ?? object.geometry
+    );
+    const binding = appearanceBindingForObject(object);
+    const renderProfile = this.#geometryRegistry.renderProfile(bundle);
+    const materialRequest = renderMaterialRequest(object, binding);
+    const materialIdentity = renderBatchMaterialIdentity(
+      materialRequest,
+      renderProfile,
+      binding
+    );
+    const signature = JSON.stringify([
+      "segmented-stroke-bundle",
+      materialIdentity,
+      this.#viewerRenderSettings.shadows.enabled
+    ]);
+    proxy.updateMatrixWorld(true);
+
+    let visual = this.#strokeVisuals.get(String(object.id)) ?? null;
+    if (visual && visual.signature !== signature) {
+      this.#removeStrokeBundleVisual(object.id, proxy);
+      visual = null;
+    }
+    if (!visual) {
+      visual = {
+        objectId: String(object.id),
+        bundle: null,
+        signature,
+        binding,
+        materialRequest,
+        renderProfile,
+        chunks: new Map(),
+        animationColorActive: false
+      };
+      this.#strokeVisuals.set(String(object.id), visual);
+    }
+
+    const nextChunksById = new Map(
+      bundle.chunks.map(chunk => [String(chunk.id), chunk])
+    );
+    const nextChunkIds = new Set(nextChunksById.keys());
+    for (const [chunkId, entry] of [...visual.chunks]) {
+      const nextChunk = nextChunksById.get(chunkId);
+      if (!nextChunk || nextChunk !== entry.chunk) {
+        this.#heterogeneousBatchManager.remove(entry.resourceId);
+        visual.chunks.delete(chunkId);
+      }
+    }
+
+    const desired = effectiveAppearanceColor(binding, {
+      baseColor: object.material?.color ?? "#ffffff",
+      instanceColor: object.instanceState?.color ?? null
+    });
+    let failed = false;
+    for (const chunk of bundle.chunks) {
+      const chunkId = String(chunk.id);
+      if (visual.chunks.has(chunkId)) continue;
+      const descriptor = strokeBundleChunkDescriptor(bundle, chunk);
+      const geometryKey = this.#geometryRegistry.key(descriptor);
+      const geometryResource = this.#resourceCache.acquireGeometry(
+        geometryKey,
+        () => this.#geometryRegistry.create(descriptor)
+      );
+      try {
+        const resourceId = strokeChunkRenderResourcePath(object.id, chunkId);
+        const attributeSignature = bufferGeometryAttributeSignature(
+          geometryResource.value
+        );
+        const cell = strokeChunkSpatialCell(
+          proxy.matrixWorld,
+          chunk.bounds,
+          64
+        );
+        const batchBaseKey = JSON.stringify([
+          signature,
+          cell,
+          attributeSignature
+        ]);
+        const result = this.#heterogeneousBatchManager.add({
+          objectId: object.id,
+          resourceId,
+          ownerId: object.id,
+          metadata: Object.freeze({
+            kind: "stroke-chunk",
+            chunkId
+          }),
+          batchBaseKey,
+          geometry: geometryResource.value,
+          matrix: proxy.matrixWorld,
+          materialFactory: () => {
+            const acquired = this.#materialCache.acquire({
+              ...materialRequest,
+              renderProfile
+            });
+            return {
+              material: acquired.value.material,
+              materialKey: acquired.key
+            };
+          }
+        });
+        if (!result.added) {
+          failed = true;
+          break;
+        }
+        visual.chunks.set(chunkId, Object.freeze({
+          chunk,
+          resourceId,
+          geometryKey,
+          batchBaseKey
+        }));
+        this.#setHeterogeneousResourceColor(resourceId, desired);
+      } finally {
+        this.#resourceCache.releaseGeometry(geometryResource.key);
+      }
+    }
+
+    if (failed || visual.chunks.size !== nextChunkIds.size) {
+      this.#removeStrokeBundleVisual(object.id, proxy);
+      return false;
+    }
+
+    visual.bundle = bundle;
+    visual.binding = binding;
+    visual.materialRequest = materialRequest;
+    visual.renderProfile = renderProfile;
+    proxy.userData.strokeBundleVisual = true;
+    proxy.userData.heterogeneousBatch = true;
+    proxy.userData.appearanceBinding = binding;
+    proxy.userData.appearanceId = object.appearanceId;
+    proxy.userData.instanceColor = object.instanceState?.color ?? null;
+    proxy.userData.materialColor = object.material?.color ?? "#ffffff";
+    proxy.userData.localBounds = {
+      min: [...bundle.bounds.min],
+      max: [...bundle.bounds.max]
+    };
+    proxy.userData.selectionAnchorPolicy = bundle.selectionAnchorPolicy;
+    proxy.userData.selectionAnchorLocal = bundle.selectionAnchorLocal
+      ? [...bundle.selectionAnchorLocal]
+      : null;
+    proxy.userData.size = bundle.bounds.max.map(
+      (value, axis) => value - bundle.bounds.min[axis]
+    );
+    if (proxy.parent !== this.scene) this.scene.add(proxy);
+    this.#heterogeneousBatchManager.updateOwner(object.id, proxy.matrixWorld);
+    this.#applyObjectInstanceColor(object.id);
+    return true;
+  }
+
+  #removeStrokeBundleVisual(
+    objectId,
+    proxy = this.#meshes.get(String(objectId))
+  ) {
+    const id = String(objectId);
+    const visual = this.#strokeVisuals.get(id);
+    if (!visual) return false;
+    this.#heterogeneousBatchManager.removeOwner(id);
+    this.#strokeVisuals.delete(id);
+    if (proxy?.userData) {
+      proxy.userData.strokeBundleVisual = false;
+      proxy.userData.heterogeneousBatch = false;
+      delete proxy.userData.selectionAnchorPolicy;
+      delete proxy.userData.selectionAnchorLocal;
+    }
+    return true;
+  }
+
+  #canUseHeterogeneousBatch(object) {
+    return Boolean(
+      this.#heterogeneousBatchManager?.supported &&
+      object?.geometry?.type === "tube" &&
+      this.#isOpaqueBatchCandidate(object)
+    );
+  }
+
+  #upsertHeterogeneousVisual(object, proxy) {
+    const descriptor = this.#geometryRegistry.describeLegacyObject(object);
+    const geometryKey = this.#geometryRegistry.key(descriptor);
+    const binding = appearanceBindingForObject(object);
+    const renderProfile = this.#geometryRegistry.renderProfile(descriptor);
+    const materialRequest = renderMaterialRequest(object, binding);
+    const materialIdentity = renderBatchMaterialIdentity(
+      materialRequest,
+      renderProfile,
+      binding
+    );
+    proxy.updateMatrixWorld(true);
+    const cell = familyBatchSpatialCell(proxy.matrixWorld, 64);
+    const signature = JSON.stringify([
+      "heterogeneous-tube",
+      materialIdentity,
+      cell,
+      this.#viewerRenderSettings.shadows.enabled
+    ]);
+    if (proxy.userData.heterogeneousBatch &&
+        proxy.userData.heterogeneousGeometryKey === geometryKey &&
+        proxy.userData.heterogeneousSignature === signature) {
+      this.#heterogeneousBatchManager.update(object.id, proxy.matrixWorld);
+      this.#applyObjectInstanceColor(object.id);
+      return true;
+    }
+    if (proxy.userData.heterogeneousBatch) {
+      this.#removeHeterogeneousObject(object.id, proxy);
+    }
+
+    const geometryResource = this.#resourceCache.acquireGeometry(
+      geometryKey,
+      () => this.#geometryRegistry.create(descriptor)
+    );
+    this.#storeGeometryBounds(proxy, geometryResource.value);
+    const attributeSignature = bufferGeometryAttributeSignature(
+      geometryResource.value
+    );
+    const batchBaseKey = JSON.stringify([signature, attributeSignature]);
+    try {
+      const result = this.#heterogeneousBatchManager.add({
+        objectId: object.id,
+        batchBaseKey,
+        geometry: geometryResource.value,
+        matrix: proxy.matrixWorld,
+        materialFactory: () => {
+          const acquired = this.#materialCache.acquire({
+            ...materialRequest,
+            renderProfile
+          });
+          return {
+            material: acquired.value.material,
+            materialKey: acquired.key
+          };
+        }
+      });
+      if (!result.added) return false;
+      proxy.userData.heterogeneousBatch = true;
+      proxy.userData.heterogeneousGeometryKey = geometryKey;
+      proxy.userData.heterogeneousSignature = signature;
+      proxy.userData.appearanceBinding = binding;
+      proxy.userData.appearanceId = object.appearanceId;
+      proxy.userData.instanceColor = object.instanceState?.color ?? null;
+      proxy.userData.materialColor = object.material?.color ?? "#ffffff";
+      if (proxy.parent !== this.scene) this.scene.add(proxy);
+      const desired = effectiveAppearanceColor(binding, {
+        baseColor: object.material?.color ?? "#ffffff",
+        instanceColor: object.instanceState?.color ?? null
+      });
+      this.#setHeterogeneousColor(object.id, desired);
+      return true;
+    } finally {
+      this.#resourceCache.releaseGeometry(geometryResource.key);
+    }
+  }
+
+  #removeHeterogeneousObject(objectId, proxy = this.#meshes.get(objectId)) {
+    const result = this.#heterogeneousBatchManager?.removeOwner(objectId) ?? {
+      removed: 0
+    };
+    if (proxy?.userData && !proxy.userData.strokeBundleVisual) {
+      proxy.userData.heterogeneousBatch = false;
+      delete proxy.userData.heterogeneousGeometryKey;
+      delete proxy.userData.heterogeneousSignature;
+    }
+    return Number(result.removed ?? 0) > 0;
+  }
+
+  #setHeterogeneousResourceColor(resourceId, value) {
+    const location = this.#heterogeneousBatchManager.locationOf(resourceId);
+    if (!location) return false;
+    const batch = this.#heterogeneousBatchManager.batches().find(
+      item => item.key === location.batchKey
+    );
+    if (!batch) return false;
+    return this.#heterogeneousBatchManager.updateColor(
+      resourceId,
+      absoluteInstanceColorFactor(batch.mesh.material, value)
+    );
+  }
+
+  #setHeterogeneousColor(objectId, value) {
+    let changed = false;
+    for (const resourceId of
+      this.#heterogeneousBatchManager.resourcesForOwner(objectId)) {
+      if (this.#setHeterogeneousResourceColor(resourceId, value)) {
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   #batchKeyFor(object) {
     const descriptor = this.#geometryRegistry.describeLegacyObject(object);
     const renderProfile = this.#geometryRegistry.renderProfile(descriptor);
@@ -3116,16 +3554,26 @@ export class ThreeRegionRenderer {
   #setInstanceColor(objectId, value) {
     const family = this.#familyVisuals.get(String(objectId));
     if (family) {
-      if (!family.animationColorActive) {
-        family.animationInstanceColor = family.mesh.instanceColor ?? null;
-        if (family.animationInstanceColor) {
-          family.mesh.instanceColor = null;
-          family.mesh.material.needsUpdate = true;
+      family.animationColorActive = true;
+      let changed = false;
+      for (const resourceId of family.resourceIds) {
+        const location = this.#batchManager.locationOf(resourceId);
+        const batch = location
+          ? this.#batchManager.getBatch(location.batchKey)
+          : null;
+        if (!batch) continue;
+        if (updateAbsoluteInstanceColor(batch, resourceId, value)) {
+          changed = true;
+          this.#markBatchDirty(location.batchKey);
         }
-        family.animationColorActive = true;
       }
-      family.mesh.material.color?.set?.(value);
-      return Boolean(family.mesh.material.color);
+      return changed;
+    }
+
+    const strokeVisual = this.#strokeVisuals.get(String(objectId));
+    if (strokeVisual) strokeVisual.animationColorActive = true;
+    if (this.#heterogeneousBatchManager.resourcesForOwner(objectId).length) {
+      return this.#setHeterogeneousColor(objectId, value);
     }
 
     const location = this.#batchManager.locationOf(objectId);
@@ -3141,26 +3589,24 @@ export class ThreeRegionRenderer {
 
     const family = this.#familyVisuals.get(String(objectId));
     if (family) {
-      if (family.animationColorActive) {
-        if (family.animationInstanceColor) {
-          family.mesh.instanceColor = family.animationInstanceColor;
-          if (family.binding.colorMode === "per-instance") {
-            for (let index = 0; index < family.nextIndex; index += 1) {
-              family.color.set(
-                familyColorAt(family.normalizedFamily, index)
-              );
-              family.mesh.setColorAt(index, family.color);
-            }
-            if (family.mesh.instanceColor) {
-              family.mesh.instanceColor.needsUpdate = true;
-            }
-          }
-          family.mesh.material.needsUpdate = true;
-        }
-        family.animationInstanceColor = null;
-        family.animationColorActive = false;
-      }
+      family.animationColorActive = false;
       return this.#applyFamilyAppearance(family, family.binding);
+    }
+
+    if (this.#heterogeneousBatchManager.resourcesForOwner(objectId).length) {
+      const strokeVisual = this.#strokeVisuals.get(String(objectId));
+      if (strokeVisual) strokeVisual.animationColorActive = false;
+      const baseColor = proxy.userData.instanceColor ??
+        proxy.userData.appearanceBinding?.uniformColor ??
+        proxy.userData.materialColor ?? "#ffffff";
+      const desired = effectiveAppearanceColor(
+        proxy.userData.appearanceBinding,
+        {
+          baseColor,
+          instanceColor: proxy.userData.instanceColor
+        }
+      );
+      return this.#setHeterogeneousColor(objectId, desired);
     }
 
     const location = this.#batchManager.locationOf(objectId);
@@ -3185,7 +3631,16 @@ export class ThreeRegionRenderer {
   }
 
   #updateBatchMatrix(objectId, proxy) {
+    const family = this.#familyVisuals.get(String(objectId));
+    if (family) return this.#updateSharedFamilyMatrices(family);
     if (proxy.matrixAutoUpdate) proxy.updateMatrix();
+    proxy.updateMatrixWorld(true);
+    if (this.#heterogeneousBatchManager.resourcesForOwner(objectId).length) {
+      return this.#heterogeneousBatchManager.updateOwner(
+        objectId,
+        proxy.matrixWorld
+      ) > 0;
+    }
     const location = this.#batchManager.locationOf(objectId);
     const changed = this.#batchManager.update(objectId, proxy.matrix);
     if (changed) this.#markBatchDirty(location?.batchKey);
@@ -3787,16 +4242,51 @@ export class ThreeRegionRenderer {
 
   #selectionReferencePosition(objectId) {
     if (!objectId) return null;
-    const animated = this.#animationPivotOverrides.get(objectId);
+    const id = String(objectId);
+    const animated = this.#animationPivotOverrides.get(id);
     if (animated) return new THREE.Vector3().fromArray(animated);
-    if (!this.#hierarchy.has(objectId)) {
-      const proxy = this.#meshes.get(String(objectId));
+
+    const object = this.#objectsById.get(id) ?? null;
+    const proxy = this.#meshes.get(id) ?? null;
+    const defaultPolicy = object && (
+      object.kind === "instance-family" ||
+      object.kind === "stroke-bundle" ||
+      object.geometry?.type === "stroke-bundle"
+    ) ? "bounds-center" : "pivot";
+    const policy = String(
+      object?.selectionAnchorPolicy ??
+      object?.geometry?.selectionAnchorPolicy ??
+      defaultPolicy
+    );
+
+    if (policy === "bounds-center") {
+      const bounds = this.#worldBoundsForObjectId(id, new THREE.Box3());
+      if (!bounds.isEmpty()) return bounds.getCenter(new THREE.Vector3());
+    }
+
+    if (policy === "custom" && proxy) {
+      const local = object?.selectionAnchorLocal ??
+        object?.geometry?.selectionAnchorLocal;
+      if (Array.isArray(local) && local.length === 3) {
+        proxy.updateMatrixWorld(true);
+        return new THREE.Vector3().fromArray(local).applyMatrix4(
+          proxy.matrixWorld
+        );
+      }
+    }
+
+    if (policy === "origin" && proxy) {
+      proxy.updateMatrixWorld(true);
+      return proxy.getWorldPosition(new THREE.Vector3());
+    }
+
+    if (!this.#hierarchy.has(id)) {
       if (!proxy) return null;
       proxy.updateMatrixWorld(true);
       return proxy.getWorldPosition(new THREE.Vector3());
     }
     return new THREE.Vector3().fromArray(
-      selectionReferenceWorldPosition(this.#hierarchy,objectId)
+      selectionReferenceWorldPosition(this.#hierarchy,id)
     );
   }
 
@@ -4295,6 +4785,9 @@ export class ThreeRegionRenderer {
       if (edit.snap.scope === "active" || edit.snap.self) targets.push(edit.mesh);
       if (edit.snap.scope === "scene") {
         for (const batch of this.#batchManager.batches()) targets.push(batch.mesh);
+        for (const batch of this.#heterogeneousBatchManager.batches()) {
+          targets.push(batch.mesh);
+        }
       }
       for (const hit of raycaster.intersectObjects(targets, false)) {
         let objectId = edit.objectId;
@@ -4306,6 +4799,9 @@ export class ThreeRegionRenderer {
         }
         if (hit.object.isInstancedMesh) {
           objectId = this.#batchManager.objectFromHit(hit);
+          if (!objectId || objectId === edit.objectId) continue;
+        } else if (Number.isInteger(hit.batchId)) {
+          objectId = this.#heterogeneousBatchManager.objectFromHit(hit);
           if (!objectId || objectId === edit.objectId) continue;
         }
         const faceTarget = this.#meshSnapFacePoint(hit, anchorWorld);
@@ -5040,17 +5536,17 @@ export class ThreeRegionRenderer {
     this.#flushBatchBounds();
 
     const selectionBatches = this.#batchManager.batches();
+    const heterogeneousBatches = this.#heterogeneousBatchManager.batches();
     this.#incrementalDiagnostics.raycastBatchVisits +=
-      selectionBatches.length;
+      selectionBatches.length + heterogeneousBatches.length;
     const hits = this.raycaster.intersectObjects(
       selectionBatches.map(batch => batch.mesh),
       false
     );
-    const familyHits = this.raycaster.intersectObjects(
-      [...this.#familyVisuals.values()].map(visual => visual.mesh),
+    const heterogeneousHits = this.raycaster.intersectObjects(
+      heterogeneousBatches.map(batch => batch.mesh),
       false
     );
-
     const cameraHits = this.raycaster.intersectObjects(
       [...this.#cameraVisuals.values()].flatMap(
         visual => [visual.body, visual.lens, visual.lines]
@@ -5065,7 +5561,9 @@ export class ThreeRegionRenderer {
     );
     const hitIds=[...new Set([
       ...hits.map(hit => this.#batchManager.objectFromHit(hit)),
-      ...familyHits.map(hit => hit.object.userData.familyObjectId),
+      ...heterogeneousHits.map(hit =>
+        this.#heterogeneousBatchManager.objectFromHit(hit)
+      ),
       ...cameraHits.map(hit => hit.object.userData.cameraObjectId),
       ...lightHits.map(hit => hit.object.userData.lightObjectId),
       ...this.#cameraScreenHitIds(
@@ -5295,6 +5793,7 @@ export class ThreeRegionRenderer {
 
 getResourceDiagnostics() {
   const batches = this.#batchManager.batches();
+  const heterogeneousBatches = this.#heterogeneousBatchManager.batches();
   const geometries = new Set();
   const materials = new Set();
   const textures = new Set();
@@ -5310,12 +5809,12 @@ getResourceDiagnostics() {
       }
     }
   }
-  for (const visual of this.#familyVisuals.values()) {
-    if (visual.mesh.geometry) geometries.add(visual.mesh.geometry);
-    if (visual.mesh.material) {
-      materials.add(visual.mesh.material);
-      if (visual.mesh.material.map) {
-        textures.add(visual.mesh.material.map);
+  for (const batch of heterogeneousBatches) {
+    if (batch.mesh?.geometry) geometries.add(batch.mesh.geometry);
+    if (batch.mesh?.material) {
+      materials.add(batch.mesh.material);
+      if (batch.mesh.material.map) {
+        textures.add(batch.mesh.material.map);
         texturedMeshes += 1;
       }
     }
@@ -5324,12 +5823,12 @@ getResourceDiagnostics() {
   const info = this.renderer?.info;
 
   return Object.freeze({
-    meshes: batches.length + this.#familyVisuals.size,
+    meshes: batches.length + heterogeneousBatches.length,
     logicalProxies: this.#meshes.size,
-    instancedMeshes: batches.length + this.#familyVisuals.size,
-    logicalInstances:
-      this.#batchManager.stats().objects +
-      this.#incrementalDiagnostics.familyInstances,
+    instancedMeshes: batches.length,
+    heterogeneousMeshes: heterogeneousBatches.length,
+    logicalInstances: this.#batchManager.stats().resources +
+      this.#heterogeneousBatchManager.status().resources,
     familyObjects: this.#familyVisuals.size,
     familyInstances: this.#incrementalDiagnostics.familyInstances,
     familyEstimatedBytes:
@@ -5355,6 +5854,7 @@ getResourceDiagnostics() {
     cache: this.#resourceCache.stats(),
     materials: this.#materialCache.stats(),
     batches: this.#batchManager.stats(),
+    heterogeneousBatches: this.#heterogeneousBatchManager.status(),
     incremental: this.getIncrementalDiagnostics?.() ?? null
   });
 }
@@ -5611,13 +6111,24 @@ function rootObjectMatrix(object) {
 }
 
 function transformHitNormalToWorld(hit) {
+  return hit.face.normal.clone()
+    .transformDirection(hitWorldMatrix(hit))
+    .normalize();
+}
+
+function hitWorldMatrix(hit) {
   const matrix = hit.object.matrixWorld.clone();
-  if (hit.object.isInstancedMesh && Number.isInteger(hit.instanceId)) {
+  const instanceId = hit.object.isInstancedMesh && Number.isInteger(hit.instanceId)
+    ? hit.instanceId
+    : Number.isInteger(hit.batchId)
+      ? hit.batchId
+      : null;
+  if (instanceId !== null && typeof hit.object.getMatrixAt === "function") {
     const instanceMatrix = new THREE.Matrix4();
-    hit.object.getMatrixAt(hit.instanceId, instanceMatrix);
+    hit.object.getMatrixAt(instanceId, instanceMatrix);
     matrix.multiply(instanceMatrix);
   }
-  return hit.face.normal.clone().transformDirection(matrix).normalize();
+  return matrix;
 }
 
 function normalizeNavigationPlane(frame = {}) {
@@ -5803,6 +6314,88 @@ function projectedSelectionIdsWithFallback(hierarchy, ids = []) {
 }
 
 
+function renderBatchMaterialIdentity(materialRequest, renderProfile, binding) {
+  const material = structuredClone(materialRequest?.material ?? {});
+  delete material.color;
+  return stableRenderIdentity({
+    material,
+    side: renderProfile?.side ?? "front",
+    materialMode: binding?.materialMode ?? "inherit",
+    opacityMultiplier: Number(binding?.opacityMultiplier ?? 1)
+  });
+}
+
+function stableRenderIdentity(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableRenderIdentity).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .filter(key => value[key] !== undefined)
+      .map(key => `${JSON.stringify(key)}:${stableRenderIdentity(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function strokeChunkSpatialCell(matrix, bounds, cellSize = 64) {
+  const center = new THREE.Vector3(
+    Number(bounds?.min?.[0] ?? 0) +
+      (Number(bounds?.max?.[0] ?? 0) - Number(bounds?.min?.[0] ?? 0)) * 0.5,
+    Number(bounds?.min?.[1] ?? 0) +
+      (Number(bounds?.max?.[1] ?? 0) - Number(bounds?.min?.[1] ?? 0)) * 0.5,
+    Number(bounds?.min?.[2] ?? 0) +
+      (Number(bounds?.max?.[2] ?? 0) - Number(bounds?.min?.[2] ?? 0)) * 0.5
+  ).applyMatrix4(matrix);
+  const size = Math.max(1, Number(cellSize) || 64);
+  return [center.x, center.y, center.z]
+    .map(value => Math.floor(value / size))
+    .join(":");
+}
+
+function familyBatchSpatialCell(matrix, cellSize = 64) {
+  const size = Math.max(1, Number(cellSize) || 64);
+  const elements = matrix.elements ?? matrix;
+  return [12, 13, 14].map(index =>
+    Math.floor(Number(elements[index] ?? 0) / size)
+  ).join(":");
+}
+
+function absoluteInstanceColorFactor(material, desiredValue) {
+  const desired = desiredValue?.isColor
+    ? desiredValue.clone()
+    : new THREE.Color(desiredValue ?? 0xffffff);
+  const base = material?.color?.isColor
+    ? material.color
+    : new THREE.Color(0xffffff);
+  const minimum = 1e-6;
+  for (const channel of ["r", "g", "b"]) {
+    if (Math.abs(base[channel]) < minimum) base[channel] = minimum;
+  }
+  return new THREE.Color(
+    desired.r / base.r,
+    desired.g / base.g,
+    desired.b / base.b
+  );
+}
+
+function bufferGeometryAttributeSignature(geometry) {
+  const attributes = Object.entries(geometry?.attributes ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, attribute]) => [
+      name,
+      Number(attribute.itemSize),
+      Boolean(attribute.normalized),
+      attribute.array?.constructor?.name ?? "TypedArray"
+    ]);
+  return JSON.stringify({
+    indexed: Boolean(geometry?.index),
+    indexType: geometry?.index?.array?.constructor?.name ?? null,
+    attributes
+  });
+}
+
 function surfacePlacementFromHit({ hit, objectId, ray, target, previous }) {
   if (!hit?.point || !hit?.face) return null;
   const normal = transformHitNormalToWorld(hit);
@@ -5846,6 +6439,7 @@ function surfacePlacementFromHit({ hit, objectId, ray, target, previous }) {
     objectId: String(objectId),
     faceIndex: Number.isInteger(hit.faceIndex) ? hit.faceIndex : null,
     instanceId: Number.isInteger(hit.instanceId) ? hit.instanceId : null,
+    batchId: Number.isInteger(hit.batchId) ? hit.batchId : null,
     barycentric: barycentric
       ? Object.freeze(barycentric.toArray())
       : null,
@@ -5861,12 +6455,7 @@ function surfaceHitTriangle(hit) {
   const position = geometry?.getAttribute?.("position");
   const face = hit?.face;
   if (!position || !face) return null;
-  const matrix = hit.object.matrixWorld.clone();
-  if (hit.object.isInstancedMesh && Number.isInteger(hit.instanceId)) {
-    const instance = new THREE.Matrix4();
-    hit.object.getMatrixAt(hit.instanceId, instance);
-    matrix.multiply(instance);
-  }
+  const matrix = hitWorldMatrix(hit);
   return new THREE.Triangle(
     new THREE.Vector3(
       position.getX(face.a), position.getY(face.a), position.getZ(face.a)

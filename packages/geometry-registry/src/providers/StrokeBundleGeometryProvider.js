@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import {
-  normalizeStrokeBundleDescriptor
-} from "../../../stroke-resources/src/index.js?build=20260731-0044a";
+  normalizeStrokeBundleDescriptor,
+  strokeBundleStrokes
+} from "../../../stroke-resources/src/index.js?build=20260801-0045a";
 import {
   TubeGeometryProvider
 } from "./TubeGeometryProvider.js?build=20260731-0044a";
@@ -34,7 +35,8 @@ export const StrokeBundleGeometryProvider = Object.freeze({
 
   create(descriptor) {
     const bundle = normalizeStrokeBundleDescriptor(descriptor);
-    const parts = bundle.strokes.map(stroke =>
+    const strokes = strokeBundleStrokes(bundle);
+    const parts = strokes.map(stroke =>
       TubeGeometryProvider.create({
         type: "tube",
         points: stroke.points,
@@ -49,9 +51,16 @@ export const StrokeBundleGeometryProvider = Object.freeze({
     try {
       const geometry = mergeBufferGeometries(parts);
       geometry.userData.strokeBundle = Object.freeze({
-        strokeIds: Object.freeze(bundle.strokes.map(stroke => stroke.id)),
-        strokeCount: bundle.strokes.length,
-        pointCount: bundle.pointCount
+        strokeIds: Object.freeze(strokes.map(stroke => stroke.id)),
+        strokeCount: bundle.strokeCount,
+        pointCount: bundle.pointCount,
+        chunkCount: bundle.chunks.length,
+        chunks: Object.freeze(bundle.chunks.map(chunk => Object.freeze({
+          id: chunk.id,
+          strokeCount: chunk.strokeCount,
+          pointCount: chunk.pointCount,
+          estimatedBytes: chunk.estimatedBytes
+        })))
       });
       geometry.computeBoundingBox();
       geometry.computeBoundingSphere();
