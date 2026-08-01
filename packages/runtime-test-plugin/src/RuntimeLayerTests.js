@@ -262,13 +262,13 @@ import {
   geometryToolIcon,
   geometryToolPriority,
   normalizeHudDimensions
-} from "../../edit-hud/src/index.js?build=20260801-0046b";
+} from "../../edit-hud/src/index.js?build=20260801-0046c";
 import {
   HudLayoutStore,
   createDefaultHudLayoutDocument,
   normalizeHudLayoutDocument,
   resolveHudLayoutPlan
-} from "../../edit-hud-layout/src/index.js?build=20260801-0046b";
+} from "../../edit-hud-layout/src/index.js?build=20260801-0046c";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -1871,7 +1871,7 @@ export function createRuntimeLayerTests() {
         assertEqual(result.profileReference.id, "profile");
       },
 
-      "layout v3 migra seções ocultas sem copiar estado do editor"() {
+      "layout v4 migra seções ocultas e incorpora viewport ao perfil"() {
         const document = createDefaultHudLayoutDocument({
           familyIds: ["quick", "measure"],
           itemIds: ["edit-hud-undo"],
@@ -1881,7 +1881,9 @@ export function createRuntimeLayerTests() {
             groups: { quick: true, measure: false }
           }
         });
-        assertEqual(document.schemaVersion, "spatial-seed-hud-layout-v3");
+        assertEqual(document.schemaVersion, "spatial-seed-hud-layout-v4");
+        assertEqual(document.profiles.default.viewport.columns, 12);
+        assertEqual(document.profiles.default.viewport.rows, 6);
         assertEqual(document.profiles.default.sections.quick.visibility, "auto");
         assertEqual(document.profiles.default.sections.measure.visibility, "hidden");
         assertEqual(document.profiles.default.sections.quick.order, null);
@@ -2056,6 +2058,44 @@ export function createRuntimeLayerTests() {
         assertEqual(profile.items.undo.activation.activates[0], "redo");
         assertEqual(profile.items.undo.activation.activatesOnDeactivate[0], "move");
         assertEqual(profile.items.undo.activation.deactivatesOnDeactivate[0], "redo");
+      },
+
+      "ferramenta pode mudar de seção e seção pode ser reposicionada"() {
+        const store = new HudLayoutStore({
+          storage: { getItem() { return null; }, setItem() {} },
+          sectionIds: ["quick", "tool", "custom"],
+          sectionOrder: ["quick", "tool", "custom"],
+          itemIds: ["undo", "move"],
+          itemSections: { undo: "quick", move: "tool" }
+        });
+        store.placeItem("undo", { section: "custom" });
+        assertEqual(store.profile().items.undo.section, "custom");
+        store.placeSection("custom", { before: "quick" });
+        const profile = store.profile();
+        assertEqual(profile.sections.custom.order < profile.sections.quick.order, true);
+      },
+
+      "perfil preserva viewport e dimensões amplas sem teto de interface"() {
+        const values = new Map();
+        const store = new HudLayoutStore({
+          storage: {
+            getItem(key) { return values.get(key) ?? null; },
+            setItem(key, value) { values.set(key, value); }
+          },
+          sectionIds: ["quick"],
+          itemIds: ["undo"],
+          itemSections: { undo: "quick" }
+        });
+        store.updateViewport({ columns: 48, rows: 30, opacity: 0.75 });
+        store.updateSection("quick", { columns: 64, rows: 32 });
+        store.updateItem("undo", { cellWidth: 24, cellHeight: 16 });
+        const second = store.createProfile({ label: "Tela inteira" });
+        assertEqual(store.profile(second).viewport.columns, 48);
+        assertEqual(store.profile(second).sections.quick.columns, 64);
+        assertEqual(store.profile(second).items.undo.cellHeight, 16);
+        store.updateViewport({ columns: 12 });
+        store.setActiveProfile("default");
+        assertEqual(store.profile().viewport.columns, 48);
       },
 
       "perfis são independentes e transportáveis"() {
