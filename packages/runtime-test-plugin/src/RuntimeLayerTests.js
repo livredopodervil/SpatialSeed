@@ -262,13 +262,28 @@ import {
   geometryToolIcon,
   geometryToolPriority,
   normalizeHudDimensions
-} from "../../edit-hud/src/index.js?build=20260801-0046c";
+} from "../../edit-hud/src/index.js?build=20260801-0046d";
 import {
   HudLayoutStore,
   createDefaultHudLayoutDocument,
   normalizeHudLayoutDocument,
-  resolveHudLayoutPlan
-} from "../../edit-hud-layout/src/index.js?build=20260801-0046c";
+  resolveHudLayoutPlan,
+  resolveGridLayout,
+  resolveGridMutation,
+  gridLayoutHasOverlap
+} from "../../edit-hud-layout/src/index.js?build=20260801-0046d";
+import {
+  normalizeApplicationDefinition,
+  normalizeHudComponentDescriptor
+} from "../../ui-contracts/src/index.js?build=20260801-0046d";
+import {
+  HudComponentRegistry,
+  UiModuleRegistry
+} from "../../ui-registry/src/index.js?build=20260801-0046d";
+import {
+  UiApplicationComposer,
+  UiApplicationStore
+} from "../../ui-application/src/index.js?build=20260801-0046d";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -1871,7 +1886,7 @@ export function createRuntimeLayerTests() {
         assertEqual(result.profileReference.id, "profile");
       },
 
-      "layout v4 migra seções ocultas e incorpora viewport ao perfil"() {
+      "layout v5 migra seções ocultas e incorpora viewport ao perfil"() {
         const document = createDefaultHudLayoutDocument({
           familyIds: ["quick", "measure"],
           itemIds: ["edit-hud-undo"],
@@ -1881,7 +1896,7 @@ export function createRuntimeLayerTests() {
             groups: { quick: true, measure: false }
           }
         });
-        assertEqual(document.schemaVersion, "spatial-seed-hud-layout-v4");
+        assertEqual(document.schemaVersion, "spatial-seed-hud-layout-v5");
         assertEqual(document.profiles.default.viewport.columns, 12);
         assertEqual(document.profiles.default.viewport.rows, 6);
         assertEqual(document.profiles.default.sections.quick.visibility, "auto");
@@ -2125,6 +2140,179 @@ export function createRuntimeLayerTests() {
         clone.importText(exported);
         assertEqual(clone.activeProfileId(), profileId);
         assertEqual(clone.profile().label, "Minimalista");
+      },
+
+      "widgets tipados impõem dimensões coerentes no grid"() {
+        const select = normalizeHudComponentDescriptor({
+          id: "object.pivot-policy",
+          kind: "select",
+          category: "reference",
+          label: "Política do pivô"
+        });
+        const button = normalizeHudComponentDescriptor({
+          id: "history.undo",
+          kind: "button",
+          category: "quick",
+          label: "Desfazer"
+        });
+        assertEqual(select.sizing.minWidth, 2);
+        assertEqual(select.sizing.resizeY, false);
+        assertEqual(button.sizing.preferredWidth, 1);
+      },
+
+      "seções são removíveis sem destruir seus componentes"() {
+        const store = new HudLayoutStore({
+          storage: { getItem() { return null; }, setItem() {} },
+          sectionIds: ["quick"],
+          itemIds: ["undo"],
+          itemSections: { undo: "quick" }
+        });
+        store.deleteSection("quick");
+        assertEqual(store.profile().sections.quick.present, false);
+        assertEqual(store.profile().items.undo.section, null);
+        assertEqual(store.profile().items.undo.present, true);
+        store.restoreSection("quick");
+        store.restoreItem("undo", { section: "quick" });
+        assertEqual(store.profile().sections.quick.present, true);
+        assertEqual(store.profile().items.undo.section, "quick");
+      },
+
+      "movimento com push persiste posições sem sobreposição"() {
+        const store = new HudLayoutStore({
+          storage: { getItem() { return null; }, setItem() {} },
+          sectionIds: ["quick"],
+          itemIds: ["a", "b"],
+          itemSections: { a: "quick", b: "quick" }
+        });
+        store.updateSection("quick", { columns: 2, rows: 1, collisionMode: "push" });
+        store.placeItemAt("a", { section: "quick", x: 0, y: 0 });
+        store.placeItemAt("b", { section: "quick", x: 0, y: 0 });
+        const profile = store.profile();
+        const layout = resolveGridLayout({
+          entries: Object.entries(profile.items).map(([id, item]) => ({ id, ...item })),
+          columns: 2,
+          minimumRows: 1,
+          collisionMode: "reject"
+        });
+        assertEqual(gridLayoutHasOverlap(layout.placements), false);
+        assertEqual(profile.items.a.x === profile.items.b.x && profile.items.a.y === profile.items.b.y, false);
+      },
+
+      "catálogo pode receber componentes de módulos depois da criação"() {
+        const store = new HudLayoutStore({
+          storage: { getItem() { return null; }, setItem() {} },
+          sectionIds: ["quick"],
+          itemIds: []
+        });
+        const descriptor = normalizeHudComponentDescriptor({
+          id: "measure.distance",
+          kind: "button",
+          category: "measure",
+          label: "Distância"
+        });
+        store.updateCatalog({
+          sectionIds: ["measure"],
+          itemIds: [descriptor.id],
+          itemSections: { [descriptor.id]: "measure" },
+          itemDescriptors: { [descriptor.id]: descriptor }
+        });
+        assertEqual(store.profile().items[descriptor.id].section, "measure");
+        assertEqual(store.profile().sections.measure.present, true);
+      },
+
+      "módulos declarativos validam dependências e isolam componentes"() {
+        const hud = new HudComponentRegistry();
+        const registry = new UiModuleRegistry({ hudComponents: hud });
+        registry.register({ id: "ui.base", title: "Base", hudComponents: [] });
+        registry.register({
+          id: "ui.measurement",
+          title: "Medição",
+          dependencies: ["ui.base"],
+          hudComponents: [{
+            id: "measure.distance",
+            kind: "button",
+            category: "measure",
+            label: "Distância"
+          }]
+        });
+        assertEqual(registry.isEnabled("ui.measurement"), true);
+        assertEqual(hud.get("measure.distance").sourceModule, "ui.measurement");
+        assertThrowsMessage(
+          () => registry.setEnabled("ui.base", false),
+          "dependentes ativos"
+        );
+        registry.setEnabled("ui.base", false, { cascade: true });
+        assertEqual(registry.isEnabled("ui.measurement"), false);
+      },
+
+      "módulos podem ser registrados antes das dependências e ativados depois"() {
+        const registry = new UiModuleRegistry();
+        registry.register({
+          id: "ui.inspector",
+          title: "Inspector",
+          dependencies: ["ui.base"],
+          hudComponents: [],
+          panels: [{ id: "panel.inspector", title: "Inspector" }]
+        }, { enabled: false });
+        assertEqual(registry.isEnabled("ui.inspector"), false);
+        registry.register({ id: "ui.base", title: "Base", hudComponents: [] });
+        registry.setEnabled("ui.inspector", true, { cascade: true });
+        assertEqual(registry.isEnabled("ui.inspector"), true);
+        assertEqual(registry.describe({ activeOnly: true }).panels[0].sourceModule, "ui.inspector");
+        registry.setEnabled("ui.inspector", false);
+        assertEqual(registry.describe({ activeOnly: true }).panels.length, 0);
+      },
+
+      "aplicação pode vincular explicitamente um perfil de HUD"() {
+        const store = new UiApplicationStore({
+          storage: { getItem() { return null; }, setItem() {} },
+          installedModules: ["ui.base"]
+        });
+        store.updateApplication("default", { hudProfileId: "drawing" });
+        assertEqual(store.activeApplication().hudProfileId, "drawing");
+      },
+
+      "definição de aplicação compõe módulos sem alterar o núcleo"() {
+        const values = new Map();
+        const registry = new UiModuleRegistry();
+        const store = new UiApplicationStore({
+          storage: {
+            getItem(key) { return values.get(key) ?? null; },
+            setItem(key, value) { values.set(key, value); }
+          },
+          installedModules: []
+        });
+        const composer = new UiApplicationComposer({ registry, store });
+        registry.register({ id: "ui.base", title: "Base", hudComponents: [] });
+        registry.register({
+          id: "ui.animation",
+          title: "Animação",
+          dependencies: ["ui.base"],
+          hudComponents: []
+        });
+        store.setModuleEnabled("ui.animation", false);
+        assertEqual(registry.isEnabled("ui.animation"), false);
+        assertEqual(registry.isEnabled("ui.base"), true);
+        const definition = normalizeApplicationDefinition(store.activeApplication());
+        assertEqual(definition.schemaVersion, "spatial-seed-application-v1");
+        composer.dispose();
+      },
+
+      "mutação de grid retorna conjunto completo para persistência"() {
+        const mutation = resolveGridMutation({
+          entries: [
+            { id: "a", x: 0, y: 0, width: 1, height: 1 },
+            { id: "b", x: 1, y: 0, width: 1, height: 1 }
+          ],
+          movingId: "b",
+          proposed: { x: 0, y: 0, width: 1, height: 1 },
+          columns: 2,
+          minimumRows: 1,
+          collisionMode: "push"
+        });
+        assertEqual(mutation.accepted, true);
+        assertEqual(mutation.placements.length, 2);
+        assertEqual(gridLayoutHasOverlap(mutation.placements), false);
       }
     },
 
