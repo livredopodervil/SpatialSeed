@@ -262,13 +262,13 @@ import {
   geometryToolIcon,
   geometryToolPriority,
   normalizeHudDimensions
-} from "../../edit-hud/src/index.js?build=20260801-0046a";
+} from "../../edit-hud/src/index.js?build=20260801-0046b";
 import {
   HudLayoutStore,
   createDefaultHudLayoutDocument,
   normalizeHudLayoutDocument,
   resolveHudLayoutPlan
-} from "../../edit-hud-layout/src/index.js?build=20260801-0046a";
+} from "../../edit-hud-layout/src/index.js?build=20260801-0046b";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -1871,7 +1871,7 @@ export function createRuntimeLayerTests() {
         assertEqual(result.profileReference.id, "profile");
       },
 
-      "layout v2 migra famílias ocultas sem copiar estado do editor"() {
+      "layout v3 migra seções ocultas sem copiar estado do editor"() {
         const document = createDefaultHudLayoutDocument({
           familyIds: ["quick", "measure"],
           itemIds: ["edit-hud-undo"],
@@ -1881,10 +1881,10 @@ export function createRuntimeLayerTests() {
             groups: { quick: true, measure: false }
           }
         });
-        assertEqual(document.schemaVersion, "spatial-seed-hud-layout-v2");
-        assertEqual(document.profiles.default.families.quick.visibility, "auto");
-        assertEqual(document.profiles.default.families.measure.visibility, "hidden");
-        assertEqual(document.profiles.default.families.quick.order, null);
+        assertEqual(document.schemaVersion, "spatial-seed-hud-layout-v3");
+        assertEqual(document.profiles.default.sections.quick.visibility, "auto");
+        assertEqual(document.profiles.default.sections.measure.visibility, "hidden");
+        assertEqual(document.profiles.default.sections.quick.order, null);
       },
 
       "ferramenta fixada mantém posição e slot fora do contexto"() {
@@ -1956,7 +1956,7 @@ export function createRuntimeLayerTests() {
             defaultItemIndex: 0
           }],
           profile: {
-            families: {
+            sections: {
               measure: {
                 visibility: "hidden",
                 zone: "adaptive",
@@ -2002,6 +2002,89 @@ export function createRuntimeLayerTests() {
         assertEqual(profile.items.repeat.order, 1);
         assertEqual(profile.items.redo.order, 2);
         assertEqual(Object.hasOwn(profile, "commands"), false);
+      },
+
+      "perfil preserva ícone seção comando células e relações de ativação"() {
+        const values = new Map();
+        const store = new HudLayoutStore({
+          storage: {
+            getItem(key) { return values.get(key) ?? null; },
+            setItem(key, value) { values.set(key, value); }
+          },
+          sectionIds: ["quick", "custom"],
+          itemIds: ["undo", "redo"],
+          itemSections: { undo: "quick", redo: "quick" }
+        });
+        store.updateSection("custom", {
+          label: "Essenciais",
+          color: "#123456",
+          columns: 3,
+          rows: 2,
+          scrollMode: "rotate"
+        });
+        store.updateItem("undo", {
+          icon: "U",
+          label: "Voltar",
+          section: "custom",
+          cellWidth: 2,
+          command: {
+            id: "history.undo",
+            arguments: { count: 2 }
+          },
+          activation: {
+            mode: "toggle",
+            group: "history",
+            activates: ["redo"],
+            deactivates: [],
+            activatesOnDeactivate: ["move"],
+            deactivatesOnDeactivate: ["redo"],
+            onActivate: {
+              id: "ui.notice",
+              arguments: { text: "ativo" }
+            }
+          }
+        });
+        const profile = store.profile();
+        assertEqual(profile.sections.custom.color, "#123456");
+        assertEqual(profile.sections.custom.columns, 3);
+        assertEqual(profile.items.undo.icon, "U");
+        assertEqual(profile.items.undo.section, "custom");
+        assertEqual(profile.items.undo.cellWidth, 2);
+        assertEqual(profile.items.undo.command.id, "history.undo");
+        assertEqual(profile.items.undo.command.arguments.count, 2);
+        assertEqual(profile.items.undo.activation.mode, "toggle");
+        assertEqual(profile.items.undo.activation.activates[0], "redo");
+        assertEqual(profile.items.undo.activation.activatesOnDeactivate[0], "move");
+        assertEqual(profile.items.undo.activation.deactivatesOnDeactivate[0], "redo");
+      },
+
+      "perfis são independentes e transportáveis"() {
+        const values = new Map();
+        const store = new HudLayoutStore({
+          storage: {
+            getItem(key) { return values.get(key) ?? null; },
+            setItem(key, value) { values.set(key, value); }
+          },
+          sectionIds: ["quick"],
+          itemIds: ["undo"],
+          itemSections: { undo: "quick" }
+        });
+        const profileId = store.createProfile({ label: "Minimalista" });
+        store.updateItem("undo", { visibility: "hidden" });
+        store.setActiveProfile("default");
+        assertEqual(store.profile().items.undo.visibility, "inherit");
+        store.setActiveProfile(profileId);
+        assertEqual(store.profile().items.undo.visibility, "hidden");
+        const exported = store.exportDocument();
+        const clone = new HudLayoutStore({
+          storage: { getItem() { return null; }, setItem() {} },
+          sectionIds: ["quick"],
+          itemIds: ["undo"],
+          itemSections: { undo: "quick" }
+        });
+        clone.importText(exported);
+        assertEqual(clone.activeProfileId(), profileId);
+        assertEqual(clone.profile().label, "Minimalista");
       }
     },
 

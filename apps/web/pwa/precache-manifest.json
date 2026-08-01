@@ -66,6 +66,7 @@
     "packages/edit-hud-layout/src/HudDomLayout.js",
     "packages/edit-hud-layout/src/HudLayoutPolicy.js",
     "packages/edit-hud-layout/src/HudLayoutStore.js",
+    "packages/edit-hud-layout/src/HudInteractionController.js",
     "packages/edit-hud-layout/src/index.js",
     "packages/edit-hud/src/EditHud.js",
     "packages/edit-hud/src/HudContextHeuristics.js",
