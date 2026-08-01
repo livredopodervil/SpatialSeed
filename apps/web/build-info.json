@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260731-0043x2",
-  "channel": "fix/0043x2-browser-test-clock"
+  "build": "20260731-0044a",
+  "channel": "feature/0044-compact-resource-families"
 }

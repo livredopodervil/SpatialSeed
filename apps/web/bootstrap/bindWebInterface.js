@@ -345,6 +345,8 @@ export function bindWebInterface({
   registerRuntimeAction("selection.duplicate");
   registerRuntimeAction("selection.group");
   registerRuntimeAction("selection.ungroup");
+  registerRuntimeAction("selection.instances.fuse");
+  registerRuntimeAction("selection.strokes.fuse");
   registerRuntimeAction("selection.repeat");
   registerRuntimeAction("selection.delete");
   registerRuntimeAction("pivot.edit.toggle");
@@ -1437,6 +1439,14 @@ export function bindWebInterface({
   uiActions.bindControl($("duplicate-selection"), "selection.duplicate");
   uiActions.bindControl($("group-selection"), "selection.group");
   uiActions.bindControl($("ungroup-selection"), "selection.ungroup");
+  uiActions.bindControl(
+    $("edit-hud-fuse-families"),
+    "selection.instances.fuse"
+  );
+  uiActions.bindControl(
+    $("edit-hud-fuse-strokes"),
+    "selection.strokes.fuse"
+  );
   uiActions.bindControl($("repeat-duplicate"), "selection.repeat");
   uiActions.bindControl($("delete-selection"), "selection.delete");
 

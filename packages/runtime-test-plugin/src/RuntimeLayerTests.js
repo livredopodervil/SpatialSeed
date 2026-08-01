@@ -92,7 +92,21 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260731-0043x1";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260731-0044a";
+import {
+  explicitFamilyTransformAt,
+  familyMemberResourcePath,
+  normalizeExplicitInstanceFamily,
+  packAnchoredExplicitInstanceFamily
+} from "../../procedural-families/src/index.js?build=20260731-0044a";
+import {
+  normalizeStrokeBundleDescriptor,
+  StrokeFusionService
+} from "../../stroke-resources/src/index.js?build=20260731-0044a";
+import {
+  buildResourceTree,
+  parseResourcePath
+} from "../../resource-tree/src/index.js?build=20260731-0044a";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -123,7 +137,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260729-0039g1";
+} from "../../region-box/src/reducer.js?build=20260731-0044a";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -132,7 +146,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260728-0039d";
+} from "../../geometry-registry/src/index.js?build=20260731-0044a";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -2411,27 +2425,27 @@ export function createRuntimeLayerTests() {
           affineScale: "0.5+u",
           affineULength: 2
         });
-        const created = fixture.sandbox.getSnapshot().objects.filter(
-          object => result.createdIds.includes(object.id)
-        );
+        const created = fixture.sandbox.getObject(result.familyId);
+        const family = normalizeExplicitInstanceFamily(created.family);
+        const first = explicitFamilyTransformAt(family, 0, {});
+        const last = explicitFamilyTransformAt(family, family.count - 1, {});
         assertEqual(brush.sourceMode, "catalog");
         assertNear(brush.sourceGeometry.radius, 0.4);
         assertEqual(brush.sourceGeometry.widthSegments, 18);
         assertEqual(brush.sourceGeometry.heightSegments, 9);
         assertEqual(result.count, 5);
-        assertEqual(created.length, 5);
-        assertEqual(created.every(object =>
-          object.geometry.type === "sphere"
-        ), true);
+        assertEqual(fixture.sandbox.getSnapshot().objects.length, 6);
+        assertEqual(created.kind, "instance-family");
+        assertEqual(created.geometry.type, "sphere");
         assertEqual(brush.sourceColor, "#224466");
-        assertEqual(created.every(object =>
-          typeof object.appearanceId === "string"
-        ), true);
-        assertNear(created[0].scale[0], 0.5);
-        assertNear(created.at(-1).scale[0], 1.5);
+        assertEqual(typeof created.appearanceId, "string");
+        assertNear(first.scale[0], 0.5);
+        assertNear(last.scale[0], 1.5);
+        assertEqual(result.createdIds.length, 1);
+        assertEqual(result.memberResources.length, 5);
         assertEqual(
-          new Set(created.map(object => object.appearanceId)).size,
-          1
+          result.memberResources[0],
+          familyMemberResourcePath(created.id, family.memberIds[0])
         );
         assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
       },
@@ -2462,18 +2476,17 @@ export function createRuntimeLayerTests() {
             plan,
             brush
           });
-          const created = result.createdIds.map(id =>
-            fixture.sandbox.getObject(id)
-          );
-          assertEqual(created.length, plan.previewCount);
+          const created = fixture.sandbox.getObject(result.familyId);
+          const family = normalizeExplicitInstanceFamily(created.family);
+          assertEqual(family.count, plan.previewCount);
           assertDeepEqual(
-            created.map(object => object.instanceState?.color),
+            Array.from({ length: family.count }, (_, index) =>
+              packedColorHex(explicitFamilyTransformAt(family, index, {}).color)
+            ),
             plan.colorsByEntry[0].colors
           );
-          assertEqual(
-            created.every(object => object.geometry.type === geometry.type),
-            true
-          );
+          assertEqual(created.geometry.type, geometry.type);
+          assertEqual(result.memberResources.length, plan.previewCount);
           assertEqual(fixture.sandbox.undo(), true);
         }
       },
@@ -2654,16 +2667,17 @@ export function createRuntimeLayerTests() {
           plan: extended,
           brush
         });
-        const created = fixture.sandbox.getSnapshot().objects.filter(
-          object => result.createdIds.includes(object.id)
-        );
-        assertEqual(created.length, extended.previewCount);
+        const created = fixture.sandbox.getObject(result.familyId);
+        const family = normalizeExplicitInstanceFamily(created.family);
+        assertEqual(family.count, extended.previewCount);
         assertDeepEqual(
-          result.createdIds,
+          result.memberIds,
           extended.draft.instances.map(instance => instance.id)
         );
         assertDeepEqual(
-          created.map(object => object.instanceState.color),
+          Array.from({ length: family.count }, (_, index) =>
+            packedColorHex(explicitFamilyTransformAt(family, index, {}).color)
+          ),
           extended.colorsByEntry[0].colors
         );
         assertEqual(
@@ -12396,6 +12410,279 @@ assets: {
       }
     },
 
+    "compact-resources": {
+      "família compacta preserva identidades virtuais estáveis"() {
+        const packed = packAnchoredExplicitInstanceFamily([
+          {
+            id: "glyph-a",
+            position: [10, 2, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1]
+          },
+          {
+            id: "glyph-b",
+            position: [12, 2, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [0.5, 0.5, 0.5]
+          }
+        ], { anchorPolicy: "first" });
+        const family = normalizeExplicitInstanceFamily(packed.family);
+        assertEqual(family.count, 2);
+        assertDeepEqual(family.memberIds, ["glyph-a", "glyph-b"]);
+        assertDeepEqual(packed.origin, [10, 2, 0]);
+        assertDeepEqual(
+          explicitFamilyTransformAt(family, 1, {}).position,
+          [2, 0, 0]
+        );
+        assertEqual(
+          familyMemberResourcePath("family-1", "glyph-b"),
+          "/objects/family-1/members/glyph-b"
+        );
+      },
+
+      "fusão de famílias reduz objetos sem perder membros"() {
+        const region = new Region(
+          { id: "family-fusion-region", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: region.id,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          appearanceRuntime: new AppearanceRuntime()
+        });
+        const first = operations.createGeometryInstances({
+          name: "A",
+          geometry: { type: "box", size: [1, 1, 1] },
+          preparedInstances: [
+            { id: "a1", position: [0, 0, 0], rotation: [0,0,0,1], scale: [1,1,1] },
+            { id: "a2", position: [1, 0, 0], rotation: [0,0,0,1], scale: [1,1,1] }
+          ]
+        });
+        const second = operations.createGeometryInstances({
+          name: "B",
+          geometry: { type: "box", size: [1, 1, 1] },
+          preparedInstances: [
+            { id: "b1", position: [2, 0, 0], rotation: [0,0,0,1], scale: [1,1,1] },
+            { id: "b2", position: [3, 0, 0], rotation: [0,0,0,1], scale: [1,1,1] }
+          ]
+        });
+        editor.selection.replaceMany([
+          { kind: "object", regionId: region.id, objectId: first.familyId },
+          { kind: "object", regionId: region.id, objectId: second.familyId }
+        ], { activeObjectId: first.familyId });
+        const fused = operations.fuseSelectedFamilies({ name: "Palavra" });
+        assertEqual(fused.changed, true);
+        assertEqual(fused.removedFamilyObjects, 2);
+        assertEqual(fused.createdFamilyObjects, 1);
+        assertEqual(fused.instanceCount, 4);
+        assertEqual(sandbox.objectCount, 1);
+        const object = sandbox.getObject(fused.familyIds[0]);
+        assertEqual(object.name, "Palavra");
+        const family = normalizeExplicitInstanceFamily(object.family);
+        assertEqual(family.count, 4);
+        assertEqual(
+          family.memberIds.includes(`${first.familyId}:a1`),
+          true
+        );
+        assertEqual(
+          family.memberIds.includes(`${second.familyId}:b2`),
+          true
+        );
+      },
+
+      "traços tocantes fundem automaticamente e traços distantes podem formar uma palavra"() {
+        const region = new Region(
+          { id: "stroke-fusion-region", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        let sequence = 0;
+        const service = new StrokeFusionService({
+          sandbox,
+          editor,
+          regionId: region.id,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          createId: () => `resource-${++sequence}`
+        });
+        const tube = {
+          type: "tube",
+          points: [[0, 0, 0], [1, 0, 0]],
+          radius: 0.05,
+          radialSegments: 6,
+          tubularSegments: 2,
+          curveType: "polyline"
+        };
+        const first = service.createStroke({ geometry: tube });
+        const second = service.createStroke({
+          geometry: tube,
+          position: [1, 0, 0]
+        });
+        assertEqual(first.id, second.id);
+        assertEqual(second.fused, true);
+        assertEqual(sandbox.objectCount, 1);
+        assertEqual(
+          normalizeStrokeBundleDescriptor(
+            sandbox.getObject(first.id).geometry
+          ).strokes.length,
+          2
+        );
+        assertEqual(
+          sandbox.getHistoryDiagnostics().performance.preparedDispatches,
+          1
+        );
+        assertEqual(sandbox.undo(), true);
+        assertEqual(
+          normalizeStrokeBundleDescriptor(
+            sandbox.getObject(first.id).geometry
+          ).strokes.length,
+          1
+        );
+        assertEqual(sandbox.redo(), true);
+        assertEqual(
+          normalizeStrokeBundleDescriptor(
+            sandbox.getObject(first.id).geometry
+          ).strokes.length,
+          2
+        );
+        const third = service.createStroke({
+          geometry: tube,
+          position: [10, 0, 0]
+        });
+        assertEqual(third.fused, false);
+        assertEqual(sandbox.objectCount, 2);
+        editor.selection.replaceMany([
+          { kind: "object", regionId: region.id, objectId: first.id },
+          { kind: "object", regionId: region.id, objectId: third.id }
+        ], { activeObjectId: first.id });
+        const word = service.fuseSelected({ name: "Palavra" });
+        assertEqual(word.changed, true);
+        assertEqual(sandbox.objectCount, 1);
+        assertEqual(word.strokeCount, 3);
+        assertEqual(sandbox.getObject(word.id).name, "Palavra");
+      },
+
+      "índice espacial restringe a fusão aos candidatos próximos"() {
+        const region = new Region(
+          { id: "stroke-index-region", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        let sequence = 0;
+        const service = new StrokeFusionService({
+          sandbox,
+          editor,
+          regionId: region.id,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          createId: () => `indexed-${++sequence}`
+        });
+        const tube = {
+          type: "tube",
+          points: [[0, 0, 0], [0.5, 0, 0]],
+          radius: 0.02,
+          radialSegments: 4,
+          tubularSegments: 2,
+          curveType: "polyline"
+        };
+        for (let index = 0; index < 100; index += 1) {
+          service.createStroke({
+            geometry: tube,
+            position: [index * 20, 0, 0],
+            autoFuse: false
+          });
+        }
+        const before = service.status();
+        service.createStroke({
+          geometry: tube,
+          position: [0.5, 0, 0],
+          autoFuse: true
+        });
+        const after = service.status();
+        assertEqual(after.indexedBundles, 100);
+        assertEqual(after.indexRebuilds, before.indexRebuilds);
+        assertEqual(after.candidateBundles - before.candidateBundles < 5, true);
+        assertEqual(after.automaticFusions, 1);
+      },
+
+      "árvore de recursos navega grupos objetos traços membros e vértices"() {
+        const family = packAnchoredExplicitInstanceFamily([
+          { id: "letter-a", position: [0,0,0], rotation: [0,0,0,1], scale: [1,1,1] },
+          { id: "letter-b", position: [1,0,0], rotation: [0,0,0,1], scale: [1,1,1] }
+        ]).family;
+        const tree = buildResourceTree({
+          objects: [
+            {
+              id: "word",
+              kind: "group",
+              name: "Palavra",
+              parentId: null,
+              position: [0,0,0],
+              rotation: [0,0,0,1],
+              scale: [1,1,1]
+            },
+            {
+              id: "letters",
+              kind: "instance-family",
+              name: "Letras",
+              parentId: "word",
+              position: [0,0,0],
+              rotation: [0,0,0,1],
+              scale: [1,1,1],
+              geometry: { type: "box", size: [1,1,1], segments: [1,1,1] },
+              family
+            },
+            {
+              id: "ink",
+              kind: "stroke-bundle",
+              name: "Tinta",
+              parentId: "word",
+              position: [0,0,0],
+              rotation: [0,0,0,1],
+              scale: [1,1,1],
+              geometry: {
+                type: "stroke-bundle",
+                strokes: [{
+                  id: "stroke-a",
+                  points: [[0,0,0],[1,1,0],[2,0,0]],
+                  radius: 0.05,
+                  radialSegments: 6,
+                  tubularSegments: 2,
+                  curveType: "polyline"
+                }]
+              }
+            }
+          ]
+        });
+        const paths = flattenResourcePaths(tree);
+        assertEqual(paths.includes("/objects/word"), true);
+        assertEqual(
+          paths.includes("/objects/letters/members/letter-b"),
+          true
+        );
+        assertEqual(
+          paths.includes("/objects/ink/strokes/stroke-a/vertices/2"),
+          true
+        );
+        assertDeepEqual(
+          parseResourcePath(
+            "/objects/ink/strokes/stroke-a/vertices/2"
+          ),
+          {
+            kind: "vertex",
+            ownerObjectId: "ink",
+            strokeId: "stroke-a",
+            vertexIndex: 2,
+            path: "/objects/ink/strokes/stroke-a/vertices/2"
+          }
+        );
+      }
+    },
+
     "geometry-creation": {
       "help anuncia apenas famílias criáveis"() {
         const console = createGeometryConsole([]);
@@ -12458,7 +12745,8 @@ assets: {
           "create shape contour '[[-1,-1],[1,-1],[1,1],[-1,1]]'",
           "create extrude contour '[[-1,-1],[1,-1],[1,1],[-1,1]]' depth 2",
           "create polyhedron vertices '[[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]]' indices '[2,1,0,0,3,2,1,3,0,2,3,1]'",
-          "create buffer positions '[[-1,0,0],[1,0,0],[0,1,0]]' indices '[0,1,2]'"
+          "create buffer positions '[[-1,0,0],[1,0,0],[0,1,0]]' indices '[0,1,2]'",
+          `create stroke-bundle strokes '[{"id":"s1","points":[[0,0,0],[1,0,0]],"radius":0.05}]'`
         ]) {
           assertEqual(console.execute(source)[0].ok, true);
         }
@@ -12566,10 +12854,20 @@ assets: {
           operations:[{type:"move",value:[2,0,0]}]
         });
         assertEqual(result.count,4);
+        const object = sandbox.getState().objects[0];
+        const family = normalizeExplicitInstanceFamily(object.family);
+        assertEqual(sandbox.getState().objects.length, 1);
+        assertEqual(object.kind, "instance-family");
         assertDeepEqual(
-          sandbox.getState().objects.map(object => object.position),
+          Array.from({ length: family.count }, (_, index) => {
+            const transform = explicitFamilyTransformAt(family, index, {});
+            return transform.position.map((value, axis) =>
+              value + object.position[axis]
+            );
+          }),
           [[0,0,0],[2,0,0],[4,0,0],[6,0,0]]
         );
+        assertEqual(result.memberResources.length, 4);
         assertEqual(sandbox.getHistoryDiagnostics().commandCount,1);
         assertEqual(
           editor.selection.snapshot().activeMember.objectId,
@@ -12615,7 +12913,8 @@ assets: {
             "box","sphere","cylinder","plane","polygon",
             "capsule","circle","cone","dodecahedron","icosahedron",
             "octahedron","ring","tetrahedron","torus","torus-knot",
-            "lathe","tube","shape","extrude","polyhedron","buffer"
+            "lathe","tube","shape","extrude","polyhedron","buffer",
+            "stroke-bundle"
           ]
         );
         assertEqual(
@@ -14593,6 +14892,18 @@ function createPropertyConsole(fixture) {
       }
     }
   });
+}
+
+function flattenResourcePaths(node) {
+  return [
+    ...(node.path ? [node.path] : []),
+    ...(node.children ?? []).flatMap(flattenResourcePaths)
+  ];
+}
+
+function packedColorHex(value) {
+  if (value === null || value === undefined) return null;
+  return `#${Number(value).toString(16).padStart(6, "0").slice(-6)}`;
 }
 
 function geometryProviderSamples() {

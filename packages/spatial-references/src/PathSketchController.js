@@ -1530,7 +1530,7 @@ export class PathSketchController {
     }
   }
 
-  #scheduleVisualRelease(job) {
+  #deferResultPreviewClear(job) {
     const schedule = callback => {
       const id = globalThis.requestAnimationFrame(() => {
         const index = this.#handoffFrames.indexOf(id);
@@ -1688,7 +1688,7 @@ export class PathSketchController {
       typeof this.renderer.subscribeObjectVisuals === "function";
     if (!hasVisualObserver &&
         typeof globalThis.requestAnimationFrame === "function") {
-      this.#scheduleVisualRelease(job);
+      this.#deferResultPreviewClear(job);
     } else {
       this.#releaseCommittedHandoff(job);
     }
@@ -2175,13 +2175,15 @@ function nowMs() {
 }
 
 function resultCreatedIds(result) {
-  const ids = Array.isArray(result?.createdIds)
-    ? result.createdIds
-    : result?.id !== undefined && result?.id !== null
-      ? [result.id]
-      : Array.isArray(result?.activeIds)
-        ? result.activeIds
-        : [];
+  const ids = Array.isArray(result?.publishedObjectIds)
+    ? result.publishedObjectIds
+    : Array.isArray(result?.createdIds)
+      ? result.createdIds
+      : result?.id !== undefined && result?.id !== null
+        ? [result.id]
+        : Array.isArray(result?.activeIds)
+          ? result.activeIds
+          : [];
   return [...new Set(ids.map(String).filter(Boolean))];
 }
 

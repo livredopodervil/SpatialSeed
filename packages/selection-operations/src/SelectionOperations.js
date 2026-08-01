@@ -14,9 +14,12 @@ import {
   decomposeMatrix
 } from "./AffineRepeat.js?build=20260715-0021d";
 import {
+  explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
+  familyMemberResourcePath,
+  normalizeExplicitInstanceFamily,
   packAnchoredExplicitInstanceFamily
-} from "../../procedural-families/src/index.js?build=20260730-0041a";
+} from "../../procedural-families/src/index.js?build=20260730-0044a";
 import {
   appearanceBindingForObject,
   compactUniformFamilyColors,
@@ -24,7 +27,7 @@ import {
 } from "../../appearance-binding/src/index.js?build=20260730-0041b";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v7";
+  static apiVersion = "selection-operations-v8";
 
   constructor({
     editor,
@@ -258,71 +261,93 @@ export class SelectionOperations {
     const instanceColors = colors === null || colors === undefined
       ? null
       : normalizeInstanceColors(colors, instances.length);
-    const requestedAppearance = normalizeAppearanceBinding(
-      appearanceBinding,
-      { fallbackColor: color }
-    );
+    const compactedColors = instanceColors
+      ? compactUniformFamilyColors(instanceColors)
+      : Object.freeze({
+          colors: null,
+          appearanceBinding: normalizeAppearanceBinding(null, {
+            fallbackColor: color
+          })
+        });
+    const requestedAppearance = appearanceBinding ?? {};
+    const resolvedAppearanceBinding = normalizeAppearanceBinding({
+      ...compactedColors.appearanceBinding,
+      ...requestedAppearance,
+      ...(instanceColors
+        ? {
+            colorMode: compactedColors.appearanceBinding.colorMode,
+            ...(compactedColors.appearanceBinding.uniformColor
+              ? {
+                  uniformColor:
+                    compactedColors.appearanceBinding.uniformColor
+                }
+              : {})
+          }
+        : {})
+    }, {
+      family: null,
+      fallbackColor: color
+    });
     const appearance = this.#creationAppearance(color, material);
     const index = this.sandbox.objectCount + 1;
     const label = this.geometryRegistry.label(descriptor.type);
     const baseName = name || `${label} ${index}`;
-    /*
-     * Cada cópia continua sendo um objeto lógico endereçável. O renderer pode
-     * agrupá-las em lotes instanciados por geometria/aparência, sem reduzir o
-     * contrato público a um único id de família.
-     */
-    const ids = sourceInstances.map(instance =>
-      String(instance?.id ?? "").trim() || crypto.randomUUID()
+    const memberIds = sourceInstances.map((instance, memberIndex) =>
+      String(instance?.id ?? "").trim() || `member-${memberIndex + 1}`
     );
-    const objects = instances.map((instance, instanceIndex) => {
-      const instanceColor = instanceColors?.[instanceIndex] ?? null;
-      return Object.freeze({
-        id: ids[instanceIndex],
-        name: instances.length === 1
-          ? baseName
-          : `${baseName} ${instanceIndex + 1}`,
-        kind: descriptor.type,
-        position: Object.freeze([...instance.position]),
-        rotation: Object.freeze([...instance.rotation]),
-        scale: Object.freeze([...instance.scale]),
-        geometry: descriptor,
-        ...appearance,
-        appearanceBinding: requestedAppearance,
-        instanceState: Object.freeze(
-          instanceColor ? { color: instanceColor } : {}
-        )
-      });
-    });
-    const command = deepFreezeCommand({
-      type: "selection.duplicate",
-      preparedImmutable: "spatialseed-prepared-command-v1",
-      source: String(source),
-      sourceIds: [],
-      copyCount: instances.length,
-      geometryInstances: true,
+    const familyId = crypto.randomUUID();
+    const anchored = packAnchoredExplicitInstanceFamily(instances, {
+      colors: compactedColors.colors,
+      memberIds,
       anchorPolicy,
-      ...(anchor ? { anchor: structuredClone(anchor) } : {}),
-      ...(generator ? { generator: structuredClone(generator) } : {}),
-      objects
+      anchor,
+      generator: {
+        ...(generator ?? { type: "explicit-instance-family-v2" }),
+        coordinateSpace: "family-local-v2",
+        identityMode: "virtual-members-v1",
+        anchorPolicy
+      }
+    });
+    const family = anchored.family;
+    const command = deepFreezeCommand({
+      type: "instance-family.create",
+      preparedImmutable: "spatialseed-prepared-command-v1",
+      id: familyId,
+      name: baseName,
+      position: anchored.origin,
+      geometry: descriptor,
+      family,
+      appearanceBinding: resolvedAppearanceBinding,
+      source: String(source),
+      ...(appearance.appearanceId
+        ? { appearanceId: appearance.appearanceId }
+        : { color: appearance.color })
     });
     const changed = this.sandbox.dispatch(command);
-    if (changed) this.#selectIds([ids.at(-1)]);
+    if (changed) this.#selectIds([familyId]);
+    const memberResources = memberIds.map(memberId =>
+      familyMemberResourcePath(familyId, memberId)
+    );
     return Object.freeze({
       changed,
       tool: "geometry-instances",
       geometry: descriptor,
-      count: instances.length,
-      familyId: null,
-      familyOrigin: null,
-      anchorPolicy,
-      colorMode: requestedAppearance.colorMode,
-      materialMode: requestedAppearance.materialMode,
-      opacityMultiplier: requestedAppearance.opacityMultiplier,
-      logicalObjectCount: instances.length,
-      estimatedTransformBytes: instances.length * 80,
-      createdIds: Object.freeze([...ids]),
-      activeIds: Object.freeze(ids.length ? [ids.at(-1)] : []),
-      activeId: ids.at(-1) ?? null
+      count: family.count,
+      familyId,
+      familyOrigin: anchored.origin,
+      anchorPolicy: anchored.anchorPolicy,
+      colorMode: resolvedAppearanceBinding.colorMode,
+      materialMode: resolvedAppearanceBinding.materialMode,
+      opacityMultiplier: resolvedAppearanceBinding.opacityMultiplier,
+      logicalObjectCount: 1,
+      estimatedTransformBytes:
+        explicitInstanceFamilyEstimatedBytes(family),
+      memberIds: Object.freeze([...memberIds]),
+      memberResources: Object.freeze(memberResources),
+      createdIds: Object.freeze([familyId]),
+      publishedObjectIds: Object.freeze([familyId]),
+      activeIds: Object.freeze([familyId]),
+      activeId: familyId
     });
   }
 
@@ -958,6 +983,150 @@ export class SelectionOperations {
     });
   }
 
+  fuseSelectedFamilies({
+    objectIds = null,
+    minimumGroupSize = 2,
+    name = null
+  } = {}) {
+    if (!this.geometryRegistry) {
+      throw new Error("Registro de geometrias indisponível.");
+    }
+    const minimum = Number(minimumGroupSize);
+    if (!Number.isInteger(minimum) || minimum < 2) {
+      throw new RangeError("Fusão de famílias exige ao menos duas famílias.");
+    }
+    const requestedIds = Array.isArray(objectIds) && objectIds.length
+      ? objectIds.map(String)
+      : this.editor.selection.snapshot().members
+          .map(member => String(member.objectId));
+    const state = this.sandbox.getSnapshot();
+    const hierarchy = new HierarchyIndex(state.objects);
+    const groups = new Map();
+
+    for (const id of requestedIds) {
+      const object = this.#objectById(id);
+      if (!object || object.kind !== "instance-family") continue;
+      const descriptor = this.geometryRegistry.describeLegacyObject(object);
+      const appearanceKey = JSON.stringify([
+        object.appearanceId ?? null,
+        object.material ?? null,
+        appearanceBindingForObject(object)
+      ]);
+      const key = `${this.geometryRegistry.key(descriptor)}|${appearanceKey}`;
+      const group = groups.get(key) ?? {
+        descriptor,
+        appearanceKey,
+        objects: []
+      };
+      group.objects.push(object);
+      groups.set(key, group);
+    }
+
+    const families = [];
+    const removeIds = [];
+    for (const group of groups.values()) {
+      if (group.objects.length < minimum) continue;
+      const instances = [];
+      const colors = [];
+      let hasColors = true;
+      for (const object of group.objects) {
+        const family = normalizeExplicitInstanceFamily(object.family);
+        const familyWorld = new THREE.Matrix4().fromArray(
+          hierarchy.worldMatrixOf(object.id)
+        );
+        for (let index = 0; index < family.count; index += 1) {
+          const transform = explicitFamilyTransformAt(family, index, {});
+          const local = new THREE.Matrix4().compose(
+            new THREE.Vector3().fromArray(transform.position),
+            new THREE.Quaternion().fromArray(transform.rotation),
+            new THREE.Vector3().fromArray(transform.scale)
+          );
+          const world = familyWorld.clone().multiply(local);
+          const position = new THREE.Vector3();
+          const rotation = new THREE.Quaternion();
+          const scale = new THREE.Vector3();
+          world.decompose(position, rotation, scale);
+          instances.push({
+            id: `${object.id}:${transform.memberId}`,
+            position: position.toArray(),
+            rotation: rotation.toArray(),
+            scale: scale.toArray()
+          });
+          if (transform.color === null) {
+            hasColors = false;
+          } else {
+            colors.push(`#${transform.color.toString(16).padStart(6, "0")}`);
+          }
+        }
+      }
+      if (instances.length > 100000) {
+        throw new RangeError(
+          "Uma família fundida não pode exceder 100000 membros."
+        );
+      }
+      const anchored = packAnchoredExplicitInstanceFamily(instances, {
+        memberIds: instances.map(instance => instance.id),
+        colors: hasColors ? colors : null,
+        anchorPolicy: "bounds",
+        generator: {
+          type: "family-fusion-v1",
+          coordinateSpace: "family-local-v2",
+          identityMode: "virtual-members-v1",
+          sourceFamilies: group.objects.map(object => object.id),
+          sourceRevision: this.sandbox.revision
+        }
+      });
+      const first = group.objects[0];
+      const requestedName = String(name ?? "").trim();
+      families.push({
+        id: crypto.randomUUID(),
+        name: requestedName
+          ? `${requestedName}${groups.size > 1 ? ` ${families.length + 1}` : ""}`
+          : `${first.name ?? this.geometryRegistry.label(group.descriptor.type)} × ${instances.length}`,
+        position: anchored.origin,
+        geometry: group.descriptor,
+        family: anchored.family,
+        appearanceBinding: appearanceBindingForObject(first),
+        ...(first.appearanceId
+          ? { appearanceId: first.appearanceId }
+          : { material: structuredClone(first.material ?? { color: "#6699cc" }) })
+      });
+      removeIds.push(...group.objects.map(object => String(object.id)));
+    }
+
+    if (!families.length) {
+      return Object.freeze({
+        changed: false,
+        reason: "no-compatible-families",
+        requested: requestedIds.length
+      });
+    }
+    const changed = this.sandbox.dispatch(deepFreezeCommand({
+      type: "instance-family.compact-many",
+      preparedImmutable: "spatialseed-prepared-command-v1",
+      removeIds,
+      families,
+      source: "family-fusion"
+    }));
+    const familyIds = families.map(family => family.id);
+    if (changed) this.#selectIds(familyIds);
+    return Object.freeze({
+      changed,
+      removedFamilyObjects: removeIds.length,
+      createdFamilyObjects: familyIds.length,
+      instanceCount: families.reduce(
+        (total, item) => total + item.family.count,
+        0
+      ),
+      familyIds: Object.freeze(familyIds),
+      estimatedTransformBytes: families.reduce(
+        (total, item) => total +
+          explicitInstanceFamilyEstimatedBytes(item.family),
+        0
+      )
+    });
+  }
+
   compactSelectedInstances({ objectIds = null, minimumGroupSize = 2 } = {}) {
     if (!this.geometryRegistry) {
       throw new Error("Registro de geometrias indisponível.");
@@ -1044,6 +1213,7 @@ export class SelectionOperations {
           })),
           {
             colors: compactedColors.colors,
+            memberIds: members.map(object => String(object.id)),
             generator: {
               type: "selection-compaction-v1",
               coordinateSpace: "family-local-v1",

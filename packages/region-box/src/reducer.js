@@ -8,10 +8,14 @@ import {
 } from "../../scene-hierarchy/src/index.js";
 import {
   normalizeExplicitInstanceFamily
-} from "../../procedural-families/src/index.js?build=20260730-0041a";
+} from "../../procedural-families/src/index.js?build=20260731-0044a";
 import {
   normalizeAppearanceBinding
 } from "../../appearance-binding/src/index.js?build=20260730-0041a";
+import {
+  appendStrokeToBundle,
+  normalizeStrokeBundleDescriptor
+} from "../../stroke-resources/src/index.js?build=20260731-0044a";
 
 function updateById(objects, id, updater) {
   const index = objects.findIndex(object => object.id === id);
@@ -301,6 +305,100 @@ export function boxRegionReducer(state, command, context = {}) {
       };
     }
 
+    case "stroke-bundle.append": {
+      const objectId = String(command.objectId ?? "").trim();
+      if (!objectId) throw new TypeError("Append de traço exige objeto-alvo.");
+      const existing = typeof context.getObject === "function"
+        ? context.getObject(objectId)
+        : state.objects.find(object => String(object.id) === objectId);
+      if (!existing || existing.kind !== "stroke-bundle") {
+        throw new Error(`Conjunto de traços inexistente: ${objectId}.`);
+      }
+      const geometry = appendStrokeToBundle(
+        existing.geometry,
+        command.stroke
+      );
+      const object = Object.freeze({ ...existing, geometry });
+      const objects = updateById(
+        state.objects,
+        objectId,
+        () => object
+      );
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [{
+          type: "object-updated",
+          objectId,
+          object,
+          source: command.source ?? "stroke-bundle.append"
+        }]
+      };
+    }
+
+    case "stroke-bundle.merge": {
+      const sourceIds = [...new Set(
+        (command.sourceIds ?? []).map(id => String(id ?? "").trim())
+      )].filter(Boolean);
+      const target = freezeStrokeBundleObject(command.object, context, {
+        allowedExistingIds: new Set(sourceIds)
+      });
+      const targetId = String(target.id);
+      const existingById = new Map(
+        state.objects.map(object => [String(object.id), object])
+      );
+      const targetExists = existingById.has(targetId);
+      if (targetExists && !sourceIds.includes(targetId)) {
+        throw new Error(`Duplicate object id: ${targetId}`);
+      }
+      const removedSet = new Set(sourceIds.filter(id => id !== targetId));
+      for (const id of removedSet) {
+        if (!existingById.has(id)) {
+          throw new Error(`Traço fundido inexistente: ${id}.`);
+        }
+      }
+      for (const object of state.objects) {
+        const parentId = object.parentId == null
+          ? null
+          : String(object.parentId);
+        if (parentId && removedSet.has(parentId)) {
+          throw new Error(
+            `Não é possível fundir ${parentId}: ele possui descendentes.`
+          );
+        }
+      }
+      const objects = [];
+      let inserted = false;
+      for (const object of state.objects) {
+        const id = String(object.id);
+        if (removedSet.has(id)) continue;
+        if (id === targetId) {
+          objects.push(target);
+          inserted = true;
+        } else {
+          objects.push(object);
+        }
+      }
+      if (!inserted) objects.push(target);
+      const frozen = Object.freeze(objects);
+      new HierarchyIndex(frozen);
+      return {
+        state: Object.freeze({ ...state, objects: frozen }),
+        changes: [
+          {
+            type: targetExists ? "object-updated" : "object-created",
+            objectId: targetId,
+            ...(targetExists ? {} : { object: target }),
+            source: command.source ?? "stroke-bundle.merge"
+          },
+          ...[...removedSet].map(objectId => ({
+            type: "object-deleted",
+            objectId,
+            source: command.source ?? "stroke-bundle.merge"
+          }))
+        ]
+      };
+    }
+
     case "instance-family.compact-many": {
       if (!Array.isArray(command.removeIds) ||
           !Array.isArray(command.families) ||
@@ -320,6 +418,16 @@ export function boxRegionReducer(state, command, context = {}) {
       if (removedObjects.some(object => !object)) {
         throw new Error("A compactação referencia objetos inexistentes.");
       }
+      for (const object of state.objects) {
+        const parentId = object.parentId == null
+          ? null
+          : String(object.parentId);
+        if (parentId && removedSet.has(parentId)) {
+          throw new Error(
+            `Não é possível fundir ${parentId}: ele possui descendentes.`
+          );
+        }
+      }
       const familyObjects = command.families.map(item =>
         freezeInstanceFamilyObject(item, context, removedSet)
       );
@@ -331,6 +439,7 @@ export function boxRegionReducer(state, command, context = {}) {
         ...state.objects.filter(object => !removedSet.has(String(object.id))),
         ...familyObjects
       ]);
+      new HierarchyIndex(objects);
       return {
         state: Object.freeze({ ...state, objects }),
         changes: [
@@ -809,6 +918,59 @@ function freezeCamera(value = {}) {
     focusDistance
   });
 }
+
+function freezeStrokeBundleObject(
+  command = {},
+  context = {},
+  { allowedExistingIds = new Set() } = {}
+) {
+  const id = String(command.id ?? "").trim();
+  if (!id) throw new TypeError("Conjunto de traços exige id.");
+  const exists = typeof context.hasObject === "function"
+    ? context.hasObject(id) && !allowedExistingIds.has(id)
+    : false;
+  if (exists) throw new Error(`Duplicate object id: ${id}`);
+  const geometry = normalizeStrokeBundleDescriptor(command.geometry);
+  return Object.freeze({
+    id,
+    kind: "stroke-bundle",
+    name: String(command.name ?? id),
+    parentId: command.parentId ?? null,
+    position: freezeVector(
+      command.position ?? [0, 0, 0],
+      3,
+      "Posição do conjunto de traços inválida."
+    ),
+    rotation: freezeVector(
+      command.rotation ?? [0, 0, 0, 1],
+      4,
+      "Rotação do conjunto de traços inválida."
+    ),
+    scale: freezeVector(
+      command.scale ?? [1, 1, 1],
+      3,
+      "Escala do conjunto de traços inválida."
+    ),
+    geometry,
+    ...(command.appearanceId
+      ? { appearanceId: String(command.appearanceId) }
+      : {
+          material: Object.freeze({
+            ...(command.material ? structuredClone(command.material) : {}),
+            color: normalizeHexColor(
+              command.material?.color ?? command.color ?? "#6699cc"
+            )
+          })
+        }),
+    appearanceBinding: normalizeAppearanceBinding(
+      command.appearanceBinding,
+      { fallbackColor: command.material?.color ?? command.color ?? "#6699cc" }
+    ),
+    instanceState: Object.freeze({}),
+    source: String(command.source ?? "stroke-bundle")
+  });
+}
+
 
 function freezeInstanceFamilyObject(command = {}, context = {}, ignoredIds = new Set()) {
   const id = String(command.id ?? "").trim();

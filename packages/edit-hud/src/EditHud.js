@@ -15,7 +15,8 @@ const STATIC_GROUP_ORDER = Object.freeze([
 const STATIC_ACTION_ORDER = Object.freeze([
   "edit-hud-create", "edit-hud-create-light", "edit-hud-material",
   "edit-hud-enter-mesh", "edit-hud-draw-path", "edit-hud-group",
-  "edit-hud-ungroup", "edit-hud-duplicate", "edit-hud-delete",
+  "edit-hud-ungroup", "edit-hud-fuse-families", "edit-hud-fuse-strokes",
+  "edit-hud-duplicate", "edit-hud-delete",
   "edit-hud-select-all", "edit-hud-select-none", "edit-hud-select-invert",
   "edit-hud-select-grow", "edit-hud-select-shrink", "edit-hud-select-linked",
   "edit-hud-select-boundary", "edit-hud-create-vertex",
@@ -295,11 +296,21 @@ export class EditHud {
     const selectedObjectIds = selection.members?.map(
       member => member.objectId
     ) ?? [];
+    const selectionActions =
+      this.query("selection.actions.describe") ?? {};
+    const fuseFamilies = this.root.querySelector("#edit-hud-fuse-families");
+    const fuseStrokes = this.root.querySelector("#edit-hud-fuse-strokes");
+    if (fuseFamilies) {
+      fuseFamilies.disabled = !selectionActions.canFuseFamilies;
+    }
+    if (fuseStrokes) {
+      fuseStrokes.disabled = !selectionActions.canFuseStrokes;
+    }
     this.#heuristic = deriveHudContext({
       state,
       mesh,
       selection,
-      selectionActions: this.query("selection.actions.describe") ?? {},
+      selectionActions,
       references: this.query("path.references.list", {
         includeSelection: false,
         ids: selectedObjectIds
@@ -1935,6 +1946,8 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-draw-path": ["Desenhar spline", "Desenha à mão livre no plano travado ou no plano atual do viewer e cria um caminho suavizado."],
   "edit-hud-group": ["Agrupar", "Cria um grupo contendo os objetos selecionados."],
   "edit-hud-ungroup": ["Desagrupar", "Remove o grupo selecionado e preserva seus filhos na cena."],
+  "edit-hud-fuse-families": ["Fundir famílias", "Une famílias instanciadas compatíveis em uma única família compacta com membros virtuais."],
+  "edit-hud-fuse-strokes": ["Fundir traços", "Une traços selecionados, inclusive descontínuos, no mesmo objeto lógico compacto."],
   "edit-hud-duplicate": ["Duplicar", "Duplica objetos ou os componentes selecionados da malha."],
   "edit-hud-delete": ["Excluir", "Exclui objetos ou componentes selecionados. A operação participa do undo correspondente."],
   "edit-hud-select-all": ["Selecionar tudo", "Seleciona todos os componentes do modo atual na malha ativa."],

@@ -2203,3 +2203,23 @@ html[data-toolbar-layout="vertical"] #selection-panel{
 #edit-hud[data-drawing-target-type="plane"] .edit-hud-surface-jump {
   opacity:0.5;
 }
+
+/* 0044a: navegador hierárquico de recursos */
+.resource-browser{display:grid;gap:.45rem}
+.resource-browser-header{display:grid;gap:.35rem}
+.resource-browser-header input{width:100%;min-width:0}
+.resource-current-path{font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;opacity:.72;padding:.25rem .35rem;border-radius:.35rem;background:#0003}
+.resource-tree{display:grid;gap:.12rem;max-height:min(58vh,640px);overflow:auto;overscroll-behavior:contain}
+.resource-branch,.resource-leaf{margin:0}
+.resource-branch>summary{list-style:none}
+.resource-branch>summary::-webkit-details-marker{display:none}
+.resource-branch>summary::before{content:"▸";display:inline-block;width:1rem;transform:translateX(calc(var(--resource-depth,0)*.55rem));opacity:.65}
+.resource-branch[open]>summary::before{content:"▾"}
+.resource-node-button{display:grid;grid-template-columns:1.2rem minmax(5rem,1fr);grid-template-areas:"kind label" ". summary";gap:0 .3rem;width:100%;min-width:0;padding:.26rem .35rem .26rem calc(.35rem + var(--resource-depth,0)*.55rem);border:0;border-radius:.3rem;background:transparent;color:inherit;text-align:left;font:inherit}
+.resource-node-button:hover,.resource-node-button:focus-visible{background:#ffffff10;outline:none}
+.resource-kind{grid-area:kind;text-align:center;opacity:.8}
+.resource-label{grid-area:label;overflow-wrap:anywhere}
+.resource-summary{grid-area:summary;font-size:.78em;opacity:.65;overflow-wrap:anywhere}
+.resource-children{display:grid;gap:.08rem}
+.resource-omitted{padding:.35rem;opacity:.65;font-size:.82em}
+[data-resource-row][hidden]{display:none!important}

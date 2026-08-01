@@ -559,6 +559,10 @@ export class DevConsole {
         this.#expectMaximum(tokens,0,"ungroup");
         return this.commands.execute("selection.ungroup");
 
+      case "fuse":
+      case "fundir":
+        return this.#fuse(tokens);
+
       case "repeat":
         return this.#repeat(tokens);
 
@@ -665,7 +669,7 @@ export class DevConsole {
         "affine-repeat|tool-parameters|" +
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|path-references|mesh-edit-math|" +
-        "geometry-creation|geometry-registry|" +
+        "geometry-creation|geometry-registry|compact-resources|" +
         "file-interop|project-files|project-recovery|pwa-status|spatial-planning|" +
         "spatial-plan-commit|procedure-catalog|procedure-editor|all",
         "calc expressão JavaScript",
@@ -694,6 +698,8 @@ export class DevConsole {
         "duplicate",
         "group [nome]",
         "ungroup",
+        "fuse families|strokes [nome]",
+        "fundir familias|tracos [nome]",
         "duplicate count N [move|rotate|scale|pivot|matrix ...]",
         '  expressões: duplicate count 24 move "3*cos(i*pi/12)" 0 "3*sin(i*pi/12)"',
         '  rotação: rotate 0 "i*pi/12 rad" 0',
@@ -1562,6 +1568,41 @@ export class DevConsole {
     return this.commands.execute(
       "selection.group",
       name ? { name } : {}
+    );
+  }
+
+  #fuse(tokens) {
+    const target = String(tokens.shift() ?? "help").toLowerCase();
+    if (["help", "ajuda"].includes(target)) {
+      this.#expectMaximum(tokens, 0, "fuse help");
+      return {
+        usage: [
+          "fuse families [nome]",
+          "fuse strokes [nome]",
+          "fundir familias [nome]",
+          "fundir tracos [nome]"
+        ],
+        semantics: {
+          families: "Funde famílias instanciadas compatíveis em famílias compactas.",
+          strokes: "Funde conjuntos de traços selecionados em um objeto lógico."
+        }
+      };
+    }
+    const name = tokens.join(" ").trim();
+    if (["family", "families", "familia", "familias", "instances"].includes(target)) {
+      return this.commands.execute(
+        "selection.instances.fuse",
+        name ? { name } : {}
+      );
+    }
+    if (["stroke", "strokes", "trace", "traces", "traco", "tracos", "traço", "traços"].includes(target)) {
+      return this.commands.execute(
+        "selection.strokes.fuse",
+        name ? { name } : {}
+      );
+    }
+    throw new Error(
+      "Uso: fuse families|strokes [nome]."
     );
   }
 

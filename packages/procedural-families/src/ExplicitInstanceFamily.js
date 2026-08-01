@@ -70,12 +70,16 @@ export function explicitInstanceFamilyAnchor(
 
 function packExplicitInstanceFamilyInternal(
   instances,
-  { colors = null, generator = null } = {},
+  { colors = null, memberIds = null, generator = null } = {},
   origin = null
 ) {
   validateInstanceCollection(instances);
   const count = instances.length;
   const anchor = origin ?? [0, 0, 0];
+  const normalizedMemberIds = normalizeMemberIds(
+    memberIds ?? instances.map(instance => instance?.id ?? null),
+    count
+  );
   const positions = new Array(count * 3);
   const rotations = new Array(count * 4);
   let scales = null;
@@ -135,6 +139,7 @@ function packExplicitInstanceFamilyInternal(
     type: EXPLICIT_INSTANCE_FAMILY_TYPE,
     validated: VALIDATED_FAMILY_MARKER,
     count,
+    memberIds: normalizedMemberIds,
     positions: Object.freeze(positions),
     ...(hasNonIdentityRotation
       ? { rotations: Object.freeze(rotations) }
@@ -174,6 +179,7 @@ export function normalizeExplicitInstanceFamily(value) {
   if (!Number.isInteger(count) || count < 1 || count > 100000) {
     throw new RangeError("Quantidade inválida na família de instâncias.");
   }
+  const memberIds = normalizeMemberIds(value.memberIds, count);
   const positions = normalizedFlatVectorArray(
     value.positions,
     count,
@@ -196,6 +202,7 @@ export function normalizeExplicitInstanceFamily(value) {
     type: EXPLICIT_INSTANCE_FAMILY_TYPE,
     validated: VALIDATED_FAMILY_MARKER,
     count,
+    memberIds,
     positions,
     ...(rotations ? { rotations } : {}),
     ...(scales ? { scales } : {}),
@@ -211,6 +218,7 @@ export function explicitInstanceFamilyEstimatedBytes(family) {
   const normalized = normalizeExplicitInstanceFamily(family);
   return (
     normalized.positions.length * 4 +
+    normalized.memberIds.reduce((total, id) => total + 8 + id.length * 2, 0) +
     (normalized.rotations?.length ?? 0) * 4 +
     (normalized.scales?.length ?? 0) * 4 +
     (normalized.colors?.length ?? 0) * 4 +
@@ -242,7 +250,43 @@ export function explicitFamilyTransformAt(family, index, target = {}) {
   target.color = family.colors
     ? Number(family.colors[index])
     : null;
+  target.memberId = explicitFamilyMemberIdAt(family, index);
   return target;
+}
+
+export function explicitFamilyMemberIdAt(family, index) {
+  const normalized = normalizeExplicitInstanceFamily(family);
+  if (!Number.isInteger(index) || index < 0 || index >= normalized.count) {
+    throw new RangeError(`Índice de membro inválido: ${index}.`);
+  }
+  return normalized.memberIds[index];
+}
+
+export function explicitFamilyMemberIndex(family, memberId) {
+  const normalized = normalizeExplicitInstanceFamily(family);
+  const id = String(memberId ?? "").trim();
+  if (!id) return -1;
+  return normalized.memberIds.indexOf(id);
+}
+
+export function familyMemberResourcePath(familyObjectId, memberId) {
+  const objectId = String(familyObjectId ?? "").trim();
+  const id = String(memberId ?? "").trim();
+  if (!objectId || !id) {
+    throw new TypeError("Referência de membro exige família e membro.");
+  }
+  return `/objects/${encodeURIComponent(objectId)}/members/${encodeURIComponent(id)}`;
+}
+
+export function parseFamilyMemberResourcePath(value) {
+  const match = String(value ?? "").match(
+    /^\/objects\/([^/]+)\/members\/([^/]+)$/
+  );
+  if (!match) return null;
+  return Object.freeze({
+    familyId: decodeURIComponent(match[1]),
+    memberId: decodeURIComponent(match[2])
+  });
 }
 
 function isTrustedFamily(value) {
@@ -255,6 +299,10 @@ function isTrustedFamily(value) {
   }
   const count = Number(value.count);
   if (!Number.isInteger(count) || count < 1 || count > 100000) return false;
+  if (!Object.isFrozen(value.memberIds) ||
+      value.memberIds.length !== count ||
+      new Set(value.memberIds).size !== count ||
+      value.memberIds.some(id => !String(id).trim())) return false;
   if (!Object.isFrozen(value.positions) ||
       value.positions.length !== count * 3) return false;
   if (value.rotations &&
@@ -278,6 +326,23 @@ function isTrustedFamily(value) {
   return true;
 }
 
+
+function normalizeMemberIds(value, count) {
+  const source = value === null || value === undefined
+    ? []
+    : Array.from(value);
+  if (source.length && source.length !== count) {
+    throw new RangeError("IDs de membros devem acompanhar as instâncias.");
+  }
+  const ids = Array.from({ length: count }, (_, index) => {
+    const candidate = String(source[index] ?? "").trim();
+    return candidate || `member-${index + 1}`;
+  });
+  if (new Set(ids).size !== ids.length) {
+    throw new Error("IDs duplicados na família de instâncias.");
+  }
+  return Object.freeze(ids);
+}
 
 function normalizeAnchorPolicy(value) {
   const policy = String(value ?? "first").toLowerCase();

@@ -18,7 +18,7 @@ import {
   createViewerEnvironmentTexture
 } from "./ViewerEnvironment.js?build=20260726-0032a";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
-import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js";
+import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260731-0044a";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
 import {
   normalizeCameraProjection,
@@ -73,7 +73,7 @@ import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
   normalizeExplicitInstanceFamily
-} from "../../procedural-families/src/index.js?build=20260730-0041a";
+} from "../../procedural-families/src/index.js?build=20260731-0044a";
 import {
   appearanceBindingForObject,
   appearanceBindingIdentity,

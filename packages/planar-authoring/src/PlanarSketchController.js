@@ -30,11 +30,13 @@ const DEFAULTS = Object.freeze({
   sides: 6,
   arcAngleDegrees: 90,
   closed: false,
-  continuous: false
+  continuous: false,
+  autoFuse: true,
+  fusionTolerance: 0
 });
 
 export class PlanarSketchController {
-  static apiVersion = "planar-sketch-controller-v1";
+  static apiVersion = "planar-sketch-controller-v2";
 
   #active = null;
   #listeners = new Set();
@@ -54,6 +56,7 @@ export class PlanarSketchController {
     sandbox = null,
     drawingTarget = null,
     createObject,
+    createStroke = null,
     onCompleted = () => {},
     onEnded = () => {}
   }) {
@@ -73,11 +76,15 @@ export class PlanarSketchController {
         "PlanarSketchController exige comando público de criação."
       );
     }
+    if (createStroke !== null && typeof createStroke !== "function") {
+      throw new TypeError("createStroke deve ser função quando informado.");
+    }
     this.renderer = renderer;
     this.geometryRegistry = geometryRegistry;
     this.sandbox = sandbox;
     this.#drawingTarget = drawingTarget;
     this.createObject = createObject;
+    this.createStroke = createStroke;
     this.onCompleted = onCompleted;
     this.onEnded = onEnded;
     this.#bind(true);
@@ -151,13 +158,23 @@ export class PlanarSketchController {
       points,
       settings
     });
-    const result = this.createObject({
+    const creation = {
       name: options.name ?? plan.name,
       geometry: plan.geometry,
       position: plan.position,
       rotation: plan.rotation,
       color: settings.color
-    });
+    };
+    const result = this.createStroke &&
+      settings.style === "stroke" &&
+      plan.geometry.type === "tube"
+      ? this.createStroke({
+          ...creation,
+          autoFuse: settings.autoFuse,
+          fusionTolerance: settings.fusionTolerance,
+          source: "planar-sketch"
+        })
+      : this.createObject(creation);
     return Object.freeze({
       ...result,
       tool: "planar-primitive",
@@ -1146,7 +1163,14 @@ function normalizeSettings(value = {}) {
     sides,
     arcAngleDegrees,
     closed: Boolean(value.closed),
-    continuous: Boolean(value.continuous)
+    continuous: Boolean(value.continuous),
+    autoFuse: value.autoFuse === undefined
+      ? DEFAULTS.autoFuse
+      : Boolean(value.autoFuse),
+    fusionTolerance: nonNegative(
+      value.fusionTolerance ?? DEFAULTS.fusionTolerance,
+      "tolerância de fusão"
+    )
   });
 }
 
@@ -1172,6 +1196,9 @@ function resolveDrawingFrame(renderer, source, explicitFrame) {
 }
 
 function resultCreatedIds(result) {
+  if (Array.isArray(result?.publishedObjectIds)) {
+    return result.publishedObjectIds.map(String);
+  }
   if (Array.isArray(result?.createdIds)) {
     return result.createdIds.map(String);
   }
@@ -1201,6 +1228,12 @@ function positive(value, label) {
   if (!Number.isFinite(number) || number <= 0) {
     throw new RangeError(`${label} deve ser positiva.`);
   }
+  return number;
+}
+
+function nonNegative(value, label) {
+  const number = finite(value, label);
+  if (number < 0) throw new RangeError(`${label} não pode ser negativa.`);
   return number;
 }
 

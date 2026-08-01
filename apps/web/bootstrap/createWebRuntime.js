@@ -9,18 +9,21 @@ import {
   ViewerCameraController,
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260730-0041a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260731-0043x1";
-import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260714-0020b-a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260730-0040e";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260731-0044a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260731-0044a";
+import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260731-0044a";
+import {
+  buildResourceTree
+} from "../../../packages/resource-tree/src/index.js?build=20260731-0044a";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260731-0044a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0043x1";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0044a";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260730-0040e";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260731-0043x2";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260731-0044a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -36,7 +39,7 @@ import {
 } from "../../../packages/property-registry/src/index.js?build=20260727-0037c";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260728-0039d";
+} from "../../../packages/geometry-registry/src/index.js?build=20260731-0044a";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -97,7 +100,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260730-0042c";
+} from "../../../packages/edit-hud/src/index.js?build=20260731-0044a";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -112,7 +115,10 @@ import {
 } from "../../../packages/drawing-target/src/index.js?build=20260730-0042c";
 import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260730-0042c";
+} from "../../../packages/planar-authoring/src/index.js?build=20260731-0044a";
+import {
+  StrokeFusionService
+} from "../../../packages/stroke-resources/src/index.js?build=20260731-0044a";
 import {
   MeasurementController
 } from "../../../packages/measurement-tools/src/index.js?build=20260730-0040e";
@@ -121,7 +127,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260731-0043x1";
+} from "../../../packages/spatial-references/src/index.js?build=20260731-0044a";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -271,7 +277,23 @@ export async function createWebRuntime({
     selection: () => editor.selection.snapshot()
   });
 
-  const outline = new OutlineRenderer(outlineRoot);
+  const outline = new OutlineRenderer(outlineRoot, {
+    onActivate: ({ path, reference }) => {
+      const objectId = reference?.ownerObjectId;
+      if (!objectId || !baseSandbox.getObject(objectId)) return;
+      editor.selection.replace({
+        kind: reference.kind,
+        regionId: region.descriptor.id,
+        objectId,
+        resourcePath: path,
+        ...(reference.memberId ? { memberId: reference.memberId } : {}),
+        ...(reference.strokeId ? { strokeId: reference.strokeId } : {}),
+        ...(Number.isInteger(reference.vertexIndex)
+          ? { vertexIndex: reference.vertexIndex }
+          : {})
+      });
+    }
+  });
   const locationParameters = new URLSearchParams(
     globalThis.location?.search ?? ""
   );
@@ -455,6 +477,13 @@ export async function createWebRuntime({
       else toolLifecycle.clearRepeatable();
     }
   });
+  const strokeFusion = new StrokeFusionService({
+    sandbox,
+    editor,
+    regionId: region.descriptor.id,
+    geometryRegistry,
+    appearanceRuntime
+  });
   const meshEditor = new MeshEditController({
     sandbox,
     editor,
@@ -568,6 +597,7 @@ export async function createWebRuntime({
     drawingTarget,
     createObject: args =>
       commandsRef.execute("object.create.configured", args),
+    createStroke: args => strokeFusion.createStroke(args),
     onCompleted: ({ mode, settings, frame, points }) => {
       toolLifecycle.remember({
         id: "planar.primitive.create",
@@ -758,6 +788,26 @@ export async function createWebRuntime({
         "compactar instâncias selecionadas"
       );
       return selectionOperations.compactSelectedInstances(args);
+    },
+    { category: "selection", mutates: true }
+  );
+  commands.register(
+    "selection.instances.fuse",
+    args => {
+      viewerCoordinator.requireAuthority(
+        "fundir famílias de instâncias"
+      );
+      return selectionOperations.fuseSelectedFamilies(args);
+    },
+    { category: "selection", mutates: true }
+  );
+  commands.register(
+    "selection.strokes.fuse",
+    args => {
+      viewerCoordinator.requireAuthority(
+        "fundir conjuntos de traços"
+      );
+      return strokeFusion.fuseSelected(args);
     },
     { category: "selection", mutates: true }
   );
@@ -1231,9 +1281,31 @@ export async function createWebRuntime({
     } = {}) =>
       appearanceBindings.inspectSelection({ targetIds })
     )
-    .register("selection.actions.describe", () => ({
-      canGroup: !editor.selection.empty,
-      canUngroup: selectionOperations.canUngroup()
+    .register("selection.actions.describe", () => {
+      const selected = editor.selection.snapshot().members
+        .map(member => sandbox.getObject?.(member.objectId))
+        .filter(Boolean);
+      return Object.freeze({
+        canGroup: selected.length > 0,
+        canUngroup: selectionOperations.canUngroup(),
+        canFuseFamilies:
+          selected.filter(object => object.kind === "instance-family").length >= 2,
+        canFuseStrokes:
+          selected.filter(object => object.kind === "stroke-bundle").length >= 2
+      });
+    })
+    .register("stroke.fusion.status", () =>
+      strokeFusion.status()
+    )
+    .register("resource.tree.describe", ({
+      maxMembers = 128,
+      maxStrokes = 128,
+      maxVertices = 128
+    } = {}) => buildResourceTree({
+      objects: sandbox.getSnapshot().objects,
+      maxMembers,
+      maxStrokes,
+      maxVertices
     }))
     .register("experiments.describe", () =>
       experimentService.list()
@@ -1832,6 +1904,7 @@ export async function createWebRuntime({
       pathTools,
       pathSketch,
       planarSketch,
+      strokeFusion,
       measurement,
       toolRegistry,
       toolParameters,
