@@ -1,5 +1,5 @@
-export const HUD_LAYOUT_SCHEMA_VERSION = "spatial-seed-hud-layout-v2";
-export const HUD_LAYOUT_STORAGE_KEY = "spatialseed.edit.hud.layout.v2";
+export const HUD_LAYOUT_SCHEMA_VERSION = "spatial-seed-hud-layout-v3";
+export const HUD_LAYOUT_STORAGE_KEY = "spatialseed.edit.hud.layout.v3";
 
 export const HUD_VISIBILITY_VALUES = Object.freeze([
   "inherit",
@@ -15,16 +15,49 @@ export const HUD_ZONE_VALUES = Object.freeze([
   "fixed-end"
 ]);
 
-const DEFAULT_FAMILY_POLICY = Object.freeze({
+export const HUD_ACTIVATION_MODES = Object.freeze([
+  "native",
+  "momentary",
+  "toggle"
+]);
+
+export const HUD_SECTION_SCROLL_MODES = Object.freeze([
+  "rotate",
+  "scroll"
+]);
+
+const DEFAULT_SECTION_POLICY = Object.freeze({
+  label: null,
   visibility: "auto",
   zone: "adaptive",
-  order: null
+  order: null,
+  color: "#528bff",
+  columns: 4,
+  rows: 1,
+  scrollMode: "rotate",
+  showHeader: true
 });
 
 const DEFAULT_ITEM_POLICY = Object.freeze({
+  label: null,
+  icon: null,
+  section: null,
   visibility: "inherit",
   zone: "inherit",
-  order: null
+  order: null,
+  cellWidth: 1,
+  cellHeight: 1,
+  command: null,
+  activation: Object.freeze({
+    mode: "native",
+    group: null,
+    activates: Object.freeze([]),
+    deactivates: Object.freeze([]),
+    activatesOnDeactivate: Object.freeze([]),
+    deactivatesOnDeactivate: Object.freeze([]),
+    onActivate: null,
+    onDeactivate: null
+  })
 });
 
 const ZONE_BASE = Object.freeze({
@@ -35,26 +68,37 @@ const ZONE_BASE = Object.freeze({
 
 export function createDefaultHudLayoutDocument({
   familyIds = [],
+  sectionIds = familyIds,
   itemIds = [],
+  itemSections = {},
   legacyPreferences = null,
-  familyOrder = []
+  familyOrder = [],
+  sectionOrder = familyOrder
 } = {}) {
   const adaptive = legacyPreferences?.adaptiveOrder !== false;
   const groups = legacyPreferences?.groups ?? {};
-  const orderByFamily = rankMap(familyOrder);
-  const families = {};
+  const orderedSections = uniqueStrings([...sectionIds, ...familyIds]);
+  const orderBySection = rankMap([...sectionOrder, ...familyOrder]);
+  const sections = {};
 
-  for (const [index, familyId] of uniqueStrings(familyIds).entries()) {
-    families[familyId] = {
-      visibility: groups[familyId] === false ? "hidden" : "auto",
+  for (const [index, sectionId] of orderedSections.entries()) {
+    sections[sectionId] = {
+      ...DEFAULT_SECTION_POLICY,
+      visibility: groups[sectionId] === false ? "hidden" : "auto",
       zone: adaptive ? "adaptive" : "fixed-start",
-      order: adaptive ? null : orderByFamily.get(familyId) ?? index
+      order: adaptive ? null : orderBySection.get(sectionId) ?? index,
+      color: defaultSectionColor(sectionId, index)
     };
   }
 
+  const normalizedItemSections = normalizeItemSections(itemSections);
   const items = {};
   for (const itemId of uniqueStrings(itemIds)) {
-    items[itemId] = { ...DEFAULT_ITEM_POLICY };
+    items[itemId] = {
+      ...DEFAULT_ITEM_POLICY,
+      activation: { ...DEFAULT_ITEM_POLICY.activation },
+      section: normalizedItemSections[itemId] ?? null
+    };
   }
 
   return freezeDocument({
@@ -62,29 +106,21 @@ export function createDefaultHudLayoutDocument({
     activeProfile: "default",
     profiles: {
       default: {
-        families,
+        label: "Padrão",
+        sections,
         items
       }
     }
   });
 }
 
-export function normalizeHudLayoutDocument(value = {}, {
-  familyIds = [],
-  itemIds = [],
-  legacyPreferences = null,
-  familyOrder = []
-} = {}) {
-  const fallback = createDefaultHudLayoutDocument({
-    familyIds,
-    itemIds,
-    legacyPreferences,
-    familyOrder
-  });
+export function normalizeHudLayoutDocument(value = {}, options = {}) {
   const source = value && typeof value === "object" ? value : {};
-  const activeProfile = nonEmptyString(source.activeProfile) ?? "default";
-  const sourceProfiles = source.profiles && typeof source.profiles === "object"
-    ? source.profiles
+  const migrated = migrateDocument(source);
+  const fallback = createDefaultHudLayoutDocument(options);
+  const activeProfile = nonEmptyString(migrated.activeProfile) ?? "default";
+  const sourceProfiles = migrated.profiles && typeof migrated.profiles === "object"
+    ? migrated.profiles
     : {};
   const profileIds = uniqueStrings([
     ...Object.keys(sourceProfiles),
@@ -94,13 +130,14 @@ export function normalizeHudLayoutDocument(value = {}, {
   const profiles = {};
 
   for (const profileId of profileIds) {
-    const sourceProfile = sourceProfiles[profileId] ?? {};
-    const fallbackProfile = fallback.profiles.default;
-    profiles[profileId] = normalizeHudLayoutProfile(sourceProfile, {
-      familyIds,
-      itemIds,
-      fallbackProfile
-    });
+    profiles[profileId] = normalizeHudLayoutProfile(
+      sourceProfiles[profileId] ?? {},
+      {
+        ...options,
+        fallbackProfile: fallback.profiles.default,
+        profileId
+      }
+    );
   }
 
   return freezeDocument({
@@ -112,63 +149,94 @@ export function normalizeHudLayoutDocument(value = {}, {
 
 export function normalizeHudLayoutProfile(value = {}, {
   familyIds = [],
+  sectionIds = familyIds,
   itemIds = [],
-  fallbackProfile = null
+  itemSections = {},
+  fallbackProfile = null,
+  profileId = "default"
 } = {}) {
   const source = value && typeof value === "object" ? value : {};
-  const fallback = fallbackProfile ?? { families: {}, items: {} };
-  const familyKeys = uniqueStrings([
+  const sourceSections = source.sections ?? source.families ?? {};
+  const fallback = fallbackProfile ?? { sections: {}, items: {} };
+  const fallbackSections = fallback.sections ?? fallback.families ?? {};
+  const sectionKeys = uniqueStrings([
+    ...sectionIds,
     ...familyIds,
-    ...Object.keys(fallback.families ?? {}),
-    ...Object.keys(source.families ?? {})
+    ...Object.keys(fallbackSections),
+    ...Object.keys(sourceSections)
   ]);
   const itemKeys = uniqueStrings([
     ...itemIds,
     ...Object.keys(fallback.items ?? {}),
     ...Object.keys(source.items ?? {})
   ]);
-  const families = {};
+  const normalizedItemSections = normalizeItemSections(itemSections);
+  const sections = {};
   const items = {};
 
-  for (const familyId of familyKeys) {
-    families[familyId] = normalizeFamilyPolicy(
-      source.families?.[familyId],
-      fallback.families?.[familyId]
+  for (const [index, sectionId] of sectionKeys.entries()) {
+    sections[sectionId] = normalizeSectionPolicy(
+      sourceSections?.[sectionId],
+      fallbackSections?.[sectionId] ?? {
+        ...DEFAULT_SECTION_POLICY,
+        color: defaultSectionColor(sectionId, index)
+      }
     );
   }
 
   for (const itemId of itemKeys) {
+    const defaultItem = fallback.items?.[itemId] ?? {
+      ...DEFAULT_ITEM_POLICY,
+      section: normalizedItemSections[itemId] ?? null
+    };
     items[itemId] = normalizeItemPolicy(
       source.items?.[itemId],
-      fallback.items?.[itemId]
+      defaultItem
     );
   }
 
   return Object.freeze({
-    families: Object.freeze(families),
+    label: nonEmptyString(source.label) ??
+      nonEmptyString(fallback.label) ??
+      readableProfileId(profileId),
+    sections: Object.freeze(sections),
     items: Object.freeze(items)
   });
 }
 
-export function normalizeFamilyPolicy(value = {}, fallback = null) {
+export function normalizeSectionPolicy(value = {}, fallback = null) {
   const source = value && typeof value === "object" ? value : {};
   const base = fallback && typeof fallback === "object"
     ? fallback
-    : DEFAULT_FAMILY_POLICY;
+    : DEFAULT_SECTION_POLICY;
   return Object.freeze({
+    label: nullableString(source.label, nullableString(base.label, null)),
     visibility: normalizeVisibility(
       source.visibility,
-      normalizeVisibility(base.visibility, DEFAULT_FAMILY_POLICY.visibility, false),
+      normalizeVisibility(base.visibility, DEFAULT_SECTION_POLICY.visibility, false),
       false
     ),
     zone: normalizeZone(
       source.zone,
-      normalizeZone(base.zone, DEFAULT_FAMILY_POLICY.zone, false),
+      normalizeZone(base.zone, DEFAULT_SECTION_POLICY.zone, false),
       false
     ),
-    order: nullableInteger(source.order, nullableInteger(base.order, null))
+    order: nullableInteger(source.order, nullableInteger(base.order, null)),
+    color: normalizeColor(source.color, normalizeColor(base.color, DEFAULT_SECTION_POLICY.color)),
+    columns: boundedInteger(source.columns, boundedInteger(base.columns, 4, 1, 24), 1, 24),
+    rows: boundedInteger(source.rows, boundedInteger(base.rows, 1, 1, 12), 1, 12),
+    scrollMode: HUD_SECTION_SCROLL_MODES.includes(source.scrollMode)
+      ? source.scrollMode
+      : HUD_SECTION_SCROLL_MODES.includes(base.scrollMode)
+        ? base.scrollMode
+        : DEFAULT_SECTION_POLICY.scrollMode,
+    showHeader: source.showHeader === undefined
+      ? base.showHeader !== false
+      : Boolean(source.showHeader)
   });
 }
+
+export const normalizeFamilyPolicy = normalizeSectionPolicy;
 
 export function normalizeItemPolicy(value = {}, fallback = null) {
   const source = value && typeof value === "object" ? value : {};
@@ -176,6 +244,9 @@ export function normalizeItemPolicy(value = {}, fallback = null) {
     ? fallback
     : DEFAULT_ITEM_POLICY;
   return Object.freeze({
+    label: nullableString(source.label, nullableString(base.label, null)),
+    icon: nullableString(source.icon, nullableString(base.icon, null)),
+    section: nullableString(source.section, nullableString(base.section, null)),
     visibility: normalizeVisibility(
       source.visibility,
       normalizeVisibility(base.visibility, DEFAULT_ITEM_POLICY.visibility, true),
@@ -186,7 +257,48 @@ export function normalizeItemPolicy(value = {}, fallback = null) {
       normalizeZone(base.zone, DEFAULT_ITEM_POLICY.zone, true),
       true
     ),
-    order: nullableInteger(source.order, nullableInteger(base.order, null))
+    order: nullableInteger(source.order, nullableInteger(base.order, null)),
+    cellWidth: boundedInteger(source.cellWidth, boundedInteger(base.cellWidth, 1, 1, 12), 1, 12),
+    cellHeight: boundedInteger(source.cellHeight, boundedInteger(base.cellHeight, 1, 1, 8), 1, 8),
+    command: normalizeCommandSpec(source.command, base.command),
+    activation: normalizeActivationPolicy(source.activation, base.activation)
+  });
+}
+
+export function normalizeCommandSpec(value, fallback = null) {
+  if (value === null || value === false || value === "") return null;
+  const source = value && typeof value === "object" ? value : null;
+  if (!source) return normalizeCommandSpec(fallback, null);
+  const id = nonEmptyString(source.id ?? source.command);
+  if (!id) return null;
+  return Object.freeze({
+    id,
+    arguments: freezeJsonObject(source.arguments ?? source.args ?? {})
+  });
+}
+
+export function normalizeActivationPolicy(value = {}, fallback = null) {
+  const source = value && typeof value === "object" ? value : {};
+  const base = fallback && typeof fallback === "object"
+    ? fallback
+    : DEFAULT_ITEM_POLICY.activation;
+  return Object.freeze({
+    mode: HUD_ACTIVATION_MODES.includes(source.mode)
+      ? source.mode
+      : HUD_ACTIVATION_MODES.includes(base.mode)
+        ? base.mode
+        : "native",
+    group: nullableString(source.group, nullableString(base.group, null)),
+    activates: Object.freeze(uniqueStrings(source.activates ?? base.activates ?? [])),
+    deactivates: Object.freeze(uniqueStrings(source.deactivates ?? base.deactivates ?? [])),
+    activatesOnDeactivate: Object.freeze(uniqueStrings(
+      source.activatesOnDeactivate ?? base.activatesOnDeactivate ?? []
+    )),
+    deactivatesOnDeactivate: Object.freeze(uniqueStrings(
+      source.deactivatesOnDeactivate ?? base.deactivatesOnDeactivate ?? []
+    )),
+    onActivate: normalizeCommandSpec(source.onActivate, base.onActivate),
+    onDeactivate: normalizeCommandSpec(source.onDeactivate, base.onDeactivate)
   });
 }
 
@@ -198,34 +310,40 @@ export function resolveHudLayoutPlan({
   familyContext = {},
   itemContext = {}
 } = {}) {
+  const itemSections = Object.fromEntries(
+    descriptors.map(descriptor => [descriptor.id, descriptor.family])
+  );
   const normalizedProfile = normalizeHudLayoutProfile(profile, {
-    familyIds: descriptors.map(descriptor => descriptor.family),
-    itemIds: descriptors.map(descriptor => descriptor.id)
+    sectionIds: descriptors.map(descriptor => descriptor.family),
+    itemIds: descriptors.map(descriptor => descriptor.id),
+    itemSections
   });
   const groupRanks = rankMap(adaptiveGroupOrder);
   const itemRanks = rankMap(adaptiveItemOrder);
   const familyFallbackRanks = fallbackFamilyRanks(descriptors);
 
   return Object.freeze(descriptors.map(descriptor => {
-    const familyPolicy = normalizedProfile.families[descriptor.family] ??
-      DEFAULT_FAMILY_POLICY;
-    const itemPolicy = normalizedProfile.items[descriptor.id] ??
-      DEFAULT_ITEM_POLICY;
+    const itemPolicy = normalizedProfile.items[descriptor.id] ?? DEFAULT_ITEM_POLICY;
+    const sectionId = itemPolicy.section ?? descriptor.family;
+    const sectionPolicy = normalizedProfile.sections[sectionId] ??
+      normalizedProfile.sections[descriptor.family] ??
+      DEFAULT_SECTION_POLICY;
     const visibility = itemPolicy.visibility === "inherit"
-      ? familyPolicy.visibility
+      ? sectionPolicy.visibility
       : itemPolicy.visibility;
     const zone = itemPolicy.zone === "inherit"
-      ? familyPolicy.zone
+      ? sectionPolicy.zone
       : itemPolicy.zone;
     const familyState = familyContext[descriptor.family] ?? {};
+    const sectionState = familyContext[sectionId] ?? familyState;
     const itemState = itemContext[descriptor.id] ?? {};
-    const contextVisible = itemState.visible ?? familyState.visible ?? true;
-    const contextAvailable = itemState.available ?? familyState.available ?? true;
+    const contextVisible = itemState.visible ?? sectionState.visible ?? true;
+    const contextAvailable = itemState.available ?? sectionState.available ?? true;
     const pinned = zone !== "adaptive";
     const hidden = visibility === "hidden" ||
       (visibility === "auto" && !contextVisible && !pinned);
-    const familyRank = finiteInteger(familyPolicy.order) ??
-      (zone === "adaptive" ? groupRanks.get(descriptor.family) : null) ??
+    const sectionRank = finiteInteger(sectionPolicy.order) ??
+      (zone === "adaptive" ? groupRanks.get(sectionId) : null) ??
       familyFallbackRanks.get(descriptor.family) ??
       0;
     const itemRank = finiteInteger(itemPolicy.order) ??
@@ -233,11 +351,20 @@ export function resolveHudLayoutPlan({
       finiteInteger(descriptor.defaultItemIndex) ??
       0;
     const order = (ZONE_BASE[zone] ?? ZONE_BASE.adaptive) +
-      Math.max(0, familyRank) * 10_000 +
+      Math.max(0, sectionRank) * 10_000 +
       Math.max(0, itemRank);
 
     return Object.freeze({
       ...descriptor,
+      section: sectionId,
+      sectionPolicy,
+      itemPolicy,
+      label: itemPolicy.label ?? descriptor.label,
+      icon: itemPolicy.icon ?? descriptor.nativeIcon ?? null,
+      command: itemPolicy.command,
+      activation: itemPolicy.activation,
+      cellWidth: itemPolicy.cellWidth,
+      cellHeight: itemPolicy.cellHeight,
       visibility,
       zone,
       pinned,
@@ -257,29 +384,99 @@ export function resolveHudLayoutPlan({
   }));
 }
 
-export function hudLayoutSignature(plan = []) {
-  return JSON.stringify(plan.map(item => [
-    item.id,
-    item.zone,
-    item.order,
-    item.hidden,
-    item.disabled,
-    item.pinned
-  ]));
+export function resolveHudSectionPlan(plan = [], profile = {}) {
+  const normalized = normalizeHudLayoutProfile(profile, {
+    sectionIds: plan.map(item => item.section),
+    itemIds: plan.map(item => item.id),
+    itemSections: Object.fromEntries(plan.map(item => [item.id, item.section]))
+  });
+  const sectionIds = uniqueStrings([
+    ...Object.keys(normalized.sections),
+    ...plan.map(item => item.section)
+  ]);
+  return Object.freeze(sectionIds.map((sectionId, fallbackIndex) => {
+    const policy = normalized.sections[sectionId] ?? DEFAULT_SECTION_POLICY;
+    const items = plan.filter(item => item.section === sectionId && !item.hidden);
+    return Object.freeze({
+      id: sectionId,
+      ...policy,
+      hidden: policy.visibility === "hidden" || items.length === 0,
+      order: (ZONE_BASE[policy.zone] ?? ZONE_BASE.adaptive) +
+        (finiteInteger(policy.order) ?? fallbackIndex),
+      itemCount: items.length,
+      capacity: policy.columns * policy.rows
+    });
+  }));
+}
+
+export function hudLayoutSignature(plan = [], profile = {}) {
+  const sections = resolveHudSectionPlan(plan, profile);
+  return JSON.stringify({
+    sections: sections.map(section => [
+      section.id,
+      section.label,
+      section.visibility,
+      section.zone,
+      section.order,
+      section.color,
+      section.columns,
+      section.rows,
+      section.scrollMode,
+      section.showHeader,
+      section.hidden
+    ]),
+    items: plan.map(item => [
+      item.id,
+      item.section,
+      item.icon,
+      item.label,
+      item.zone,
+      item.order,
+      item.hidden,
+      item.disabled,
+      item.pinned,
+      item.cellWidth,
+      item.cellHeight,
+      item.command?.id ?? null,
+      item.command?.arguments ?? null,
+      item.activation
+    ])
+  });
 }
 
 export function familyPolicyDefaults() {
-  return DEFAULT_FAMILY_POLICY;
+  return DEFAULT_SECTION_POLICY;
 }
+
+export const sectionPolicyDefaults = familyPolicyDefaults;
 
 export function itemPolicyDefaults() {
   return DEFAULT_ITEM_POLICY;
 }
 
+function migrateDocument(source) {
+  if (source.schemaVersion === HUD_LAYOUT_SCHEMA_VERSION) return source;
+  if (!source.profiles || typeof source.profiles !== "object") return source;
+  const profiles = {};
+  for (const [profileId, profile] of Object.entries(source.profiles)) {
+    profiles[profileId] = {
+      ...profile,
+      label: profile.label ?? readableProfileId(profileId),
+      sections: profile.sections ?? profile.families ?? {},
+      items: profile.items ?? {}
+    };
+  }
+  return {
+    ...source,
+    schemaVersion: HUD_LAYOUT_SCHEMA_VERSION,
+    profiles
+  };
+}
+
 function freezeDocument(document) {
   const profiles = {};
   for (const [profileId, profile] of Object.entries(document.profiles ?? {})) {
-    profiles[profileId] = normalizeHudLayoutProfile(profile);
+    profiles[profileId] = normalizeHudLayoutProfile(profile, { profileId });
   }
   return Object.freeze({
     schemaVersion: HUD_LAYOUT_SCHEMA_VERSION,
@@ -315,29 +512,123 @@ function normalizeZone(value, fallback, allowInherit) {
   return allowed.includes(value) ? value : fallback;
 }
 
+function normalizeColor(value, fallback) {
+  const candidate = String(value ?? "").trim();
+  return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate.toLowerCase() : fallback;
+}
+
+function freezeJsonObject(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : {};
+  try {
+    return deepFreeze(structuredClone(source));
+  } catch {
+    return Object.freeze({});
+  }
+}
+
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+}
+
+function defaultSectionColor(sectionId, index) {
+  const known = {
+    subject: "#4cc9f0",
+    tool: "#528bff",
+    quick: "#9a6eff",
+    selection: "#e75db5",
+    frame: "#7e7bff",
+    axes: "#ff994a",
+    snap: "#eec249",
+    navigation: "#3ac4b5",
+    reference: "#ff6984",
+    "drawing-target": "#4fc3a1",
+    appearance: "#c47cff",
+    planar: "#41d28f",
+    measure: "#27b9d6",
+    lifecycle: "#9bcd52",
+    creation: "#bc71eb",
+    actions: "#f4705c",
+    session: "#68c4dc"
+  };
+  if (known[sectionId]) return known[sectionId];
+  const hue = Math.abs(hashString(sectionId) + index * 47) % 360;
+  return hslToHex(hue, 68, 58);
+}
+
+function hashString(value) {
+  let hash = 0;
+  for (const char of String(value)) hash = (hash * 31 + char.codePointAt(0)) | 0;
+  return hash;
+}
+
+function hslToHex(h, s, l) {
+  s /= 100;
+  l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  const [r, g, b] = h < 60 ? [c, x, 0]
+    : h < 120 ? [x, c, 0]
+      : h < 180 ? [0, c, x]
+        : h < 240 ? [0, x, c]
+          : h < 300 ? [x, 0, c]
+            : [c, 0, x];
+  return `#${[r, g, b].map(channel => Math.round((channel + m) * 255)
+    .toString(16).padStart(2, "0")).join("")}`;
+}
+
+function readableProfileId(value) {
+  return String(value ?? "default")
+    .replace(/[-_:]+/g, " ")
+    .trim()
+    .replace(/^./, character => character.toUpperCase()) || "Padrão";
+}
+
+function normalizeItemSections(value) {
+  const result = {};
+  for (const [itemId, sectionId] of Object.entries(value ?? {})) {
+    const item = nonEmptyString(itemId);
+    const section = nonEmptyString(sectionId);
+    if (item && section) result[item] = section;
+  }
+  return result;
+}
+
 function rankMap(values) {
   return new Map(uniqueStrings(values).map((value, index) => [value, index]));
 }
 
 function uniqueStrings(values) {
-  return [...new Set((values ?? [])
+  return [...new Set((Array.isArray(values) ? values : [])
     .map(value => nonEmptyString(value))
     .filter(Boolean))];
 }
 
 function nonEmptyString(value) {
-  const result = String(value ?? "").trim();
-  return result || null;
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function nullableString(value, fallback = null) {
+  if (value === null || value === undefined || value === "") return fallback;
+  return nonEmptyString(value) ?? fallback;
+}
+
+function finiteInteger(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Math.trunc(numeric) : null;
 }
 
 function nullableInteger(value, fallback) {
   if (value === null || value === undefined || value === "") return fallback;
-  const number = Number(value);
-  return Number.isInteger(number) ? number : fallback;
+  return finiteInteger(value) ?? fallback;
 }
 
-function finiteInteger(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const number = Number(value);
-  return Number.isInteger(number) ? number : null;
+function boundedInteger(value, fallback, minimum, maximum) {
+  const numeric = finiteInteger(value);
+  return Math.max(minimum, Math.min(maximum, numeric ?? fallback));
 }
