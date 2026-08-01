@@ -17,6 +17,7 @@ export function createEditorCommands({
   planarSketch = null,
   objectPlacement = null,
   measurement = null,
+  beforeProjectSave = null,
   canMutateProject = () => true
 }) {
   const commands = new CommandRegistry();
@@ -781,6 +782,7 @@ export function createEditorCommands({
     )
     .register("project.save", () => {
       requireObjectMode("salvar o projeto");
+      if (typeof beforeProjectSave === "function") beforeProjectSave();
       return projectService.save();
     })
     .register("project.open", ({ text }) => {

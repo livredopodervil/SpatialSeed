@@ -25,7 +25,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260729-0039g1";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260801-0045a";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -50,7 +50,10 @@ import {
 } from "../../instance-batches/src/InstanceBatch.js?build=20260729-0039g2";
 import {
   InstanceBatchManager
-} from "../../instance-batches/src/InstanceBatchManager.js?build=20260713-0019g-c2";
+} from "../../instance-batches/src/InstanceBatchManager.js?build=20260801-0045a";
+import {
+  HeterogeneousBatchManager
+} from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260801-0045a";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -100,13 +103,21 @@ import {
   packAnchoredExplicitInstanceFamily
 } from "../../procedural-families/src/index.js?build=20260731-0044a";
 import {
+  appendStrokeToBundle,
+  compactStrokeBundle,
   normalizeStrokeBundleDescriptor,
+  replaceStrokePointInBundle,
+  strokeBundleAnchorLocal,
+  strokeBundleFromStroke,
+  strokeBundleStrokes,
+  StrokeCompactionScheduler,
   StrokeFusionService
-} from "../../stroke-resources/src/index.js?build=20260731-0044b";
+} from "../../stroke-resources/src/index.js?build=20260801-0045a";
 import {
   buildResourceTree,
+  createVirtualResourceTree,
   parseResourcePath
-} from "../../resource-tree/src/index.js?build=20260731-0044a";
+} from "../../resource-tree/src/index.js?build=20260801-0045a";
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
@@ -137,7 +148,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260731-0044a";
+} from "../../region-box/src/reducer.js?build=20260801-0045a";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -146,7 +157,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260731-0044a";
+} from "../../geometry-registry/src/index.js?build=20260801-0045a";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -233,7 +244,7 @@ import {
 } from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260731-0044b";
+} from "../../editor-commands/src/EditorCommands.js?build=20260801-0045a";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -11170,6 +11181,78 @@ assets: {
     manager.clear({ disposeGeometry: true, disposeMaterial: true });
   },
 
+  "famílias lógicas diferentes compartilham o mesmo lote"() {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshBasicMaterial();
+    const manager = new InstanceBatchManager();
+    const first = manager.addSegmented({
+      resourceId: "/objects/a/members/a1",
+      ownerId: "family-a",
+      memberId: "a1",
+      batchBaseKey: "shared-box",
+      matrix: new THREE.Matrix4(),
+      descriptor: { geometry, material, capacity: 16 }
+    });
+    const second = manager.addSegmented({
+      resourceId: "/objects/b/members/b1",
+      ownerId: "family-b",
+      memberId: "b1",
+      batchBaseKey: "shared-box",
+      matrix: new THREE.Matrix4().makeTranslation(2, 0, 0),
+      descriptor: { geometry, material, capacity: 16 }
+    });
+    assertEqual(manager.batchCount, 1);
+    assertEqual(first.batch, second.batch);
+    assertEqual(manager.hasObject("family-a"), true);
+    assertEqual(
+      manager.referenceFromHit({
+        object: second.batch.mesh,
+        instanceId: second.instanceIndex
+      }).ownerId,
+      "family-b"
+    );
+    assertEqual(manager.removeOwner("family-a").removed, 1);
+    assertEqual(manager.hasObject("family-b"), true);
+    manager.clear({ disposeGeometry: true, disposeMaterial: true });
+  },
+
+  "tubos heterogêneos compatíveis compartilham BatchedMesh quando disponível"() {
+    const manager = new HeterogeneousBatchManager({
+      maximumInstances: 8,
+      maximumVertices: 10000,
+      maximumIndices: 30000
+    });
+    if (!manager.supported) {
+      assertEqual(manager.status().supported, false);
+      return;
+    }
+    const material = new THREE.MeshBasicMaterial();
+    const first = manager.add({
+      objectId: "tube-a",
+      resourceId: "/objects/tube-a/@render/chunks/1",
+      ownerId: "tube-a",
+      batchBaseKey: "tube-shared",
+      geometry: new THREE.BoxGeometry(1, 1, 1),
+      matrix: new THREE.Matrix4(),
+      materialFactory: () => ({ material })
+    });
+    const second = manager.add({
+      objectId: "tube-b",
+      resourceId: "/objects/tube-b/@render/chunks/1",
+      ownerId: "tube-b",
+      batchBaseKey: "tube-shared",
+      geometry: new THREE.SphereGeometry(0.5, 8, 6),
+      matrix: new THREE.Matrix4().makeTranslation(2, 0, 0),
+      materialFactory: () => ({ material })
+    });
+    assertEqual(first.added, true);
+    assertEqual(second.added, true);
+    assertEqual(manager.status().batches, 1);
+    assertEqual(manager.status().owners, 2);
+    manager.clear();
+    material.dispose();
+  },
+
   "manager atualiza e remove objeto"() {
     const geometry = new THREE.BoxGeometry(1, 1, 1);
     const material = new THREE.MeshBasicMaterial();
@@ -12637,7 +12720,7 @@ assets: {
         assertEqual(
           normalizeStrokeBundleDescriptor(
             sandbox.getObject(first.id).geometry
-          ).strokes.length,
+          ).strokeCount,
           2
         );
         assertEqual(
@@ -12648,14 +12731,14 @@ assets: {
         assertEqual(
           normalizeStrokeBundleDescriptor(
             sandbox.getObject(first.id).geometry
-          ).strokes.length,
+          ).strokeCount,
           1
         );
         assertEqual(sandbox.redo(), true);
         assertEqual(
           normalizeStrokeBundleDescriptor(
             sandbox.getObject(first.id).geometry
-          ).strokes.length,
+          ).strokeCount,
           2
         );
         const third = service.createStroke({
@@ -12675,7 +12758,84 @@ assets: {
         assertEqual(sandbox.getObject(word.id).name, "Palavra");
       },
 
-      "tubo legado é promovido a conjunto compacto quando recebe novo traço"() {
+      "traços tocantes de aparências distintas formam um grupo lógico sem cópia física"() {
+        const region = new Region(
+          { id: "stroke-logical-fusion", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        let sequence = 0;
+        const service = new StrokeFusionService({
+          sandbox,
+          editor,
+          regionId: region.id,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          createId: () => `logical-${++sequence}`
+        });
+        const tube = {
+          type: "tube",
+          points: [[0, 0, 0], [1, 0, 0]],
+          radius: 0.05,
+          radialSegments: 6,
+          tubularSegments: 2,
+          curveType: "polyline"
+        };
+        const first = service.createStroke({
+          geometry: tube,
+          color: "#ff0000"
+        });
+        const second = service.createStroke({
+          geometry: tube,
+          position: [1.11, 0, 0],
+          color: "#0000ff"
+        });
+        assertEqual(second.changed, true);
+        assertEqual(second.fused, true);
+        assertEqual(second.mode, "logical-group");
+        assertEqual(second.logicalObjectId, second.id);
+        assertEqual(sandbox.objectCount, 3);
+        const group = sandbox.getObject(second.logicalObjectId);
+        const firstObject = sandbox.getObject(first.objectId);
+        const secondObject = sandbox.getObject(second.objectId);
+        assertEqual(group.kind, "group");
+        assertEqual(firstObject.parentId, group.id);
+        assertEqual(secondObject.parentId, group.id);
+        assertEqual(firstObject.geometry.strokeCount, 1);
+        assertEqual(secondObject.geometry.strokeCount, 1);
+
+        const third = service.createStroke({
+          geometry: tube,
+          position: [2.22, 0, 0],
+          color: "#0000ff"
+        });
+        assertEqual(third.fused, true);
+        assertEqual(third.logicalObjectId, group.id);
+        assertEqual(third.id, group.id);
+        assertEqual(sandbox.objectCount, 3);
+        assertEqual(
+          normalizeStrokeBundleDescriptor(
+            sandbox.getObject(second.objectId).geometry
+          ).strokeCount,
+          2
+        );
+        assertEqual(
+          sandbox.getSnapshot().objects.filter(object => object.kind === "group").length,
+          1
+        );
+        assertEqual(sandbox.undo(), true);
+        assertEqual(
+          normalizeStrokeBundleDescriptor(
+            sandbox.getObject(second.objectId).geometry
+          ).strokeCount,
+          1
+        );
+        assertEqual(sandbox.undo(), true);
+        assertEqual(sandbox.objectCount, 1);
+        assertEqual(sandbox.getObject(first.objectId).parentId, null);
+      },
+
+      "tubo legado pode ser unido manualmente a conjunto compacto"() {
         const region = new Region(
           { id: "legacy-tube-fusion", type: "box-region" },
           { schemaVersion: 1, objects: [] }
@@ -12707,26 +12867,31 @@ assets: {
           regionId: region.id,
           geometryRegistry,
           appearanceRuntime,
-          createId: () => "new-stroke"
+          createId: (() => { let i = 0; return () => `manual-${++i}`; })()
         });
-        const result = service.createStroke({
+        const created = service.createStroke({
           geometry: tube,
-          position: [1.11, 0, 0],
-          fusionTolerance: 0
+          position: [2, 0, 0],
+          autoFuse: false
         });
+        editor.selection.replaceMany([
+          { kind: "object", regionId: region.id, objectId: legacyId },
+          { kind: "object", regionId: region.id, objectId: created.id }
+        ], { activeObjectId: legacyId });
+        const result = service.fuseSelected();
         const object = sandbox.getObject(legacyId);
-        assertEqual(result.fused, true);
+        assertEqual(result.changed, true);
         assertEqual(result.id, legacyId);
         assertEqual(object.kind, "stroke-bundle");
         assertEqual(
-          normalizeStrokeBundleDescriptor(object.geometry).strokes.length,
+          normalizeStrokeBundleDescriptor(object.geometry).strokeCount,
           2
         );
       },
 
-      "índice espacial restringe a fusão aos candidatos próximos"() {
+      "fusão automática consulta somente os dois traços imediatamente anteriores"() {
         const region = new Region(
-          { id: "stroke-index-region", type: "box-region" },
+          { id: "stroke-recent-region", type: "box-region" },
           { schemaVersion: 1, objects: [] }
         );
         const sandbox = new Sandbox(region, boxRegionReducer);
@@ -12737,7 +12902,7 @@ assets: {
           editor,
           regionId: region.id,
           geometryRegistry: createDefaultGeometryRegistry(),
-          createId: () => `indexed-${++sequence}`
+          createId: () => `recent-${++sequence}`
         });
         const tube = {
           type: "tube",
@@ -12754,17 +12919,153 @@ assets: {
             autoFuse: false
           });
         }
-        const before = service.status();
-        service.createStroke({
+        const before = service.status().diagnostics;
+        const result = service.createStroke({
           geometry: tube,
           position: [0.5, 0, 0],
           autoFuse: true
         });
-        const after = service.status();
-        assertEqual(after.indexedBundles, 100);
-        assertEqual(after.indexRebuilds, before.indexRebuilds);
-        assertEqual(after.candidateBundles - before.candidateBundles < 5, true);
-        assertEqual(after.automaticFusions, 1);
+        const after = service.status().diagnostics;
+        assertEqual(result.fused, false);
+        assertEqual(
+          after.recentCandidatesVisited - before.recentCandidatesVisited <= 2,
+          true
+        );
+        assertEqual(after.maximumCandidatesPerStroke, 2);
+      },
+
+      "chunks segmentados preservam referências e compactam fora do histórico"() {
+        const stroke = index => ({
+          id: `segment-${index}`,
+          points: [[index, 0, 0], [index + 0.5, 0, 0]],
+          radius: 0.02,
+          radialSegments: 4,
+          tubularSegments: 2,
+          curveType: "polyline"
+        });
+        const appendPolicy = {
+          targetChunkPoints: 64,
+          maximumChunkPoints: 64,
+          maximumChunkStrokes: 1,
+          targetChunkBytes: 1024
+        };
+        let bundle = strokeBundleFromStroke(stroke(0), { policy: appendPolicy });
+        bundle = appendStrokeToBundle(bundle, stroke(1), { policy: appendPolicy });
+        bundle = appendStrokeToBundle(bundle, stroke(2), { policy: appendPolicy });
+        const firstChunk = bundle.chunks[0];
+        const appended = appendStrokeToBundle(bundle, stroke(3), {
+          policy: appendPolicy
+        });
+        assertEqual(appended.chunks[0], firstChunk);
+        assertEqual(appended.chunks.length, 4);
+
+        const region = new Region(
+          { id: "segmented-compaction", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        sandbox.dispatch({
+          type: "object.create",
+          object: {
+            id: "ink",
+            kind: "stroke-bundle",
+            name: "Tinta",
+            position: [0,0,0],
+            rotation: [0,0,0,1],
+            scale: [1,1,1],
+            geometry: appended
+          }
+        });
+        const before = sandbox.getHistoryDiagnostics();
+        const scheduler = new StrokeCompactionScheduler({
+          sandbox,
+          policy: {
+            schedule: "manual",
+            compactAfterAppends: 1,
+            targetChunkPoints: 1024,
+            maximumChunkPoints: 2048,
+            maximumChunkStrokes: 16,
+            targetChunkBytes: 65536
+          }
+        });
+        scheduler.runNow("ink");
+        const after = sandbox.getHistoryDiagnostics();
+        const compacted = normalizeStrokeBundleDescriptor(
+          sandbox.getObject("ink").geometry
+        );
+        assertEqual(compacted.chunks.length, 1);
+        assertEqual(after.commandCount, before.commandCount);
+        assertEqual(after.performance.maintenanceDispatches > 0, true);
+      },
+
+      "âncora acompanha bounds e edição de vértice invalida apenas o chunk"() {
+        const policy = {
+          targetChunkPoints: 64,
+          maximumChunkPoints: 64,
+          maximumChunkStrokes: 1,
+          targetChunkBytes: 1024
+        };
+        let bundle = strokeBundleFromStroke({
+          id: "a",
+          points: [[0,0,0],[2,0,0]],
+          radius: 0.1
+        }, { policy });
+        bundle = appendStrokeToBundle(bundle, {
+          id: "b",
+          points: [[10,0,0],[12,0,0]],
+          radius: 0.1
+        }, { policy });
+        const untouched = bundle.chunks[1];
+        assertDeepEqual(strokeBundleAnchorLocal(bundle), [6,0,0]);
+        const edited = replaceStrokePointInBundle(bundle, "a", 1, [4,2,0]);
+        assertEqual(edited.changed, true);
+        assertEqual(edited.bundle.chunks[1], untouched);
+        assertDeepEqual(strokeBundleAnchorLocal(edited.bundle), [6,1,0]);
+      },
+
+      "árvore virtual consulta somente a página expandida sem copiar a hierarquia"() {
+        const instances = Array.from({ length: 10000 }, (_, index) => ({
+          id: `virtual-${index}`,
+          position: [index,0,0],
+          rotation: [0,0,0,1],
+          scale: [1,1,1]
+        }));
+        const family = packAnchoredExplicitInstanceFamily(instances).family;
+        const region = new Region(
+          { id: "virtual-resource-region", type: "box-region" },
+          {
+            schemaVersion: 1,
+            objects: [{
+              id: "virtual-family",
+              kind: "instance-family",
+              name: "Família virtual",
+              parentId: null,
+              position: [0,0,0],
+              rotation: [0,0,0,1],
+              scale: [1,1,1],
+              geometry: { type: "box", size: [1,1,1] },
+              family
+            }]
+          }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const tree = createVirtualResourceTree({ sandbox, pageSize: 25 });
+        const before = tree.status().diagnostics;
+        const page = tree.listChildren(
+          "/objects/virtual-family/members",
+          { offset: 5000, limit: 25 }
+        );
+        const status = tree.status();
+        assertEqual(status.mode, "authoritative-lazy-sandbox");
+        assertEqual(page.items.length, 25);
+        assertEqual(page.total, 10000);
+        assertEqual(
+          status.diagnostics.descriptorsCreated - before.descriptorsCreated,
+          25
+        );
+        assertEqual(status.diagnostics.maximumPageItems, 25);
+        assertEqual(status.diagnostics.objectsVisited, 0);
+        assertEqual(status.diagnostics.indexBuilds, 0);
       },
 
       "árvore de recursos navega grupos objetos traços membros e vértices"() {

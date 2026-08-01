@@ -1,6 +1,6 @@
 import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-0020b-a";
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260730-0040h";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260801-0045a";
 import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260729-0039g2";
 import {
@@ -9,21 +9,22 @@ import {
   ViewerCameraController,
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260731-0044a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260731-0044b";
-import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260731-0044a";
+import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260801-0045a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260801-0045a";
+import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a";
 import {
-  buildResourceTree
-} from "../../../packages/resource-tree/src/index.js?build=20260731-0044a";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260731-0044a";
+  createVirtualResourceTree,
+  parseResourcePath
+} from "../../../packages/resource-tree/src/index.js?build=20260801-0045a";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260801-0045a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0044a";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260731-0044b";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260801-0045a";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260731-0044b";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260801-0045a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -39,7 +40,7 @@ import {
 } from "../../../packages/property-registry/src/index.js?build=20260727-0037c";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260731-0044a";
+} from "../../../packages/geometry-registry/src/index.js?build=20260801-0045a";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -117,8 +118,10 @@ import {
   PlanarSketchController
 } from "../../../packages/planar-authoring/src/index.js?build=20260731-0044a";
 import {
-  StrokeFusionService
-} from "../../../packages/stroke-resources/src/index.js?build=20260731-0044b";
+  StrokeCompactionScheduler,
+  StrokeFusionService,
+  replaceStrokePointInBundle
+} from "../../../packages/stroke-resources/src/index.js?build=20260801-0045a";
 import {
   MeasurementController
 } from "../../../packages/measurement-tools/src/index.js?build=20260730-0040e";
@@ -277,7 +280,13 @@ export async function createWebRuntime({
     selection: () => editor.selection.snapshot()
   });
 
+  const resourceTree = createVirtualResourceTree({
+    sandbox: baseSandbox,
+    pageSize: 100
+  });
+  let resourceEditHandler = null;
   const outline = new OutlineRenderer(outlineRoot, {
+    resourceTree,
     onActivate: ({ path, reference }) => {
       const objectId = reference?.ownerObjectId;
       if (!objectId || !baseSandbox.getObject(objectId)) return;
@@ -292,7 +301,8 @@ export async function createWebRuntime({
           ? { vertexIndex: reference.vertexIndex }
           : {})
       });
-    }
+    },
+    onEdit: request => resourceEditHandler?.(request)
   });
   const locationParameters = new URLSearchParams(
     globalThis.location?.search ?? ""
@@ -477,12 +487,17 @@ export async function createWebRuntime({
       else toolLifecycle.clearRepeatable();
     }
   });
+  const strokeCompaction = new StrokeCompactionScheduler({
+    sandbox: baseSandbox
+  });
+  strokeCompaction.attachInputSource(globalThis);
   const strokeFusion = new StrokeFusionService({
     sandbox,
     editor,
     regionId: region.descriptor.id,
     geometryRegistry,
-    appearanceRuntime
+    appearanceRuntime,
+    compactionScheduler: strokeCompaction
   });
   const meshEditor = new MeshEditController({
     sandbox,
@@ -729,6 +744,7 @@ export async function createWebRuntime({
     planarSketch,
     objectPlacement,
     measurement,
+    beforeProjectSave: () => strokeCompaction.checkpoint("save"),
     canMutateProject: action =>
       viewerCoordinator.requireAuthority(action)
   });
@@ -837,6 +853,83 @@ export async function createWebRuntime({
         "fundir conjuntos de traços"
       );
       return strokeFusion.fuseSelected(args);
+    },
+    { category: "selection", mutates: true }
+  );
+  commands.register(
+    "stroke.compaction.configure",
+    args => strokeCompaction.configure(args),
+    { category: "storage", mutates: false }
+  );
+  commands.register(
+    "stroke.compaction.run",
+    ({ objectId = null } = {}) => strokeCompaction.runNow(objectId),
+    { category: "storage", mutates: false }
+  );
+  commands.register(
+    "stroke.origin.rebase",
+    ({ objectId = null, targetIds = null, origin = null } = {}) => {
+      viewerCoordinator.requireAuthority("recalcular origem geométrica");
+      const ids = Array.isArray(targetIds) && targetIds.length
+        ? [...new Set(targetIds.map(String))]
+        : objectId
+          ? [String(objectId)]
+          : [...new Set(editor.selection.snapshot().members
+              .map(member => String(member.objectId)))];
+      let changed = 0;
+      for (const id of ids) {
+        const object = sandbox.getObject(id);
+        if (!object || object.kind !== "stroke-bundle") continue;
+        const geometry = object.geometry;
+        const nextOrigin = Array.isArray(origin)
+          ? origin
+          : geometry.bounds.min.map((value, axis) =>
+              value + (geometry.bounds.max[axis] - value) * 0.5
+            );
+        if (sandbox.dispatch({
+          type: "stroke-bundle.rebase-origin",
+          objectId: id,
+          expectedGeometry: geometry,
+          nextOrigin,
+          source: "stroke.origin.rebase"
+        })) changed += 1;
+      }
+      return Object.freeze({ changed: changed > 0, count: changed, targetIds: Object.freeze(ids) });
+    },
+    { category: "storage", mutates: true }
+  );
+  commands.register(
+    "selection.anchor.set",
+    ({ policy = "bounds-center", position = null, targetIds = null } = {}) => {
+      viewerCoordinator.requireAuthority("alterar a política de âncora");
+      const ids = Array.isArray(targetIds) && targetIds.length
+        ? [...new Set(targetIds.map(String))]
+        : [...new Set(editor.selection.snapshot().members
+            .map(member => String(member.objectId)))];
+      if (!ids.length) return Object.freeze({ changed: false, reason: "selection-empty" });
+      const normalizedPolicy = String(policy).trim().toLowerCase();
+      if (!["bounds-center", "origin", "custom", "pivot"].includes(normalizedPolicy)) {
+        throw new RangeError(`Política de âncora desconhecida: ${normalizedPolicy}.`);
+      }
+      if (normalizedPolicy === "custom" &&
+          (!Array.isArray(position) || position.length !== 3 ||
+            !position.every(Number.isFinite))) {
+        throw new TypeError("Âncora personalizada exige position [x,y,z].");
+      }
+      const changed = sandbox.dispatch({
+        type: "selection.properties.set",
+        targetIds: ids,
+        updates: ids.map(id => ({
+          id,
+          patch: {
+            selectionAnchorPolicy: normalizedPolicy,
+            ...(normalizedPolicy === "custom"
+              ? { selectionAnchorLocal: [...position] }
+              : { selectionAnchorLocal: null })
+          }
+        }))
+      });
+      return Object.freeze({ changed, targetIds: Object.freeze(ids), policy: normalizedPolicy });
     },
     { category: "selection", mutates: true }
   );
@@ -1159,9 +1252,11 @@ export async function createWebRuntime({
         "confirmar um plano espacial"
       );
     }
-    return hasCamera
+    const result = hasCamera
       ? cameraPlanCommitService.commit(plan)
       : spatialPlanCommitService.commit(plan);
+    if (!hasCamera) strokeCompaction.checkpoint("approve");
+    return result;
   });
 
   const programSession = new ProgramSessionController({
@@ -1286,6 +1381,125 @@ export async function createWebRuntime({
 
   // Painéis e HUDs podem consultar a seleção durante a própria construção.
   // Registre estas queries fundamentais antes de instanciar qualquer UI.
+  commands.register(
+    "resource.property.set",
+    ({
+      path,
+      property = null,
+      value,
+      expectedRevision = null
+    } = {}) => {
+      viewerCoordinator.requireAuthority("editar recurso");
+      const reference = parseResourcePath(path);
+      if (!reference?.ownerObjectId) {
+        throw new TypeError("Caminho de recurso inválido.");
+      }
+      if (expectedRevision !== null &&
+          Number(expectedRevision) !== Number(sandbox.revision)) {
+        return Object.freeze({
+          changed: false,
+          reason: "revision-conflict",
+          expectedRevision: Number(expectedRevision),
+          actualRevision: Number(sandbox.revision)
+        });
+      }
+      const object = sandbox.getObject(reference.ownerObjectId);
+      if (!object) {
+        return Object.freeze({ changed: false, reason: "object-not-found" });
+      }
+
+      if (reference.kind === "object") {
+        const key = String(property ?? "name").trim();
+        if (key === "parentId") {
+          const parentId = normalizeResourceParentId(value);
+          const changed = sandbox.dispatch({
+            type: "hierarchy.reparent",
+            id: object.id,
+            parentId
+          });
+          return Object.freeze({
+            changed,
+            path: reference.path,
+            property: key,
+            parentId
+          });
+        }
+        const patch = resourceObjectPatch(key, value);
+        const changed = sandbox.dispatch({
+          type: "object.update",
+          id: object.id,
+          patch
+        });
+        return Object.freeze({ changed, path: reference.path, property: key });
+      }
+
+      if (reference.kind === "vertex" && reference.strokeId) {
+        const key = String(property ?? "position").trim();
+        if (key !== "position") {
+          throw new RangeError("Vértices de traço aceitam apenas position.");
+        }
+        const replaced = replaceStrokePointInBundle(
+          object.geometry,
+          reference.strokeId,
+          reference.vertexIndex,
+          normalizedResourceVector(value, "posição do vértice")
+        );
+        if (!replaced.changed) {
+          return Object.freeze({ changed: false, path: reference.path });
+        }
+        const changed = sandbox.dispatch({
+          type: "object.update",
+          id: object.id,
+          patch: { geometry: replaced.bundle }
+        });
+        return Object.freeze({
+          changed,
+          path: reference.path,
+          property: key
+        });
+      }
+
+      return Object.freeze({
+        changed: false,
+        reason: "resource-read-only",
+        path: reference.path,
+        kind: reference.kind
+      });
+    },
+    { category: "resources", mutates: true }
+  );
+
+  resourceEditHandler = ({ path, reference, readValue }) => {
+    if (typeof globalThis.prompt !== "function") return false;
+    if (reference?.kind === "object") {
+      const current = readValue("name") ?? "";
+      const value = globalThis.prompt("Nome do objeto", String(current));
+      if (value === null) return false;
+      return commands.execute("resource.property.set", {
+        path,
+        property: "name",
+        value,
+        expectedRevision: sandbox.revision
+      });
+    }
+    if (reference?.kind === "vertex" && reference.strokeId) {
+      const current = readValue(null);
+      const value = globalThis.prompt(
+        "Posição local do vértice [x,y,z]",
+        JSON.stringify(current)
+      );
+      if (value === null) return false;
+      return commands.execute("resource.property.set", {
+        path,
+        property: "position",
+        value: JSON.parse(value),
+        expectedRevision: sandbox.revision
+      });
+    }
+    globalThis.alert?.("Este recurso é somente leitura nesta versão.");
+    return false;
+  };
+
   queries
     .register("selection.snapshot", () =>
       editor.selection.snapshot()
@@ -1326,16 +1540,42 @@ export async function createWebRuntime({
     .register("stroke.fusion.status", () =>
       strokeFusion.status()
     )
-    .register("resource.tree.describe", ({
-      maxMembers = 128,
-      maxStrokes = 128,
-      maxVertices = 128
-    } = {}) => buildResourceTree({
-      objects: sandbox.getSnapshot().objects,
-      maxMembers,
-      maxStrokes,
-      maxVertices
-    }))
+    .register("resource.tree.describe", ({ path = "/" } = {}) =>
+      resourceTree.describe(path) ?? resourceTree.root()
+    )
+    .register("resource.tree.children", ({
+      path = "/",
+      offset = 0,
+      cursor = null,
+      limit = 100
+    } = {}) => resourceTree.listChildren(path, { offset, cursor, limit }))
+    .register("resource.tree.value", ({ path, property = null } = {}) =>
+      resourceTree.readValue(path, property)
+    )
+    .register("resource.tree.status", () => resourceTree.status())
+    .register("stroke.compaction.status", () => strokeCompaction.status())
+    .register("selection.anchor.status", () => {
+      const members = editor.selection.snapshot().members;
+      return Object.freeze({
+        members: Object.freeze(members.map(member => {
+          const object = sandbox.getObject(member.objectId);
+          return Object.freeze({
+            objectId: String(member.objectId),
+            policy: String(
+              object?.selectionAnchorPolicy ??
+              object?.geometry?.selectionAnchorPolicy ??
+              ((object?.kind === "instance-family" ||
+                object?.kind === "stroke-bundle" ||
+                object?.geometry?.type === "stroke-bundle")
+                ? "bounds-center"
+                : "pivot")
+            ),
+            position: object?.selectionAnchorLocal ??
+              object?.geometry?.selectionAnchorLocal ?? null
+          });
+        }))
+      });
+    })
     .register("experiments.describe", () =>
       experimentService.list()
     )
@@ -1897,6 +2137,11 @@ export async function createWebRuntime({
     .onDispose(unsubscribeEditor)
     .onDispose(unsubscribeEditContext)
     .onDispose(unsubscribeMeasurement)
+    .onDispose(() => {
+      strokeCompaction.detachInputSource();
+      strokeCompaction.cancelAll();
+    })
+    .onDispose(() => resourceTree.dispose?.())
     .onDispose(unsubscribeMeshEdit)
     .onDispose(unsubscribeSelection)
     .onDispose(unsubscribeSpatialReferences)
@@ -1934,6 +2179,8 @@ export async function createWebRuntime({
       pathSketch,
       planarSketch,
       strokeFusion,
+      strokeCompaction,
+      resourceTree,
       measurement,
       toolRegistry,
       toolParameters,
@@ -1962,6 +2209,65 @@ export async function createWebRuntime({
       connectUiDiagnostics
     })
   });
+}
+
+function resourceObjectPatch(property, value) {
+  const key = String(property ?? "").trim();
+  const allowed = new Set([
+    "name",
+    "parentId",
+    "visible",
+    "position",
+    "rotation",
+    "scale",
+    "selectionAnchorPolicy",
+    "selectionAnchorLocal"
+  ]);
+  if (!allowed.has(key)) {
+    throw new RangeError(`Propriedade de recurso não editável: ${key}.`);
+  }
+  if (key === "name") {
+    const name = String(value ?? "").trim();
+    if (!name) throw new TypeError("Nome não pode ser vazio.");
+    return { name };
+  }
+  if (key === "parentId") {
+    throw new RangeError(
+      "parentId deve ser alterado pelo comando hierarchy.reparent."
+    );
+  }
+  if (key === "visible") return { visible: Boolean(value) };
+  if (["position", "scale", "selectionAnchorLocal"].includes(key)) {
+    return { [key]: value === null && key === "selectionAnchorLocal"
+      ? null
+      : normalizedResourceVector(value, key) };
+  }
+  if (key === "rotation") {
+    if (!Array.isArray(value) || value.length !== 4 ||
+        !value.every(Number.isFinite)) {
+      throw new TypeError("rotation exige [x,y,z,w].");
+    }
+    return { rotation: value.map(Number) };
+  }
+  const policy = String(value ?? "bounds-center").trim().toLowerCase();
+  if (!["bounds-center", "origin", "custom", "pivot"].includes(policy)) {
+    throw new RangeError(`Política de âncora desconhecida: ${policy}.`);
+  }
+  return { selectionAnchorPolicy: policy };
+}
+
+function normalizeResourceParentId(value) {
+  return value === null || String(value ?? "").trim() === ""
+    ? null
+    : String(value).trim();
+}
+
+function normalizedResourceVector(value, label) {
+  if (!Array.isArray(value) || value.length !== 3 ||
+      !value.every(Number.isFinite)) {
+    throw new TypeError(`${label} exige [x,y,z].`);
+  }
+  return value.map(Number);
 }
 
 function withProjectTransientReset(projectService, beforeReplace) {

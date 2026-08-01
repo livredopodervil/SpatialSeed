@@ -1,4 +1,4 @@
 export {
   manifest,
   activateRuntimeTestPlugin
-} from "./RuntimeTestPlugin.js?build=20260731-0044b";
+} from "./RuntimeTestPlugin.js?build=20260801-0045a";

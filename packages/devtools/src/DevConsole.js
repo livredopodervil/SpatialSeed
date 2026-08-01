@@ -549,6 +549,14 @@ export class DevConsole {
       case "pivot":
         return this.#pivot(tokens);
 
+      case "anchor":
+      case "ancora":
+        return this.#anchor(tokens);
+
+      case "stroke-origin":
+      case "origem-traco":
+        return this.#strokeOrigin(tokens);
+
       case "duplicate":
         return this.#duplicate(tokens);
 
@@ -711,6 +719,10 @@ export class DevConsole {
         "pivot median|bounds|active",
         "pivot absolute x y z",
         "pivot relative dx dy dz",
+        "anchor status|bounds-center|origin|pivot|custom x y z",
+        "ancora status|centro|origem|pivo|personalizada x y z",
+        "stroke-origin rebase [x y z]",
+        "origem-traco recalcular [x y z]",
         "vertices on|off",
         "mesh enter|status|apply|cancel|help",
         "mesh mode vertex|edge|face",
@@ -2467,10 +2479,55 @@ export class DevConsole {
       );
     }
 
+    if (namespace === "compaction") {
+      const action = (tokens.shift() ?? "status").toLowerCase();
+      if (action === "status") {
+        this.#expectMaximum(tokens, 0, "runtime compaction status");
+        return this.queries.execute("stroke.compaction.status");
+      }
+      if (action === "run") {
+        this.#expectMaximum(tokens, 1, "runtime compaction run [objectId]");
+        return this.commands.execute("stroke.compaction.run", {
+          objectId: tokens[0] ?? null
+        });
+      }
+      if (["set", "configure"].includes(action)) {
+        if (!tokens.length) {
+          throw new Error(
+            "Uso: runtime compaction set {política-JSON}."
+          );
+        }
+        const patch = parseJson(
+          tokens.join(" "),
+          "Política de compactação"
+        );
+        return this.commands.execute("stroke.compaction.configure", patch);
+      }
+      if (action === "help") {
+        this.#expectMaximum(tokens, 0, "runtime compaction help");
+        return {
+          usage: [
+            "runtime compaction status",
+            "runtime compaction run [objectId]",
+            "runtime compaction set {política-JSON}"
+          ],
+          schedules: [
+            "off", "manual", "idle", "on-save",
+            "on-approve", "on-export"
+          ],
+          example: "runtime compaction set {\"schedule\":\"idle\",\"idleBudgetMs\":2,\"targetChunkPoints\":8192,\"maximumChunkPoints\":16384,\"maximumChunkStrokes\":128}"
+        };
+      }
+      throw new Error(
+        "Uso: runtime compaction status|run [objectId]|set {JSON}|help."
+      );
+    }
+
     if (namespace !== "test") {
       throw new Error(
         "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
-        "resources|test help|animation-runtime|animation-commands|" +
+        "resources|compaction status|run|set|help|" +
+        "test help|animation-runtime|animation-commands|" +
         "tool-parameters|selection-ui|instance-batches|" +
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
@@ -2499,6 +2556,64 @@ export class DevConsole {
       "runtime.test.run",
       { suite }
     );
+  }
+
+  #anchor(tokens) {
+    const action = (tokens.shift() ?? "status").toLowerCase();
+    if (action === "status") {
+      this.#expectMaximum(tokens, 0, "anchor status");
+      return this.queries.execute("selection.anchor.status");
+    }
+    if (["bounds", "bounds-center", "center", "centro"].includes(action)) {
+      this.#expectMaximum(tokens, 0, "anchor bounds-center");
+      return this.commands.execute("selection.anchor.set", {
+        policy: "bounds-center"
+      });
+    }
+    if (["origin", "origem"].includes(action)) {
+      this.#expectMaximum(tokens, 0, "anchor origin");
+      return this.commands.execute("selection.anchor.set", { policy: "origin" });
+    }
+    if (["pivot", "pivo", "pivô"].includes(action)) {
+      this.#expectMaximum(tokens, 0, "anchor pivot");
+      return this.commands.execute("selection.anchor.set", { policy: "pivot" });
+    }
+    if (["custom", "personalizada", "personalizado"].includes(action)) {
+      this.#expectExact(tokens, 3, "anchor custom x y z");
+      return this.commands.execute("selection.anchor.set", {
+        policy: "custom",
+        position: tokens.map(value => this.#number(value))
+      });
+    }
+    if (action === "help" || action === "ajuda") {
+      this.#expectMaximum(tokens, 0, "anchor help");
+      return Object.freeze({
+        usage: Object.freeze([
+          "anchor status",
+          "anchor bounds-center",
+          "anchor origin",
+          "anchor pivot",
+          "anchor custom x y z"
+        ]),
+        note: "A política altera somente a referência de seleção; não move a geometria."
+      });
+    }
+    throw new Error(
+      "Uso: anchor status|bounds-center|origin|pivot|custom x y z."
+    );
+  }
+
+  #strokeOrigin(tokens) {
+    const action = (tokens.shift() ?? "rebase").toLowerCase();
+    if (!["rebase", "recalcular"].includes(action)) {
+      throw new Error("Uso: stroke-origin rebase [x y z].");
+    }
+    if (tokens.length !== 0 && tokens.length !== 3) {
+      throw new Error("Uso: stroke-origin rebase [x y z].");
+    }
+    return this.commands.execute("stroke.origin.rebase", tokens.length
+      ? { origin: tokens.map(value => this.#number(value)) }
+      : {});
   }
 
   #duplicate(tokens) {
