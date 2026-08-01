@@ -146,7 +146,7 @@ import {
   createIndependentProjectUrl
 } from "../../../packages/local-viewers/src/index.js?build=20260730-0040f";
 
-const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v6";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v7";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({

@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260731-0044b",
-  "channel": "feature/0044b-stability-and-tool-policy"
+  "build": "20260731-0044b1",
+  "channel": "hotfix/0044b1-renderer-api-contract"
 }
