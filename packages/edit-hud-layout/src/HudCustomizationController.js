@@ -3,8 +3,8 @@ import {
   HUD_SECTION_SCROLL_MODES,
   HUD_VISIBILITY_VALUES,
   HUD_ZONE_VALUES
-} from "./HudLayoutPolicy.js?build=20260801-0046b";
-import { descriptorLabels } from "./HudDomLayout.js?build=20260801-0046b";
+} from "./HudLayoutPolicy.js?build=20260801-0046c";
+import { descriptorLabels } from "./HudDomLayout.js?build=20260801-0046c";
 
 const SECTION_VISIBILITIES = HUD_VISIBILITY_VALUES.filter(value => value !== "inherit");
 const SECTION_ZONES = HUD_ZONE_VALUES.filter(value => value !== "inherit");
@@ -19,6 +19,7 @@ export class HudCustomizationController {
   #unsubscribe;
   #search = "";
   #focusItem = null;
+  #focusSection = null;
 
   constructor({ root, store, descriptors = [] } = {}) {
     if (!root) throw new TypeError("HudCustomizationController exige root.");
@@ -43,6 +44,20 @@ export class HudCustomizationController {
     this.#root.querySelector("input[type=search]")?.focus?.();
   }
 
+  openSection(sectionId) {
+    this.#focusSection = String(sectionId ?? "").trim() || null;
+    this.open();
+    queueMicrotask(() => {
+      const row = this.#root.querySelector(`[data-family="${cssEscape(this.#focusSection)}"]`);
+      row?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      if (row) {
+        row.open = true;
+        row.dataset.focused = "true";
+        globalThis.setTimeout?.(() => delete row.dataset.focused, 1200);
+      }
+    });
+  }
+
   openItem(itemId) {
     this.#focusItem = String(itemId ?? "").trim() || null;
     this.open();
@@ -61,6 +76,7 @@ export class HudCustomizationController {
     this.#root.hidden = true;
     this.#root.dataset.open = "false";
     this.#focusItem = null;
+    this.#focusSection = null;
   }
 
   render() {
@@ -91,9 +107,11 @@ export class HudCustomizationController {
       const details = document.createElement("details");
       details.className = "hud-customizer-family";
       details.dataset.family = sectionId;
-      details.open = Boolean(this.#search || this.#focusItem && sectionDescriptors.some(
-        descriptor => descriptor.id === this.#focusItem
-      ));
+      details.open = Boolean(
+        this.#search ||
+        this.#focusSection === sectionId ||
+        this.#focusItem && sectionDescriptors.some(descriptor => descriptor.id === this.#focusItem)
+      );
       const summary = document.createElement("summary");
       const color = document.createElement("i");
       color.className = "hud-customizer-section-color";
@@ -215,10 +233,10 @@ export class HudCustomizationController {
       selectField(document, "Zona", SECTION_ZONES, policy.zone, value =>
         this.#store.updateSection(sectionId, { zone: value })
       ),
-      numberField(document, "Colunas", policy.columns ?? 4, 1, 24, 1, value =>
+      numberField(document, "Colunas", policy.columns ?? 4, 1, 256, 1, value =>
         this.#store.updateSection(sectionId, { columns: value })
       ),
-      numberField(document, "Linhas", policy.rows ?? 1, 1, 12, 1, value =>
+      numberField(document, "Linhas", policy.rows ?? 1, 1, 256, 1, value =>
         this.#store.updateSection(sectionId, { rows: value })
       ),
       selectField(document, "Excesso", HUD_SECTION_SCROLL_MODES, policy.scrollMode, value =>
@@ -283,10 +301,10 @@ export class HudCustomizationController {
       selectField(document, "Zona", HUD_ZONE_VALUES, policy.zone, value =>
         this.#store.updateItem(descriptor.id, { zone: value })
       ),
-      numberField(document, "Largura em células", policy.cellWidth ?? 1, 1, 12, 1, value =>
+      numberField(document, "Largura em células", policy.cellWidth ?? 1, 1, 256, 1, value =>
         this.#store.updateItem(descriptor.id, { cellWidth: value })
       ),
-      numberField(document, "Altura em células", policy.cellHeight ?? 1, 1, 8, 1, value =>
+      numberField(document, "Altura em células", policy.cellHeight ?? 1, 1, 256, 1, value =>
         this.#store.updateItem(descriptor.id, { cellHeight: value })
       ),
       moveButtons(document,

@@ -1,4 +1,4 @@
-import { resolveHudSectionPlan } from "./HudLayoutPolicy.js?build=20260801-0046b";
+import { resolveHudSectionPlan } from "./HudLayoutPolicy.js?build=20260801-0046c";
 
 export function discoverHudDescriptors(root, {
   familyOrder = []
@@ -159,6 +159,8 @@ function ensureSectionShell(group) {
   header.dataset.hudSectionControl = "true";
   const label = document.createElement("span");
   label.dataset.hudSectionLabel = "true";
+  label.dataset.hudSectionDragHandle = "true";
+  label.title = "Arraste para mover a seção; toque longo para editar.";
   label.textContent = group.getAttribute("aria-label") ?? group.dataset.editHudGroup;
   const previous = document.createElement("button");
   previous.type = "button";
@@ -181,7 +183,14 @@ function ensureSectionShell(group) {
   grid.className = "hud-section-grid";
   grid.dataset.hudSectionGrid = "true";
   viewport.append(grid);
-  group.replaceChildren(header, viewport);
+  const resize = document.createElement("span");
+  resize.className = "hud-section-resize";
+  resize.dataset.hudSectionResize = "true";
+  resize.dataset.hudSectionControl = "true";
+  resize.setAttribute("role", "button");
+  resize.setAttribute("aria-label", "Redimensionar seção");
+  resize.title = "Arraste para redimensionar a seção";
+  group.replaceChildren(header, viewport, resize);
   for (const child of originalChildren) grid.append(child);
   previous.addEventListener("click", event => {
     event.stopPropagation();
@@ -201,12 +210,13 @@ function applySectionPolicy(group, section) {
   group.style.setProperty("--hud-section-rows", String(section.rows));
   group.style.setProperty("--hud-section-color", section.color);
   group.style.setProperty("--hud-sector-rgb", hexToRgb(section.color).join(","));
-  group.style.gridColumn = `span ${section.columns}`;
-  group.style.gridRow = `span ${section.rows + (section.showHeader ? 1 : 0)}`;
+  group.style.removeProperty("grid-column");
+  group.style.removeProperty("grid-row");
   group.dataset.hudSectionColumns = String(section.columns);
   group.dataset.hudSectionRows = String(section.rows);
   group.dataset.hudSectionScroll = section.scrollMode;
   group.dataset.hudSectionHeader = section.showHeader ? "true" : "false";
+  group.dataset.hudSectionCompact = section.columns < 2 ? "true" : "false";
   group.dataset.hudSectionZone = section.zone;
   const label = group.querySelector("[data-hud-section-label]");
   if (label) label.textContent = section.label ?? group.getAttribute("aria-label") ?? section.id;
