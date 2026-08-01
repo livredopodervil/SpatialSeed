@@ -2826,6 +2826,28 @@ export function createRuntimeLayerTests() {
           globalThis.cancelAnimationFrame;
         globalThis.addEventListener = () => {};
         globalThis.removeEventListener = () => {};
+        /* O teste controla o relógio visual desde o primeiro pointermove.
+           Em navegador, requestAnimationFrame já existe e o preview é
+           deliberadamente coalescido; ler o estado antes do quadro tornava
+           a asserção dependente do ambiente de execução. */
+        const pendingFrames = new Map();
+        let nextFrameId = 1;
+        globalThis.requestAnimationFrame = callback => {
+          const id = nextFrameId;
+          nextFrameId += 1;
+          pendingFrames.set(id, callback);
+          return id;
+        };
+        globalThis.cancelAnimationFrame = id => {
+          pendingFrames.delete(id);
+        };
+        const runNextFrame = () => {
+          const entry = pendingFrames.entries().next().value;
+          if (!entry) throw new Error("Frame visual esperado ausente.");
+          const [id, callback] = entry;
+          pendingFrames.delete(id);
+          callback(0);
+        };
         const fixture = createPathToolFixture();
         let previewCalls = 0;
         let commitCalls = 0;
@@ -2891,8 +2913,10 @@ export function createRuntimeLayerTests() {
           const meshIds = controller.status().previewResources.meshIds;
           renderer.canvas.emit("pointerdown", pathPointerEvent(1, 20, 50));
           renderer.canvas.emit("pointermove", pathPointerEvent(1, 50, 50));
+          runNextFrame();
           const firstPreviewCount = controller.status().previewCount;
           renderer.canvas.emit("pointermove", pathPointerEvent(1, 80, 50));
+          runNextFrame();
           const secondStatus = controller.status();
           assertEqual(secondStatus.previewCount > firstPreviewCount, true);
           assertDeepEqual(secondStatus.previewResources.meshIds, meshIds);
@@ -2915,6 +2939,7 @@ export function createRuntimeLayerTests() {
             affineULength: 1,
             affineColor: "hsl(120*u,1,0.5)"
           });
+          runNextFrame();
           const affineStatus = controller.status();
           assertDeepEqual(affineStatus.previewResources.meshIds, meshIds);
           assertEqual(
@@ -2930,24 +2955,6 @@ export function createRuntimeLayerTests() {
             true
           );
 
-          const pendingFrames = new Map();
-          let nextFrameId = 1;
-          globalThis.requestAnimationFrame = callback => {
-            const id = nextFrameId;
-            nextFrameId += 1;
-            pendingFrames.set(id, callback);
-            return id;
-          };
-          globalThis.cancelAnimationFrame = id => {
-            pendingFrames.delete(id);
-          };
-          const runNextFrame = () => {
-            const entry = pendingFrames.entries().next().value;
-            if (!entry) throw new Error("Frame visual esperado ausente.");
-            const [id, callback] = entry;
-            pendingFrames.delete(id);
-            callback(0);
-          };
           const previewCallsBeforeCommit = previewCalls;
           renderer.canvas.emit("pointerup", pathPointerEvent(1, 80, 50));
           const previewGroup = renderer.scene.getObjectByName(
