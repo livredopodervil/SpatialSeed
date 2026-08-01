@@ -1,42 +1,43 @@
 import {
-  buildResourceTree,
+  createVirtualResourceTree,
   parseResourcePath
-} from "../../resource-tree/src/index.js?build=20260731-0044a";
+} from "../../resource-tree/src/index.js?build=20260801-0045a";
 
 export class OutlineRenderer {
-  static apiVersion = "outline-renderer-v2";
+  static apiVersion = "outline-renderer-v3";
 
   constructor(target, {
-    maxObjects = 200,
-    maxMembers = 128,
-    maxStrokes = 128,
-    maxVertices = 128,
-    onActivate = null
+    pageSize = 100,
+    resourceTree = null,
+    onActivate = null,
+    onEdit = null
   } = {}) {
     this.target = target;
-    this.maxObjects = maxObjects;
-    this.maxMembers = maxMembers;
-    this.maxStrokes = maxStrokes;
-    this.maxVertices = maxVertices;
+    this.pageSize = normalizePageSize(pageSize);
     this.onActivate = typeof onActivate === "function" ? onActivate : null;
+    this.onEdit = typeof onEdit === "function" ? onEdit : null;
     this.resourceIndex = new Map();
     this.openPaths = new Set(["/"]);
+    this.tree = resourceTree;
+    this.currentPath = "/";
     this.#bind();
   }
 
   update(region, sandbox, modules, state = sandbox.getSnapshot()) {
     this.#captureOpenPaths();
-    const objects = state.objects ?? [];
-    const visible = objects.slice(0, this.maxObjects);
-    const omittedObjects = Math.max(0, objects.length - visible.length);
-    const tree = buildResourceTree({
-      objects: visible,
-      maxMembers: this.maxMembers,
-      maxStrokes: this.maxStrokes,
-      maxVertices: this.maxVertices
-    });
+    if (!this.tree) {
+      this.tree = createVirtualResourceTree({
+        state,
+        pageSize: this.pageSize
+      });
+    } else {
+      this.tree.setState?.(state);
+    }
     this.resourceIndex.clear();
-    indexTree(tree, this.resourceIndex);
+    const rootPage = this.tree.listChildren("/", {
+      offset: 0,
+      limit: this.pageSize
+    });
 
     this.target.innerHTML = `
       <div class="region outline-status">
@@ -47,20 +48,18 @@ export class OutlineRenderer {
       </div>
       <div class="region resource-browser">
         <div class="resource-browser-header">
-          <strong>Recursos (${objects.length})</strong>
+          <strong>Recursos (${state.objects?.length ?? 0})</strong>
           <input
             type="search"
             data-resource-filter
-            placeholder="Filtrar nome, tipo ou caminho"
-            aria-label="Filtrar recursos"
+            placeholder="Filtrar recursos carregados"
+            aria-label="Filtrar recursos carregados"
           >
         </div>
-        <div class="resource-current-path" data-resource-current>/</div>
-        <div class="resource-tree" role="tree">
-          ${tree.children.map(node => this.#renderNode(node, 0)).join("")}
-          ${omittedObjects
-            ? `<div class="resource-omitted">… ${omittedObjects} objeto(s) fora da página atual</div>`
-            : ""}
+        <div class="resource-current-path" data-resource-current>${escapeHtml(this.currentPath)}</div>
+        <div class="resource-tree" role="tree" data-resource-root>
+          ${rootPage.items.map(node => this.#renderNode(node, 0)).join("")}
+          ${this.#renderContinuation("/", rootPage, 0)}
         </div>
       </div>
       <div class="region">
@@ -71,10 +70,12 @@ export class OutlineRenderer {
           </div>
         `).join("")}
       </div>`;
+
+    for (const node of rootPage.items) this.resourceIndex.set(node.path, node);
+    this.#restoreOpenTopLevel();
   }
 
   #renderNode(node, depth) {
-    const children = node.children ?? [];
     const path = String(node.path);
     const search = resourceSearchText(node);
     const button = `
@@ -92,23 +93,84 @@ export class OutlineRenderer {
           ? `<span class="resource-summary">${escapeHtml(node.summary)}</span>`
           : ""}
       </button>`;
-    if (!children.length) {
+    if (!node.hasChildren) {
       return `<div class="resource-leaf" data-resource-row data-search="${escapeAttribute(search)}">${button}</div>`;
     }
-    const open = this.openPaths.has(path) || depth === 0;
     return `
       <details
         class="resource-branch"
         data-resource-row
         data-resource-branch="${escapeAttribute(path)}"
+        data-resource-depth="${depth}"
         data-search="${escapeAttribute(search)}"
-        ${open ? "open" : ""}
+        ${this.openPaths.has(path) ? "open" : ""}
       >
         <summary>${button}</summary>
-        <div class="resource-children">
-          ${children.map(child => this.#renderNode(child, depth + 1)).join("")}
-        </div>
+        <div
+          class="resource-children"
+          data-resource-children="${escapeAttribute(path)}"
+          data-loaded="false"
+        ></div>
       </details>`;
+  }
+
+  #renderContinuation(path, page, depth) {
+    if (page.nextOffset === null) return "";
+    return `
+      <button
+        type="button"
+        class="resource-node-button resource-continuation"
+        data-resource-more="${escapeAttribute(path)}"
+        data-resource-offset="${page.nextOffset}"
+        data-resource-depth="${depth}"
+        style="--resource-depth:${depth}"
+      >
+        <span class="resource-kind">…</span>
+        <span class="resource-label">Carregar próximos ${Math.min(page.limit, page.total - page.nextOffset)}</span>
+      </button>`;
+  }
+
+  #loadChildren(details, { reset = false } = {}) {
+    if (!this.tree || !details) return;
+    const path = details.dataset.resourceBranch;
+    const container = details.querySelector(":scope > [data-resource-children]");
+    if (!path || !container) return;
+    if (!reset && container.dataset.loaded === "true") return;
+    const depth = Number(details.dataset.resourceDepth ?? 0) + 1;
+    const result = this.tree.listChildren(path, {
+      offset: 0,
+      limit: this.pageSize
+    });
+    container.innerHTML = result.items
+      .map(node => this.#renderNode(node, depth))
+      .join("") + this.#renderContinuation(path, result, depth);
+    container.dataset.loaded = "true";
+    for (const node of result.items) this.resourceIndex.set(node.path, node);
+    for (const child of container.querySelectorAll?.(
+      ":scope > details[data-resource-branch][open]"
+    ) ?? []) {
+      this.#loadChildren(child);
+    }
+  }
+
+  #loadMore(button) {
+    if (!this.tree || !button) return;
+    const path = button.dataset.resourceMore;
+    const offset = Number(button.dataset.resourceOffset ?? 0);
+    const depth = Number(button.dataset.resourceDepth ?? 0);
+    const result = this.tree.listChildren(path, {
+      offset,
+      limit: this.pageSize
+    });
+    const host = button.parentElement;
+    if (!host) return;
+    const fragment = document.createRange().createContextualFragment(
+      result.items.map(node => this.#renderNode(node, depth)).join("") +
+      this.#renderContinuation(path, result, depth)
+    );
+    for (const node of result.items) this.resourceIndex.set(node.path, node);
+    host.insertBefore(fragment, button);
+    button.remove();
   }
 
   #captureOpenPaths() {
@@ -122,12 +184,27 @@ export class OutlineRenderer {
     }
   }
 
+  #restoreOpenTopLevel() {
+    for (const details of this.target?.querySelectorAll?.(
+      "details[data-resource-branch][open]"
+    ) ?? []) {
+      this.#loadChildren(details);
+    }
+  }
+
   #bind() {
     this.target?.addEventListener?.("click", event => {
+      const more = event.target?.closest?.("[data-resource-more]");
+      if (more && this.target.contains(more)) {
+        this.#loadMore(more);
+        return;
+      }
       const button = event.target?.closest?.("[data-resource-path]");
       if (!button || !this.target.contains(button)) return;
       const path = button.dataset.resourcePath;
-      const node = this.resourceIndex.get(path) ?? null;
+      const node = this.resourceIndex.get(path) ?? this.tree?.describe(path) ?? null;
+      if (node) this.resourceIndex.set(path, node);
+      this.currentPath = path;
       const current = this.target.querySelector?.("[data-resource-current]");
       if (current) current.textContent = path;
       this.onActivate?.(Object.freeze({
@@ -136,6 +213,20 @@ export class OutlineRenderer {
         reference: parseResourcePath(path)
       }));
     });
+
+    this.target?.addEventListener?.("dblclick", event => {
+      const button = event.target?.closest?.("[data-resource-path]");
+      if (!button || !this.target.contains(button) || !this.onEdit) return;
+      const path = button.dataset.resourcePath;
+      const node = this.resourceIndex.get(path) ?? this.tree?.describe(path) ?? null;
+      this.onEdit(Object.freeze({
+        path,
+        node,
+        reference: parseResourcePath(path),
+        readValue: property => this.tree?.readValue(path, property)
+      }));
+    });
+
     this.target?.addEventListener?.("input", event => {
       if (!event.target?.matches?.("[data-resource-filter]")) return;
       const query = String(event.target.value ?? "").trim().toLowerCase();
@@ -144,29 +235,33 @@ export class OutlineRenderer {
           !String(row.dataset.search ?? "").includes(query);
       }
     });
+
     this.target?.addEventListener?.("toggle", event => {
       const details = event.target;
       if (!details?.matches?.("details[data-resource-branch]")) return;
       const path = details.dataset.resourceBranch;
-      if (details.open) this.openPaths.add(path);
-      else this.openPaths.delete(path);
+      if (details.open) {
+        this.openPaths.add(path);
+        this.#loadChildren(details);
+      } else {
+        this.openPaths.delete(path);
+      }
     }, true);
   }
 }
 
-function indexTree(node, index) {
-  if (node.path) index.set(String(node.path), node);
-  for (const child of node.children ?? []) indexTree(child, index);
+function normalizePageSize(value) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 1 || number > 1000) {
+    throw new RangeError("pageSize deve estar entre 1 e 1000.");
+  }
+  return number;
 }
 
 function resourceSearchText(node) {
-  return [
-    node.label,
-    node.kind,
-    node.path,
-    node.summary,
-    ...(node.children ?? []).map(resourceSearchText)
-  ].join(" ").toLowerCase();
+  return [node.label, node.kind, node.path, node.summary]
+    .join(" ")
+    .toLowerCase();
 }
 
 function resourceIcon(kind) {
@@ -180,7 +275,6 @@ function resourceIcon(kind) {
     vertex: "•",
     members: "⋮",
     strokes: "⋮",
-    continuation: "…",
     camera: "◉",
     light: "✦"
   })[kind] ?? "◇";

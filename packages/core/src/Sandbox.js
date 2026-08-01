@@ -10,6 +10,7 @@ export class Sandbox {
   #revision = 0;
   #subscribers = new Set();
   #objectsById = new Map();
+  #objectIdsByParent = new Map();
   #objectPositions = new Map();
   #objectPositionsValid = true;
   #performance = {
@@ -60,6 +61,23 @@ export class Sandbox {
   }
   getObjects(ids = []) {
     return ids.map(id => this.getObject(id));
+  }
+  listObjectChildren(parentId = null, { offset = 0, limit = 100 } = {}) {
+    const start = nonNegativeInteger(offset, "O offset hierárquico");
+    const size = nonNegativeInteger(limit, "O limite hierárquico");
+    const key = hierarchyParentKey(parentId);
+    const ids = this.#objectIdsByParent.get(key) ?? [];
+    const end = Math.min(ids.length, start + size);
+    return Object.freeze({
+      items: Object.freeze(ids.slice(start, end)),
+      offset: start,
+      limit: size,
+      total: ids.length,
+      nextOffset: end < ids.length ? end : null
+    });
+  }
+  getObjectChildCount(parentId = null) {
+    return (this.#objectIdsByParent.get(hierarchyParentKey(parentId)) ?? []).length;
   }
 
   dispatch(command) {
@@ -401,10 +419,13 @@ export class Sandbox {
     this.#performance.objectIndexRebuilds += 1;
     this.#performance.objectIndexObjectsVisited += this.#state.objects.length;
     this.#objectsById.clear();
+    this.#objectIdsByParent.clear();
     this.#objectPositions.clear();
     for (const [index, object] of this.#state.objects.entries()) {
-      this.#objectsById.set(String(object.id), object);
-      this.#objectPositions.set(String(object.id), index);
+      const id = String(object.id);
+      this.#objectsById.set(id, object);
+      this.#objectPositions.set(id, index);
+      this.#attachObjectToParentIndex(id, object.parentId);
     }
     this.#objectPositionsValid = true;
   }
@@ -490,7 +511,9 @@ export class Sandbox {
         this.#rebuildObjectIndex();
         return;
       }
+      const previous = change.previousObject ?? this.#objectsById.get(id) ?? null;
       if (change.type === "object-deleted") {
+        this.#detachObjectFromParentIndex(id, previous?.parentId);
         this.#objectsById.delete(id);
         this.#objectPositions.delete(id);
         this.#objectPositionsValid = false;
@@ -500,6 +523,14 @@ export class Sandbox {
       if (!object || String(object.id) !== id) {
         this.#rebuildObjectIndex();
         return;
+      }
+      const previousParent = previous?.parentId == null
+        ? null
+        : String(previous.parentId);
+      const nextParent = object.parentId == null ? null : String(object.parentId);
+      if (!previous || previousParent !== nextParent) {
+        if (previous) this.#detachObjectFromParentIndex(id, previousParent);
+        this.#attachObjectToParentIndex(id, nextParent);
       }
       this.#objectsById.set(id, object);
       if (change.type === "object-created" && this.#objectPositionsValid) {
@@ -512,6 +543,28 @@ export class Sandbox {
       }
     }
   }
+
+  #attachObjectToParentIndex(idValue, parentValue) {
+    const id = String(idValue);
+    const key = hierarchyParentKey(parentValue);
+    let ids = this.#objectIdsByParent.get(key);
+    if (!ids) {
+      ids = [];
+      this.#objectIdsByParent.set(key, ids);
+    }
+    if (!ids.includes(id)) ids.push(id);
+  }
+
+  #detachObjectFromParentIndex(idValue, parentValue) {
+    const id = String(idValue);
+    const key = hierarchyParentKey(parentValue);
+    const ids = this.#objectIdsByParent.get(key);
+    if (!ids) return;
+    const index = ids.indexOf(id);
+    if (index >= 0) ids.splice(index, 1);
+    if (!ids.length) this.#objectIdsByParent.delete(key);
+  }
+
 
 }
 
@@ -572,6 +625,10 @@ function invertObjectChanges(changes) {
     return Object.freeze([]);
   }
   return Object.freeze(inverse);
+}
+
+function hierarchyParentKey(value) {
+  return value === null || value === undefined ? "@root" : `@${String(value)}`;
 }
 
 function validateState(value) {
