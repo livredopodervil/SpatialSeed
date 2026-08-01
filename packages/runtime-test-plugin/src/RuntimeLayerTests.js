@@ -262,7 +262,13 @@ import {
   geometryToolIcon,
   geometryToolPriority,
   normalizeHudDimensions
-} from "../../edit-hud/src/index.js?build=20260731-0044b";
+} from "../../edit-hud/src/index.js?build=20260801-0046a";
+import {
+  HudLayoutStore,
+  createDefaultHudLayoutDocument,
+  normalizeHudLayoutDocument,
+  resolveHudLayoutPlan
+} from "../../edit-hud-layout/src/index.js?build=20260801-0046a";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -1863,6 +1869,139 @@ export function createRuntimeLayerTests() {
         assertEqual(result.canArrayAlongPath, true);
         assertEqual(result.pathReference.id, "path");
         assertEqual(result.profileReference.id, "profile");
+      },
+
+      "layout v2 migra famílias ocultas sem copiar estado do editor"() {
+        const document = createDefaultHudLayoutDocument({
+          familyIds: ["quick", "measure"],
+          itemIds: ["edit-hud-undo"],
+          familyOrder: ["quick", "measure"],
+          legacyPreferences: {
+            adaptiveOrder: true,
+            groups: { quick: true, measure: false }
+          }
+        });
+        assertEqual(document.schemaVersion, "spatial-seed-hud-layout-v2");
+        assertEqual(document.profiles.default.families.quick.visibility, "auto");
+        assertEqual(document.profiles.default.families.measure.visibility, "hidden");
+        assertEqual(document.profiles.default.families.quick.order, null);
+      },
+
+      "ferramenta fixada mantém posição e slot fora do contexto"() {
+        const descriptors = [
+          {
+            id: "edit-hud-undo",
+            family: "quick",
+            defaultFamilyIndex: 2,
+            defaultItemIndex: 4
+          },
+          {
+            id: "edit-hud-create",
+            family: "actions",
+            defaultFamilyIndex: 8,
+            defaultItemIndex: 0
+          }
+        ];
+        const document = normalizeHudLayoutDocument({
+          schemaVersion: "spatial-seed-hud-layout-v2",
+          activeProfile: "default",
+          profiles: {
+            default: {
+              families: {},
+              items: {
+                "edit-hud-undo": {
+                  visibility: "auto",
+                  zone: "fixed-start",
+                  order: 1
+                }
+              }
+            }
+          }
+        }, {
+          familyIds: ["quick", "actions"],
+          itemIds: ["edit-hud-undo", "edit-hud-create"]
+        });
+        const first = resolveHudLayoutPlan({
+          descriptors,
+          profile: document.profiles.default,
+          adaptiveGroupOrder: ["actions", "quick"],
+          itemContext: {
+            "edit-hud-undo": { visible: false, available: false },
+            "edit-hud-create": { visible: true, available: true }
+          }
+        });
+        const second = resolveHudLayoutPlan({
+          descriptors,
+          profile: document.profiles.default,
+          adaptiveGroupOrder: ["quick", "actions"],
+          itemContext: {
+            "edit-hud-undo": { visible: false, available: false },
+            "edit-hud-create": { visible: true, available: true }
+          }
+        });
+        const undoA = first.find(item => item.id === "edit-hud-undo");
+        const undoB = second.find(item => item.id === "edit-hud-undo");
+        assertEqual(undoA.hidden, false);
+        assertEqual(undoA.disabled, true);
+        assertEqual(undoA.pinned, true);
+        assertEqual(undoA.order, undoB.order);
+      },
+
+      "política individual pode reaparecer dentro de família oculta"() {
+        const [item] = resolveHudLayoutPlan({
+          descriptors: [{
+            id: "edit-hud-ruler",
+            family: "measure",
+            defaultFamilyIndex: 4,
+            defaultItemIndex: 0
+          }],
+          profile: {
+            families: {
+              measure: {
+                visibility: "hidden",
+                zone: "adaptive",
+                order: null
+              }
+            },
+            items: {
+              "edit-hud-ruler": {
+                visibility: "always",
+                zone: "fixed-end",
+                order: 2
+              }
+            }
+          },
+          familyContext: { measure: { visible: false } },
+          itemContext: {
+            "edit-hud-ruler": { visible: false, available: false }
+          }
+        });
+        assertEqual(item.hidden, false);
+        assertEqual(item.zone, "fixed-end");
+        assertEqual(item.disabled, true);
+      },
+
+      "store reordena ferramentas sem alterar comandos do núcleo"() {
+        const values = new Map();
+        const storage = {
+          getItem(key) { return values.get(key) ?? null; },
+          setItem(key, value) { values.set(key, value); }
+        };
+        const store = new HudLayoutStore({
+          storage,
+          familyIds: ["quick"],
+          itemIds: ["undo", "redo", "repeat"],
+          itemFamilies: {
+            undo: "quick",
+            redo: "quick",
+            repeat: "quick"
+          }
+        });
+        store.moveItem("repeat", -1);
+        const profile = store.profile();
+        assertEqual(profile.items.repeat.order, 1);
+        assertEqual(profile.items.redo.order, 2);
+        assertEqual(Object.hasOwn(profile, "commands"), false);
       }
     },
 

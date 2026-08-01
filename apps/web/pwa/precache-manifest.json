@@ -62,6 +62,11 @@
     "packages/edit-context/src/EditContextController.js",
     "packages/edit-context/src/PlanarFrame.js",
     "packages/edit-context/src/index.js",
+    "packages/edit-hud-layout/src/HudCustomizationController.js",
+    "packages/edit-hud-layout/src/HudDomLayout.js",
+    "packages/edit-hud-layout/src/HudLayoutPolicy.js",
+    "packages/edit-hud-layout/src/HudLayoutStore.js",
+    "packages/edit-hud-layout/src/index.js",
     "packages/edit-hud/src/EditHud.js",
     "packages/edit-hud/src/HudContextHeuristics.js",
     "packages/edit-hud/src/index.js",
@@ -261,6 +266,13 @@
     "packages/world-model/src/PrototypeStore.js",
     "packages/world-model/src/WorldDelta.js",
     "packages/world-model/src/WorldSnapshot.js",
-    "packages/world-model/src/index.js"
+    "packages/world-model/src/index.js",
+    "vendor/addons/controls/OrbitControls.js",
+    "vendor/addons/controls/TransformControls.js",
+    "vendor/addons/loaders/GLTFLoader.js",
+    "vendor/mathjs-11.11.0/math.js",
+    "vendor/ses/ses.umd.min.js",
+    "vendor/three.core.js",
+    "vendor/three.module.js"
   ]
 }
