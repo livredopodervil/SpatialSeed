@@ -14,7 +14,8 @@ import {
 } from "../../appearance-binding/src/index.js?build=20260730-0041a";
 import {
   appendStrokeToBundle,
-  normalizeStrokeBundleDescriptor
+  normalizeStrokeBundleDescriptor,
+  rebaseStrokeBundleOrigin
 } from "../../stroke-resources/src/index.js?build=20260801-0045a";
 
 function updateById(objects, id, updater) {
@@ -317,7 +318,10 @@ export function boxRegionReducer(state, command, context = {}) {
       const geometry = appendStrokeToBundle(
         existing.geometry,
         command.stroke,
-        { policy: command.policy ?? null }
+        {
+          policy: command.policy ?? null,
+          trustedUniqueId: Boolean(command.trustedUniqueId)
+        }
       );
       const object = Object.freeze({ ...existing, geometry });
       const objects = updateById(
@@ -332,6 +336,130 @@ export function boxRegionReducer(state, command, context = {}) {
           objectId,
           object,
           source: command.source ?? "stroke-bundle.append"
+        }]
+      };
+    }
+
+    case "stroke-logical-group.create": {
+      const target = freezeStrokeBundleObject(command.object, context);
+      const existingIds = new Set(state.objects.map(object => String(object.id)));
+      if (existingIds.has(String(target.id))) {
+        throw new Error(`Duplicate object id: ${target.id}`);
+      }
+      const withTarget = Object.freeze([...state.objects, target]);
+      const existingGroupId = command.existingGroupId == null
+        ? null
+        : String(command.existingGroupId);
+
+      if (existingGroupId !== null) {
+        const group = state.objects.find(object =>
+          String(object.id) === existingGroupId
+        );
+        if (!group || group.kind !== "group") {
+          throw new Error(`Grupo lógico inexistente: ${existingGroupId}.`);
+        }
+        const objects = reparentPreservingWorld(withTarget, {
+          id: String(target.id),
+          parentId: existingGroupId
+        });
+        return {
+          state: Object.freeze({ ...state, objects }),
+          changes: [
+            {
+              type: "object-created",
+              objectId: String(target.id),
+              source: command.source ?? "stroke-logical-group.create"
+            },
+            {
+              type: "hierarchy-reparented",
+              objectId: String(target.id),
+              parentId: existingGroupId,
+              source: command.source ?? "stroke-logical-group.create"
+            }
+          ]
+        };
+      }
+
+      const targetIds = [...new Set([
+        ...(command.targetIds ?? []).map(String),
+        String(target.id)
+      ])];
+      const result = groupNodes(withTarget, {
+        groupId: command.groupId,
+        targetIds,
+        name: command.name ?? "Objeto composto",
+        anchorWorldPosition: command.anchorWorldPosition,
+        pivot: command.pivot ?? [0,0,0]
+      });
+      return {
+        state: Object.freeze({ ...state, objects: result.nodes }),
+        changes: [
+          {
+            type: "object-created",
+            objectId: String(target.id),
+            source: command.source ?? "stroke-logical-group.create"
+          },
+          {
+            type: "hierarchy-grouped",
+            objectId: result.group.id,
+            targetIds: result.targetIds,
+            source: command.source ?? "stroke-logical-group.create"
+          }
+        ]
+      };
+    }
+
+    case "stroke-bundle.rebase-origin": {
+      const objectId = String(command.objectId ?? "").trim();
+      if (!objectId) throw new TypeError("Rebase de origem exige objeto-alvo.");
+      const existing = typeof context.getObject === "function"
+        ? context.getObject(objectId)
+        : state.objects.find(object => String(object.id) === objectId);
+      if (!existing || existing.kind !== "stroke-bundle") {
+        throw new Error(`Conjunto de traços inexistente: ${objectId}.`);
+      }
+      if (command.expectedGeometry &&
+          existing.geometry !== command.expectedGeometry) {
+        return { state, changes: [] };
+      }
+      const current = normalizeStrokeBundleDescriptor(existing.geometry);
+      const nextOrigin = freezeVector(
+        command.nextOrigin,
+        3,
+        "Nova origem geométrica inválida."
+      );
+      const localDelta = nextOrigin.map(
+        (value, axis) => value - current.storageOrigin[axis]
+      );
+      if (localDelta.every(value => Math.abs(value) <= 1e-12)) {
+        return { state, changes: [] };
+      }
+      const geometry = rebaseStrokeBundleOrigin(current, nextOrigin);
+      const positionDelta = rotateScaledVector(
+        localDelta,
+        existing.rotation ?? [0, 0, 0, 1],
+        existing.scale ?? [1, 1, 1]
+      );
+      const object = Object.freeze({
+        ...existing,
+        position: Object.freeze((existing.position ?? [0, 0, 0]).map(
+          (value, axis) => Number(value) + positionDelta[axis]
+        )),
+        geometry,
+        selectionAnchorPolicy: geometry.selectionAnchorPolicy,
+        ...(geometry.selectionAnchorLocal
+          ? { selectionAnchorLocal: geometry.selectionAnchorLocal }
+          : {})
+      });
+      const objects = updateById(state.objects, objectId, () => object);
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [{
+          type: "object-updated",
+          objectId,
+          object,
+          source: command.source ?? "stroke-bundle.rebase-origin",
+          maintenance: true
         }]
       };
     }
@@ -972,6 +1100,26 @@ function freezeCamera(value = {}) {
     far,
     focusDistance
   });
+}
+
+
+function rotateScaledVector(vector, quaternion, scale) {
+  const x = Number(vector[0]) * Number(scale[0]);
+  const y = Number(vector[1]) * Number(scale[1]);
+  const z = Number(vector[2]) * Number(scale[2]);
+  const qx = Number(quaternion[0]);
+  const qy = Number(quaternion[1]);
+  const qz = Number(quaternion[2]);
+  const qw = Number(quaternion[3]);
+  const ix = qw * x + qy * z - qz * y;
+  const iy = qw * y + qz * x - qx * z;
+  const iz = qw * z + qx * y - qy * x;
+  const iw = -qx * x - qy * y - qz * z;
+  return [
+    ix * qw + iw * -qx + iy * -qz - iz * -qy,
+    iy * qw + iw * -qy + iz * -qx - ix * -qz,
+    iz * qw + iw * -qz + ix * -qy - iy * -qx
+  ];
 }
 
 function freezeStrokeBundleObject(

@@ -4,6 +4,9 @@ const VALIDATED_BUNDLE_MARKER = "spatialseed-stroke-bundle-v2";
 const LEGACY_BUNDLE_MARKER = "spatialseed-stroke-bundle-v1";
 const VALIDATED_STROKE_MARKER = "spatialseed-stroke-v1";
 const VALIDATED_CHUNK_MARKER = "spatialseed-stroke-chunk-v1";
+const TRUSTED_STROKES = new WeakSet();
+const TRUSTED_CHUNKS = new WeakSet();
+const TRUSTED_BUNDLES = new WeakSet();
 const CURVE_TYPES = new Set([
   "centripetal",
   "chordal",
@@ -150,14 +153,15 @@ export function mergeStrokeBundles(values, {
 
 export function appendStrokeToBundle(bundleValue, strokeValue, {
   policy = null,
-  chunkId = null
+  chunkId = null,
+  trustedUniqueId = false
 } = {}) {
   const bundle = normalizeStrokeBundleDescriptor(bundleValue);
   const resolvedPolicy = normalizeStrokeChunkPolicy(
     policy ?? bundle.compactionPolicy
   );
   let stroke = normalizeStroke(strokeValue, bundle.strokeCount);
-  if (strokeBundleFindStroke(bundle, stroke.id)) {
+  if (!trustedUniqueId && strokeBundleFindStroke(bundle, stroke.id)) {
     let suffix = 2;
     let id = `${stroke.id}-${suffix}`;
     while (strokeBundleFindStroke(bundle, id)) id = `${stroke.id}-${++suffix}`;
@@ -181,14 +185,124 @@ export function appendStrokeToBundle(bundleValue, strokeValue, {
       chunkId ?? `chunk-${bundle.chunks.length + 1}`
     ));
   }
-  return trustedBundle({
+  return trustedBundleKnown({
     chunks,
+    strokeCount: bundle.strokeCount + 1,
+    pointCount: bundle.pointCount + stroke.points.length,
+    bounds: unionBounds(bundle.bounds, strokeBounds(stroke)),
     storageOrigin: bundle.storageOrigin,
     originPolicy: bundle.originPolicy,
     selectionAnchorPolicy: bundle.selectionAnchorPolicy,
     selectionAnchorLocal: bundle.selectionAnchorLocal,
     compactionPolicy: resolvedPolicy,
     compactionRevision: bundle.compactionRevision
+  });
+}
+
+export function replaceStrokePointInBundle(
+  bundleValue,
+  strokeIdValue,
+  vertexIndex,
+  pointValue
+) {
+  const bundle = normalizeStrokeBundleDescriptor(bundleValue);
+  const strokeId = nonEmptyString(strokeIdValue, "traço");
+  if (!Number.isInteger(vertexIndex) || vertexIndex < 0) {
+    throw new RangeError("Índice de vértice inválido.");
+  }
+  const point = Object.freeze(normalizedVector3(
+    pointValue,
+    "posição do vértice"
+  ));
+  let changed = false;
+  const chunks = bundle.chunks.map(chunk => {
+    const strokeIndex = chunk.strokes.findIndex(stroke => stroke.id === strokeId);
+    if (strokeIndex < 0) return chunk;
+    const stroke = chunk.strokes[strokeIndex];
+    if (vertexIndex >= stroke.points.length) {
+      throw new RangeError(`Vértice ${vertexIndex} não existe em ${strokeId}.`);
+    }
+    if (stroke.points[vertexIndex].every((value, axis) => value === point[axis])) {
+      return chunk;
+    }
+    const points = [...stroke.points];
+    points[vertexIndex] = point;
+    const strokes = [...chunk.strokes];
+    strokes[strokeIndex] = normalizeStroke({ ...stroke, points }, strokeIndex);
+    changed = true;
+    return createChunk(strokes, chunk.id);
+  });
+  if (!chunks.some((chunk, index) => chunk !== bundle.chunks[index]) &&
+      !strokeBundleFindStroke(bundle, strokeId)) {
+    throw new Error(`Traço inexistente: ${strokeId}.`);
+  }
+  if (!changed) return Object.freeze({ changed: false, bundle });
+  return Object.freeze({
+    changed: true,
+    bundle: trustedBundleKnown({
+      chunks,
+      strokeCount: bundle.strokeCount,
+      pointCount: bundle.pointCount,
+      bounds: mergeChunkBounds(chunks),
+      storageOrigin: bundle.storageOrigin,
+      originPolicy: bundle.originPolicy,
+      selectionAnchorPolicy: bundle.selectionAnchorPolicy,
+      selectionAnchorLocal: bundle.selectionAnchorLocal,
+      compactionPolicy: bundle.compactionPolicy,
+      compactionRevision: bundle.compactionRevision
+    })
+  });
+}
+
+export function strokeBundleCompactionStatus(
+  bundleValue,
+  policyValue = null
+) {
+  const bundle = normalizeStrokeBundleDescriptor(bundleValue);
+  const policy = normalizeStrokeChunkPolicy(
+    policyValue ?? bundle.compactionPolicy
+  );
+  const fragmentationThreshold = finiteBetweenDefault(
+    policyValue?.fragmentationThreshold,
+    0,
+    1,
+    0.2
+  );
+  const minimumSmallChunks = integerBetweenDefault(
+    policyValue?.minimumSmallChunks,
+    1,
+    10000,
+    4
+  );
+  let mergeablePairs = 0;
+  let underfilledChunks = 0;
+  const utilizationLimit = 1 - fragmentationThreshold;
+  for (let index = 0; index < bundle.chunks.length; index += 1) {
+    const chunk = bundle.chunks[index];
+    if (index < bundle.chunks.length - 1) {
+      const pointRatio = chunk.pointCount / policy.targetChunkPoints;
+      const byteRatio = chunk.estimatedBytes / policy.targetChunkBytes;
+      const strokeRatio = chunk.strokeCount / policy.maximumChunkStrokes;
+      if (Math.max(pointRatio, byteRatio, strokeRatio) < utilizationLimit) {
+        underfilledChunks += 1;
+      }
+      const nextStroke = bundle.chunks[index + 1]?.strokes?.[0];
+      if (nextStroke && chunkCanAccept(chunk, nextStroke, policy)) {
+        mergeablePairs += 1;
+      }
+    }
+  }
+  const policyChanged = !sameChunkPolicy(bundle.compactionPolicy, policy);
+  const fragmented = mergeablePairs > 0 &&
+    (underfilledChunks >= minimumSmallChunks ||
+      mergeablePairs >= minimumSmallChunks);
+  return Object.freeze({
+    needed: policyChanged || fragmented,
+    policyChanged,
+    fragmented,
+    mergeablePairs,
+    underfilledChunks,
+    chunkCount: bundle.chunks.length
   });
 }
 
@@ -204,8 +318,11 @@ export function compactStrokeBundle(bundleValue, policyValue = null) {
   }
   return Object.freeze({
     changed: true,
-    bundle: trustedBundle({
+    bundle: trustedBundleKnown({
       chunks,
+      strokeCount: bundle.strokeCount,
+      pointCount: bundle.pointCount,
+      bounds: mergeChunkBounds(chunks),
       storageOrigin: bundle.storageOrigin,
       originPolicy: bundle.originPolicy,
       selectionAnchorPolicy: bundle.selectionAnchorPolicy,
@@ -221,35 +338,61 @@ export function createStrokeCompactionJob(bundleValue, policyValue = null) {
   const policy = normalizeStrokeChunkPolicy(
     policyValue ?? bundle.compactionPolicy
   );
-  const source = [...iterateStrokeBundle(bundle)];
-  let index = 0;
+  let sourceChunkIndex = 0;
+  let sourceStrokeIndex = 0;
   let current = [];
+  let currentPointCount = 0;
+  let currentEstimatedBytes = 64;
   const chunks = [];
+
+  const nextStroke = () => {
+    while (sourceChunkIndex < bundle.chunks.length) {
+      const chunk = bundle.chunks[sourceChunkIndex];
+      if (sourceStrokeIndex < chunk.strokes.length) {
+        return chunk.strokes[sourceStrokeIndex++];
+      }
+      sourceChunkIndex += 1;
+      sourceStrokeIndex = 0;
+    }
+    return null;
+  };
+  const flush = () => {
+    if (!current.length) return;
+    chunks.push(createChunk(current, `chunk-${chunks.length + 1}`));
+    current = [];
+    currentPointCount = 0;
+    currentEstimatedBytes = 64;
+  };
+  const accept = stroke => {
+    if (current.length && !chunkMetricsCanAccept({
+      strokeCount: current.length,
+      pointCount: currentPointCount,
+      estimatedBytes: currentEstimatedBytes
+    }, stroke, policy)) {
+      flush();
+    }
+    current.push(stroke);
+    currentPointCount += stroke.points.length;
+    currentEstimatedBytes += estimateStrokeBytes(stroke);
+  };
+  const exhausted = () => sourceChunkIndex >= bundle.chunks.length;
+
   return Object.freeze({
-    get done() { return index >= source.length && current.length === 0; },
+    get done() { return exhausted() && current.length === 0; },
     step(maximumStrokes = 1) {
       let processed = 0;
       const limit = Math.max(1, Number(maximumStrokes) || 1);
-      while (index < source.length && processed < limit) {
-        const stroke = source[index++];
-        if (current.length) {
-          const currentChunk = createChunk(current, `chunk-${chunks.length + 1}`);
-          if (!chunkCanAccept(currentChunk, stroke, policy)) {
-            chunks.push(currentChunk);
-            current = [];
-          }
-        }
-        current.push(stroke);
+      while (processed < limit) {
+        const stroke = nextStroke();
+        if (!stroke) break;
+        accept(stroke);
         processed += 1;
       }
-      if (index >= source.length && current.length) {
-        chunks.push(createChunk(current, `chunk-${chunks.length + 1}`));
-        current = [];
-      }
-      return Object.freeze({ processed, done: index >= source.length && !current.length });
+      if (exhausted()) flush();
+      return Object.freeze({ processed, done: exhausted() && !current.length });
     },
     finish() {
-      if (index < source.length || current.length) {
+      if (!exhausted() || current.length) {
         throw new Error("Compactação ainda não terminou.");
       }
       const changed = !sameChunkLayout(bundle.chunks, chunks) ||
@@ -257,8 +400,11 @@ export function createStrokeCompactionJob(bundleValue, policyValue = null) {
       return Object.freeze({
         changed,
         bundle: changed
-          ? trustedBundle({
+          ? trustedBundleKnown({
               chunks,
+              strokeCount: bundle.strokeCount,
+              pointCount: bundle.pointCount,
+              bounds: mergeChunkBounds(chunks),
               storageOrigin: bundle.storageOrigin,
               originPolicy: bundle.originPolicy,
               selectionAnchorPolicy: bundle.selectionAnchorPolicy,
@@ -286,8 +432,11 @@ export function rebaseStrokeBundleOrigin(bundleValue, nextOriginValue) {
     }, 0)),
     chunk.id
   ));
-  return trustedBundle({
+  return trustedBundleKnown({
     chunks,
+    strokeCount: bundle.strokeCount,
+    pointCount: bundle.pointCount,
+    bounds: translateBounds(bundle.bounds, delta),
     storageOrigin: nextOrigin,
     originPolicy: bundle.originPolicy,
     selectionAnchorPolicy: bundle.selectionAnchorPolicy,
@@ -308,8 +457,11 @@ export function setStrokeBundleAnchorPolicy(bundleValue, {
   const selectionAnchorLocal = selectionAnchorPolicy === "custom"
     ? Object.freeze(normalizedVector3(position, "âncora personalizada"))
     : null;
-  return trustedBundle({
+  return trustedBundleKnown({
     chunks: bundle.chunks,
+    strokeCount: bundle.strokeCount,
+    pointCount: bundle.pointCount,
+    bounds: bundle.bounds,
     storageOrigin: bundle.storageOrigin,
     originPolicy: bundle.originPolicy,
     selectionAnchorPolicy,
@@ -317,6 +469,34 @@ export function setStrokeBundleAnchorPolicy(bundleValue, {
     compactionPolicy: bundle.compactionPolicy,
     compactionRevision: bundle.compactionRevision
   });
+}
+
+export function strokeBundleChunkDescriptor(bundleValue, chunkValue) {
+  const bundle = normalizeStrokeBundleDescriptor(bundleValue);
+  const chunk = typeof chunkValue === "string"
+    ? bundle.chunks.find(item => item.id === chunkValue)
+    : chunkValue;
+  if (!chunk || !bundle.chunks.includes(chunk)) {
+    throw new Error("Chunk não pertence ao conjunto de traços.");
+  }
+  return trustedBundleKnown({
+    chunks: [chunk],
+    strokeCount: chunk.strokeCount,
+    pointCount: chunk.pointCount,
+    bounds: chunk.bounds,
+    storageOrigin: bundle.storageOrigin,
+    originPolicy: bundle.originPolicy,
+    selectionAnchorPolicy: bundle.selectionAnchorPolicy,
+    selectionAnchorLocal: bundle.selectionAnchorLocal,
+    compactionPolicy: bundle.compactionPolicy,
+    compactionRevision: bundle.compactionRevision
+  });
+}
+
+export function strokeChunkRenderResourcePath(objectId, chunkId) {
+  const owner = nonEmptyString(objectId, "objeto");
+  const chunk = nonEmptyString(chunkId, "chunk");
+  return `/objects/${encodeURIComponent(owner)}/@render/chunks/${encodeURIComponent(chunk)}`;
 }
 
 export function strokeBundleAnchorLocal(bundleValue) {
@@ -512,7 +692,7 @@ function normalizeStroke(value, index) {
   }
   const closed = Boolean(value.closed);
   const tension = finite(value.tension ?? 0.5, `tensão do traço ${index + 1}`);
-  return deepFreeze({
+  const result = deepFreeze({
     validated: VALIDATED_STROKE_MARKER,
     id,
     points,
@@ -523,6 +703,8 @@ function normalizeStroke(value, index) {
     curveType,
     tension
   });
+  TRUSTED_STROKES.add(result);
+  return result;
 }
 
 function normalizeChunk(value, index) {
@@ -549,7 +731,7 @@ function createChunk(strokesValue, idValue) {
   const estimatedBytes = strokes.reduce((total, stroke) =>
     total + estimateStrokeBytes(stroke), 64
   );
-  return deepFreeze({
+  const result = deepFreeze({
     validated: VALIDATED_CHUNK_MARKER,
     id,
     strokes,
@@ -558,6 +740,54 @@ function createChunk(strokesValue, idValue) {
     estimatedBytes,
     bounds
   });
+  TRUSTED_CHUNKS.add(result);
+  return result;
+}
+
+function trustedBundleKnown({
+  chunks,
+  strokeCount,
+  pointCount,
+  bounds,
+  storageOrigin,
+  originPolicy,
+  selectionAnchorPolicy,
+  selectionAnchorLocal,
+  compactionPolicy,
+  compactionRevision
+}) {
+  const frozenChunks = Object.isFrozen(chunks)
+    ? chunks
+    : Object.freeze([...chunks]);
+  assertCollectionLimits(strokeCount, pointCount);
+  const result = deepFreeze({
+    type: STROKE_BUNDLE_GEOMETRY_TYPE,
+    schemaVersion: "spatialseed-stroke-bundle-v2",
+    validated: VALIDATED_BUNDLE_MARKER,
+    chunks: frozenChunks,
+    strokeCount,
+    pointCount,
+    bounds: validBounds(bounds) ? bounds : mergeChunkBounds(frozenChunks),
+    storageOrigin: Object.freeze(normalizedVector3(
+      storageOrigin,
+      "origem geométrica do conjunto de traços"
+    )),
+    originPolicy: normalizeOriginPolicy(originPolicy),
+    selectionAnchorPolicy: normalizeSelectionAnchorPolicy(selectionAnchorPolicy),
+    ...(selectionAnchorLocal
+      ? { selectionAnchorLocal: Object.freeze(normalizedVector3(
+          selectionAnchorLocal,
+          "âncora personalizada do conjunto de traços"
+        )) }
+      : {}),
+    compactionPolicy: normalizeStrokeChunkPolicy(compactionPolicy),
+    compactionRevision: nonNegativeInteger(
+      compactionRevision,
+      "revisão de compactação"
+    )
+  });
+  TRUSTED_BUNDLES.add(result);
+  return result;
 }
 
 function trustedBundle({
@@ -588,7 +818,7 @@ function trustedBundle({
   if (new Set(ids).size !== ids.length) {
     throw new Error("IDs duplicados no conjunto de traços.");
   }
-  return deepFreeze({
+  const result = deepFreeze({
     type: STROKE_BUNDLE_GEOMETRY_TYPE,
     schemaVersion: "spatialseed-stroke-bundle-v2",
     validated: VALIDATED_BUNDLE_MARKER,
@@ -614,47 +844,20 @@ function trustedBundle({
       "revisão de compactação"
     )
   });
+  TRUSTED_BUNDLES.add(result);
+  return result;
 }
 
 function isTrustedStroke(value) {
-  return Boolean(
-    value && typeof value === "object" && Object.isFrozen(value) &&
-    value.validated === VALIDATED_STROKE_MARKER &&
-    typeof value.id === "string" && value.id &&
-    Object.isFrozen(value.points) && value.points.length >= 2 &&
-    Number.isFinite(value.radius) && value.radius > 0
-  );
+  return Boolean(value && typeof value === "object" && TRUSTED_STROKES.has(value));
 }
 
 function isTrustedChunk(value) {
-  return Boolean(
-    value && typeof value === "object" && Object.isFrozen(value) &&
-    value.validated === VALIDATED_CHUNK_MARKER &&
-    typeof value.id === "string" && value.id &&
-    Object.isFrozen(value.strokes) && value.strokes.length >= 1 &&
-    value.strokes.every(isTrustedStroke) &&
-    Number.isInteger(value.strokeCount) &&
-    value.strokeCount === value.strokes.length &&
-    Number.isInteger(value.pointCount) && value.pointCount >= 2 &&
-    Number.isFinite(value.estimatedBytes) && value.estimatedBytes > 0 &&
-    validBounds(value.bounds)
-  );
+  return Boolean(value && typeof value === "object" && TRUSTED_CHUNKS.has(value));
 }
 
 function isTrustedBundle(value) {
-  return Boolean(
-    value && typeof value === "object" && Object.isFrozen(value) &&
-    value.type === STROKE_BUNDLE_GEOMETRY_TYPE &&
-    value.validated === VALIDATED_BUNDLE_MARKER &&
-    value.validated !== LEGACY_BUNDLE_MARKER &&
-    Object.isFrozen(value.chunks) && value.chunks.length >= 1 &&
-    value.chunks.every(isTrustedChunk) &&
-    Number.isInteger(value.strokeCount) && value.strokeCount >= 1 &&
-    Number.isInteger(value.pointCount) && value.pointCount >= 2 &&
-    validBounds(value.bounds) &&
-    Object.isFrozen(value.storageOrigin) && value.storageOrigin.length === 3 &&
-    value.compactionPolicy && Object.isFrozen(value.compactionPolicy)
-  );
+  return Boolean(value && typeof value === "object" && TRUSTED_BUNDLES.has(value));
 }
 
 function packStrokesIntoChunks(strokes, policy) {
@@ -675,13 +878,20 @@ function packStrokesIntoChunks(strokes, policy) {
 }
 
 function chunkCanAccept(chunk, stroke, policy) {
-  const nextPoints = chunk.pointCount + stroke.points.length;
-  const nextBytes = chunk.estimatedBytes + estimateStrokeBytes(stroke);
-  return chunk.strokeCount < policy.maximumChunkStrokes &&
+  return chunkMetricsCanAccept(chunk, stroke, policy);
+}
+
+function chunkMetricsCanAccept(metrics, stroke, policy) {
+  const nextPoints = metrics.pointCount + stroke.points.length;
+  const nextBytes = metrics.estimatedBytes + estimateStrokeBytes(stroke);
+  return metrics.strokeCount < policy.maximumChunkStrokes &&
     nextPoints <= policy.maximumChunkPoints &&
-    nextBytes <= Math.max(policy.targetChunkBytes * 2, policy.targetChunkBytes + 65536) &&
-    (chunk.pointCount < policy.targetChunkPoints ||
-      chunk.estimatedBytes < policy.targetChunkBytes);
+    nextBytes <= Math.max(
+      policy.targetChunkBytes * 2,
+      policy.targetChunkBytes + 65536
+    ) &&
+    (metrics.pointCount < policy.targetChunkPoints ||
+      metrics.estimatedBytes < policy.targetChunkBytes);
 }
 
 function sameChunkLayout(left, right) {
@@ -735,6 +945,20 @@ function boundsForStrokes(strokes) {
     }
   }
   return deepFreeze({ min: Object.freeze(min), max: Object.freeze(max) });
+}
+
+function unionBounds(left, right) {
+  return deepFreeze({
+    min: left.min.map((value, axis) => Math.min(value, right.min[axis])),
+    max: left.max.map((value, axis) => Math.max(value, right.max[axis]))
+  });
+}
+
+function translateBounds(bounds, delta) {
+  return deepFreeze({
+    min: bounds.min.map((value, axis) => value + delta[axis]),
+    max: bounds.max.map((value, axis) => value + delta[axis])
+  });
 }
 
 function mergeChunkBounds(chunks) {
@@ -900,6 +1124,22 @@ function positive(value, label) {
   if (!(number > 0)) throw new RangeError(`${label} deve ser positivo.`);
   return number;
 }
+function finiteBetweenDefault(value, minimum, maximum, fallback) {
+  if (value === null || value === undefined) return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= minimum && number <= maximum
+    ? number
+    : fallback;
+}
+
+function integerBetweenDefault(value, minimum, maximum, fallback) {
+  if (value === null || value === undefined) return fallback;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= minimum && number <= maximum
+    ? number
+    : fallback;
+}
+
 function finiteNonNegative(value, label) {
   const number = finite(value, label);
   if (number < 0) throw new RangeError(`${label} não pode ser negativa.`);

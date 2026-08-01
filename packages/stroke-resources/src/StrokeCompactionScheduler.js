@@ -1,6 +1,7 @@
 import {
   createStrokeCompactionJob,
-  normalizeStrokeBundleDescriptor
+  normalizeStrokeBundleDescriptor,
+  strokeBundleCompactionStatus
 } from "./StrokeBundle.js?build=20260801-0045a";
 import {
   DEFAULT_STROKE_COMPACTION_POLICY,
@@ -109,6 +110,11 @@ export class StrokeCompactionScheduler {
       return false;
     }
     const geometry = normalizeStrokeBundleDescriptor(object.geometry);
+    const compaction = strokeBundleCompactionStatus(geometry, this.policy);
+    if (!force && !compaction.needed) {
+      this.diagnostics.skipped += 1;
+      return false;
+    }
     this.pending.set(id, {
       objectId: id,
       sourceGeometry: object.geometry,
@@ -130,6 +136,47 @@ export class StrokeCompactionScheduler {
       this.#runSlice({ force: true });
     }
     return this.status();
+  }
+
+  checkpoint(kind = "approve") {
+    const normalized = String(kind).trim().toLowerCase();
+    const expected = normalized === "approve"
+      ? "on-approve"
+      : normalized === "save"
+        ? "on-save"
+        : normalized === "export"
+          ? "on-export"
+          : normalized;
+    const result = { compacted: 0, rebased: 0, visited: 0 };
+    const objectIds = (this.sandbox.getSnapshot()?.objects ?? [])
+      .filter(isStrokeBundleObject)
+      .map(object => String(object.id));
+    for (const objectId of objectIds) {
+      let object = this.sandbox.getObject(objectId);
+      if (!isStrokeBundleObject(object)) continue;
+      result.visited += 1;
+      if (this.policy.schedule === expected) {
+        const beforeGeometry = object.geometry;
+        this.runNow(objectId);
+        object = this.sandbox.getObject(objectId);
+        if (object?.geometry !== beforeGeometry) result.compacted += 1;
+      }
+      if (this.policy.originRebasePolicy !== expected ||
+          !isStrokeBundleObject(object)) continue;
+      const geometry = normalizeStrokeBundleDescriptor(object.geometry);
+      const nextOrigin = geometry.bounds.min.map((value, axis) =>
+        value + (geometry.bounds.max[axis] - value) * 0.5
+      );
+      const changed = this.sandbox.dispatchMaintenance({
+        type: "stroke-bundle.rebase-origin",
+        objectId,
+        expectedGeometry: object.geometry,
+        nextOrigin,
+        source: `stroke-checkpoint-${normalized}`
+      });
+      if (changed) result.rebased += 1;
+    }
+    return Object.freeze(result);
   }
 
   cancelAll() {

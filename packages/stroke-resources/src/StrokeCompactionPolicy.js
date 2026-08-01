@@ -23,7 +23,7 @@ export function normalizeStrokeCompactionPolicy(value = {}) {
   const schedule = String(
     source.schedule ?? DEFAULT_STROKE_COMPACTION_POLICY.schedule
   ).toLowerCase();
-  if (!["off", "manual", "idle", "on-save", "on-approve"].includes(schedule)) {
+  if (!["off", "manual", "idle", "on-save", "on-approve", "on-export"].includes(schedule)) {
     throw new RangeError(`Agendamento de compactação desconhecido: ${schedule}.`);
   }
   const originRebasePolicy = String(
