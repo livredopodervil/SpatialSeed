@@ -32,7 +32,7 @@ import {
   RefCountCache,
   textureKey,
   ThreeResourceCache
-} from "../../renderer-resource-cache/src/index.js";
+} from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
 import {
   BatchMaterialCache,
   resolveViewerMaterial
@@ -102,7 +102,7 @@ import {
 import {
   normalizeStrokeBundleDescriptor,
   StrokeFusionService
-} from "../../stroke-resources/src/index.js?build=20260731-0044a";
+} from "../../stroke-resources/src/index.js?build=20260731-0044b";
 import {
   buildResourceTree,
   parseResourcePath
@@ -233,7 +233,7 @@ import {
 } from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260730-0040e";
+} from "../../editor-commands/src/EditorCommands.js?build=20260731-0044b";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -245,13 +245,13 @@ import {
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../edit-tools/src/index.js?build=20260729-0040a";
+} from "../../edit-tools/src/index.js?build=20260731-0044b";
 import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority,
   normalizeHudDimensions
-} from "../../edit-hud/src/index.js?build=20260730-0040e";
+} from "../../edit-hud/src/index.js?build=20260731-0044b";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -268,7 +268,7 @@ import {
   samplePathFrames,
   samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "../../spatial-references/src/index.js?build=20260731-0043x1";
+} from "../../spatial-references/src/index.js?build=20260731-0044b";
 import {
   formatBuildLabel,
   normalizeBuildInfo
@@ -700,7 +700,7 @@ export function createRuntimeLayerTests() {
         lifecycle.setKeepActive(false);
         assertEqual(lifecycle.status().toolId, "rotate");
         assertEqual(lifecycle.status().keepActive, false);
-        assertEqual(lifecycle.keepActive("object.place"), true);
+        assertEqual(lifecycle.keepActive("object.place"), false);
         assertEqual(lifecycle.keepActive("path.sketch"), true);
         lifecycle.dispose();
       },
@@ -800,7 +800,7 @@ export function createRuntimeLayerTests() {
           editor: fixture.editor,
           storage
         });
-        assertEqual(lifecycle.keepActive("object.place"), true);
+        assertEqual(lifecycle.keepActive("object.place"), false);
         assertEqual(lifecycle.keepActive("path.sketch"), true);
         assertEqual(
           storage.getItem(TOOL_PREFERENCES_STORAGE_KEY),
@@ -858,6 +858,70 @@ export function createRuntimeLayerTests() {
         assertDeepEqual(sketchValues, [false]);
         assertEqual(lifecycle.keepActive("object.place"), false);
         assertEqual(lifecycle.keepActive("path.sketch"), false);
+        lifecycle.dispose();
+      },
+
+      "ferramentas interativas se excluem e o mesmo ícone desarma"() {
+        const fixture = createEditContextFixture();
+        const lifecycle = new ToolLifecycleController({
+          editor: fixture.editor,
+          storage: createMemoryStorage()
+        });
+        const calls = [];
+        let placementActive = true;
+        let placementGeometry = { type: "box", size: [1, 1, 1] };
+        let pathActive = false;
+        let planarActive = false;
+        const objectPlacement = {
+          get active() { return placementActive; },
+          status() {
+            return { active: placementActive, settings: { geometry: placementGeometry } };
+          },
+          cancel() { placementActive = false; calls.push("placement.cancel"); return {}; },
+          begin(args) {
+            placementActive = true;
+            placementGeometry = args.geometry;
+            calls.push("placement.begin");
+            return { active: true };
+          }
+        };
+        const pathSketch = {
+          status() { return { active: pathActive }; },
+          cancel() { pathActive = false; calls.push("path.cancel"); return {}; },
+          begin() { pathActive = true; calls.push("path.begin"); return { active: true }; }
+        };
+        const planarSketch = {
+          status() { return { active: planarActive, mode: "polyline" }; },
+          cancel() { planarActive = false; calls.push("planar.cancel"); return {}; },
+          begin() { planarActive = true; calls.push("planar.begin"); return { active: true }; }
+        };
+        const commands = createEditorCommands({
+          editor: fixture.editor,
+          renderer: fixture.renderer,
+          selectionOperations: {},
+          projectService: {},
+          benchmarkRunner: {},
+          resourceAudit: {},
+          toolLifecycle: lifecycle,
+          objectPlacement,
+          pathSketch,
+          planarSketch
+        });
+
+        commands.execute("path.sketch.begin", {});
+        assertDeepEqual(calls, ["placement.cancel", "path.begin"]);
+        assertEqual(pathActive, true);
+        commands.execute("object.placement.begin", {
+          geometry: { type: "sphere", radius: 1 }
+        });
+        assertDeepEqual(calls, [
+          "placement.cancel", "path.begin", "path.cancel", "placement.begin"
+        ]);
+        const toggled = commands.execute("object.placement.begin", {
+          geometry: { type: "sphere", radius: 1 }
+        });
+        assertEqual(toggled.toggledOff, true);
+        assertEqual(placementActive, false);
         lifecycle.dispose();
       },
 
@@ -3273,11 +3337,25 @@ export function createRuntimeLayerTests() {
         delete globalThis.cancelAnimationFrame;
         const fixture = createPathToolFixture();
         const renderer = createPathSketchRendererStub();
+        const geometryRegistry = createDefaultGeometryRegistry();
+        let sequence = 0;
+        const fusion = new StrokeFusionService({
+          sandbox: fixture.sandbox,
+          editor: fixture.editor,
+          regionId: "path-tool-region",
+          geometryRegistry,
+          createId: () => `path-stroke-${++sequence}`
+        });
+        let routedThroughFusion = 0;
         let completed = null;
         const controller = new PathSketchController({
           renderer,
           pathTools: fixture.service,
-          geometryRegistry: createDefaultGeometryRegistry(),
+          geometryRegistry,
+          createStroke: args => {
+            routedThroughFusion += 1;
+            return fusion.createStroke(args);
+          },
           onCompleted: value => { completed = value; }
         });
         try {
@@ -3304,6 +3382,11 @@ export function createRuntimeLayerTests() {
           assert(completed);
           assertEqual(completed.result.changed, true);
           assertEqual(typeof completed.result.id, "string");
+          assertEqual(routedThroughFusion, 1);
+          assertEqual(
+            fixture.sandbox.getObject(completed.result.id).kind,
+            "stroke-bundle"
+          );
           assertEqual(controller.status().active, false);
           assertEqual(
             fixture.sandbox.getHistoryDiagnostics().commandCount,
@@ -10975,6 +11058,31 @@ assets: {
         assertEqual(disposes, 1);
       },
 
+      "cache retém somente versões recentes de conjuntos de traços"() {
+        let creates = 0;
+        let disposes = 0;
+        const cache = new RefCountCache({
+          retainReleased: 2,
+          retainWhen: key => key.startsWith("stroke-bundle:"),
+          create(key) {
+            creates += 1;
+            return { key, dispose() { disposes += 1; } };
+          }
+        });
+        const first = cache.acquire("stroke-bundle:a").value;
+        cache.release("stroke-bundle:a");
+        const restored = cache.acquire("stroke-bundle:a").value;
+        assertEqual(first, restored);
+        assertEqual(creates, 1);
+        cache.release("stroke-bundle:a");
+        cache.acquire("stroke-bundle:b");
+        cache.release("stroke-bundle:b");
+        cache.acquire("stroke-bundle:c");
+        cache.release("stroke-bundle:c");
+        assertEqual(cache.stats().retained, 2);
+        assertEqual(disposes, 1);
+      },
+
       "chave de textura inclui transformação UV"() {
         const first = textureKey({
           src: "texture.png",
@@ -12520,10 +12628,11 @@ assets: {
         const first = service.createStroke({ geometry: tube });
         const second = service.createStroke({
           geometry: tube,
-          position: [1, 0, 0]
+          position: [1.11, 0, 0]
         });
         assertEqual(first.id, second.id);
         assertEqual(second.fused, true);
+        assertEqual(second.fusionTolerance > 0, true);
         assertEqual(sandbox.objectCount, 1);
         assertEqual(
           normalizeStrokeBundleDescriptor(
@@ -12564,6 +12673,55 @@ assets: {
         assertEqual(sandbox.objectCount, 1);
         assertEqual(word.strokeCount, 3);
         assertEqual(sandbox.getObject(word.id).name, "Palavra");
+      },
+
+      "tubo legado é promovido a conjunto compacto quando recebe novo traço"() {
+        const region = new Region(
+          { id: "legacy-tube-fusion", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        const geometryRegistry = createDefaultGeometryRegistry();
+        const appearanceRuntime = new AppearanceRuntime();
+        const operations = new SelectionOperations({
+          editor,
+          sandbox,
+          regionId: region.id,
+          geometryRegistry,
+          appearanceRuntime
+        });
+        const tube = {
+          type: "tube",
+          points: [[0, 0, 0], [1, 0, 0]],
+          radius: 0.05,
+          radialSegments: 6,
+          tubularSegments: 2,
+          curveType: "polyline"
+        };
+        operations.createGeometry({ geometry: tube, color: "#6699cc" });
+        const legacyId = sandbox.getSnapshot().objects[0].id;
+        const service = new StrokeFusionService({
+          sandbox,
+          editor,
+          regionId: region.id,
+          geometryRegistry,
+          appearanceRuntime,
+          createId: () => "new-stroke"
+        });
+        const result = service.createStroke({
+          geometry: tube,
+          position: [1.11, 0, 0],
+          fusionTolerance: 0
+        });
+        const object = sandbox.getObject(legacyId);
+        assertEqual(result.fused, true);
+        assertEqual(result.id, legacyId);
+        assertEqual(object.kind, "stroke-bundle");
+        assertEqual(
+          normalizeStrokeBundleDescriptor(object.geometry).strokes.length,
+          2
+        );
       },
 
       "índice espacial restringe a fusão aos candidatos próximos"() {

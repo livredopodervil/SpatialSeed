@@ -10,7 +10,7 @@ import {
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
 import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260731-0044a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260731-0044a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260731-0044b";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260731-0044a";
 import {
   buildResourceTree
@@ -19,11 +19,11 @@ import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=2
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0044a";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260730-0040e";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260731-0044b";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260731-0044a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260731-0044b";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -100,13 +100,13 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260731-0044a";
+} from "../../../packages/edit-hud/src/index.js?build=20260731-0044b";
 import {
   ToolLifecycleController,
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../../packages/edit-tools/src/index.js?build=20260730-0041b";
+} from "../../../packages/edit-tools/src/index.js?build=20260731-0044b";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260730-0040e";
@@ -118,7 +118,7 @@ import {
 } from "../../../packages/planar-authoring/src/index.js?build=20260731-0044a";
 import {
   StrokeFusionService
-} from "../../../packages/stroke-resources/src/index.js?build=20260731-0044a";
+} from "../../../packages/stroke-resources/src/index.js?build=20260731-0044b";
 import {
   MeasurementController
 } from "../../../packages/measurement-tools/src/index.js?build=20260730-0040e";
@@ -127,7 +127,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260731-0044a";
+} from "../../../packages/spatial-references/src/index.js?build=20260731-0044b";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -519,6 +519,7 @@ export async function createWebRuntime({
     pathTools,
     geometryRegistry,
     drawingTarget,
+    createStroke: args => strokeFusion.createStroke(args),
     onCompleted: ({
       settings,
       points,
@@ -565,7 +566,7 @@ export async function createWebRuntime({
             label: "Distribuir no caminho desenhado"
           }
         : {
-            id: "path.create",
+            id: "path.stroke.create",
             args: {
               points,
               name: settings.name || "Tubo desenhado",
@@ -580,7 +581,9 @@ export async function createWebRuntime({
               tension: settings.tension,
               color: settings.color,
               materialMode: settings.materialMode,
-              opacityMultiplier: settings.opacityMultiplier
+              opacityMultiplier: settings.opacityMultiplier,
+              autoFuse: settings.autoFuse,
+              fusionTolerance: settings.fusionTolerance
             },
             label: "Criar tubo desenhado"
           };
@@ -730,6 +733,32 @@ export async function createWebRuntime({
       viewerCoordinator.requireAuthority(action)
   });
   commandsRef = commands;
+  commands.register(
+    "path.stroke.create",
+    ({
+      autoFuse = true,
+      fusionTolerance = null,
+      ...args
+    } = {}) => {
+      const plan = pathTools.preparePathCreatePlan(args);
+      return strokeFusion.createStroke({
+        name: plan.name,
+        geometry: plan.geometry,
+        position: plan.position,
+        color: plan.color,
+        appearanceBinding: plan.appearanceBinding,
+        autoFuse,
+        fusionTolerance,
+        source: "path-command"
+      });
+    },
+    {
+      category: "path-tools",
+      mutates: true,
+      repeatable: true,
+      label: "Criar tubo desenhado"
+    }
+  );
   commands.register(
     "drawing.target.set",
     args => drawingTarget.set(args),

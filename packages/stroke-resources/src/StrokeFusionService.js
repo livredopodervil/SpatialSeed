@@ -16,7 +16,7 @@ import {
 } from "./StrokeBundle.js?build=20260731-0044a";
 
 export class StrokeFusionService {
-  static apiVersion = "stroke-fusion-service-v1";
+  static apiVersion = "stroke-fusion-service-v2";
 
   constructor({
     sandbox,
@@ -70,7 +70,7 @@ export class StrokeFusionService {
     material = null,
     appearanceBinding = null,
     autoFuse = true,
-    fusionTolerance = 0,
+    fusionTolerance = null,
     source = "planar-stroke"
   } = {}) {
     const tube = this.geometryRegistry.normalize(geometry);
@@ -102,13 +102,20 @@ export class StrokeFusionService {
       appearance.material ?? null,
       binding
     ]);
+    const requestedFusionTolerance = fusionTolerance === null ||
+      fusionTolerance === undefined || fusionTolerance === ""
+      ? 0
+      : nonNegative(fusionTolerance, "fusionTolerance");
+    const effectiveFusionTolerance = requestedFusionTolerance === 0
+      ? Math.max(0.01, tube.radius * maximumScale(scale) * 0.35)
+      : requestedFusionTolerance;
     const state = this.sandbox.getSnapshot();
     const touching = [];
     if (autoFuse) {
       this.#ensureIndex(state);
       const candidateIds = this.#candidateIds(stroke, {
         appearanceKey,
-        tolerance: fusionTolerance
+        tolerance: effectiveFusionTolerance
       });
       this.diagnostics.candidateBundles += candidateIds.length;
       for (const id of candidateIds) {
@@ -117,7 +124,7 @@ export class StrokeFusionService {
         const nearbyStrokes = candidateStrokesFromIndex(
           indexed.strokeIndex,
           stroke,
-          fusionTolerance,
+          effectiveFusionTolerance,
           this.cellSize
         );
         this.diagnostics.segmentTests += nearbyStrokes.reduce(
@@ -127,7 +134,7 @@ export class StrokeFusionService {
           0
         );
         if (nearbyStrokes.some(candidate =>
-          strokesTouch(stroke, candidate, fusionTolerance)
+          strokesTouch(stroke, candidate, effectiveFusionTolerance)
         )) {
           touching.push({
             object: indexed.object,
@@ -162,7 +169,9 @@ export class StrokeFusionService {
       source
     };
     const sourceIds = touching.map(item => String(item.object.id));
-    const changed = touching.length === 1
+    const appendToExistingBundle = touching.length === 1 &&
+      touching[0].object.kind === "stroke-bundle";
+    const changed = appendToExistingBundle
       ? this.sandbox.dispatch(Object.freeze({
           type: "stroke-bundle.append",
           preparedImmutable: "spatialseed-prepared-command-v1",
@@ -180,7 +189,7 @@ export class StrokeFusionService {
       this.diagnostics.strokesCreated += 1;
       if (touching.length) this.diagnostics.automaticFusions += 1;
       this.diagnostics.bundlesRemoved += Math.max(0, touching.length - 1);
-      const appendTarget = touching.length === 1
+      const appendTarget = appendToExistingBundle
         ? touching[0].indexed
         : null;
       for (const id of sourceIds) {
@@ -215,6 +224,7 @@ export class StrokeFusionService {
       strokeId: persistedStroke.id,
       strokeResource: strokeResourcePath(targetId, persistedStroke.id),
       fused: touching.length > 0,
+      fusionTolerance: effectiveFusionTolerance,
       fusedBundleIds: Object.freeze(sourceIds),
       strokeCount: merged.strokes.length,
       geometry: merged
@@ -230,7 +240,7 @@ export class StrokeFusionService {
     const hierarchy = new HierarchyIndex(state.objects);
     const objects = ids.map(id => state.objects.find(object =>
       String(object.id) === id
-    )).filter(object => object?.kind === "stroke-bundle");
+    )).filter(isStrokeCompatibleObject);
     if (objects.length < 2) {
       return Object.freeze({
         changed: false,
@@ -255,6 +265,7 @@ export class StrokeFusionService {
       sourceIds: objects.map(object => String(object.id)),
       object: {
         ...structuredClone(target),
+        kind: "stroke-bundle",
         name: name ?? target.name ?? `Traços × ${merged.strokes.length}`,
         parentId: null,
         position: [0, 0, 0],
@@ -271,6 +282,7 @@ export class StrokeFusionService {
       for (const object of objects) this.#removeIndexed(object.id);
       const nextObject = {
         ...structuredClone(target),
+        kind: "stroke-bundle",
         name: name ?? target.name ?? `Traços × ${merged.strokes.length}`,
         parentId: null,
         position: [0, 0, 0],
@@ -311,7 +323,7 @@ export class StrokeFusionService {
     const hierarchy = new HierarchyIndex(state.objects);
     for (const object of state.objects) {
       this.diagnostics.sceneObjectsVisited += 1;
-      if (object.kind !== "stroke-bundle" || object.parentId) continue;
+      if (!isStrokeCompatibleObject(object) || object.parentId) continue;
       const worldBundle = bundleInWorld(object, hierarchy);
       this.#indexRootObject(
         object,
@@ -451,12 +463,38 @@ export class StrokeFusionService {
 }
 
 function bundleInWorld(object, hierarchy) {
-  const bundle = normalizeStrokeBundleDescriptor(object.geometry);
+  const bundle = localStrokeBundle(object);
   const matrix = hierarchy.worldMatrixOf(object.id);
   return normalizeStrokeBundleDescriptor({
     type: "stroke-bundle",
     strokes: bundle.strokes.map(stroke => transformStroke(stroke, matrix))
   });
+}
+
+function localStrokeBundle(object) {
+  if (object?.geometry?.type === "stroke-bundle") {
+    return normalizeStrokeBundleDescriptor(object.geometry);
+  }
+  if (object?.geometry?.type === "tube") {
+    return strokeBundleFromStroke({
+      id: `${String(object.id)}:stroke`,
+      points: object.geometry.points,
+      radius: object.geometry.radius,
+      radialSegments: object.geometry.radialSegments,
+      tubularSegments: object.geometry.tubularSegments,
+      closed: object.geometry.closed,
+      curveType: object.geometry.curveType,
+      tension: object.geometry.tension
+    });
+  }
+  throw new TypeError(`Objeto ${object?.id ?? "?"} não contém traços.`);
+}
+
+function isStrokeCompatibleObject(object) {
+  return Boolean(
+    object &&
+    (object.kind === "stroke-bundle" || object.geometry?.type === "tube")
+  );
 }
 
 function appearanceIdentity(object) {
@@ -597,4 +635,12 @@ function vector(value, length, label) {
 
 function maximumScale(value) {
   return Math.max(...vector(value, 3, "escala").map(Math.abs));
+}
+
+function nonNegative(value, label) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new RangeError(`${label} deve ser finito e não negativo.`);
+  }
+  return number;
 }

@@ -25,6 +25,8 @@ const DEFAULTS = Object.freeze({
   curveType: "centripetal",
   tension: 0.5,
   color: "#70c8ff",
+  autoFuse: true,
+  fusionTolerance: null,
   closed: false,
   sourceMode: "selection",
   geometryType: "box",
@@ -50,7 +52,7 @@ const DEFAULTS = Object.freeze({
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v10";
+  static apiVersion = "path-sketch-controller-v11";
 
   #active = null;
   #listeners = new Set();
@@ -63,6 +65,7 @@ export class PathSketchController {
   #previewArrayCache;
   #preprocessPool;
   #drawingTarget = null;
+  #createStroke = null;
   #inputPositionArray = new Float32Array(0);
   #inputPositionAttribute = null;
   #inputCapacity = 0;
@@ -115,6 +118,7 @@ export class PathSketchController {
     pathTools,
     geometryRegistry = pathTools?.resolver?.geometryRegistry,
     drawingTarget = null,
+    createStroke = null,
     onCompleted = () => {},
     onEnded = () => {}
   }) {
@@ -131,6 +135,10 @@ export class PathSketchController {
     this.pathTools = pathTools;
     this.geometryRegistry = geometryRegistry;
     this.#drawingTarget = drawingTarget;
+    if (createStroke !== null && typeof createStroke !== "function") {
+      throw new TypeError("createStroke deve ser função quando informado.");
+    }
+    this.#createStroke = createStroke;
     this.onCompleted = onCompleted;
     this.onEnded = onEnded;
     this.#previewLine = createPreviewLine();
@@ -1446,7 +1454,18 @@ export class PathSketchController {
             brush: job.brush,
             anchorPolicy: job.settings.anchorPolicy
           })
-        : this.pathTools.commitPathCreatePlan({ plan });
+        : this.#createStroke && job.settings.autoFuse
+          ? this.#createStroke({
+              name: plan.name,
+              geometry: plan.geometry,
+              position: plan.position,
+              color: plan.color,
+              appearanceBinding: plan.appearanceBinding,
+              autoFuse: true,
+              fusionTolerance: job.settings.fusionTolerance,
+              source: "path-sketch"
+            })
+          : this.pathTools.commitPathCreatePlan({ plan });
       const dispatchMs = nowMs() - dispatchStartedAt;
       this.#commitDiagnostics.dispatchedStrokes += 1;
       this.#commitDiagnostics.lastQueueWaitMs = queueWaitMs;
@@ -2077,6 +2096,11 @@ function normalizeSettings(value) {
     curveType: String(value.curveType),
     tension: finite(value.tension, "tension"),
     color: String(value.color),
+    autoFuse: value.autoFuse !== false,
+    fusionTolerance: optionalNonNegative(
+      value.fusionTolerance,
+      "fusionTolerance"
+    ),
     closed: Boolean(value.closed),
     sourceMode: String(value.sourceMode ?? "selection").toLowerCase(),
     geometryType: String(value.geometryType ?? "box").toLowerCase(),
@@ -2376,6 +2400,11 @@ function positive(value, name) {
     throw new RangeError(`${name} deve ser positivo.`);
   }
   return number;
+}
+
+function optionalNonNegative(value, label) {
+  if (value === null || value === undefined || value === "") return null;
+  return nonNegative(value, label);
 }
 
 function nonNegative(value, name) {

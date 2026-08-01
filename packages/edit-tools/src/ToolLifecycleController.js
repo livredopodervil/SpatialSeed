@@ -4,24 +4,24 @@ const TOOL_LIFECYCLES = Object.freeze({
   translate: "sticky",
   rotate: "sticky",
   scale: "sticky",
-  "object.place": "sticky",
+  "object.place": "single-shot",
   "path.sketch": "continuous",
   "planar.sketch": "continuous"
 });
 
-export const TOOL_PREFERENCES_SCHEMA_VERSION = 2;
-export const TOOL_PREFERENCES_STORAGE_KEY = "spatialseed.edit.tools.v2";
-export const LEGACY_TOOL_PREFERENCES_STORAGE_KEY = "spatialseed.edit.tools.v1";
+export const TOOL_PREFERENCES_SCHEMA_VERSION = 3;
+export const TOOL_PREFERENCES_STORAGE_KEY = "spatialseed.edit.tools.v3";
+export const LEGACY_TOOL_PREFERENCES_STORAGE_KEY = "spatialseed.edit.tools.v2";
 
 export class ToolLifecycleController {
-  static apiVersion = "tool-lifecycle-controller-v3";
+  static apiVersion = "tool-lifecycle-controller-v4";
 
   #listeners = new Set();
   #execute = null;
   #activeAction = null;
   #defaultKeepActive = true;
   #keepByTool = new Map([
-    ["object.place", true],
+    ["object.place", false],
     ["path.sketch", true],
     ["planar.sketch", true]
   ]);
@@ -232,6 +232,10 @@ export class ToolLifecycleController {
     const legacy = this.#readPreferences(this.#legacyStorageKey);
     if (!legacy) return;
     this.#applyPreferences(legacy);
+    /* A inserção contínua antiga causava sessões aparentemente travadas.
+       A migração v3 preserva as demais escolhas, mas retorna object.place
+       ao comportamento seguro de disparo único. */
+    this.#keepByTool.set("object.place", false);
     this.#savePreferences();
   }
 

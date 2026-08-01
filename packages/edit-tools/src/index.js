@@ -4,7 +4,7 @@ export {
   TOOL_PREFERENCES_STORAGE_KEY,
   ToolLifecycleController,
   lifecycleOf
-} from "./ToolLifecycleController.js?build=20260729-0040a";
+} from "./ToolLifecycleController.js?build=20260731-0044b";
 export { EditToolRegistry } from "./EditToolRegistry.js?build=20260729-0039g";
 export {
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -15,4 +15,4 @@ export {
 export {
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "./createDefaultEditToolRegistry.js?build=20260730-0041b";
+} from "./createDefaultEditToolRegistry.js?build=20260731-0044b";

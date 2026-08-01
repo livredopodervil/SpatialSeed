@@ -14,4 +14,4 @@ export {
 
 export {
   StrokeFusionService
-} from "./StrokeFusionService.js?build=20260731-0044a";
+} from "./StrokeFusionService.js?build=20260731-0044b";

@@ -6,6 +6,8 @@ export class ThreeResourceCache {
     this.textureLoader = textureLoader;
 
     this.geometries = new RefCountCache({
+      retainReleased: 3,
+      retainWhen: key => String(key).startsWith("stroke-bundle:"),
       create: (_, descriptor) => {
         const geometry=descriptor.create();
         if (!geometry?.isBufferGeometry) {

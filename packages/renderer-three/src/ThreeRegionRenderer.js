@@ -17,7 +17,7 @@ import {
 import {
   createViewerEnvironmentTexture
 } from "./ViewerEnvironment.js?build=20260726-0032a";
-import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js";
+import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260731-0044a";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
 import {
@@ -83,7 +83,7 @@ import {
 } from "../../appearance-binding/src/index.js?build=20260730-0041a";
 
 export class ThreeRegionRenderer {
-  static apiVersion = "renderer-three-navigation-camera-v6";
+  static apiVersion = "renderer-three-navigation-camera-v7";
   #meshes = new Map();
   #cameraVisuals = new Map();
   #lightVisuals = new Map();
@@ -2163,6 +2163,7 @@ export class ThreeRegionRenderer {
     if (!proxy) {
       proxy = new THREE.Object3D();
       proxy.userData.objectId = object.id;
+      proxy.userData.kind = object.kind;
       proxy.userData.batchKey = null;
       proxy.userData.size = object.size ? [...object.size] : [0,0,0];
       proxy.userData.localBounds = null;
@@ -2176,6 +2177,7 @@ export class ThreeRegionRenderer {
       this.#incrementalDiagnostics.objectsUpdated += 1;
     }
 
+    proxy.userData.kind = object.kind;
     proxy.userData.size = object.size ? [...object.size] : [0,0,0];
     proxy.userData.canonicalWorldMatrix = [...worldMatrix];
     proxy.userData.appearanceBinding = appearanceBindingForObject(object);
@@ -2412,6 +2414,8 @@ export class ThreeRegionRenderer {
         baseColor: preparedMaterial.baseColor,
         baseOpacity: preparedMaterial.baseOpacity,
         ownsMaterial: true,
+        animationInstanceColor: null,
+        animationColorActive: false,
         nextIndex: 0,
         building: true,
         transform: {
@@ -2610,6 +2614,7 @@ export class ThreeRegionRenderer {
       );
       visual.mesh.setMatrixAt(index, visual.matrix);
       if (
+        !visual.animationColorActive &&
         visual.binding.colorMode === "per-instance" &&
         visual.transform.color !== null
       ) {
@@ -3009,6 +3014,7 @@ export class ThreeRegionRenderer {
     const materialRequest = renderMaterialRequest(object, binding);
     return JSON.stringify([
       this.#geometryRegistry.key(descriptor),
+      object.kind === "stroke-bundle" ? String(object.id) : null,
       materialRequest.appearanceId ?? null,
       materialRequest.material ?? null,
       renderProfile.side,
@@ -3108,17 +3114,54 @@ export class ThreeRegionRenderer {
   }
 
   #setInstanceColor(objectId, value) {
+    const family = this.#familyVisuals.get(String(objectId));
+    if (family) {
+      if (!family.animationColorActive) {
+        family.animationInstanceColor = family.mesh.instanceColor ?? null;
+        if (family.animationInstanceColor) {
+          family.mesh.instanceColor = null;
+          family.mesh.material.needsUpdate = true;
+        }
+        family.animationColorActive = true;
+      }
+      family.mesh.material.color?.set?.(value);
+      return Boolean(family.mesh.material.color);
+    }
+
     const location = this.#batchManager.locationOf(objectId);
     if (!location) return false;
     const batch = this.#batchManager.getBatch(location.batchKey);
     if (!batch) return false;
-
     return updateAbsoluteInstanceColor(batch, objectId, value);
   }
 
   #applyObjectInstanceColor(objectId) {
     const proxy = this.#meshes.get(objectId);
     if (!proxy) return false;
+
+    const family = this.#familyVisuals.get(String(objectId));
+    if (family) {
+      if (family.animationColorActive) {
+        if (family.animationInstanceColor) {
+          family.mesh.instanceColor = family.animationInstanceColor;
+          if (family.binding.colorMode === "per-instance") {
+            for (let index = 0; index < family.nextIndex; index += 1) {
+              family.color.set(
+                familyColorAt(family.normalizedFamily, index)
+              );
+              family.mesh.setColorAt(index, family.color);
+            }
+            if (family.mesh.instanceColor) {
+              family.mesh.instanceColor.needsUpdate = true;
+            }
+          }
+          family.mesh.material.needsUpdate = true;
+        }
+        family.animationInstanceColor = null;
+        family.animationColorActive = false;
+      }
+      return this.#applyFamilyAppearance(family, family.binding);
+    }
 
     const location = this.#batchManager.locationOf(objectId);
     const batch = location

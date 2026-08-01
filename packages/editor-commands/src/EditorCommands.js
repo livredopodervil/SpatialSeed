@@ -27,12 +27,47 @@ export function createEditorCommands({
       );
     }
   };
-  const cancelInteractiveAction = () => {
-    if (objectPlacement?.active) objectPlacement.cancel();
-    if (pathSketch?.status?.().active) pathSketch.cancel();
-    if (planarSketch?.status?.().active) planarSketch.cancel();
-    if (measurement?.status?.().active) measurement.cancel();
-    toolLifecycle?.cancelAction();
+  const cancelInteractiveAction = ({ except = null } = {}) => {
+    const preserved = String(except ?? "");
+    if (preserved !== "object.place" && objectPlacement?.active) {
+      objectPlacement.cancel();
+    }
+    if (preserved !== "path.sketch" && pathSketch?.status?.().active) {
+      pathSketch.cancel();
+    }
+    if (preserved !== "planar.sketch" && planarSketch?.status?.().active) {
+      planarSketch.cancel();
+    }
+    if (preserved !== "measurement" && measurement?.status?.().active) {
+      measurement.cancel();
+    }
+    if (!preserved || toolLifecycle?.status?.().activeAction !== preserved) {
+      toolLifecycle?.cancelAction();
+    }
+  };
+  const toggleOffActiveAction = toolId => {
+    const normalized = String(toolId);
+    if (normalized === "object.place" && objectPlacement?.active) {
+      objectPlacement.cancel();
+      toolLifecycle?.cancelAction(normalized);
+      return true;
+    }
+    if (normalized === "path.sketch" && pathSketch?.status?.().active) {
+      pathSketch.cancel();
+      toolLifecycle?.cancelAction(normalized);
+      return true;
+    }
+    if (normalized === "planar.sketch" && planarSketch?.status?.().active) {
+      planarSketch.cancel();
+      toolLifecycle?.cancelAction(normalized);
+      return true;
+    }
+    if (normalized === "measurement" && measurement?.status?.().active) {
+      measurement.cancel();
+      toolLifecycle?.cancelAction();
+      return true;
+    }
+    return false;
   };
   const configured = (toolId, args, execute) => {
     if (!toolParameters) return execute(args ?? {});
@@ -57,8 +92,14 @@ export function createEditorCommands({
 
   commands
     .register("tool.set", ({ mode }) => {
+      cancelInteractiveAction();
       renderer.setTransformMode(mode);
       return editor.snapshot().tool;
+    })
+    .register("edit.interaction.cancel", () => {
+      cancelInteractiveAction();
+      renderer.setTransformMode("select");
+      return Object.freeze({ active: false, mode: "select" });
     })
     .register("space.toggle", () => {
       if (!meshEditor?.active) {
@@ -474,7 +515,11 @@ export function createEditorCommands({
   if (pathSketch) {
     commands
       .register("path.sketch.begin", args => {
-        if (measurement?.status?.().active) measurement.cancel();
+        requireObjectMode("desenhar caminhos");
+        if (toggleOffActiveAction("path.sketch")) {
+          return Object.freeze({ active: false, toggledOff: true });
+        }
+        cancelInteractiveAction({ except: "path.sketch" });
         toolLifecycle?.activateAction("path.sketch");
         try {
           return configured("path.sketch", args, invocation =>
@@ -507,9 +552,12 @@ export function createEditorCommands({
     commands
       .register("planar.sketch.begin", (args = {}) => {
         requireObjectMode("desenhar geometria 2D");
-        if (measurement?.status?.().active) measurement.cancel();
-        if (objectPlacement?.active) objectPlacement.cancel();
-        if (pathSketch?.status?.().active) pathSketch.cancel();
+        const status = planarSketch?.status?.() ?? {};
+        if (status.active && (!args.mode || args.mode === status.mode)) {
+          toggleOffActiveAction("planar.sketch");
+          return Object.freeze({ active: false, toggledOff: true });
+        }
+        cancelInteractiveAction({ except: "planar.sketch" });
         toolLifecycle?.activateAction("planar.sketch");
         try {
           return configured("planar.sketch", args, invocation =>
@@ -560,7 +608,16 @@ export function createEditorCommands({
     commands
       .register("object.placement.begin", args => {
         requireObjectMode("posicionar objetos");
-        if (measurement?.status?.().active) measurement.cancel();
+        const activePlacement = objectPlacement?.status?.() ?? null;
+        const sameGeometry = activePlacement?.active &&
+          JSON.stringify(activePlacement.settings?.geometry ?? null) ===
+          JSON.stringify(args?.geometry ?? null);
+        if (objectPlacement?.active &&
+            (sameGeometry || !activePlacement?.settings)) {
+          toggleOffActiveAction("object.place");
+          return Object.freeze({ active: false, toggledOff: true });
+        }
+        cancelInteractiveAction({ except: "object.place" });
         toolLifecycle?.activateAction("object.place");
         try {
           return objectPlacement.begin({
@@ -582,9 +639,12 @@ export function createEditorCommands({
   if (measurement) {
     commands
       .register("measurement.begin", (args = {}) => {
-        if (objectPlacement?.active) objectPlacement.cancel();
-        if (pathSketch?.status?.().active) pathSketch.cancel();
-        if (planarSketch?.status?.().active) planarSketch.cancel();
+        const status = measurement?.status?.() ?? {};
+        if (status.active && (!args.mode || args.mode === status.mode)) {
+          toggleOffActiveAction("measurement");
+          return Object.freeze({ active: false, toggledOff: true });
+        }
+        cancelInteractiveAction({ except: "measurement" });
         toolLifecycle?.cancelAction();
         return measurement.begin(args);
       }, { category: "measurement", mutates: false })

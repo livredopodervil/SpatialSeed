@@ -70,6 +70,18 @@ export function createDefaultEditToolRegistry({
         colorParameter("color", "Cor do tubo", "#70c8ff", {
           when: { mode: "tube" }
         }),
+        booleanParameter(
+          "autoFuse",
+          "Unir automaticamente ao tocar",
+          true,
+          { when: { mode: "tube" } }
+        ),
+        numberParameter(
+          "fusionTolerance",
+          "Margem de contato (0 = automática)",
+          0,
+          { minimum: 0, maximum: 2, step: 0.01, when: { mode: "tube" } }
+        ),
         enumParameter("sourceMode", "Fonte do pincel", [
           { value: "selection", label: "Seleção atual" },
           { value: "catalog", label: "Geometria do catálogo" }
