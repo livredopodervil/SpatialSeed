@@ -5,12 +5,13 @@ import {
 } from "./HudContextHeuristics.js?build=20260730-0041b";
 import {
   HudCustomizationController,
+  HudInteractionController,
   HudLayoutStore,
   applyHudLayoutPlan,
   discoverHudDescriptors,
   hudLayoutSignature,
   resolveHudLayoutPlan
-} from "../../edit-hud-layout/src/index.js?build=20260801-0046a";
+} from "../../edit-hud-layout/src/index.js?build=20260801-0046b";
 
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
@@ -100,6 +101,7 @@ export class EditHud {
   #layoutStore = null;
   #layoutDescriptors = [];
   #layoutCustomizer = null;
+  #layoutInteraction = null;
   #unsubscribeLayout = null;
   #lastLayoutSignature = null;
 
@@ -137,6 +139,7 @@ export class EditHud {
     this.#unsubscribeHistory?.();
     this.#unsubscribeLayout?.();
     this.#layoutCustomizer?.dispose?.();
+    this.#layoutInteraction?.dispose?.();
     if (this.#historyFrame !== null) {
       if (typeof globalThis.cancelAnimationFrame === "function") {
         globalThis.cancelAnimationFrame(this.#historyFrame);
@@ -368,6 +371,7 @@ export class EditHud {
         : "false";
     this.#element("edit-hud-measure-clear").disabled =
       !measurement.active && !measurement.result;
+    this.#layoutInteraction?.synchronizeNativeState?.();
   }
 
   refreshHistory(snapshot = null) {
@@ -747,7 +751,7 @@ export class EditHud {
       checkbox.checked = this.#familyVisibleByPreference(group);
       checkbox.addEventListener("change", () => {
         this.#preferences.groups[group] = checkbox.checked;
-        this.#layoutStore?.updateFamily(group, {
+        this.#layoutStore?.updateSection(group, {
           visibility: checkbox.checked ? "auto" : "hidden"
         });
         this.#savePreferences();
@@ -985,6 +989,9 @@ export class EditHud {
       this.#showHint(control, { sticky: true });
       return;
     }
+    // Em ferramentas da grade, o toque longo pertence ao personalizador direto.
+    // A ajuda continua disponível por toque curto, hover, foco e modo ?.
+    if (control.closest?.("[data-hud-item]")) return;
     this.#clearHintTimer();
     this.#hintPointer = {
       pointerId: event.pointerId,
@@ -1418,10 +1425,10 @@ export class EditHud {
       familyOrder: STATIC_GROUP_ORDER
     })];
     this.#layoutStore = new HudLayoutStore({
-      familyIds: this.#layoutDescriptors.map(descriptor => descriptor.family),
+      sectionIds: this.#layoutDescriptors.map(descriptor => descriptor.family),
       itemIds: this.#layoutDescriptors.map(descriptor => descriptor.id),
-      familyOrder: STATIC_GROUP_ORDER,
-      itemFamilies: Object.fromEntries(
+      sectionOrder: STATIC_GROUP_ORDER,
+      itemSections: Object.fromEntries(
         this.#layoutDescriptors.map(descriptor => [descriptor.id, descriptor.family])
       ),
       legacyPreferences: this.#preferences
@@ -1430,6 +1437,13 @@ export class EditHud {
       root: this.#element("edit-hud-customizer"),
       store: this.#layoutStore,
       descriptors: this.#layoutDescriptors
+    });
+    this.#layoutInteraction = new HudInteractionController({
+      root: this.root,
+      store: this.#layoutStore,
+      descriptors: this.#layoutDescriptors,
+      execute: (command, args) => this.#execute(command, args),
+      openItemEditor: itemId => this.#layoutCustomizer?.openItem?.(itemId)
     });
     this.#unsubscribeLayout = this.#layoutStore.subscribe(() => {
       this.#lastLayoutSignature = null;
@@ -1445,13 +1459,13 @@ export class EditHud {
     if (!profile) return;
     for (const group of STATIC_GROUP_ORDER) {
       this.#preferences.groups[group] =
-        profile.families?.[group]?.visibility !== "hidden";
+        profile.sections?.[group]?.visibility !== "hidden";
     }
   }
 
   #familyVisibleByPreference(group) {
     const profile = this.#layoutStore?.profile?.();
-    return profile?.families?.[group]?.visibility !== "hidden";
+    return profile?.sections?.[group]?.visibility !== "hidden";
   }
 
   #layoutContext() {
@@ -1536,9 +1550,10 @@ export class EditHud {
       familyContext,
       itemContext
     });
-    const signature = hudLayoutSignature(plan);
+    const profile = this.#layoutStore.profile();
+    const signature = hudLayoutSignature(plan, profile);
     if (signature === this.#lastLayoutSignature) return;
-    applyHudLayoutPlan(plan);
+    applyHudLayoutPlan(plan, { root: this.root, profile });
     this.#lastLayoutSignature = signature;
   }
 
@@ -2314,9 +2329,9 @@ function visibleHudCellCount(root) {
   let count = 0;
   for (const group of root.querySelectorAll("[data-edit-hud-group]")) {
     if (group.hidden) continue;
-    for (const control of group.querySelectorAll("button, label")) {
-      if (!control.hidden) count += 1;
-    }
+    const columns = Math.max(1, Number(group.dataset.hudSectionColumns) || 1);
+    const rows = Math.max(1, Number(group.dataset.hudSectionRows) || 1);
+    count += columns * rows;
   }
   return Math.max(1, count);
 }

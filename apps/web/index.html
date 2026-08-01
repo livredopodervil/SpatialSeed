@@ -224,7 +224,7 @@
         <label>Tamanho do plano <input id="edit-hud-drawing-helper-size" type="number" min="0.1" step="0.5" value="12"></label>
         <label>Opacidade do plano <input id="edit-hud-drawing-helper-opacity" type="range" min="0.02" max="0.9" step="0.02" value="0.18"></label>
       </div>
-      <p class="edit-hud-help-note">Toque curto executa. Pressione e segure para ver nome e explicação. O botão ? ativa um modo de consulta que não executa as ferramentas.</p>
+      <p class="edit-hud-help-note">Toque curto executa. Pressione e segure para editar ou arraste após o toque longo para mover o ícone. O botão ? ativa um modo de consulta que não executa as ferramentas.</p>
       <div class="edit-hud-config-actions">
         <button id="edit-hud-customize" type="button">Personalizar barra…</button>
         <button id="edit-hud-reset" type="button">Restaurar HUD</button>
@@ -392,13 +392,25 @@
       <header>
         <div>
           <strong id="edit-hud-customizer-title">Personalizar barra</strong>
-          <small>Fixe ferramentas, oculte famílias e preserve posições.</small>
+          <small>Edite ícones, seções, comandos, células, relações e perfis.</small>
         </div>
         <button type="button" data-hud-customizer-close title="Fechar">×</button>
       </header>
       <div class="hud-customizer-toolbar">
-        <input type="search" data-hud-customizer-search placeholder="Filtrar famílias ou ferramentas" aria-label="Filtrar toolbar">
-        <button type="button" data-hud-customizer-reset>Restaurar layout</button>
+        <label class="hud-profile-select"><span>Perfil</span><select data-hud-profile-select aria-label="Perfil da toolbar"></select></label>
+        <div class="hud-profile-actions">
+          <button type="button" data-hud-profile-new title="Criar perfil">＋</button>
+          <button type="button" data-hud-profile-copy title="Duplicar perfil">⧉</button>
+          <button type="button" data-hud-profile-rename title="Renomear perfil">✎</button>
+          <button type="button" data-hud-profile-delete title="Remover perfil">🗑</button>
+        </div>
+        <input type="search" data-hud-customizer-search placeholder="Filtrar seções ou ferramentas" aria-label="Filtrar toolbar">
+        <div class="hud-profile-actions">
+          <button type="button" data-hud-section-new title="Criar seção">Nova seção</button>
+          <button type="button" data-hud-profile-export title="Exportar perfis">Exportar</button>
+          <label class="hud-import-button" title="Importar perfis">Importar<input type="file" accept="application/json,.json" data-hud-profile-import hidden></label>
+          <button type="button" data-hud-customizer-reset>Restaurar</button>
+        </div>
       </div>
       <div class="hud-customizer-body" data-hud-customizer-body></div>
     </div>
@@ -1328,6 +1340,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260801-0046a"></script>
+<script type="module" src="./boot.js?build=20260801-0046b"></script>
 </body>
 </html>
