@@ -199,8 +199,8 @@ ou desenvolver o cliente atual.
 de artefatos compilados divergentes da fonte.
 
 **Consequências:** caminhos relativos e import maps são parte do contrato de
-distribuição; um servidor HTTP continua necessário; arquivos estáticos novos
-devem entrar no manifesto PWA.
+distribuição; uma origem servida continua necessária; arquivos estáticos novos
+devem entrar no manifesto PWA. O fluxo HTTPS local atual é definido por D-047.
 
 ## D-014 — PWA guarda o aplicativo, não substitui arquivos de projeto
 
@@ -850,6 +850,30 @@ stores mutáveis do host durante o boot. Adapters de navegador pertencem à API
 pública `platform-web`; o perfil normal não alcança nem precacheia testes,
 benchmarks ou auditorias. O perfil diagnóstico os ativa sobre um runtime
 candidato pela porta versionada de composição, com descarte inverso em falha.
+
+## D-047 — O teste local da PWA usa origem HTTPS canônica por checkout
+
+**Estado:** implementada no incremento 0047d.
+
+O servidor de desenvolvimento deriva sua raiz do checkout que contém
+`tools/no_cache_server.py`, usa HTTPS por padrão e conserva a porta 8082. A CA
+local é compartilhada entre worktrees, enquanto o certificado do servidor é
+reemitido quando o conjunto detectado de endereços IPv4/IPv6 muda. A API
+`platform-web` resolve worker e escopo a partir de uma raiz absoluta da mesma
+origem; caminhos recebidos com barras iniciais duplicadas são canonizados.
+
+**Motivação:** o servidor anterior apontava sempre para
+`~/SpatialSeed-monorepo`, mesmo quando invocado a partir de outro worktree, e o
+uso de portas diferentes impedia que o teste representasse a origem PWA
+habitual. Além disso, um caminho `//apps/web/` podia virar o escopo relativo
+`//apps/web/`, que o navegador interpretava como o host `apps`.
+
+**Consequências:** apenas um checkout ocupa a porta 8082 de cada vez; trocar a
+versão testada significa encerrar o servidor e executar o mesmo comando no
+outro checkout. Loopback permanece o padrão; exposição à rede exige
+`--network`. Certificados e chaves não entram no repositório. HTTP continua
+disponível somente por `--http` para diagnóstico explícito, e não é o fluxo
+canônico de validação da PWA.
 
 ## Decisões superadas ou rejeitadas
 

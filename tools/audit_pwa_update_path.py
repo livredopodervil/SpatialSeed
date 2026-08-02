@@ -42,7 +42,17 @@ def main() -> int:
         raise SystemExit("A verificação do service worker ocorre tarde demais.")
     require(
         boot,
-        'new URL("../reset-spatialseed-cache.html",import.meta.url)',
+        "resolvePwaLocations(import.meta.url)",
+        "O bootstrap não usa a fronteira canônica de localização PWA.",
+    )
+    require(
+        boot,
+        "scope:locations.scopeUrl",
+        "O bootstrap não registra o worker com escopo absoluto da mesma origem.",
+    )
+    require(
+        boot,
+        '"../reset-spatialseed-cache.html",',
         "O bootstrap não possui rota de recuperação fora do escopo PWA.",
     )
     require(

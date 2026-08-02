@@ -141,7 +141,7 @@ python3 tools/generate_pwa_precache.py --check
 
 ```bash
 python tools/no_cache_server.py
-termux-open-url 'http://127.0.0.1:8082/apps/web/'
+termux-open-url 'https://127.0.0.1:8082/apps/web/'
 ```
 
 - [ ] aplicação inicia sem painel fatal;

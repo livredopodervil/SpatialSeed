@@ -10,7 +10,7 @@ navegador. A aplicação mantida está em `apps/web/`.
 ```text
 Repositório: ~/SpatialSeed-monorepo
 Cópia pública: ~/storage/shared/SpatialSeed-monorepo
-Aplicação: http://127.0.0.1:8082/apps/web/
+Aplicação: https://127.0.0.1:8082/apps/web/
 ```
 
 Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
@@ -145,7 +145,7 @@ bash tools/seedctl test
 
 Na aplicação normal, consulte `help`, `help create`, `help animate` e
 `procedure help`. Para `runtime test`, `runtime resources` e benchmarks, abra
-`http://127.0.0.1:8082/apps/web/?application=diagnostics`. Exemplos:
+`https://127.0.0.1:8082/apps/web/?application=diagnostics`. Exemplos:
 
 ```text
 help
@@ -157,8 +157,9 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente os perfis normal e diagnóstico do build `0047c` em
-Android/Termux. O contrato `module-v2`, o reducer regional e o catálogo inicial
+Validar visualmente os perfis normal e diagnóstico do build `0047d` pelo
+servidor HTTPS canônico em Android/Termux, inclusive instalação e reabertura da
+PWA. O contrato `module-v2`, o reducer regional e o catálogo inicial
 de experimentos usam ativação candidata; `platform-web` possui os adapters do
 navegador; testes, benchmarks e auditorias não são alcançáveis pelo boot de
 produção. O próximo incremento deve continuar reduzindo o composition root por

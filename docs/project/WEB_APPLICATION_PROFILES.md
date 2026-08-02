@@ -83,6 +83,12 @@ perfil diagnóstico com rede, seus módulos são carregados sob demanda e podem
 entrar no cache de execução normal do service worker. A aplicação funcional
 offline não depende deles.
 
+Worker e escopo são resolvidos por `platform-web` a partir da URL absoluta do
+módulo de entrada. O registro recebe um `scopeUrl` absoluto da mesma origem; a
+forma `scope` em pathname permanece apenas como descrição. Isso impede que um
+caminho iniciado por `//apps/` seja reinterpretado pelo navegador como o host
+`apps`.
+
 ## Verificação
 
 Abra o perfil diagnóstico e execute:

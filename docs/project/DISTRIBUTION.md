@@ -25,7 +25,7 @@ ocupava esse caminho foi preservado em
 | --- | --- | --- | --- |
 | GitHub Pages | implementada | demonstração e acesso público | depende da publicação do `main` |
 | PWA instalada | implementada | abertura offline e recuperação local | IndexedDB não é cópia portátil |
-| servidor local | implementada | desenvolvimento e teste | exige origem HTTP local |
+| servidor local | implementada | desenvolvimento e teste PWA | usa HTTPS e CA local |
 | pasta portátil com servidor embutido | planejada | distribuição sem Python/Termux | ainda não empacotada |
 | aplicativo nativo/híbrido | hipótese | integração profunda com arquivos e sistema | não é dependência do núcleo |
 
@@ -158,12 +158,15 @@ python tools/no_cache_server.py
 Abra:
 
 ```bash
-termux-open-url 'http://127.0.0.1:8082/'
-termux-open-url 'http://127.0.0.1:8082/apps/web/'
+termux-open-url 'https://127.0.0.1:8082/'
+termux-open-url 'https://127.0.0.1:8082/apps/web/'
 ```
 
-O script sem cache pressupõe exatamente `~/SpatialSeed-monorepo` e serve apenas
-`127.0.0.1:8082`.
+O script deriva a raiz do checkout que o contém e usa sempre a porta 8082. Na
+primeira execução, ele gera uma CA local reutilizável e a exporta como
+`~/storage/downloads/SpatialSeed-local-CA.crt`. Para acesso por outro aparelho,
+use `python tools/no_cache_server.py --network`; o certificado do servidor é
+reemitido automaticamente com os endereços IPv4/IPv6 detectados.
 
 ### Ambiente genérico
 
@@ -175,15 +178,16 @@ python3 -m http.server 8082 --bind 127.0.0.1
 
 Então abra `http://127.0.0.1:8082/apps/web/`.
 
-## Por que ainda há um servidor HTTP
+## Por que ainda há um servidor web local
 
-Mesmo offline, o navegador executa o aplicativo dentro de uma origem HTTP.
+Mesmo offline, o navegador executa o aplicativo dentro de uma origem web.
 Módulos ES, import maps, `fetch`, service workers, texturas e políticas de origem
 não têm comportamento confiável quando o projeto é aberto diretamente por
 `file://`.
 
 Service workers exigem HTTPS, com exceção de origens locais seguras como
-`127.0.0.1` e `localhost`.
+`127.0.0.1` e `localhost`. O fluxo Termux usa HTTPS mesmo nessa exceção para que
+o teste local cubra o mesmo requisito da instalação PWA e do acesso em rede.
 
 ## Verificação de uma distribuição
 

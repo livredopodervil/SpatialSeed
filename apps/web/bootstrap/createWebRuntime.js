@@ -29,7 +29,7 @@ import { ProjectService } from "../../../packages/project-files/src/ProjectServi
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260802-0047c";
+} from "../../../packages/platform-web/src/index.js?build=20260802-0047d";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService

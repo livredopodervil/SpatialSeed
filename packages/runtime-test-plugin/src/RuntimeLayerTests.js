@@ -297,7 +297,7 @@ import {
   resolvePwaLocations,
   webApplicationName,
   workerBuild
-} from "../../platform-web/src/index.js?build=20260802-0047c";
+} from "../../platform-web/src/index.js?build=20260802-0047d";
 import {
   clampEditorFontSize,
   highlightProcedureSource,
@@ -10711,6 +10711,18 @@ assets: {
           "http://127.0.0.1:8082/apps/web/service-worker.js"
         );
         assertEqual(locations.scope,"/apps/web/");
+        assertEqual(locations.scopeUrl,"http://127.0.0.1:8082/apps/web/");
+      },
+
+      "barra duplicada não transforma o escopo em outro host"() {
+        const locations=resolvePwaLocations(
+          "http://127.0.0.1:8082//apps/web/boot.js"
+        );
+        assertEqual(locations.applicationRoot,"http://127.0.0.1:8082/apps/web/");
+        assertEqual(locations.workerUrl,
+          "http://127.0.0.1:8082/apps/web/service-worker.js");
+        assertEqual(locations.scope,"/apps/web/");
+        assertEqual(locations.scopeUrl,"http://127.0.0.1:8082/apps/web/");
       },
 
       "prefixo do GitHub Pages é preservado nos caminhos PWA"() {
@@ -10722,6 +10734,8 @@ assets: {
           "https://livredopodervil.github.io/SpatialSeed/apps/web/service-worker.js"
         );
         assertEqual(locations.scope,"/SpatialSeed/apps/web/");
+        assertEqual(locations.scopeUrl,
+          "https://livredopodervil.github.io/SpatialSeed/apps/web/");
         assertEqual(
           locations.legacyWorkerUrl,
           "https://livredopodervil.github.io/SpatialSeed/service-worker.js"

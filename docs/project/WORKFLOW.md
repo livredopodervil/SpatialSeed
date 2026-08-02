@@ -19,7 +19,7 @@ O workflow deve simultaneamente:
 
 ```text
 Repositório local: ~/SpatialSeed-monorepo
-Aplicação local:   http://127.0.0.1:8082/apps/web/
+Aplicação local:   https://127.0.0.1:8082/apps/web/
 Repositório remoto: https://github.com/livredopodervil/SpatialSeed
 Aplicação pública:  https://livredopodervil.github.io/SpatialSeed/apps/web/
 ```
@@ -226,7 +226,9 @@ python3 tools/generate_pwa_precache.py --check
 python tools/no_cache_server.py
 ```
 
-Abra `http://127.0.0.1:8082/apps/web/` e confirme o build no rodapé.
+Abra `https://127.0.0.1:8082/apps/web/` e confirme o build no rodapé. O script
+serve o checkout em que está versionado; para trocar de worktree, encerre o
+servidor anterior e execute o mesmo comando no novo worktree, sem mudar a porta.
 
 ### Teste automático
 

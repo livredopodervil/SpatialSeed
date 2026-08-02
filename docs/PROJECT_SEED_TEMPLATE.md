@@ -10,7 +10,7 @@ navegador. A aplicação mantida está em `apps/web/`.
 ```text
 Repositório: ~/SpatialSeed-monorepo
 Cópia pública: ~/storage/shared/SpatialSeed-monorepo
-Aplicação: http://127.0.0.1:8082/apps/web/
+Aplicação: https://127.0.0.1:8082/apps/web/
 ```
 
 Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.

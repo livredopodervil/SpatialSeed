@@ -105,7 +105,8 @@ http://127.0.0.1:8082/apps/web/
 
 ### Android com Termux
 
-O servidor de desenvolvimento sem cache foi preparado para o diretório `~/SpatialSeed-monorepo`:
+O servidor canônico usa HTTPS, porta 8082 e serve o checkout que contém o
+próprio script. Assim, o mesmo comando funciona no monorepo ou em um worktree:
 
 ```bash
 git clone https://github.com/livredopodervil/SpatialSeed.git ~/SpatialSeed-monorepo
@@ -116,8 +117,14 @@ python tools/no_cache_server.py
 Em outra sessão do Termux:
 
 ```bash
-termux-open-url 'http://127.0.0.1:8082/apps/web/'
+termux-open-url 'https://127.0.0.1:8082/apps/web/'
 ```
+
+Na primeira execução, a CA local é criada e copiada para
+`~/storage/downloads/SpatialSeed-local-CA.crt`; instale-a no Android antes de
+validar a PWA. Para testar em outro aparelho pela rede IPv4/IPv6, execute
+`python tools/no_cache_server.py --network` ou o alias
+`bash tools/no_cache_https_ipv6.sh` e abra uma das URLs impressas.
 
 Também está disponível o utilitário operacional:
 
@@ -126,7 +133,9 @@ bash tools/seedctl help
 bash tools/seedctl serve
 ```
 
-Um servidor HTTP é necessário porque módulos ES, import maps e service workers dependem das regras de uma origem web. Para PWA fora de `127.0.0.1` ou `localhost`, use HTTPS.
+Um servidor web é necessário porque módulos ES, import maps e service workers
+dependem das regras de uma origem. O fluxo Termux usa HTTPS também em loopback,
+para que o mesmo teste cubra instalação e execução da PWA em rede.
 
 ## Primeiro percurso pela interface
 

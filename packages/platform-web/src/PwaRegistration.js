@@ -1,4 +1,4 @@
-import { formatBuildLabel } from "./BuildInfo.js?build=20260802-0047c";
+import { formatBuildLabel } from "./BuildInfo.js?build=20260802-0047d";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -37,7 +37,7 @@ export function registerPwa(buildInfo, {
   serviceWorkers.addEventListener("controllerchange", publish);
 
   return serviceWorkers.register(workerUrl, {
-    scope: locations.scope
+    scope: locations.scopeUrl
   }).then(registration => {
     state.registered = true;
     state.scope = registration.scope;
@@ -61,14 +61,17 @@ export function resolvePwaLocations(moduleUrl) {
   if (!moduleUrl) {
     throw new TypeError("Localização da aplicação web é obrigatória.");
   }
-  const applicationRoot = new URL("./", moduleUrl);
+  const moduleLocation = new URL(moduleUrl);
+  moduleLocation.pathname = `/${moduleLocation.pathname.replace(/^\/+/, "")}`;
+  const applicationRoot = new URL("./", moduleLocation);
   const repositoryRoot = new URL("../../", applicationRoot);
   return Object.freeze({
     applicationRoot: applicationRoot.href,
     repositoryRoot: repositoryRoot.href,
     workerUrl: new URL("service-worker.js", applicationRoot).href,
     legacyWorkerUrl: new URL("service-worker.js", repositoryRoot).href,
-    scope: applicationRoot.pathname
+    scope: applicationRoot.pathname,
+    scopeUrl: applicationRoot.href
   });
 }
 

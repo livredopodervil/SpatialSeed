@@ -7,9 +7,10 @@ import {
   loadWebApplicationDefinition,
   loadWebRuntimeExtensions,
   registerPwa,
+  resolvePwaLocations,
   webApplicationName,
   workerBuild
-} from "../../packages/platform-web/src/index.js?build=20260802-0047c";
+} from "../../packages/platform-web/src/index.js?build=20260802-0047d";
 
 const $=id => document.getElementById(id);
 const pwaInstallController=new PwaInstallController({windowRef:window});
@@ -57,10 +58,11 @@ async function ensureCurrentServiceWorker(buildInfo) {
   const controllerBuild=workerBuild(serviceWorkers.controller);
   if (controllerBuild === buildInfo.build) return;
 
-  const workerUrl=new URL("./service-worker.js",import.meta.url);
+  const locations=resolvePwaLocations(import.meta.url);
+  const workerUrl=new URL(locations.workerUrl);
   workerUrl.searchParams.set("build",buildInfo.build);
   const registration=await serviceWorkers.register(workerUrl,{
-    scope:new URL("./",import.meta.url).pathname
+    scope:locations.scopeUrl
   });
   await registration.update().catch(() => {});
 
@@ -76,7 +78,10 @@ async function ensureCurrentServiceWorker(buildInfo) {
   }
 
   if (controllerBuild && controllerBuild !== buildInfo.build) {
-    const resetUrl=new URL("../reset-spatialseed-cache.html",import.meta.url);
+    const resetUrl=new URL(
+      "../reset-spatialseed-cache.html",
+      locations.applicationRoot
+    );
     resetUrl.searchParams.set("return","./web/");
     resetUrl.searchParams.set("build",buildInfo.build);
     location.replace(resetUrl);

@@ -1,6 +1,6 @@
 import {
   WEB_RUNTIME_EXTENSION_API_VERSION
-} from "../../platform-web/src/index.js?build=20260802-0047c";
+} from "../../platform-web/src/index.js?build=20260802-0047d";
 import {
   BenchmarkRunner
 } from "../../benchmarks/src/index.js?build=20260802-0047a";
@@ -9,10 +9,10 @@ import {
 } from "../../resource-audit/src/index.js?build=20260714-0020b-a";
 import {
   TestService
-} from "../../tests/src/index.js?build=20260802-0047c";
+} from "../../tests/src/index.js?build=20260802-0047d";
 import {
   activateRuntimeTestPlugin
-} from "./RuntimeTestPlugin.js?build=20260802-0047c";
+} from "./RuntimeTestPlugin.js?build=20260802-0047d";
 
 export const runtimeDiagnosticsManifest = Object.freeze({
   id: "spatialseed.diagnostics.runtime-tests",

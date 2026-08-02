@@ -91,7 +91,8 @@ uma implementação compatível antes de escrever código.
 - ambiente principal: Android + Termux;
 - repositório canônico: `~/SpatialSeed-monorepo`;
 - cliente atual: `apps/web/`;
-- servidor local: `tools/no_cache_server.py`, porta 8082;
+- servidor local: `tools/no_cache_server.py`, HTTPS na porta fixa 8082 e raiz
+  derivada do checkout que contém o script;
 - não introduzir dependência obrigatória de Node/npm sem decisão explícita;
 - alterações devem permanecer no repositório;
 - não usar operações Git destrutivas;
