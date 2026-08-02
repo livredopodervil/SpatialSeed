@@ -1,8 +1,9 @@
 # Estratégia de testes do SpatialSeed
 
 > Política P0. Auditada em 16 de julho de 2026. A lista e a contagem de testes
-> não são congeladas neste documento; consulte `runtime test help` e
-> `runtime test all` no build efetivamente carregado.
+> não são congeladas neste documento; no perfil `?application=diagnostics`,
+> consulte `runtime test help` e `runtime test all` no build efetivamente
+> carregado.
 
 ## 1. Objetivos
 
@@ -40,6 +41,8 @@ WebGL, gesto de usuário ou Chrome Android.
 
 ### 3.1 `TestService`
 
+Disponível no perfil `/apps/web/?application=diagnostics`.
+
 Comando:
 
 ```text
@@ -53,6 +56,9 @@ roundtrip simples de projeto.
 
 ### 3.2 Runtime Test Plugin
 
+Disponível no perfil `/apps/web/?application=diagnostics`; a aplicação padrão
+não importa nem precacheia o plugin.
+
 Comando:
 
 ```text
@@ -61,9 +67,9 @@ runtime test nome-da-suite
 runtime test all
 ```
 
-O plugin importa os módulos reais da aplicação e executa testes síncronos no
-navegador. O resultado é JSON com `passed`, `failed`, `total`, `durationMs` e
-itens individuais.
+O plugin importa APIs públicas e módulos reais, sem importar `apps/web`, e
+executa testes no navegador. O resultado é JSON com `passed`, `failed`,
+`total`, `durationMs` e itens individuais.
 
 As famílias atuais incluem:
 
@@ -316,7 +322,7 @@ Capacidade deve ser detectada, não inferida do nome do navegador.
 Antes de integrar ao `main`:
 
 - [ ] suíte diretamente afetada passa;
-- [ ] `runtime test all` passa;
+- [ ] `runtime test all` passa no perfil diagnóstico;
 - [ ] teste visual proporcional passa;
 - [ ] arquivos/PWA/plataforma são testados quando afetados;
 - [ ] regressão corrigida recebeu teste que falharia antes;

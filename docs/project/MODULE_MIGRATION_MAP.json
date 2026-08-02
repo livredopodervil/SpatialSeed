@@ -159,6 +159,10 @@
       "target": "authoring",
       "disposition": "preserve-planar-tools"
     },
+    "packages/platform-web": {
+      "target": "platform-web",
+      "disposition": "own-browser-adapters-and-profile-composition"
+    },
     "packages/plugin-api": {
       "target": "kernel",
       "disposition": "evolve-to-module-v2"

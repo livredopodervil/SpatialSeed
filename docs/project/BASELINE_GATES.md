@@ -36,7 +36,8 @@ não deve aceitar dívida nova para fazer o gate passar.
 
 ## Gate de desempenho e compacidade
 
-No console do SpatialSeed, execute:
+Abra `/apps/web/?application=diagnostics` e, no console do SpatialSeed,
+execute:
 
 ```text
 runtime test performance-baseline
@@ -75,8 +76,9 @@ python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 ```
 
-O manifesto de precache é gerado deterministicamente. Se um recurso estático
-for acrescentado ou removido, regenere-o com
+O manifesto de precache de produção é gerado deterministicamente e exclui os
+pacotes marcados como diagnóstico. Se um recurso estático funcional for
+acrescentado ou removido, regenere-o com
 `python3 tools/generate_pwa_precache.py` e revise a diferença.
 
 ## Uso durante a implementação do kernel v2
@@ -86,4 +88,6 @@ completa do runtime sem regressão e o aplicativo validado no ambiente do autor.
 O incremento `0047b` aplica esta regra à região e ao catálogo inicial: os
 caminhos substituídos foram removidos e os achados correspondentes devem sair
 da baseline, sem serem movidos para novos arquivos ou cobertos por ponte
-paralela.
+paralela. O `0047c` aplica a mesma regra ao ciclo de testes: o perfil de
+produção não alcança diagnósticos, enquanto o perfil explícito conserva a suíte
+e os benchmarks sobre o mesmo runtime funcional.

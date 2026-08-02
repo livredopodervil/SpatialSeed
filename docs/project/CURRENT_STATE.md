@@ -2,7 +2,8 @@
 > e foi superado pelos marcos `0022` a `0026`. Não o use para determinar o
 > estado atual. Consulte o [`README.md`](../../README.md), o manifesto
 > [`apps/web/build-info.json`](../../apps/web/build-info.json) e execute
-> `runtime test all` no build efetivamente carregado. O conteúdo abaixo foi
+> `runtime test all` no perfil `?application=diagnostics` do build efetivamente
+> carregado. O conteúdo abaixo foi
 > preservado sem alterações como registro histórico.
 
 # Estado atual confirmado

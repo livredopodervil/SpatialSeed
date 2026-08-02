@@ -26,9 +26,10 @@ import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0044a";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260802-0047a";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
-import { BenchmarkRunner } from "../../../packages/benchmarks/src/index.js?build=20260802-0047a";
-import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260802-0047b";
+import {
+  activateWebRuntimeExtensions,
+  BrowserProcedureCatalogStore
+} from "../../../packages/platform-web/src/index.js?build=20260802-0047c";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -37,7 +38,6 @@ import {
   classifyChanges,
   SceneProjectionScheduler
 } from "../../../packages/incremental-runtime/src/index.js?build=20260730-0040h";
-import { ResourceAudit } from "../../../packages/resource-audit/src/index.js?build=20260714-0020b-a";
 import {
   createDefaultPropertyRegistry,
   SelectionPropertyService
@@ -62,9 +62,6 @@ import {
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
 } from "../../../packages/script-runtime/src/index.js?build=20260731-0043x";
-import {
-  BrowserProcedureCatalogStore
-} from "../procedures/BrowserProcedureCatalogStore.js?build=20260716-0026i";
 import {
   ProcedureCatalogEditor
 } from "../../../packages/procedure-editor/src/index.js?build=20260716-0026j";
@@ -172,7 +169,8 @@ export async function createWebRuntime({
   onConsoleOutput,
   buildInfo,
   uiConfiguration,
-  runtimeProfile = "authoring"
+  runtimeProfile = "authoring",
+  runtimeExtensions = []
 }) {
   if (!buildInfo?.build || !buildInfo?.version) {
     throw new TypeError("createWebRuntime exige buildInfo válido.");
@@ -694,19 +692,6 @@ export async function createWebRuntime({
         lastError: null
       });
 
-  const benchmarkRunner = new BenchmarkRunner({
-    reducer,
-    projectService
-  });
-
-  const resourceAudit = new ResourceAudit({
-    sandbox,
-    editor,
-    renderer,
-    appearanceRuntime,
-    selectionOperations
-  });
-
   const propertyRegistry = createDefaultPropertyRegistry();
   const propertyService = new SelectionPropertyService({
     selection: editor.selection,
@@ -725,8 +710,6 @@ export async function createWebRuntime({
     renderer,
     selectionOperations,
     projectService,
-    benchmarkRunner,
-    resourceAudit,
     propertyService,
     meshEditor,
     editContext,
@@ -1323,22 +1306,7 @@ export async function createWebRuntime({
     }
   );
 
-  activateRuntimeTestPlugin({ commands });
-
-  const testService = new TestService({
-    reducer,
-    commands,
-    projectService
-  });
-
-  commands
-    .register("test.help", () => testService.help())
-    .register("test.run", ({ suite }) =>
-      testService.run(suite)
-    )
-    .register("runtime.api.noop", ({ value = null } = {}) =>
-      value
-    );
+  commands.register("runtime.api.noop", ({ value = null } = {}) => value);
 
   const queries = new RuntimeQueryRegistry();
   const events = new RuntimeEvents();
@@ -2140,6 +2108,27 @@ export async function createWebRuntime({
     .onDispose(unsubscribeSpatialReferences)
     .onDispose(unsubscribeSandbox);
 
+  let activeWebExtensions;
+  try {
+    activeWebExtensions = await activateWebRuntimeExtensions(
+      runtimeExtensions,
+      {
+        commands,
+        reducer,
+        projectService,
+        sandbox,
+        editor,
+        renderer,
+        appearanceRuntime,
+        selectionOperations
+      }
+    );
+  } catch (error) {
+    runtime.dispose();
+    throw error;
+  }
+  runtime.onDispose(() => activeWebExtensions.dispose());
+
   return Object.freeze({
     buildInfo,
     runtime,
@@ -2155,6 +2144,7 @@ export async function createWebRuntime({
       renderer,
       outline,
       modules,
+      runtimeExtensions: activeWebExtensions.manifests,
       devConsole,
       procedureCatalog,
       procedureCatalogEditor,

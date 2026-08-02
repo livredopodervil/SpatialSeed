@@ -442,7 +442,7 @@ Estas atividades não precisam esperar um marco próprio.
 
 ### Qualidade e segurança
 
-- manter `runtime test all` verde;
+- manter `runtime test all` verde no perfil diagnóstico isolado;
 - acrescentar teste para cada regressão encontrada visualmente;
 - formalizar o threat model do runtime SES;
 - definir CSP e política de dependências antes de aceitar código não confiável;

@@ -281,29 +281,28 @@ import {
   samplePathFramesBySpacing
 } from "../../spatial-references/src/index.js?build=20260731-0044b";
 import {
-  formatBuildLabel,
-  normalizeBuildInfo
-} from "../../../apps/web/BuildInfo.js";
-import {
+  WEB_APPLICATION_DEFINITION_VERSION,
+  WEB_RUNTIME_EXTENSION_API_VERSION,
+  activateWebRuntimeExtensions,
+  BrowserProcedureCatalogStore,
   BrowserProjectFileGateway,
-  isPlatformBlock
-} from "../../../apps/web/file-interop/BrowserProjectFileGateway.js?build=20260724-0029b2";
-import {
-  BrowserProcedureCatalogStore
-} from "../../../apps/web/procedures/BrowserProcedureCatalogStore.js";
+  PwaInstallController,
+  formatBuildLabel,
+  formatPwaBuildLabel,
+  isPlatformBlock,
+  loadWebApplicationDefinition,
+  loadWebRuntimeExtensions,
+  normalizeBuildInfo,
+  normalizeWebApplicationDefinition,
+  resolvePwaLocations,
+  webApplicationName,
+  workerBuild
+} from "../../platform-web/src/index.js?build=20260802-0047c";
 import {
   clampEditorFontSize,
   highlightProcedureSource,
   logicalLineCount
 } from "../../procedure-editor/src/index.js";
-import {
-  formatPwaBuildLabel,
-  resolvePwaLocations,
-  workerBuild
-} from "../../../apps/web/pwa/registerPwa.js";
-import {
-  PwaInstallController
-} from "../../../apps/web/pwa/PwaInstallController.js";
 import {
   SelectionMarquee,
   UiActionRegistry,
@@ -10535,10 +10534,175 @@ assets: {
       }
     },
 
+    "web-application-profile": {
+      "perfil padrão não importa extensões de diagnóstico"() {
+        const definition=normalizeWebApplicationDefinition({
+          definitionVersion:WEB_APPLICATION_DEFINITION_VERSION,
+          id:"spatialseed.application.modeling",
+          role:"production",
+          extensions:[]
+        },{
+          sourceUrl:"https://example.test/apps/web/config/application.default.json"
+        });
+        let imports=0;
+        return loadWebRuntimeExtensions(definition,{
+          importModule() { imports+=1; }
+        }).then(extensions => {
+          assertEqual(extensions.length,0);
+          assertEqual(imports,0);
+        });
+      },
+
+      "perfil de produção rejeita extensão diagnóstica"() {
+        assertThrowsMessage(() => normalizeWebApplicationDefinition({
+          definitionVersion:WEB_APPLICATION_DEFINITION_VERSION,
+          id:"spatialseed.application.invalid",
+          role:"production",
+          extensions:[{
+            id:"spatialseed.diagnostics.runtime-tests",
+            apiVersion:WEB_RUNTIME_EXTENSION_API_VERSION,
+            role:"diagnostics",
+            entry:"../../../packages/runtime-test-plugin/src/index.js"
+          }]
+        },{
+          sourceUrl:"https://example.test/apps/web/config/application.invalid.json"
+        }),"produção");
+      },
+
+      "registro editorial não contém comandos de desenvolvimento"() {
+        const fixture=createEditContextFixture();
+        const commands=createEditorCommands({
+          editor:fixture.editor,
+          renderer:fixture.renderer,
+          selectionOperations:{},
+          projectService:{}
+        });
+        const ids=new Set(commands.describe().map(command => command.id));
+        for (const id of [
+          "runtime.test.run",
+          "test.run",
+          "runtime.resources",
+          "benchmark.compact"
+        ]) {
+          assertEqual(ids.has(id),false);
+        }
+        assertEqual(ids.has("selection.stats"),true);
+      },
+
+      async "perfil diagnóstico resolve definição e valida manifesto"() {
+        let requested=null;
+        const definition=await loadWebApplicationDefinition({
+          name:webApplicationName({
+            href:"https://example.test/apps/web/?application=diagnostics"
+          }),
+          applicationRootUrl:"https://example.test/apps/web/boot.js",
+          fetchImpl:async url => {
+            requested=url;
+            return {
+              ok:true,
+              async json() {
+                return {
+                  definitionVersion:WEB_APPLICATION_DEFINITION_VERSION,
+                  id:"spatialseed.application.diagnostics",
+                  role:"diagnostics",
+                  extensions:[{
+                    id:"spatialseed.diagnostics.runtime-tests",
+                    apiVersion:WEB_RUNTIME_EXTENSION_API_VERSION,
+                    role:"diagnostics",
+                    entry:"../../../packages/runtime-test-plugin/src/index.js"
+                  }]
+                };
+              }
+            };
+          }
+        });
+        const loaded=await loadWebRuntimeExtensions(definition,{
+          importModule:async entryUrl => ({
+            webRuntimeExtension:{
+              manifest:{
+                id:"spatialseed.diagnostics.runtime-tests",
+                apiVersion:WEB_RUNTIME_EXTENSION_API_VERSION,
+                role:"diagnostics"
+              },
+              activate() {}
+            },
+            entryUrl
+          })
+        });
+        assertEqual(
+          requested,
+          "https://example.test/apps/web/config/application.diagnostics.json"
+        );
+        assertEqual(loaded.length,1);
+        assertEqual(
+          loaded[0].manifest.id,
+          "spatialseed.diagnostics.runtime-tests"
+        );
+      },
+
+      async "ativação falha de forma atômica e descarta em ordem inversa"() {
+        const events=[];
+        let error=null;
+        try {
+          await activateWebRuntimeExtensions([{
+            manifest:{id:"spatialseed.test.first"},
+            activate() {
+              events.push("first.activate");
+              return {dispose:() => events.push("first.dispose")};
+            }
+          },{
+            manifest:{id:"spatialseed.test.second"},
+            activate() {
+              events.push("second.activate");
+              throw new Error("activation failed");
+            }
+          }],{});
+        } catch (caught) {
+          error=caught;
+        }
+        assertEqual(error?.message,"activation failed");
+        assertDeepEqual(events,[
+          "first.activate",
+          "second.activate",
+          "first.dispose"
+        ]);
+      },
+
+      "ajuda do console não anuncia comandos ausentes na produção"() {
+        const createConsole=ids => new DevConsole({
+          editor:{selection:new Selection()},
+          sandbox:{},
+          region:{},
+          renderer:{},
+          getDiagnostics:() => ({}),
+          commands:{
+            execute() {},
+            describe:() => ids.map(id => ({id}))
+          }
+        });
+        const production=createConsole([]).execute("help")[0].result.commands;
+        const diagnostics=createConsole([
+          "runtime.test.run"
+        ]).execute("help")[0].result.commands;
+        assertEqual(
+          production.some(command => command.startsWith("runtime test")),
+          false
+        );
+        assertEqual(
+          production.some(command => command.includes("?application=diagnostics")),
+          true
+        );
+        assertEqual(
+          diagnostics.some(command => command.startsWith("runtime test")),
+          true
+        );
+      }
+    },
+
     "pwa-status": {
       "escopo local permanece limitado à aplicação"() {
         const locations=resolvePwaLocations(
-          "http://127.0.0.1:8082/apps/web/pwa/registerPwa.js"
+          "http://127.0.0.1:8082/apps/web/boot.js"
         );
         assertEqual(locations.applicationRoot,"http://127.0.0.1:8082/apps/web/");
         assertEqual(locations.repositoryRoot,"http://127.0.0.1:8082/");
@@ -10551,7 +10715,7 @@ assets: {
 
       "prefixo do GitHub Pages é preservado nos caminhos PWA"() {
         const locations=resolvePwaLocations(
-          "https://livredopodervil.github.io/SpatialSeed/apps/web/pwa/registerPwa.js"
+          "https://livredopodervil.github.io/SpatialSeed/apps/web/boot.js"
         );
         assertEqual(
           locations.workerUrl,

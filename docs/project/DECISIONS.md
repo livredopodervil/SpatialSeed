@@ -821,8 +821,8 @@ documental distinta.
 
 ## D-046 — A modularização usa oito fronteiras e gates monotônicos
 
-**Estado:** planejada; etapa zero e primeira fatia do kernel v2 implementadas
-até o incremento 0047b.
+**Estado:** planejada; etapa zero, primeira fatia do kernel v2 e isolamento do
+perfil diagnóstico implementados até o incremento 0047c.
 
 O aplicativo mantido convergirá para oito módulos acíclicos: `kernel`,
 `document`, `procedural`, `authoring`, `viewer`, `renderer-three`, `interface` e
@@ -846,7 +846,10 @@ e remove o caminho anterior no mesmo incremento. O registro v2 valida o grafo e
 as referências antes da ativação, só publica o conjunto candidato completo e
 descarta instâncias em ordem inversa quando qualquer ativação falha. O reducer
 regional e o catálogo inicial já são contribuições declaradas; não recebem
-stores mutáveis do host durante o boot.
+stores mutáveis do host durante o boot. Adapters de navegador pertencem à API
+pública `platform-web`; o perfil normal não alcança nem precacheia testes,
+benchmarks ou auditorias. O perfil diagnóstico os ativa sobre um runtime
+candidato pela porta versionada de composição, com descarte inverso em falha.
 
 ## Decisões superadas ou rejeitadas
 

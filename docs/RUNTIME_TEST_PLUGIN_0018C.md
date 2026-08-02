@@ -1,6 +1,11 @@
-# Runtime Test Plugin 0018c
+# Runtime Test Plugin e perfil diagnóstico
 
-Plugin isolado para validar a separação entre Viewer, Editor e simulador global.
+O plugin valida as fronteiras do SpatialSeed sem integrar o runtime de
+produção. Abra:
+
+```text
+/apps/web/?application=diagnostics
+```
 
 ## Comandos
 
@@ -26,5 +31,12 @@ runtime test all
 - rejeição de conflito;
 - evolução autônoma do simulador.
 - contrato atômico de propriedades, aparência, textura e instância.
+- perfis web, rejeição de diagnóstico em produção e rollback de extensões.
 
-O plugin recebe somente o registro de comandos. Não recebe Region, Sandbox, renderer ou DOM.
+O núcleo de testes registra `runtime.test.*` somente pelo registro de comandos.
+A composição diagnóstica privilegiada cria também `TestService`, benchmarks e
+auditoria de recursos a partir de capabilities explícitas do runtime candidato.
+Ela não recebe DOM e não é uma API para extensões de usuário.
+
+Os adapters testados — build, arquivos, armazenamento de procedimentos e PWA —
+vêm da API pública `packages/platform-web`; o plugin não importa `apps/web`.

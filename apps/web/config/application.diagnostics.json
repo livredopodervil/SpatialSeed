@@ -1,0 +1,13 @@
+{
+  "definitionVersion": "spatial-seed-web-application-v1",
+  "id": "spatialseed.application.diagnostics",
+  "role": "diagnostics",
+  "extensions": [
+    {
+      "id": "spatialseed.diagnostics.runtime-tests",
+      "apiVersion": "spatial-seed-web-runtime-extension-v1",
+      "role": "diagnostics",
+      "entry": "../../../packages/runtime-test-plugin/src/index.js?build=20260802-0047c"
+    }
+  ]
+}

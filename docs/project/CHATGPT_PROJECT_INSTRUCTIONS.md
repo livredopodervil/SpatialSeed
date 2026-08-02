@@ -132,7 +132,7 @@ commits já publicados apenas para alterar crédito sem solicitação explícita
 
 ## Testes
 
-Toda alteração estrutural deve chegar a:
+Toda alteração estrutural deve abrir `?application=diagnostics` e chegar a:
 
 ```text
 runtime test all

@@ -1,6 +1,6 @@
 # Main Proposal: núcleo cristalizado e extensões internas
 
-Status: implementação incremental; etapa 0 e primeira fatia do kernel v2 materializadas até o build `0047b`, sem merge da branch 0046
+Status: implementação incremental; etapa 0, primeira fatia do kernel v2 e isolamento diagnóstico materializados até o build `0047c`, sem merge da branch 0046
 Base obrigatória: `d556306c8b921363c26c56f49cb532e8e2e2b0f9` (`origin/main`)  
 Fonte de ideias, não de integração: `cfc63ca813ca722e9755b7a23c6d484287e9c289` e o estado local exportado da 0046  
 Data da análise: 2026-08-02
@@ -399,8 +399,16 @@ O incremento `0047b` contém somente:
    reescrever seus algoritmos;
 3. testes de rollback, ordem de descarte e referências inválidas.
 
-O incremento imediatamente posterior deve remover o ciclo entre runtime de
-produção e plugin de testes e reduzir o composition root, já sobre o kernel
-validado. Ainda não deve existir designer, nova folha de estilos nem migração
-em massa do HUD. A primeira fatia visual só começa depois que o registro único,
-o boot sem diagnósticos e os gates estiverem funcionando.
+O incremento `0047c` contém somente:
+
+1. API pública `platform-web` para os adapters antes internos a `apps/web`;
+2. definições separadas de aplicação normal e diagnóstico;
+3. carregamento e rollback de extensões confiáveis antes da publicação do
+   runtime;
+4. remoção de testes, benchmarks e auditorias do grafo e precache de produção.
+
+O ciclo `apps/web` ↔ `runtime-test-plugin` foi removido: nenhuma das duas
+arestas permanece e o perfil diagnóstico conserva os mesmos comandos por
+composição explícita. O incremento seguinte deve continuar reduzindo o
+composition root por uma fatia vertical não visual. Ainda não deve existir
+designer, nova folha de estilos nem reorganização funcional do HUD.

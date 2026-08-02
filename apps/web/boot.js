@@ -1,9 +1,15 @@
 import {
+  PwaInstallController,
+  formatPwaBuildLabel,
   formatBuildLabel,
-  loadBuildInfo
-} from "./BuildInfo.js";
-import { loadUiConfiguration } from "./UiConfiguration.js";
-import { PwaInstallController } from "./pwa/PwaInstallController.js";
+  loadBuildInfo,
+  loadUiConfiguration,
+  loadWebApplicationDefinition,
+  loadWebRuntimeExtensions,
+  registerPwa,
+  webApplicationName,
+  workerBuild
+} from "../../packages/platform-web/src/index.js?build=20260802-0047c";
 
 const $=id => document.getElementById(id);
 const pwaInstallController=new PwaInstallController({windowRef:window});
@@ -12,20 +18,32 @@ try {
   const buildInfo=await loadBuildInfo();
   exposeBuildInfo(buildInfo);
   await ensureCurrentServiceWorker(buildInfo);
-  const uiConfiguration=await loadUiConfiguration();
+  const [uiConfiguration,applicationDefinition]=await Promise.all([
+    loadUiConfiguration(),
+    loadWebApplicationDefinition({
+      name:webApplicationName(location),
+      applicationRootUrl:import.meta.url
+    })
+  ]);
+  const runtimeExtensions=await loadWebRuntimeExtensions(
+    applicationDefinition
+  );
+  exposeApplicationDefinition(applicationDefinition);
   await loadStylesheet(buildInfo);
 
   const cacheKey=encodeURIComponent(buildInfo.build);
-  const [{ startApplication },pwaModule]=await Promise.all([
-    import(`./main.js?build=${cacheKey}`),
-    import(`./pwa/registerPwa.js?build=${cacheKey}`)
-  ]);
-  await startApplication(buildInfo,uiConfiguration,{pwaInstallController});
-  pwaModule.registerPwa(buildInfo,{
+  const { startApplication }=await import(`./main.js?build=${cacheKey}`);
+  await startApplication(buildInfo,uiConfiguration,{
+    applicationDefinition,
+    runtimeExtensions,
+    pwaInstallController
+  });
+  registerPwa(buildInfo,{
+    applicationUrl:import.meta.url,
     onStateChange: state => exposePwaState(
       buildInfo,
       state,
-      pwaModule.formatPwaBuildLabel
+      formatPwaBuildLabel
     )
   });
 } catch (error) {
@@ -87,16 +105,6 @@ function waitForControllerBuild(serviceWorkers,expectedBuild,timeoutMs) {
   });
 }
 
-function workerBuild(worker) {
-  const value=worker?.scriptURL;
-  if (!value) return null;
-  try {
-    return new URL(value,location.href).searchParams.get("build");
-  } catch {
-    return null;
-  }
-}
-
 function isTrustedOrigin() {
   return window.isSecureContext || [
     "localhost",
@@ -134,6 +142,11 @@ function exposeBuildInfo(buildInfo) {
   meta.content=buildInfo.build;
   document.documentElement.dataset.build=buildInfo.build;
   $("build-content").textContent=formatBuildLabel(buildInfo);
+}
+
+function exposeApplicationDefinition(definition) {
+  document.documentElement.dataset.application=definition.id;
+  document.documentElement.dataset.applicationRole=definition.role;
 }
 
 function loadStylesheet(buildInfo) {

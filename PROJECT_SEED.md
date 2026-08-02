@@ -64,7 +64,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 - laboratório declarativo de experimentos;
 - ações e atalhos configuráveis sobre os mesmos comandos;
 - runtime de animação efêmero, presets, faixas por objeto e cor animada;
-- testes, diagnósticos, recursos e benchmarks consultáveis no aplicativo.
+- testes, auditorias e benchmarks consultáveis pelo perfil diagnóstico
+  explícito, sem integrar o grafo de produção.
 - catálogo ampliado de geometrias Three.js e providers declarativos;
 - configuração local de sombras, ambiente, reflexos e materiais físicos;
 - edição isolada de malha com vértices, arestas e faces, meia-arestas
@@ -142,8 +143,9 @@ bash tools/seedctl test
 
 ## Console
 
-Consulte `help`, `help create`, `help animate`, `procedure help` e
-`runtime test help` no build carregado. Exemplos de diagnóstico:
+Na aplicação normal, consulte `help`, `help create`, `help animate` e
+`procedure help`. Para `runtime test`, `runtime resources` e benchmarks, abra
+`http://127.0.0.1:8082/apps/web/?application=diagnostics`. Exemplos:
 
 ```text
 help
@@ -155,12 +157,13 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente o build `0047b` e confirmar os gates em Android/Termux. O
-contrato `module-v2`, o reducer regional e o catálogo inicial de experimentos
-já usam ativação candidata, rollback e contribuições declaradas. O próximo
-incremento deve retirar testes, benchmarks e diagnósticos do grafo de produção,
-quebrar o ciclo `apps/web` ↔ `runtime-test-plugin` e reduzir o composition root;
-não deve iniciar ainda a migração do HUD.
+Validar visualmente os perfis normal e diagnóstico do build `0047c` em
+Android/Termux. O contrato `module-v2`, o reducer regional e o catálogo inicial
+de experimentos usam ativação candidata; `platform-web` possui os adapters do
+navegador; testes, benchmarks e auditorias não são alcançáveis pelo boot de
+produção. O próximo incremento deve continuar reduzindo o composition root por
+uma fatia vertical não visual, sem iniciar ainda a reorganização funcional do
+HUD.
 
 O roadmap funcional permanece preservado, mas está subordinado à cristalização
 do núcleo: redefinição paramétrica pelo Inspector; operadores e constraints 2D;
@@ -177,7 +180,8 @@ Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/MEASUREMENT_INPUT_0040B.md`,
 `docs/TOOL_PARAMETERS_PATH_DRAW_0039D.md` e
 `docs/EDIT_INTERACTION_0038B.md`. Para a reorganização atual, consulte
-`docs/project/MAIN_PROPOSAL_ARCHITECTURE.md` e
+`docs/project/MAIN_PROPOSAL_ARCHITECTURE.md`,
+`docs/project/WEB_APPLICATION_PROFILES.md` e
 `docs/project/BASELINE_GATES.md`.
 
 ## Protocolo para nova LLM
@@ -190,6 +194,7 @@ Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 5. Reutilizar comandos, registros, manifesto e gerenciadores atuais.
 6. Não misturar estado editorial, especulativo, autoritativo, visual e temporal.
 7. Preferir patch mínimo, testável e reversível.
-8. Executar suíte específica, `runtime test all` e teste visual aplicável.
+8. Executar a suíte específica e `runtime test all` no perfil diagnóstico, além
+   do teste visual aplicável.
 9. Repetir benchmarks equivalentes após otimizações.
 10. Atualizar documentação viva, decisão e ponto de retomada.

@@ -513,7 +513,8 @@ flowchart TD
 | `packages/appearance-runtime` | aparências normalizadas, compartilhamento e projeção legada |
 | `packages/project-files` | validação, serialização e abertura de projetos |
 | `packages/project-recovery` | identidade, journal IndexedDB e restauração local |
-| `packages/runtime-test-plugin` | testes arquiteturais executáveis no aplicativo |
+| `packages/platform-web` | adapters públicos do navegador e composição de perfis web |
+| `packages/runtime-test-plugin` | testes arquiteturais carregados somente pelo perfil diagnóstico |
 | `apps/web` | composição concreta da PWA e suas superfícies visuais |
 
 Consulte [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
@@ -524,6 +525,8 @@ Consulte [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
 [`docs/ANIMATION_WORKSPACE_0028D.md`](docs/ANIMATION_WORKSPACE_0028D.md).
 O protocolo local atual está em
 [`docs/project/LOCAL_VIEWER_COORDINATION.md`](docs/project/LOCAL_VIEWER_COORDINATION.md).
+Os perfis normal e diagnóstico estão em
+[`docs/project/WEB_APPLICATION_PROFILES.md`](docs/project/WEB_APPLICATION_PROFILES.md).
 O contrato de câmera está dividido entre
 [`docs/project/VIEWER_CAMERA_CONTROLLER.md`](docs/project/VIEWER_CAMERA_CONTROLLER.md)
 e [`docs/project/CAMERA_OBJECTS.md`](docs/project/CAMERA_OBJECTS.md).
@@ -551,7 +554,9 @@ roadmap.
 
 ## Testes, diagnóstico e desempenho
 
-Os testes principais rodam dentro da aplicação porque exercitam os mesmos módulos usados pelo navegador. No console:
+Os testes principais rodam sobre o mesmo runtime usado pelo navegador, mas não
+entram no grafo de produção. Abra
+`/apps/web/?application=diagnostics` e, no console, execute:
 
 ```text
 runtime test all
@@ -590,6 +595,9 @@ Para conferir o manifesto offline depois de criar, remover ou renomear módulos 
 python3 tools/generate_pwa_precache.py
 python3 tools/generate_pwa_precache.py --check
 ```
+
+O precache funcional exclui `runtime-test-plugin`, `tests`, `benchmarks` e
+`resource-audit`; o perfil diagnóstico carrega esses pacotes sob demanda.
 
 Para auditar a raiz pública, o catálogo e todos os destinos históricos sem
 acessar a rede:
@@ -640,7 +648,10 @@ python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 ```
 
-Abra a aplicação, execute `runtime test all` e faça os testes visuais correspondentes à alteração. Mudanças de interface não devem criar uma segunda implementação de comportamento: exponha ou reutilize o comando público e faça a superfície visual chamá-lo.
+Abra o perfil `?application=diagnostics`, execute `runtime test all` e faça os
+testes visuais correspondentes à alteração. Mudanças de interface não devem
+criar uma segunda implementação de comportamento: exponha ou reutilize o
+comando público e faça a superfície visual chamá-lo.
 
 Commits devem preservar a autoria efetiva. Quando houver assistência técnica automatizada, ela pode ser registrada sem substituir o autor:
 

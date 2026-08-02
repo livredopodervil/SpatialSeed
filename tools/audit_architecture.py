@@ -48,6 +48,7 @@ def main() -> int:
     migration_map = load_json(MAP_PATH)
     components = discover_components()
     validate_map(migration_map, components)
+    validate_application_profiles(migration_map)
     findings = audit(migration_map, components)
     issue_ids = sorted(
         f"{category}|{issue}"
@@ -150,6 +151,78 @@ def validate_map(migration_map: dict, components: dict[str, Path]) -> None:
         raise SystemExit("Invalid migration map: " + "; ".join(errors))
 
 
+def validate_application_profiles(migration_map: dict) -> None:
+    profile_root = ROOT / "apps/web/config"
+    expected = {
+        "default": "production",
+        "diagnostics": "diagnostics",
+    }
+    errors = []
+    entries = migration_map["components"]
+
+    for name, expected_role in expected.items():
+        path = profile_root / f"application.{name}.json"
+        if not path.is_file():
+            errors.append(f"missing web application profile: {path.relative_to(ROOT)}")
+            continue
+        try:
+            profile = load_json(path)
+        except (OSError, json.JSONDecodeError) as error:
+            errors.append(f"invalid web application profile {name}: {error}")
+            continue
+
+        if profile.get("definitionVersion") != "spatial-seed-web-application-v1":
+            errors.append(f"unsupported web application profile version: {name}")
+        role = profile.get("role")
+        if role != expected_role:
+            errors.append(f"web application profile {name} must be {expected_role}")
+        extensions = profile.get("extensions")
+        if not isinstance(extensions, list):
+            errors.append(f"web application profile {name} extensions must be a list")
+            continue
+
+        identifiers = set()
+        for extension in extensions:
+            if not isinstance(extension, dict):
+                errors.append(f"web application profile {name} has invalid extension")
+                continue
+            extension_id = extension.get("id")
+            if extension_id in identifiers:
+                errors.append(
+                    f"web application profile {name} duplicates {extension_id}"
+                )
+            identifiers.add(extension_id)
+            extension_role = extension.get("role")
+            if role == "production" and extension_role == "diagnostics":
+                errors.append(
+                    f"production profile {name} activates diagnostics: {extension_id}"
+                )
+
+            specifier = str(extension.get("entry", "")).split("?", 1)[0]
+            target = (path.parent / specifier).resolve()
+            if not target.is_file() or not target.is_relative_to(ROOT):
+                errors.append(
+                    f"web application profile {name} has invalid entry: {specifier}"
+                )
+                continue
+            component = owner_of(target)
+            if component not in entries:
+                errors.append(
+                    f"web application profile {name} entry is unmapped: {specifier}"
+                )
+                continue
+            if (
+                extension_role == "diagnostics"
+                and entries[component].get("role") != "diagnostics"
+            ):
+                errors.append(
+                    f"web application profile {name} mislabels {component}"
+                )
+
+    if errors:
+        raise SystemExit("Invalid web application profiles: " + "; ".join(errors))
+
+
 def audit(migration_map: dict, components: dict[str, Path]) -> dict[str, set[str]]:
     findings: dict[str, set[str]] = defaultdict(set)
     component_entries = migration_map["components"]
@@ -241,7 +314,14 @@ def audit(migration_map: dict, components: dict[str, Path]) -> dict[str, set[str
             findings["component-cycle"].add("<->".join(sorted(cycle)))
 
     reachable = reachable_from("apps/web", edges)
+    for component in sorted(reachable - {"apps/web"}):
+        if component_entries[component].get("role") == "diagnostics":
+            findings["production-diagnostics"].add(
+                f"apps/web~>{component}"
+            )
     for component in sorted(set(components) - reachable):
+        if component_entries[component].get("role") == "diagnostics":
+            continue
         findings["unreachable-component"].add(component)
 
     return findings

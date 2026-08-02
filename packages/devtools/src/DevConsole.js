@@ -661,26 +661,37 @@ export class DevConsole {
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
+    const diagnosticsAvailable = this.commands.describe().some(
+      command => command.id === "runtime.test.run"
+    );
+    const diagnosticCommands = diagnosticsAvailable
+      ? [
+          "benchmark help",
+          "benchmark compact 10000 1000 5",
+          "benchmark scene 1000 5 100",
+          "benchmark selection 1000 5",
+          "benchmark compare|history|clear",
+          "test help|all|sandbox|reducer|commands|project",
+          "runtime test viewer-animation|animation-runtime|animation-commands|" +
+          "affine-repeat|tool-parameters|performance-baseline|" +
+          "experiment-contract|experiment-plugin|" +
+          "experiment-panel|placement-frame|path-references|mesh-edit-math|" +
+          "geometry-creation|geometry-registry|compact-resources|" +
+          "file-interop|project-files|project-recovery|pwa-status|spatial-planning|" +
+          "spatial-plan-commit|procedure-catalog|procedure-editor|all"
+        ]
+      : [
+          "diagnóstico: reabra com ?application=diagnostics para testes e benchmarks"
+        ];
+
     return {
       syntax: "Separe comandos por ponto e vírgula ou por quebra de linha.",
       commands: [
         "commands",
-        "benchmark help",
-        "benchmark compact 10000 1000 5",
-        "benchmark scene 1000 5 100",
-        "benchmark selection 1000 5",
+        ...diagnosticCommands,
         "selection stats",
         "runtime profile",
         "runtime ui-stats",
-        "benchmark compare|history|clear",
-        "test help|all|sandbox|reducer|commands|project",
-        "runtime test viewer-animation|animation-runtime|animation-commands|" +
-        "affine-repeat|tool-parameters|performance-baseline|" +
-        "experiment-contract|experiment-plugin|" +
-        "experiment-panel|placement-frame|path-references|mesh-edit-math|" +
-        "geometry-creation|geometry-registry|compact-resources|" +
-        "file-interop|project-files|project-recovery|pwa-status|spatial-planning|" +
-        "spatial-plan-commit|procedure-catalog|procedure-editor|all",
         "calc expressão JavaScript",
         "program código JavaScript",
         "procedure define|list|show|run|remove|export|import|help",

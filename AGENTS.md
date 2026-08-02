@@ -69,8 +69,8 @@ python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 ```
 
-No aplicativo, consulte primeiro `runtime test help`, execute a suíte afetada e
-depois:
+No aplicativo, abra o perfil `?application=diagnostics`, consulte primeiro
+`runtime test help`, execute a suíte afetada e depois:
 
 ```text
 runtime test all

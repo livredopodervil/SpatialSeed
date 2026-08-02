@@ -230,7 +230,7 @@ Abra `http://127.0.0.1:8082/apps/web/` e confirme o build no rodapé.
 
 ### Teste automático
 
-No console:
+Abra `/apps/web/?application=diagnostics`. No console:
 
 ```text
 runtime test all

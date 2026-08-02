@@ -3,7 +3,11 @@ const $ = id => document.getElementById(id);
 export async function startApplication(
   buildInfo,
   uiConfiguration,
-  { pwaInstallController = null } = {}
+  {
+    applicationDefinition,
+    runtimeExtensions = [],
+    pwaInstallController = null
+  } = {}
 ) {
   const cacheKey=encodeURIComponent(buildInfo.build);
   const [runtimeModule,interfaceModule]=await Promise.all([
@@ -24,7 +28,8 @@ export async function startApplication(
     procedureCatalogUiRoot: $("procedure-catalog-ui-root"),
     inspectorRoot: $("inspector-panel"),
     buildInfo,
-    uiConfiguration
+    uiConfiguration,
+    runtimeExtensions
   });
 
   const interfaceBinding = interfaceModule.bindWebInterface({
@@ -42,6 +47,8 @@ export async function startApplication(
     build: buildInfo.build,
     version: buildInfo.version,
     channel: buildInfo.channel,
+    application: applicationDefinition?.id ?? null,
+    applicationRole: applicationDefinition?.role ?? null,
     apiVersion: application.runtime.constructor.apiVersion,
     execute: (id, args) =>
       application.runtime.execute(id, args),

@@ -5,8 +5,6 @@ export function createEditorCommands({
   renderer,
   selectionOperations,
   projectService,
-  benchmarkRunner,
-  resourceAudit,
   propertyService = null,
   meshEditor = null,
   editContext = null,
@@ -796,38 +794,10 @@ export function createEditorCommands({
       return projectService.newProject();
     });
 
-  commands
-    .register(
-      "runtime.resources",
-      () => resourceAudit.collect()
-    )
-    .register(
-      "selection.stats",
-      () => renderer.getSelectionAppearanceDiagnostics()
-    );
-
-  commands
-    .register("benchmark.help", () =>
-      benchmarkRunner.help()
-    )
-    .register("benchmark.compact", args =>
-      benchmarkRunner.runCompact(args)
-    )
-    .register("benchmark.scene", args =>
-      benchmarkRunner.runScene(args)
-    )
-    .register("benchmark.selection", args =>
-      renderer.benchmarkSelectionOutlines(args)
-    )
-    .register("benchmark.compare", () =>
-      benchmarkRunner.compare()
-    )
-    .register("benchmark.history", () =>
-      benchmarkRunner.list()
-    )
-    .register("benchmark.clear", () =>
-      benchmarkRunner.clear()
-    );
+  commands.register(
+    "selection.stats",
+    () => renderer.getSelectionAppearanceDiagnostics()
+  );
 
   return commands;
 }

@@ -11,6 +11,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "apps/web/pwa/precache-manifest.json"
 SOURCE_ROOTS = (ROOT / "apps/web", ROOT / "packages", ROOT / "vendor")
+DIAGNOSTIC_PACKAGE_ROOTS = {
+    ROOT / "packages/benchmarks",
+    ROOT / "packages/resource-audit",
+    ROOT / "packages/runtime-test-plugin",
+    ROOT / "packages/tests",
+}
 ALLOWED_SUFFIXES = {
     ".css", ".html", ".js", ".json", ".png", ".svg", ".webmanifest"
 }
@@ -21,7 +27,13 @@ def collect_files() -> list[str]:
     files = set()
     for source_root in SOURCE_ROOTS:
         for path in source_root.rglob("*"):
-            if path.is_file() and path.suffix in ALLOWED_SUFFIXES and path not in EXCLUDED:
+            if any(path.is_relative_to(root) for root in DIAGNOSTIC_PACKAGE_ROOTS):
+                continue
+            if (
+                path.is_file()
+                and path.suffix in ALLOWED_SUFFIXES
+                and path not in EXCLUDED
+            ):
                 files.add(path.relative_to(ROOT).as_posix())
     return sorted(files)
 

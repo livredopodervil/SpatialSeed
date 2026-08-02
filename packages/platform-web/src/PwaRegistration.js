@@ -1,8 +1,11 @@
-import { formatBuildLabel } from "../BuildInfo.js";
+import { formatBuildLabel } from "./BuildInfo.js?build=20260802-0047c";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-export function registerPwa(buildInfo, { onStateChange = null } = {}) {
+export function registerPwa(buildInfo, {
+  onStateChange = null,
+  applicationUrl = globalThis.location?.href
+} = {}) {
   const serviceWorkers = navigator.serviceWorker;
   const state = {
     supported: Boolean(serviceWorkers),
@@ -27,7 +30,7 @@ export function registerPwa(buildInfo, { onStateChange = null } = {}) {
     return Promise.resolve(snapshot(state));
   }
 
-  const locations = resolvePwaLocations(import.meta.url);
+  const locations = resolvePwaLocations(applicationUrl);
   const workerUrl = new URL(locations.workerUrl);
   workerUrl.searchParams.set("build", buildInfo.build);
 
@@ -55,7 +58,10 @@ export function registerPwa(buildInfo, { onStateChange = null } = {}) {
 }
 
 export function resolvePwaLocations(moduleUrl) {
-  const applicationRoot = new URL("../", moduleUrl);
+  if (!moduleUrl) {
+    throw new TypeError("Localização da aplicação web é obrigatória.");
+  }
+  const applicationRoot = new URL("./", moduleUrl);
   const repositoryRoot = new URL("../../", applicationRoot);
   return Object.freeze({
     applicationRoot: applicationRoot.href,
