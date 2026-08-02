@@ -3,7 +3,7 @@ import {
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 export class DevConsole {
-  static apiVersion = "dev-console-v10";
+  static apiVersion = "dev-console-v11";
 
   constructor({
     editor,
@@ -599,6 +599,10 @@ export class DevConsole {
       case "path":
         return this.#path(tokens);
 
+      case "tool":
+      case "tools":
+        return this.#tool(tokens);
+
       case "mesh":
         return this.#mesh(tokens);
 
@@ -658,6 +662,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "path") {
         return this.#pathHelp();
       }
+      if (["tool", "tools"].includes(String(topic).toLowerCase())) {
+        return this.#toolHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -673,7 +680,7 @@ export class DevConsole {
           "benchmark compare|history|clear",
           "test help|all|sandbox|reducer|commands|project",
           "runtime test viewer-animation|animation-runtime|animation-commands|" +
-          "affine-repeat|tool-parameters|performance-baseline|" +
+          "affine-repeat|tool-parameters|tool-capabilities|performance-baseline|" +
           "experiment-contract|experiment-plugin|" +
           "experiment-panel|placement-frame|path-references|mesh-edit-math|" +
           "geometry-creation|geometry-registry|compact-resources|" +
@@ -708,6 +715,8 @@ export class DevConsole {
         "plan status|commit|discard|help",
         "help create",
         "help path",
+        "help tool",
+        "tool list|show|status|activate|run|get|set|finish|cancel|help",
         "path list|inspect|tube|sweep|array|help",
         "create help",
         "create tipo ... (consulte create help)",
@@ -1904,6 +1913,115 @@ export class DevConsole {
     throw new Error("Uso: path list|inspect|draw|tube|sweep|array|help.");
   }
 
+  #tool(tokens) {
+    const action = String(tokens.shift() ?? "list").toLowerCase();
+    if (["help", "?"].includes(action)) {
+      this.#expectMaximum(tokens, 0, "tool help");
+      return this.#toolHelp();
+    }
+    if (action === "list") {
+      this.#expectMaximum(tokens, 1, "tool list [object|vertex|edge|face]");
+      const subjectLevel = tokens.shift();
+      return this.#query("authoring.tools.list", subjectLevel
+        ? { context: { subjectLevel }, includeUnavailable: false }
+        : {});
+    }
+    if (action === "show") {
+      this.#expectExact(tokens, 1, "tool show id");
+      return this.#query("authoring.tool.describe", {
+        toolId: tokens[0]
+      });
+    }
+    if (action === "status") {
+      this.#expectMaximum(tokens, 1, "tool status [id]");
+      return this.#query("authoring.tool.status", tokens.length
+        ? { toolId: tokens[0] }
+        : {});
+    }
+    if (action === "get") {
+      this.#expectExact(tokens, 1, "tool get id");
+      return this.#query("authoring.tool.parameters.get", {
+        toolId: tokens[0]
+      });
+    }
+    if (["activate", "run", "set"].includes(action)) {
+      const toolId = tokens.shift();
+      if (!toolId) {
+        throw new Error(`Uso: tool ${action} id [parâmetro=valor ...].`);
+      }
+      const values = parseToolOptions(tokens);
+      if (action === "activate") {
+        return this.commands.execute("authoring.tool.activate", {
+          toolId,
+          options: values
+        });
+      }
+      if (action === "run") {
+        return this.commands.execute("authoring.tool.execute", {
+          toolId,
+          input: values
+        });
+      }
+      return this.commands.execute("authoring.tool.parameters.set", {
+        toolId,
+        patch: values
+      });
+    }
+    if (["finish", "cancel"].includes(action)) {
+      this.#expectMaximum(tokens, 1, `tool ${action} [id]`);
+      const toolId = tokens.shift() ?? this.#activeCanonicalToolId(action);
+      return this.commands.execute(`authoring.tool.${action}`, { toolId });
+    }
+    throw new Error(
+      "Uso: tool list|show|status|activate|run|get|set|finish|cancel|help."
+    );
+  }
+
+  #activeCanonicalToolId(operation) {
+    const active = this.#query("authoring.tools.list")
+      .filter(tool => tool.state.active && tool.operations[operation]);
+    const continuous = active.filter(tool => tool.kind === "continuous");
+    const candidates = continuous.length ? continuous : active;
+    if (candidates.length === 1) return candidates[0].id;
+    if (!candidates.length) {
+      throw new Error(
+        `Nenhuma ferramenta ativa suporta ${operation}.`
+      );
+    }
+    throw new Error(
+      `Mais de uma ferramenta ativa suporta ${operation}: ` +
+      `${candidates.map(tool => tool.id).join(", ")}. Informe o ID.`
+    );
+  }
+
+  #toolHelp() {
+    return {
+      usage: [
+        "tool list [object|vertex|edge|face]",
+        "tool show id",
+        "tool status [id]",
+        "tool activate id [parâmetro=valor ...]",
+        "tool run id [parâmetro=valor ...]",
+        "tool get id",
+        "tool set id parâmetro=valor [...]",
+        "tool finish [id]",
+        "tool cancel [id]"
+      ],
+      examples: [
+        "tool activate transform.translate",
+        "tool activate draw.tube radius=0.12 radialSegments=8",
+        "tool activate draw.array sourceMode=catalog geometryType=sphere spacingMode=world spacingWorld=0.5",
+        "tool run mesh.extrude distance=2",
+        "tool set draw.array affineRotateZ=360*u affineScale=0.5+u"
+      ],
+      notes: [
+        "Mover, girar e escalar usam os mesmos IDs nos contextos objeto e malha.",
+        "draw.tube e draw.array são intenções distintas sobre o mesmo capturador de caminho.",
+        "A fachada encaminha para os comandos existentes; não mantém documento ou histórico próprios."
+      ]
+    };
+  }
+
   #pathHelp() {
     return {
       usage: [
@@ -3043,6 +3161,32 @@ function parseNamedOptions(tokens) {
     options[token.slice(0, separator)] = token.slice(separator + 1);
   }
   return options;
+}
+
+function parseToolOptions(tokens) {
+  const values = {};
+  for (const token of tokens) {
+    const separator = token.indexOf("=");
+    if (separator < 1) {
+      throw new Error(`Parâmetro de ferramenta inválido: ${token}.`);
+    }
+    const id = token.slice(0, separator);
+    if (Object.hasOwn(values, id)) {
+      throw new Error(`Parâmetro de ferramenta repetido: ${id}.`);
+    }
+    const source = token.slice(separator + 1);
+    if (source === "true") values[id] = true;
+    else if (source === "false") values[id] = false;
+    else if (source === "null") values[id] = null;
+    else if (/^[\[{]/.test(source)) values[id] = parseJson(source, id);
+    else {
+      const number = Number(source);
+      values[id] = source !== "" && Number.isFinite(number)
+        ? number
+        : source;
+    }
+  }
+  return values;
 }
 
 function pathDrawSpacingOptions(options, parseNumber) {

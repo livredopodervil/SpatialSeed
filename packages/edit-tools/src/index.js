@@ -16,3 +16,17 @@ export {
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
 } from "./createDefaultEditToolRegistry.js?build=20260731-0044b";
+export {
+  TOOL_CAPABILITY_DESCRIPTOR_VERSION,
+  ToolCapabilityFacade
+} from "./ToolCapabilityFacade.js?build=20260802-0047e";
+export {
+  TransformToolAdapter
+} from "./TransformToolAdapter.js?build=20260802-0047e";
+export {
+  EditToolRegistryAdapter
+} from "./EditToolRegistryAdapter.js?build=20260802-0047e";
+export {
+  createDefaultToolCapabilityFacade,
+  installToolCapabilityRuntime
+} from "./createDefaultToolCapabilityFacade.js?build=20260802-0047e";

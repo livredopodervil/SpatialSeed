@@ -298,6 +298,33 @@ undo
 redo
 ```
 
+### Capacidades canônicas de autoria
+
+Modos e ferramentas que antes vinham de fontes diferentes já podem ser
+consultados e acionados pela mesma porta textual. A fachada descreve contexto,
+estado e parâmetros, mas encaminha a execução aos comandos e controllers
+existentes; ela não mantém documento, preview ou histórico próprios.
+
+```text
+help tool
+tool list
+tool list face
+tool show transform.translate
+tool status
+tool activate transform.translate
+tool activate draw.tube radius=0.12 radialSegments=8
+tool activate draw.array sourceMode=catalog geometryType=sphere spacingMode=world spacingWorld=0.5
+tool get draw.array
+tool run mesh.extrude distance=2
+tool cancel
+```
+
+`draw.tube` e `draw.array` são intenções visíveis distintas sobre o mesmo
+capturador de caminho. Ativar `transform.translate` seleciona o gizmo; uma
+transformação numérica continua sendo uma operação diferente, como `move` ou o
+comando editorial correspondente. Consulte
+[`AUTHORING_TOOL_CAPABILITIES_0047E.md`](docs/AUTHORING_TOOL_CAPABILITIES_0047E.md).
+
 ### Propriedades compartilhadas
 
 O Inspector e o console consultam o mesmo `PropertyRegistry`:
@@ -575,6 +602,7 @@ runtime test property-contract
 runtime test geometry-creation
 runtime test mesh-edit-math
 runtime test mesh-topology
+runtime test tool-capabilities
 runtime test file-interop
 runtime test project-recovery
 runtime test experiment-contract

@@ -434,6 +434,12 @@ Estas atividades não precisam esperar um marco próprio.
 
 ### Experiência de uso
 
+- projetar HUD, menus, editor de layout, console, procedures e agentes a partir
+  das mesmas capacidades `authoring.tool.*`;
+- migrar ferramentas por fluxos completos e remover na mesma fatia os bindings
+  visuais substituídos, sem inferência pelo DOM;
+- tornar intenções, contexto, parâmetros e estado ativo legíveis, reduzindo
+  navegação entre painéis e recuperação por troca artificial de ferramenta;
 - corrigir o ajuste de fonte do editor de procedimentos;
 - melhorar alças de redimensionamento para toque;
 - revisar densidade da toolbar em telas pequenas;

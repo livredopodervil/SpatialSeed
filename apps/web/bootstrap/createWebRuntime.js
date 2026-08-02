@@ -20,7 +20,7 @@ import {
   createVirtualResourceTree,
   parseResourcePath
 } from "../../../packages/resource-tree/src/index.js?build=20260801-0045a1";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260802-0047a";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260802-0047e";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0044a";
@@ -108,8 +108,10 @@ import {
   ToolLifecycleController,
   ToolParameterStore,
   createDefaultEditToolRegistry,
-  createLegacyToolParameterMigration
-} from "../../../packages/edit-tools/src/index.js?build=20260731-0044b";
+  createLegacyToolParameterMigration,
+  createDefaultToolCapabilityFacade,
+  installToolCapabilityRuntime
+} from "../../../packages/edit-tools/src/index.js?build=20260802-0047e";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260730-0040e";
@@ -1336,7 +1338,24 @@ export async function createWebRuntime({
     events,
     capabilities
   });
+  const toolCapabilities = createDefaultToolCapabilityFacade({
+    editContext,
+    registry: toolRegistry,
+    parameters: toolParameters,
+    lifecycle: toolLifecycle,
+    execute: (id, args) => commands.execute(id, args)
+  });
+  installToolCapabilityRuntime({
+    commands,
+    queries,
+    facade: toolCapabilities
+  });
+  const unsubscribeToolCapabilities = toolCapabilities.subscribe(
+    snapshot => runtime.emit("authoring.tools.changed", snapshot)
+  );
   runtime
+    .onDispose(() => toolCapabilities.dispose())
+    .onDispose(unsubscribeToolCapabilities)
     .onDispose(() => sharedAnimations.dispose())
     .onDispose(() => animationRuntime.dispose());
 
@@ -1886,6 +1905,7 @@ export async function createWebRuntime({
     .register("runtime.performance", () => runtime.metrics());
 
   capabilities
+    .register("authoringTools", () => toolCapabilities.capabilities())
     .register("recovery", () => ({
       apiVersion: SandboxRecoveryController.apiVersion,
       storeApiVersion: IndexedDbRecoveryStore.apiVersion,
@@ -2167,6 +2187,7 @@ export async function createWebRuntime({
       measurement,
       toolRegistry,
       toolParameters,
+      toolCapabilities,
       editHud,
       geometryRegistry,
       propertyRegistry,

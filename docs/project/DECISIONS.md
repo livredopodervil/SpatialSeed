@@ -821,8 +821,9 @@ documental distinta.
 
 ## D-046 — A modularização usa oito fronteiras e gates monotônicos
 
-**Estado:** planejada; etapa zero, primeira fatia do kernel v2 e isolamento do
-perfil diagnóstico implementados até o incremento 0047c.
+**Estado:** planejada; etapa zero, primeira fatia do kernel v2, isolamento do
+perfil diagnóstico e porta canônica de autoria implementados até o incremento
+0047e.
 
 O aplicativo mantido convergirá para oito módulos acíclicos: `kernel`,
 `document`, `procedural`, `authoring`, `viewer`, `renderer-three`, `interface` e
@@ -874,6 +875,37 @@ outro checkout. Loopback permanece o padrão; exposição à rede exige
 `--network`. Certificados e chaves não entram no repositório. HTTP continua
 disponível somente por `--http` para diagnóstico explícito, e não é o fluxo
 canônico de validação da PWA.
+
+## D-048 — Capacidades de autoria convergem por uma fachada canônica sem estado paralelo
+
+**Estado:** implementada inicialmente no incremento 0047e.
+
+As fontes atuais de ferramentas são projetadas por adapters explícitos numa
+única fachada `authoring.tool.*`. O contrato serializável descreve identidade,
+tipo, lifecycle, contextos, parâmetros, apresentação, disponibilidade e
+operações. `EditContextController`, `ToolLifecycleController`,
+`ToolParameterStore` e os controllers de domínio continuam autoritativos; a
+fachada mantém apenas o índice imutável dos descritores e encaminha cada
+invocação ao comando existente.
+
+**Motivação:** modos de transformação, gestos contínuos, operações imediatas e
+ações expostas apenas pelo console eram chamados igualmente de “ferramenta”,
+mas vinham de tabelas e bindings diferentes. Isso escondia mover/girar do
+editor de HUD, permitia seções sem itens e apresentava desenho de tubo e
+distribuição sob a mesma intenção visual. Reescrever todas as fontes antes de
+melhorar a interface criaria uma migração longa e arriscada; copiar seu estado
+para um novo catálogo criaria outra fonte de verdade.
+
+**Consequências:** mover, girar e escalar usam IDs canônicos nos contextos de
+objeto e malha. `draw.tube` e `draw.array` são intenções e ícones distintos,
+embora compartilhem `path.sketch` e suas preferências existentes. Ativar um
+modo não significa executar uma transformação; operações documentais continuam
+passando pelos comandos próprios. Adapters não consultam HTML nem DOM. Entradas
+legadas permanecem somente enquanto alguma superfície ainda depende delas;
+cada família visual migrada deve passar a consumir o catálogo e remover, no
+mesmo incremento, seus bindings e listas hardcoded. As condições de remoção de
+cada adapter estão registradas em
+[`AUTHORING_TOOL_CAPABILITIES_0047E.md`](../AUTHORING_TOOL_CAPABILITIES_0047E.md).
 
 ## Decisões superadas ou rejeitadas
 

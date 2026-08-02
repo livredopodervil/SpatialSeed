@@ -93,6 +93,10 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
   2D fundamentais sobre planos arbitrários;
 - navegação multitoque preservada durante ferramentas, HUD sem teto artificial,
   snap de grade/ângulo compartilhado, régua, transferidor e reset do viewer.
+- fachada canônica de capacidades de autoria sobre modos de transformação e o
+  registro atual de ferramentas, sem estado editorial ou histórico paralelo;
+  mover, girar e escalar possuem IDs estáveis e o desenho de tubo/distribuição
+  possui intenções textuais distintas sobre o mesmo capturador.
 
 ## Invariantes
 
@@ -129,6 +133,9 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
     somente o comando final entra no documento, histórico e recuperação.
 27. A reorganização converge para oito módulos, usa um único mapa de migração e
     aceita somente redução monotônica da dívida arquitetural medida.
+28. HUD, console, procedures e agentes devem consumir a mesma capacidade
+    canônica; adapters legados encaminham para as autoridades existentes e
+    nunca descobrem ferramentas percorrendo o DOM.
 
 ## Fluxo
 
@@ -153,23 +160,26 @@ runtime test help
 runtime test all
 runtime resources
 animate status
+help tool
+tool list
+tool show transform.translate
 ```
 
 ## Próxima prioridade
 
-Validar visualmente os perfis normal e diagnóstico do build `0047d` pelo
-servidor HTTPS canônico em Android/Termux, inclusive instalação e reabertura da
-PWA. O contrato `module-v2`, o reducer regional e o catálogo inicial
-de experimentos usam ativação candidata; `platform-web` possui os adapters do
-navegador; testes, benchmarks e auditorias não são alcançáveis pelo boot de
-produção. O próximo incremento deve continuar reduzindo o composition root por
-uma fatia vertical não visual, sem iniciar ainda a reorganização funcional do
-HUD.
+O objetivo imediato é tornar as muitas capacidades já existentes acessíveis de
+forma fluida para pessoas, procedures, agentes e colaboração. Preservar PWA,
+desempenho e comportamento existente é requisito de cada incremento, não o
+objetivo que deve consumir a maior parte do trabalho.
 
-O roadmap funcional permanece preservado, mas está subordinado à cristalização
-do núcleo: redefinição paramétrica pelo Inspector; operadores e constraints 2D;
-cotas persistentes; grafo explícito de modificadores; e topologia/atributos de
-malha ampliados.
+O build `0047e` introduz a fachada `authoring.tool.*` como porta única de
+descrição, estado, parâmetros e invocação. Ela adapta explicitamente as fontes
+atuais e não lê o DOM. O próximo incremento deve fazer uma primeira família
+visual completa — transformações e/ou desenho de caminho — nascer desses
+descritores no HUD e no editor de layout, retirando no mesmo patch os IDs,
+listas e listeners hardcoded que essa família substituir. A migração deve ser
+guiada pelos fluxos reais de uso: menos navegação, intenções nomeadas, estado
+ativo evidente e os mesmos comandos disponíveis de forma humana e procedural.
 
 Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PATH_REFERENCES_0037A.md`,
@@ -183,7 +193,8 @@ Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/EDIT_INTERACTION_0038B.md`. Para a reorganização atual, consulte
 `docs/project/MAIN_PROPOSAL_ARCHITECTURE.md`,
 `docs/project/WEB_APPLICATION_PROFILES.md` e
-`docs/project/BASELINE_GATES.md`.
+`docs/project/BASELINE_GATES.md`. O contrato transitório de ferramentas está em
+`docs/AUTHORING_TOOL_CAPABILITIES_0047E.md`.
 
 ## Protocolo para nova LLM
 

@@ -167,7 +167,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260802-0047a";
+} from "../../devtools/src/DevConsole.js?build=20260802-0047e";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -256,7 +256,7 @@ import {
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../edit-tools/src/index.js?build=20260731-0044b";
+} from "../../edit-tools/src/index.js?build=20260802-0047e";
 import {
   deriveHudContext,
   geometryToolIcon,
@@ -355,12 +355,16 @@ import {
   createModuleRegistryTests
 } from "./ModuleRegistryTests.js?build=20260802-0047b";
 import {
+  createToolCapabilityTests
+} from "./ToolCapabilityTests.js?build=20260802-0047e";
+import {
   BenchmarkRunner
 } from "../../benchmarks/src/index.js?build=20260802-0047a";
 
 export function createRuntimeLayerTests() {
   return {
     "module-v2": createModuleRegistryTests(),
+    "tool-capabilities": createToolCapabilityTests(),
     "performance-baseline": {
       "benchmark compacto mede estrutura sem tocar a cena ativa"() {
         const runner = new BenchmarkRunner({

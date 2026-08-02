@@ -1,6 +1,6 @@
 # Main Proposal: núcleo cristalizado e extensões internas
 
-Status: implementação incremental; etapa 0, primeira fatia do kernel v2 e isolamento diagnóstico materializados até o build `0047c`, sem merge da branch 0046
+Status: implementação incremental; baseline, primeira fatia do kernel v2, isolamento diagnóstico, HTTPS canônico e fachada de ferramentas materializados até o build `0047e`, sem merge da branch 0046
 Base obrigatória: `d556306c8b921363c26c56f49cb532e8e2e2b0f9` (`origin/main`)  
 Fonte de ideias, não de integração: `cfc63ca813ca722e9755b7a23c6d484287e9c289` e o estado local exportado da 0046  
 Data da análise: 2026-08-02
@@ -185,11 +185,12 @@ Um componente de interface é descrição, não elemento DOM nem callback:
   icon: "transform-move",
   action: {
     command: "authoring.tool.activate",
-    arguments: { toolId: "transform.move" }
+    arguments: { toolId: "transform.translate" }
   },
   state: {
-    query: "authoring.tool.active",
-    activeWhen: { equals: "transform.move" }
+    query: "authoring.tool.status",
+    arguments: { toolId: "transform.translate" },
+    activeWhen: { path: "state.active", equals: true }
   },
   sizing: {
     min: [1, 1],
@@ -215,7 +216,11 @@ O fluxo único é:
 
 `index.html` deve terminar como shell mínimo, com pontos de montagem e recursos de boot. Nenhum controle funcional fica codificado estaticamente para depois ser “adotado”. Componentes compostos especiais usam um `rendererId` confiável registrado por `platform-web`; extensões de usuário não injetam HTML ou JavaScript.
 
-O adaptador de HUD legado pode existir apenas como ferramenta temporária de migração: lê a estrutura antiga, gera descritores e perfil, valida o resultado e é removido quando o último controle for convertido. Ele não participa do runtime final.
+Adapters legados podem existir apenas como portas temporárias de migração sobre
+registros, comandos e estados explicitamente injetados. Eles nunca descobrem
+capacidades lendo a estrutura DOM. Cada adapter é removido quando sua fonte
+passa a contribuir nativamente os mesmos descritores e o último consumidor
+antigo é convertido.
 
 ## 7. Console, catálogos e extensões do usuário
 
@@ -252,7 +257,7 @@ Uma extensão de usuário pode acrescentar procedimentos, formulários derivados
 | Diagnóstico de referências ausentes | preservar | erro de validação antes da ativação; fallback apenas em safe mode explícito |
 | Preview sem commit | preservar | transação sobre o mesmo store do HUD vivo |
 | Designer de layout | reimplementar sobre a API final | sem conhecer DOM adotado ou stores globais |
-| Adapter do HUD antigo | usar uma vez | conversor de migração, depois apagar |
+| Adapters de capacidades atuais | usar temporariamente | fontes explícitas, sem DOM nem estado próprio; remover por família migrada |
 
 ## 9. O que não portar
 
@@ -409,6 +414,23 @@ O incremento `0047c` contém somente:
 
 O ciclo `apps/web` ↔ `runtime-test-plugin` foi removido: nenhuma das duas
 arestas permanece e o perfil diagnóstico conserva os mesmos comandos por
-composição explícita. O incremento seguinte deve continuar reduzindo o
-composition root por uma fatia vertical não visual. Ainda não deve existir
-designer, nova folha de estilos nem reorganização funcional do HUD.
+composição explícita.
+
+O incremento `0047d` tornou `tools/no_cache_server.py` o servidor HTTPS
+canônico do checkout atual e corrigiu a normalização de raiz e escopo do
+Service Worker.
+
+O incremento `0047e` contém somente:
+
+1. fachada canônica serializável de capacidades de autoria;
+2. adapters explícitos para modos de transformação e `EditToolRegistry`, sem
+   duplicar estado, transação ou algoritmo;
+3. IDs estáveis para mover/girar/escalar e presets distintos para desenhar tubo
+   ou distribuir ao desenhar;
+4. comandos, consultas e console `authoring.tool.*`, mais testes de equivalência
+   e idempotência.
+
+O incremento não reorganiza visualmente o HUD. A próxima fatia deve usar esse
+catálogo numa família visual real e remover os bindings hardcoded equivalentes,
+priorizando fluidez humana e disponibilidade procedural em vez de modularização
+sem efeito perceptível.
