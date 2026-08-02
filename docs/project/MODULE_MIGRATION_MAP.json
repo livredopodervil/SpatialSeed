@@ -1,0 +1,286 @@
+{
+  "schemaVersion": 1,
+  "architecture": "main-proposal-v1",
+  "modules": {
+    "kernel": { "dependsOn": [] },
+    "document": { "dependsOn": ["kernel"] },
+    "procedural": { "dependsOn": ["kernel", "document"] },
+    "authoring": { "dependsOn": ["kernel", "document"] },
+    "viewer": { "dependsOn": ["kernel", "document"] },
+    "renderer-three": { "dependsOn": ["kernel", "document", "viewer"] },
+    "interface": { "dependsOn": ["kernel"] },
+    "platform-web": {
+      "dependsOn": [
+        "kernel",
+        "document",
+        "procedural",
+        "authoring",
+        "viewer",
+        "renderer-three",
+        "interface"
+      ]
+    }
+  },
+  "components": {
+    "apps/web": {
+      "target": "platform-web",
+      "disposition": "reduce-to-composition-root"
+    },
+    "packages/animation-panel": {
+      "target": "interface",
+      "disposition": "convert-to-declarative-components"
+    },
+    "packages/animation-runtime": {
+      "target": "viewer",
+      "disposition": "preserve-algorithms"
+    },
+    "packages/appearance-binding": {
+      "target": "document",
+      "disposition": "merge-with-document-services"
+    },
+    "packages/appearance-graph": {
+      "target": "document",
+      "disposition": "preserve-normalized-stores"
+    },
+    "packages/appearance-runtime": {
+      "target": "document",
+      "disposition": "preserve-normalization"
+    },
+    "packages/asset-store": {
+      "target": "document",
+      "disposition": "preserve-content-addressing"
+    },
+    "packages/batch-material-cache": {
+      "target": "renderer-three",
+      "disposition": "preserve-cache"
+    },
+    "packages/benchmarks": {
+      "target": "platform-web",
+      "role": "diagnostics",
+      "disposition": "load-outside-production-runtime"
+    },
+    "packages/catalog-ui": {
+      "target": "interface",
+      "disposition": "convert-to-schema-derived-components"
+    },
+    "packages/core": {
+      "target": "document",
+      "disposition": "split-event-bus-into-kernel"
+    },
+    "packages/devtools": {
+      "target": "platform-web",
+      "disposition": "retain-as-command-adapter"
+    },
+    "packages/drawing-target": {
+      "target": "authoring",
+      "disposition": "preserve-local-session-state"
+    },
+    "packages/edit-context": {
+      "target": "authoring",
+      "disposition": "preserve-operational-context"
+    },
+    "packages/edit-hud": {
+      "target": "interface",
+      "disposition": "replace-dom-rendering-with-descriptors"
+    },
+    "packages/edit-tools": {
+      "target": "authoring",
+      "disposition": "preserve-tool-registry-and-parameters"
+    },
+    "packages/editor-commands": {
+      "target": "kernel",
+      "disposition": "split-handlers-into-module-contributions"
+    },
+    "packages/editor-core": {
+      "target": "authoring",
+      "disposition": "preserve-editor-session-state"
+    },
+    "packages/editor-transform-tools": {
+      "target": "interface",
+      "disposition": "remove-after-confirming-no-consumer"
+    },
+    "packages/experiment-panel": {
+      "target": "interface",
+      "disposition": "convert-to-declarative-components"
+    },
+    "packages/experiment-plugin": {
+      "target": "procedural",
+      "disposition": "convert-to-catalog-contribution"
+    },
+    "packages/experiment-runtime": {
+      "target": "procedural",
+      "disposition": "preserve-plan-first-runtime"
+    },
+    "packages/geometry-creation-panel": {
+      "target": "interface",
+      "disposition": "convert-to-schema-derived-components"
+    },
+    "packages/geometry-registry": {
+      "target": "procedural",
+      "disposition": "preserve-declarative-providers"
+    },
+    "packages/incremental-runtime": {
+      "target": "renderer-three",
+      "disposition": "preserve-incremental-projection"
+    },
+    "packages/instance-batches": {
+      "target": "renderer-three",
+      "disposition": "preserve-batching"
+    },
+    "packages/local-viewers": {
+      "target": "viewer",
+      "disposition": "preserve-coordination-protocols"
+    },
+    "packages/math-affine": {
+      "target": "procedural",
+      "disposition": "preserve-pure-math"
+    },
+    "packages/measurement-tools": {
+      "target": "viewer",
+      "disposition": "preserve-ephemeral-measurement"
+    },
+    "packages/mesh-edit-panel": {
+      "target": "interface",
+      "disposition": "convert-to-declarative-components"
+    },
+    "packages/mesh-editor-core": {
+      "target": "authoring",
+      "disposition": "preserve-topology-core"
+    },
+    "packages/object-inspector": {
+      "target": "interface",
+      "disposition": "convert-to-schema-derived-components"
+    },
+    "packages/object-placement": {
+      "target": "authoring",
+      "disposition": "preserve-preview-and-single-commit"
+    },
+    "packages/planar-authoring": {
+      "target": "authoring",
+      "disposition": "preserve-planar-tools"
+    },
+    "packages/plugin-api": {
+      "target": "kernel",
+      "disposition": "evolve-to-module-v2"
+    },
+    "packages/procedural-families": {
+      "target": "procedural",
+      "disposition": "preserve-compact-format"
+    },
+    "packages/procedure-editor": {
+      "target": "interface",
+      "disposition": "split-editor-view-from-catalog-commands"
+    },
+    "packages/project-files": {
+      "target": "document",
+      "disposition": "preserve-versioned-document-io"
+    },
+    "packages/project-recovery": {
+      "target": "platform-web",
+      "disposition": "split-recovery-policy-from-browser-stores"
+    },
+    "packages/property-registry": {
+      "target": "document",
+      "disposition": "split-schemas-from-selection-service"
+    },
+    "packages/region-box": {
+      "target": "document",
+      "disposition": "preserve-reducer"
+    },
+    "packages/renderer-outline": {
+      "target": "renderer-three",
+      "disposition": "merge-with-renderer-three"
+    },
+    "packages/renderer-resource-cache": {
+      "target": "renderer-three",
+      "disposition": "preserve-reference-counting"
+    },
+    "packages/renderer-three": {
+      "target": "renderer-three",
+      "disposition": "preserve-as-projection-adapter"
+    },
+    "packages/resource-audit": {
+      "target": "platform-web",
+      "role": "diagnostics",
+      "disposition": "load-outside-production-runtime"
+    },
+    "packages/resource-tree": {
+      "target": "procedural",
+      "disposition": "preserve-lazy-virtual-tree"
+    },
+    "packages/runtime-api": {
+      "target": "kernel",
+      "disposition": "merge-with-module-v2-runtime"
+    },
+    "packages/runtime-layers": {
+      "target": "viewer",
+      "disposition": "move-editor-session-to-authoring"
+    },
+    "packages/runtime-test-plugin": {
+      "target": "platform-web",
+      "role": "diagnostics",
+      "disposition": "remove-from-production-dependency-graph"
+    },
+    "packages/scene-hierarchy": {
+      "target": "document",
+      "disposition": "preserve-hierarchy-algorithms"
+    },
+    "packages/script-runtime": {
+      "target": "procedural",
+      "disposition": "preserve-worker-ses-boundary"
+    },
+    "packages/selection-operations": {
+      "target": "authoring",
+      "disposition": "preserve-command-backed-operations"
+    },
+    "packages/spatial-references": {
+      "target": "authoring",
+      "disposition": "preserve-reference-and-path-services"
+    },
+    "packages/stroke-resources": {
+      "target": "procedural",
+      "disposition": "preserve-segmented-compaction"
+    },
+    "packages/tests": {
+      "target": "platform-web",
+      "role": "diagnostics",
+      "disposition": "remove-from-production-dependency-graph"
+    },
+    "packages/ui-config": {
+      "target": "interface",
+      "disposition": "evolve-into-application-and-profile-documents"
+    },
+    "packages/ui-widgets": {
+      "target": "interface",
+      "disposition": "split-pure-composition-from-dom-factories"
+    },
+    "packages/viewer-render-panel": {
+      "target": "interface",
+      "disposition": "convert-to-declarative-components"
+    },
+    "packages/world-model": {
+      "target": "document",
+      "disposition": "extract-invariants-then-remove-parallel-model"
+    }
+  },
+  "historicalSurfaces": {
+    "root-prototype": {
+      "paths": [
+        "core",
+        "engine",
+        "modules",
+        "objects",
+        "regions",
+        "renderers",
+        "main.js",
+        "style.css",
+        "test.html"
+      ],
+      "disposition": "archive-with-its-cataloged-prototype"
+    },
+    "independent-experiments": {
+      "paths": ["apps/experiments"],
+      "disposition": "retain-outside-the-maintained-runtime"
+    }
+  }
+}

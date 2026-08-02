@@ -1,6 +1,6 @@
 # Main Proposal: núcleo cristalizado e extensões internas
 
-Status: proposta para implementação incremental, sem merge da branch 0046  
+Status: implementação incremental; etapa 0 materializada no build `0047a`, sem merge da branch 0046
 Base obrigatória: `d556306c8b921363c26c56f49cb532e8e2e2b0f9` (`origin/main`)  
 Fonte de ideias, não de integração: `cfc63ca813ca722e9755b7a23c6d484287e9c289` e o estado local exportado da 0046  
 Data da análise: 2026-08-02
@@ -366,15 +366,22 @@ O branch nasce exclusivamente do hash indicado no cabeçalho. Toda mudança deve
 
 Não haverá push, merge, rebase ou atualização remota automática. Se o `origin/main` avançar, a nova base será comparada conscientemente; o branch não será “atualizado” por mistura silenciosa. O sincronismo entre ambientes será feito por commits/patches identificados por hash e aplicados na mesma ordem.
 
-## 13. Primeiro incremento proposto
+## 13. Sequência inicial de incrementos
 
-O primeiro incremento de código deve conter somente:
+O incremento `0047a` contém somente a etapa zero: benchmark e auditoria
+arquitetural versionados, mapa único de migração, correção do precache e gates
+monotônicos. Seus procedimentos estão em
+[`BASELINE_GATES.md`](BASELINE_GATES.md).
 
-1. benchmark e auditoria arquitetural versionados;
-2. correção do precache do `main`;
-3. contrato `module-v2` com validação e ativação atômica;
-4. adaptação de dois módulos existentes, sem mudança de comportamento;
-5. remoção do ciclo entre runtime de produção e plugin de testes;
-6. documentação do mapa de migração.
+O incremento seguinte deve conter somente:
 
-Ainda não deve conter designer, nova folha de estilos nem migração em massa do HUD. A primeira fatia visual só começa depois que o registro único e os gates estiverem funcionando.
+1. contrato `module-v2` com validação e ativação atômica;
+2. adaptação do módulo de região e do catálogo inicial de experimentos, sem
+   reescrever seus algoritmos;
+3. testes de rollback, ordem de descarte e referências inválidas.
+
+A remoção do ciclo entre runtime de produção e plugin de testes será o
+incremento imediatamente posterior, já sobre o kernel validado. Ainda não deve
+existir designer, nova folha de estilos nem migração em massa do HUD. A primeira
+fatia visual só começa depois que o registro único e os gates estiverem
+funcionando.

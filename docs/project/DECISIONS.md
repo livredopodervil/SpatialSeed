@@ -819,6 +819,30 @@ inicial mantido pelo controlador do viewer. Medições não são sincronizadas,
 salvas nem recuperadas; uma futura cota persistente deverá ser uma entidade
 documental distinta.
 
+## D-046 — A modularização usa oito fronteiras e gates monotônicos
+
+**Estado:** planejada; etapa zero implementada no incremento 0047a.
+
+O aplicativo mantido convergirá para oito módulos acíclicos: `kernel`,
+`document`, `procedural`, `authoring`, `viewer`, `renderer-three`, `interface` e
+`platform-web`. O mapa canônico de migração é dado estruturado consumido pela
+auditoria; cada componente atual possui um único destino e uma disposição
+explícita. A dívida observada no início é registrada por identidade, não apenas
+por contagem, e o conjunto aceito só pode diminuir.
+
+**Motivação:** mover arquivos sem uma fronteira verificável poderia apenas
+renomear acoplamentos, criar sistemas paralelos ou perder os ganhos de
+compacidade e desempenho. Um gate anterior à migração permite provar que cada
+fatia remove dependências e não acrescenta outra fonte de verdade.
+
+**Consequências:** novos imports profundos, ciclos, acessos indevidos a DOM ou
+Three.js e dependências de diagnóstico no boot falham antes da integração. Os
+formatos compactos de famílias, lotes, traços, árvore virtual e cena possuem
+limites estruturais reproduzíveis; tempos só são comparados de forma
+intercalada na mesma máquina. Uma baseline não autoriza o achado legado que
+contém e não pode ser regravada para ocultar regressão. Cada migração substitui
+e remove o caminho anterior no mesmo incremento.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

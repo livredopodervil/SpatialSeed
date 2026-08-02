@@ -810,6 +810,9 @@ export function createEditorCommands({
     .register("benchmark.help", () =>
       benchmarkRunner.help()
     )
+    .register("benchmark.compact", args =>
+      benchmarkRunner.runCompact(args)
+    )
     .register("benchmark.scene", args =>
       benchmarkRunner.runScene(args)
     )

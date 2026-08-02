@@ -1,10 +1,19 @@
 import { Region } from "../../core/src/Region.js";
 import { Sandbox } from "../../core/src/Sandbox.js";
+import {
+  COMPACT_BASELINE_SCALE,
+  createCompactRuntimeBenchmark
+} from "./CompactRuntimeBenchmark.js";
 import { summarizeSamples } from "./BenchmarkStatistics.js";
 import { createBenchmarkScene, createTransforms } from "./SceneFactory.js";
 
+export const BENCHMARK_RELATIVE_LIMITS = Object.freeze({
+  medianRegressionPercent: 10,
+  p95RegressionPercent: 15
+});
+
 export class BenchmarkRunner {
-  static apiVersion = "benchmark-runner-v1";
+  static apiVersion = "benchmark-runner-v2";
 
   constructor({ reducer, projectService }) {
     this.reducer = reducer;
@@ -13,6 +22,26 @@ export class BenchmarkRunner {
   }
 
   runScene({ objectCount = 1000, samples = 5, transformCount = 100 } = {}) {
+    const result = this.#measureScene({
+      objectCount,
+      samples,
+      transformCount
+    });
+    this.#record(result);
+    return result;
+  }
+
+  runCompact(options = {}) {
+    const result = createCompactRuntimeBenchmark({
+      reducer: this.reducer,
+      measureScene: sceneOptions => this.#measureScene(sceneOptions),
+      options
+    });
+    this.#record(result);
+    return structuredClone(result);
+  }
+
+  #measureScene({ objectCount = 1000, samples = 5, transformCount = 100 } = {}) {
     const count = integer(objectCount, 1, 100000, "objectCount");
     const repetitions = integer(samples, 1, 50, "samples");
     const batchCount = Math.min(
@@ -125,7 +154,6 @@ export class BenchmarkRunner {
       )
     };
 
-    this.#record(result);
     return result;
   }
 
@@ -141,11 +169,7 @@ export class BenchmarkRunner {
     const previous = [...this.history]
       .slice(0, -1)
       .reverse()
-      .find(result =>
-        result.type === current.type &&
-        result.objectCount === current.objectCount &&
-        result.transformCount === current.transformCount
-      );
+      .find(result => comparisonKey(result) === comparisonKey(current));
 
     if (!previous) {
       return {
@@ -164,16 +188,37 @@ export class BenchmarkRunner {
         previousMedianMs: before.median,
         currentMedianMs: currentSummary.median,
         deltaMs: round(currentSummary.median - before.median),
-        changePercent: before.median === 0
-          ? null
-          : round(((currentSummary.median - before.median) / before.median) * 100)
+        changePercent: percentageChange(
+          before.median,
+          currentSummary.median
+        ),
+        previousP95Ms: before.p95,
+        currentP95Ms: currentSummary.p95,
+        p95DeltaMs: finiteDifference(before.p95, currentSummary.p95),
+        p95ChangePercent: percentageChange(before.p95, currentSummary.p95)
       };
     }
+
+    const comparisons = Object.values(metrics);
+    const gate = {
+      limits: BENCHMARK_RELATIVE_LIMITS,
+      ok: comparisons.every(metric =>
+        belowRegressionLimit(
+          metric.changePercent,
+          BENCHMARK_RELATIVE_LIMITS.medianRegressionPercent
+        ) &&
+        belowRegressionLimit(
+          metric.p95ChangePercent,
+          BENCHMARK_RELATIVE_LIMITS.p95RegressionPercent
+        )
+      )
+    };
 
     return {
       comparable: true,
       previousId: previous.id,
       currentId: current.id,
+      gate,
       metrics
     };
   }
@@ -191,6 +236,7 @@ export class BenchmarkRunner {
   help() {
     return {
       commands: [
+        "benchmark compact [instâncias] [traços] [amostras]",
         "benchmark scene [objetos] [amostras] [transformados]",
         "benchmark selection [objetos] [amostras]",
         "benchmark compare",
@@ -200,7 +246,8 @@ export class BenchmarkRunner {
       defaults: {
         objectCount: 1000,
         samples: 5,
-        transformCount: 100
+        transformCount: 100,
+        compact: COMPACT_BASELINE_SCALE
       },
       note: "Executado em Sandbox isolado; a cena ativa não é alterada."
     };
@@ -212,6 +259,30 @@ export class BenchmarkRunner {
       this.history.splice(0, this.history.length - 20);
     }
   }
+}
+
+function comparisonKey(result) {
+  return result.comparisonKey ?? [
+    result.type,
+    result.objectCount,
+    result.transformCount
+  ].join(":");
+}
+
+function percentageChange(previous, current) {
+  if (!Number.isFinite(previous) || !Number.isFinite(current) || previous === 0) {
+    return null;
+  }
+  return round(((current - previous) / previous) * 100);
+}
+
+function finiteDifference(previous, current) {
+  if (!Number.isFinite(previous) || !Number.isFinite(current)) return null;
+  return round(current - previous);
+}
+
+function belowRegressionLimit(value, limit) {
+  return value === null || value <= limit;
 }
 
 function measure(callback) {

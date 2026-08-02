@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260801-0045a1",
-  "channel": "feature/0045a1-current-base-segmented-runtime"
+  "build": "20260802-0047a",
+  "channel": "main-proposal/0047a-baseline-gates"
 }

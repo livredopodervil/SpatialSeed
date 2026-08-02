@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "baselineVersion": "compact-runtime-baseline-v1",
+  "parentCommit": "b2085bffc4391afbd4212f569268919e54139804",
+  "build": "20260802-0047a",
+  "measuredAt": "2026-08-02",
+  "environment": {
+    "runtime": "Node.js v24.14.0 with vendored Three.js loader",
+    "platform": "linux",
+    "architecture": "x64"
+  },
+  "scenario": {
+    "instanceCount": 10000,
+    "strokeCount": 1000,
+    "sceneObjectCount": 10000,
+    "transformCount": 100,
+    "pageSize": 25,
+    "samples": 5
+  },
+  "structure": {
+    "family": {
+      "members": 10000,
+      "estimatedBytes": 417808,
+      "jsonBytes": 397097,
+      "expandedInputJsonBytes": 843107
+    },
+    "instanceBatch": {
+      "batches": 1,
+      "instances": 10000,
+      "matrixBytes": 640000
+    },
+    "strokes": {
+      "strokes": 1000,
+      "chunks": 8,
+      "estimatedBytes": 124932,
+      "jsonBytes": 198667
+    },
+    "virtualPage": {
+      "items": 25,
+      "total": 10000,
+      "descriptorsCreated": 25
+    },
+    "scene": {
+      "objects": 10000,
+      "serializedBytes": 1819009
+    }
+  },
+  "timingsMs": {
+    "familyPack": { "median": 10.73, "p95": 13.011 },
+    "instanceBatch": { "median": 6.914, "p95": 9.709 },
+    "strokeBundle": { "median": 34.258, "p95": 34.669 },
+    "virtualPage": { "median": 32.792, "p95": 33.462 },
+    "sceneReplaceState": { "median": 243.259, "p95": 262.17 },
+    "sceneCloneState": { "median": 33.797, "p95": 42.193 },
+    "sceneTransformOne": { "median": 0.709, "p95": 1.67 },
+    "sceneTransformBatch": { "median": 1.86, "p95": 8.248 },
+    "sceneValidate": { "median": 65.422, "p95": 68.543 }
+  },
+  "relativeGate": {
+    "method": "five interleaved base/candidate samples on the same environment",
+    "maximumMedianRegressionPercent": 10,
+    "maximumP95RegressionPercent": 15
+  },
+  "note": "Timings describe this environment only; structural values are the portable gates."
+}

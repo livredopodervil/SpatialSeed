@@ -666,6 +666,7 @@ export class DevConsole {
       commands: [
         "commands",
         "benchmark help",
+        "benchmark compact 10000 1000 5",
         "benchmark scene 1000 5 100",
         "benchmark selection 1000 5",
         "selection stats",
@@ -674,7 +675,7 @@ export class DevConsole {
         "benchmark compare|history|clear",
         "test help|all|sandbox|reducer|commands|project",
         "runtime test viewer-animation|animation-runtime|animation-commands|" +
-        "affine-repeat|tool-parameters|" +
+        "affine-repeat|tool-parameters|performance-baseline|" +
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|path-references|mesh-edit-math|" +
         "geometry-creation|geometry-registry|compact-resources|" +
@@ -2347,6 +2348,27 @@ export class DevConsole {
       return this.commands.execute("benchmark.help");
     }
 
+    if (action === "compact") {
+      const instanceCount = tokens.length
+        ? this.#integer(tokens.shift())
+        : 10000;
+      const strokeCount = tokens.length
+        ? this.#integer(tokens.shift())
+        : 1000;
+      const samples = tokens.length ? this.#integer(tokens.shift()) : 5;
+      this.#expectMaximum(
+        tokens,
+        0,
+        "benchmark compact [instâncias] [traços] [amostras]"
+      );
+      return this.commands.execute("benchmark.compact", {
+        instanceCount,
+        strokeCount,
+        sceneObjectCount: instanceCount,
+        samples
+      });
+    }
+
     if (action === "scene") {
       const objectCount = tokens.length ? this.#integer(tokens.shift()) : 1000;
       const samples = tokens.length ? this.#integer(tokens.shift()) : 5;
@@ -2389,7 +2411,7 @@ export class DevConsole {
 
     if (!id) {
       throw new Error(
-        "Uso: benchmark help|scene|selection|compare|history|clear"
+        "Uso: benchmark help|compact|scene|selection|compare|history|clear"
       );
     }
 
@@ -2528,7 +2550,7 @@ export class DevConsole {
         "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
         "resources|compaction status|run|set|help|" +
         "test help|animation-runtime|animation-commands|" +
-        "tool-parameters|selection-ui|instance-batches|" +
+        "tool-parameters|selection-ui|instance-batches|performance-baseline|" +
         "experiment-contract|experiment-plugin|" +
         "experiment-panel|placement-frame|" +
         "geometry-creation|geometry-registry|file-interop|" +

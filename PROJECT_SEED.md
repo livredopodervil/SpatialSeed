@@ -126,6 +126,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
     de disputar autoridade ou iniciar recuperação.
 26. Previews de gestos manuais podem transmitir matrizes temporárias limitadas;
     somente o comando final entra no documento, histórico e recuperação.
+27. A reorganização converge para oito módulos, usa um único mapa de migração e
+    aceita somente redução monotônica da dívida arquitetural medida.
 
 ## Fluxo
 
@@ -153,16 +155,15 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente o incremento `0040b` em mobile — `pan/pinch` durante
-ferramentas, órbita com três dedos, HUD amplo, snap, régua, transferidor e reset
-do viewer — e avançar em incrementos independentes:
+Validar visualmente o build `0047a`, confirmar os gates em Android/Termux e
+implementar o contrato `module-v2` com ativação e rollback atômicos. A primeira
+adaptação abrangerá somente a região e o catálogo inicial de experimentos; não
+deve iniciar ainda a migração do HUD.
 
-1. redefinição paramétrica pelo Inspector, com preview e commit atômico;
-2. trim, extend, offset, fillet e constraints geométricas 2D;
-3. compasso, cotas persistentes e medições como referências transformadoras;
-4. referências vinculadas por grafo de modificadores, sem ciclos e com
-   invalidação incremental;
-5. UVs/normais por canto, bevel, knife e assets de malha compartilhados.
+O roadmap funcional permanece preservado, mas está subordinado à cristalização
+do núcleo: redefinição paramétrica pelo Inspector; operadores e constraints 2D;
+cotas persistentes; grafo explícito de modificadores; e topologia/atributos de
+malha ampliados.
 
 Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PATH_REFERENCES_0037A.md`,
@@ -173,7 +174,9 @@ Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PLANAR_AUTHORING_0040A.md`,
 `docs/MEASUREMENT_INPUT_0040B.md`,
 `docs/TOOL_PARAMETERS_PATH_DRAW_0039D.md` e
-`docs/EDIT_INTERACTION_0038B.md`.
+`docs/EDIT_INTERACTION_0038B.md`. Para a reorganização atual, consulte
+`docs/project/MAIN_PROPOSAL_ARCHITECTURE.md` e
+`docs/project/BASELINE_GATES.md`.
 
 ## Protocolo para nova LLM
 

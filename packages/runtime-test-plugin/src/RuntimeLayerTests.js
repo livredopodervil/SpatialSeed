@@ -167,7 +167,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260730-0040e";
+} from "../../devtools/src/DevConsole.js?build=20260802-0047a";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -244,7 +244,7 @@ import {
 } from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260801-0045a1";
+} from "../../editor-commands/src/EditorCommands.js?build=20260802-0047a";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -352,9 +352,93 @@ import {
   ModuleRegistry,
   selectCapabilities
 } from "../../plugin-api/src/ModuleRegistry.js";
+import {
+  BenchmarkRunner
+} from "../../benchmarks/src/index.js?build=20260802-0047a";
 
 export function createRuntimeLayerTests() {
   return {
+    "performance-baseline": {
+      "benchmark compacto mede estrutura sem tocar a cena ativa"() {
+        const runner = new BenchmarkRunner({
+          reducer: boxRegionReducer,
+          projectService: { validator: new ProjectValidator() }
+        });
+        const result = runner.runCompact({ samples: 1 });
+
+        assertEqual(result.baselineVersion, "compact-runtime-baseline-v1");
+        assertEqual(result.structure.family.members, 10000);
+        assertEqual(result.structure.instanceBatch.batches, 1);
+        assertEqual(result.structure.instanceBatch.instances, 10000);
+        assertEqual(result.structure.instanceBatch.matrixBytes, 640000);
+        assertEqual(result.structure.strokes.strokes, 1000);
+        assertEqual(result.structure.virtualPage.items, 25);
+        assertEqual(result.structure.virtualPage.total, 10000);
+        assertEqual(result.structure.virtualPage.descriptorsCreated, 25);
+        assertEqual(result.structure.scene.objects, 10000);
+        assertEqual(result.gates.applicable, true);
+        assertEqual(result.gates.ok, true);
+        assertEqual(result.gates.checks.every(check => check.ok), true);
+        assertEqual(runner.list().length, 1);
+      },
+
+      "histórico compara somente medições compactas de escala idêntica"() {
+        const runner = new BenchmarkRunner({
+          reducer: boxRegionReducer,
+          projectService: { validator: new ProjectValidator() }
+        });
+        const options = {
+          instanceCount: 64,
+          strokeCount: 16,
+          sceneObjectCount: 64,
+          transformCount: 8,
+          pageSize: 8,
+          samples: 1
+        };
+        runner.runCompact(options);
+        runner.runCompact(options);
+        const comparison = runner.compare();
+        assertEqual(comparison.comparable, true);
+        assertEqual(typeof comparison.gate.ok, "boolean");
+        assertEqual(
+          Object.values(comparison.metrics).every(metric =>
+            Object.hasOwn(metric, "p95ChangePercent")
+          ),
+          true
+        );
+      },
+
+      "console encaminha a mesma linha de base ao comando canônico"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            describe: () => [],
+            execute(id, args) {
+              calls.push({ id, args });
+              return { ok: true };
+            }
+          }
+        });
+        const [entry] = console.execute("benchmark compact 10000 1000 5");
+
+        assertEqual(entry.ok, true);
+        assertDeepEqual(calls, [{
+          id: "benchmark.compact",
+          args: {
+            instanceCount: 10000,
+            strokeCount: 1000,
+            sceneObjectCount: 10000,
+            samples: 5
+          }
+        }]);
+      }
+    },
+
     "lights-materials": {
       "luz é criada como objeto persistente editável"() {
         const state = Object.freeze({ objects: Object.freeze([]) });

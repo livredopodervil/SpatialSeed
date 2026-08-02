@@ -16,15 +16,15 @@ import {
   createVirtualResourceTree,
   parseResourcePath
 } from "../../../packages/resource-tree/src/index.js?build=20260801-0045a1";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260801-0045a1";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260802-0047a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0044a";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260801-0045a1";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260802-0047a";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
-import { BenchmarkRunner } from "../../../packages/benchmarks/src/BenchmarkRunner.js?build=20260718-0027f";
+import { BenchmarkRunner } from "../../../packages/benchmarks/src/index.js?build=20260802-0047a";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260801-0045a1";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260802-0047a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService

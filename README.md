@@ -569,12 +569,14 @@ runtime test ui-actions
 runtime test animation-runtime
 runtime test animation-tracks
 runtime test viewer-animation
+runtime test performance-baseline
 runtime resources
 ```
 
 Benchmarks ficam isolados da cena ativa:
 
 ```text
+benchmark compact 10000 1000 5
 benchmark scene 1000 10 100
 benchmark history
 benchmark compare
@@ -633,6 +635,7 @@ Antes de integrar:
 ```bash
 git status --short
 git diff --check
+python3 tools/audit_architecture.py
 python3 tools/audit_web_entrypoints.py
 python3 tools/generate_pwa_precache.py --check
 ```

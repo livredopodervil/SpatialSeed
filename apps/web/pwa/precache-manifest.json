@@ -50,7 +50,9 @@
     "packages/batch-material-cache/src/index.js",
     "packages/benchmarks/src/BenchmarkRunner.js",
     "packages/benchmarks/src/BenchmarkStatistics.js",
+    "packages/benchmarks/src/CompactRuntimeBenchmark.js",
     "packages/benchmarks/src/SceneFactory.js",
+    "packages/benchmarks/src/index.js",
     "packages/catalog-ui/src/ProcedureCatalogUiPanel.js",
     "packages/catalog-ui/src/index.js",
     "packages/core/src/EventBus.js",
@@ -261,6 +263,13 @@
     "packages/world-model/src/PrototypeStore.js",
     "packages/world-model/src/WorldDelta.js",
     "packages/world-model/src/WorldSnapshot.js",
-    "packages/world-model/src/index.js"
+    "packages/world-model/src/index.js",
+    "vendor/addons/controls/OrbitControls.js",
+    "vendor/addons/controls/TransformControls.js",
+    "vendor/addons/loaders/GLTFLoader.js",
+    "vendor/mathjs-11.11.0/math.js",
+    "vendor/ses/ses.umd.min.js",
+    "vendor/three.core.js",
+    "vendor/three.module.js"
   ]
 }

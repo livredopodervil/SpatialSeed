@@ -209,6 +209,7 @@ publica.
 ```bash
 git diff --check
 git status --short
+python3 tools/audit_architecture.py
 python3 tools/audit_web_entrypoints.py
 ```
 
