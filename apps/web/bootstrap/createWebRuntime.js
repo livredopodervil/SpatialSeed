@@ -101,7 +101,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260801-0046d";
+} from "../../../packages/edit-hud/src/index.js?build=20260802-0046d1";
 import {
   HudComponentRegistry,
   UiModuleRegistry

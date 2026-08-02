@@ -11,14 +11,14 @@ import {
   discoverHudDescriptors,
   hudLayoutSignature,
   resolveHudLayoutPlan
-} from "../../edit-hud-layout/src/index.js?build=20260801-0046d";
+} from "../../edit-hud-layout/src/index.js?build=20260802-0046d1";
 import {
   HudComponentRegistry,
   UiModuleRegistry
 } from "../../ui-registry/src/index.js?build=20260801-0046d";
 import {
   createLegacyHudModules
-} from "../../hud-runtime/src/index.js?build=20260801-0046d";
+} from "../../hud-runtime/src/index.js?build=20260802-0046d1";
 
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";

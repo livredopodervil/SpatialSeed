@@ -43,6 +43,6 @@ export {
   sectionAtPoint,
   sectionCellAtPoint,
   scrollHudSection
-} from "./HudDomLayout.js?build=20260801-0046d";
+} from "./HudDomLayout.js?build=20260802-0046d1";
 export { HudCustomizationController } from "./HudCustomizationController.js?build=20260801-0046d";
 export { HudInteractionController } from "./HudInteractionController.js?build=20260801-0046d";

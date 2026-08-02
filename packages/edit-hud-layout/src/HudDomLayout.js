@@ -322,7 +322,54 @@ function actionFromElement(element, control) {
 }
 
 function labelFromElement(element, control, fallback) {
-  return String(control?.getAttribute?.("aria-label") ?? control?.title ?? element.getAttribute?.("aria-label") ?? element.title ?? element.dataset?.geometryLabel ?? fallback).trim();
+  return firstNonEmptyText([
+    element?.dataset?.hudLabel,
+    control?.getAttribute?.("aria-label"),
+    control?.title,
+    ariaLabelledByText(control),
+    element?.getAttribute?.("aria-label"),
+    element?.title,
+    element?.dataset?.geometryLabel,
+    control?.labels?.[0]?.textContent,
+    element?.matches?.("label") ? element.textContent : null,
+    control?.name,
+    control?.textContent,
+    element?.textContent,
+    humanizeHudId(fallback),
+    fallback
+  ]) ?? "Controle";
+}
+
+function ariaLabelledByText(element) {
+  const ids = String(element?.getAttribute?.("aria-labelledby") ?? "")
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!ids.length) return null;
+  return ids
+    .map(id => element?.ownerDocument?.getElementById?.(id)?.textContent)
+    .filter(value => typeof value === "string" && value.trim())
+    .join(" ");
+}
+
+function firstNonEmptyText(values) {
+  for (const value of values) {
+    if (value == null) continue;
+    const text = String(value).replace(/\s+/g, " ").trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+function humanizeHudId(value) {
+  const text = String(value ?? "")
+    .replace(/^edit-hud[-:_]?/i, "")
+    .replace(/^hud-static[:._-]?/i, "")
+    .replace(/[._:-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text
+    ? text.replace(/(^|\s)\S/g, match => match.toUpperCase())
+    : null;
 }
 function iconFromElement(element, control) {
   const candidate = control ?? element;
