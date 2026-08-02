@@ -79,9 +79,11 @@ O manifesto de precache é gerado deterministicamente. Se um recurso estático
 for acrescentado ou removido, regenere-o com
 `python3 tools/generate_pwa_precache.py` e revise a diferença.
 
-## Critério para iniciar o kernel v2
+## Uso durante a implementação do kernel v2
 
-A etapa seguinte só começa com todos os gates acima verdes, a suíte completa do
-runtime sem regressão e o aplicativo validado visualmente no ambiente do autor.
-O kernel v2 deverá então remover achados da baseline; não poderá apenas movê-los
-para novos caminhos ou acrescentar uma ponte paralela.
+Cada fatia do kernel v2 só termina com todos os gates acima verdes, a suíte
+completa do runtime sem regressão e o aplicativo validado no ambiente do autor.
+O incremento `0047b` aplica esta regra à região e ao catálogo inicial: os
+caminhos substituídos foram removidos e os achados correspondentes devem sair
+da baseline, sem serem movidos para novos arquivos ou cobertos por ponte
+paralela.

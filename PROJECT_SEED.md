@@ -155,10 +155,12 @@ animate status
 
 ## Próxima prioridade
 
-Validar visualmente o build `0047a`, confirmar os gates em Android/Termux e
-implementar o contrato `module-v2` com ativação e rollback atômicos. A primeira
-adaptação abrangerá somente a região e o catálogo inicial de experimentos; não
-deve iniciar ainda a migração do HUD.
+Validar visualmente o build `0047b` e confirmar os gates em Android/Termux. O
+contrato `module-v2`, o reducer regional e o catálogo inicial de experimentos
+já usam ativação candidata, rollback e contribuições declaradas. O próximo
+incremento deve retirar testes, benchmarks e diagnósticos do grafo de produção,
+quebrar o ciclo `apps/web` ↔ `runtime-test-plugin` e reduzir o composition root;
+não deve iniciar ainda a migração do HUD.
 
 O roadmap funcional permanece preservado, mas está subordinado à cristalização
 do núcleo: redefinição paramétrica pelo Inspector; operadores e constraints 2D;

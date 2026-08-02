@@ -3,7 +3,10 @@ import {
 } from "../../experiment-runtime/src/index.js";
 import {
   MODULE_MANIFEST_VERSION
-} from "../../plugin-api/src/ModuleRegistry.js";
+} from "../../plugin-api/src/index.js?build=20260802-0047b";
+
+export const STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID =
+  "spatialseed.procedural.catalog.experiments.starter";
 
 export const starterExperimentDefinitions = deepFreeze([
   Object.freeze({
@@ -137,22 +140,49 @@ export const starterExperimentDefinitions = deepFreeze([
   })
 ]);
 
-export const starterExperimentPlugin = Object.freeze({
+export const starterExperimentModule = Object.freeze({
   manifest: Object.freeze({
     manifestVersion: MODULE_MANIFEST_VERSION,
-    id: "experiments.starter",
-    version: "0.1.0",
-    apiVersion: "experiment-plugin-v1",
-    optional: true,
-    capabilities: Object.freeze(["experiments"])
+    id: "spatialseed.procedural.experiments.starter",
+    version: "1.0.0",
+    requires: Object.freeze({
+      modules: Object.freeze([]),
+      capabilities: Object.freeze([])
+    }),
+    provides: Object.freeze({
+      capabilities: Object.freeze([])
+    }),
+    contributes: Object.freeze({
+      catalogs: Object.freeze([
+        Object.freeze({
+          id: STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID,
+          kind: "experiments",
+          apiVersion: EXPERIMENT_DEFINITION_VERSION,
+          entries: Object.freeze(
+            starterExperimentDefinitions.map(definition => definition.id)
+          )
+        })
+      ])
+    }),
+    permissions: Object.freeze([])
   }),
 
-  activate({ experiments }) {
-    for (const definition of starterExperimentDefinitions) {
-      experiments.register(definition);
-    }
+  createModule() {
     return Object.freeze({
-      registered: starterExperimentDefinitions.length
+      activate() {
+        return Object.freeze({
+          contributions: Object.freeze({
+            catalogs: Object.freeze({
+              [STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID]:
+                starterExperimentDefinitions
+            })
+          }),
+          status: Object.freeze({
+            definitions: starterExperimentDefinitions.length
+          })
+        });
+      },
+      dispose() {}
     });
   }
 });

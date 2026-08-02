@@ -821,7 +821,8 @@ documental distinta.
 
 ## D-046 — A modularização usa oito fronteiras e gates monotônicos
 
-**Estado:** planejada; etapa zero implementada no incremento 0047a.
+**Estado:** planejada; etapa zero e primeira fatia do kernel v2 implementadas
+até o incremento 0047b.
 
 O aplicativo mantido convergirá para oito módulos acíclicos: `kernel`,
 `document`, `procedural`, `authoring`, `viewer`, `renderer-three`, `interface` e
@@ -841,7 +842,11 @@ formatos compactos de famílias, lotes, traços, árvore virtual e cena possuem
 limites estruturais reproduzíveis; tempos só são comparados de forma
 intercalada na mesma máquina. Uma baseline não autoriza o achado legado que
 contém e não pode ser regravada para ocultar regressão. Cada migração substitui
-e remove o caminho anterior no mesmo incremento.
+e remove o caminho anterior no mesmo incremento. O registro v2 valida o grafo e
+as referências antes da ativação, só publica o conjunto candidato completo e
+descarta instâncias em ordem inversa quando qualquer ativação falha. O reducer
+regional e o catálogo inicial já são contribuições declaradas; não recebem
+stores mutáveis do host durante o boot.
 
 ## Decisões superadas ou rejeitadas
 

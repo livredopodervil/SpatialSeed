@@ -1,4 +1,5 @@
 export {
+  STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID,
   starterExperimentDefinitions,
-  starterExperimentPlugin
-} from "./StarterExperimentPlugin.js?build=20260718-0027f";
+  starterExperimentModule
+} from "./StarterExperimentPlugin.js?build=20260802-0047b";

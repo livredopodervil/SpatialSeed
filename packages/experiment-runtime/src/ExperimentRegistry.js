@@ -33,13 +33,30 @@ export class ExperimentRegistry {
   #definitions = new Map();
 
   register(input) {
-    const definition = normalizeExperimentDefinition(input);
+    return this.registerCatalog([input]);
+  }
 
-    if (this.#definitions.has(definition.id)) {
-      throw new Error(`Experimento duplicado: ${definition.id}.`);
+  registerCatalog(inputs) {
+    if (!Array.isArray(inputs)) {
+      throw new TypeError("Catálogo de experimentos deve formar uma lista.");
     }
 
-    this.#definitions.set(definition.id, definition);
+    const definitions = inputs.map(normalizeExperimentDefinition);
+    const pendingIds = new Set();
+
+    for (const definition of definitions) {
+      if (
+        pendingIds.has(definition.id) ||
+        this.#definitions.has(definition.id)
+      ) {
+        throw new Error(`Experimento duplicado: ${definition.id}.`);
+      }
+      pendingIds.add(definition.id);
+    }
+
+    for (const definition of definitions) {
+      this.#definitions.set(definition.id, definition);
+    }
     return this;
   }
 

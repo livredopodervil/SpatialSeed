@@ -1,6 +1,6 @@
 # Main Proposal: núcleo cristalizado e extensões internas
 
-Status: implementação incremental; etapa 0 materializada no build `0047a`, sem merge da branch 0046
+Status: implementação incremental; etapa 0 e primeira fatia do kernel v2 materializadas até o build `0047b`, sem merge da branch 0046
 Base obrigatória: `d556306c8b921363c26c56f49cb532e8e2e2b0f9` (`origin/main`)  
 Fonte de ideias, não de integração: `cfc63ca813ca722e9755b7a23c6d484287e9c289` e o estado local exportado da 0046  
 Data da análise: 2026-08-02
@@ -113,21 +113,40 @@ export const manifest = Object.freeze({
       id: "procedural.catalog.changed",
       payload: "schema:catalog.delta@1"
     }],
-    catalogs: {
-      procedures: ["catalog:procedural.builtin@1"],
-      tools: ["catalog:authoring.procedural-tools@1"],
-      ui: ["catalog:procedural.ui@1"]
-    }
-  }
+    catalogs: [{
+      id: "spatialseed.procedural.catalog.builtin",
+      kind: "procedures",
+      apiVersion: "spatial-seed-procedure-catalog-v1"
+    }]
+  },
+  permissions: []
 });
 
 export function createModule(scope) {
   return {
-    activate() {},
+    activate() {
+      return {
+        capabilities: {
+          "procedural.catalog.v1": catalogPort,
+          "procedural.plans.v1": planPort
+        },
+        contributions: {
+          catalogs: {
+            "spatialseed.procedural.catalog.builtin": builtinCatalog
+          }
+        }
+      };
+    },
     dispose() {}
   };
 }
 ```
+
+O manifesto e os payloads executáveis permanecem separados. O manifesto pode
+ser clonado, congelado e inspecionado sem carregar handlers; o resultado de
+`activate` deve fornecer exatamente as capabilities e contribuições declaradas,
+sem chaves implícitas. A implementação vigente e seus limites estão descritos
+em [`MODULE_V2.md`](MODULE_V2.md).
 
 O kernel deve validar, antes de qualquer efeito:
 
@@ -373,15 +392,15 @@ arquitetural versionados, mapa único de migração, correção do precache e ga
 monotônicos. Seus procedimentos estão em
 [`BASELINE_GATES.md`](BASELINE_GATES.md).
 
-O incremento seguinte deve conter somente:
+O incremento `0047b` contém somente:
 
 1. contrato `module-v2` com validação e ativação atômica;
 2. adaptação do módulo de região e do catálogo inicial de experimentos, sem
    reescrever seus algoritmos;
 3. testes de rollback, ordem de descarte e referências inválidas.
 
-A remoção do ciclo entre runtime de produção e plugin de testes será o
-incremento imediatamente posterior, já sobre o kernel validado. Ainda não deve
-existir designer, nova folha de estilos nem migração em massa do HUD. A primeira
-fatia visual só começa depois que o registro único e os gates estiverem
-funcionando.
+O incremento imediatamente posterior deve remover o ciclo entre runtime de
+produção e plugin de testes e reduzir o composition root, já sobre o kernel
+validado. Ainda não deve existir designer, nova folha de estilos nem migração
+em massa do HUD. A primeira fatia visual só começa depois que o registro único,
+o boot sem diagnósticos e os gates estiverem funcionando.

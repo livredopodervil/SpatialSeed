@@ -1,7 +1,8 @@
-import { EventBus } from "../../../packages/core/src/EventBus.js?build=20260714-0020b-a";
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
 import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260801-0045a1";
-import { ModuleRegistry } from "../../../packages/plugin-api/src/ModuleRegistry.js?build=20260718-0027f";
+import {
+  ModuleRegistry
+} from "../../../packages/plugin-api/src/index.js?build=20260802-0047b";
 import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260729-0039g2";
 import {
   VIEWER_CAMERA_COMMANDS,
@@ -9,7 +10,10 @@ import {
   ViewerCameraController,
   ViewerState,
 } from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
-import { boxRegionReducer } from "../../../packages/region-box/src/reducer.js?build=20260801-0045a1";
+import {
+  REGION_BOX_REDUCER_CONTRIBUTION_ID,
+  regionBoxModule
+} from "../../../packages/region-box/src/index.js?build=20260802-0047b";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260801-0045a1";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
 import {
@@ -24,7 +28,7 @@ import { createEditorCommands } from "../../../packages/editor-commands/src/Edit
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import { BenchmarkRunner } from "../../../packages/benchmarks/src/index.js?build=20260802-0047a";
 import { TestService } from "../../../packages/tests/src/TestService.js?build=20260716-0025b";
-import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260802-0047a";
+import { activateRuntimeTestPlugin } from "../../../packages/runtime-test-plugin/src/index.js?build=20260802-0047b";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -71,10 +75,11 @@ import {
   ExperimentActionService,
   ExperimentRegistry,
   ExperimentService
-} from "../../../packages/experiment-runtime/src/index.js?build=20260718-0027f";
+} from "../../../packages/experiment-runtime/src/index.js?build=20260802-0047b";
 import {
-  starterExperimentPlugin
-} from "../../../packages/experiment-plugin/src/index.js?build=20260718-0027f";
+  STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID,
+  starterExperimentModule
+} from "../../../packages/experiment-plugin/src/index.js?build=20260802-0047b";
 import {
   ExperimentPanel
 } from "../../../packages/experiment-panel/src/index.js?build=20260718-0027f";
@@ -175,34 +180,22 @@ export async function createWebRuntime({
   validateApis();
   const profile = resolveRuntimeProfile(runtimeProfile);
 
-  const modules = new ModuleRegistry();
-  const reducers = new Map();
-  const experimentRegistry = new ExperimentRegistry();
+  const modules = new ModuleRegistry()
+    .register(regionBoxModule)
+    .register(starterExperimentModule);
 
-  modules.register({
-    manifest: {
-      id: "region.box",
-      version: "0.5.0",
-      apiVersion: "region-v1",
-      optional: false,
-      capabilities: ["reducers"]
-    },
-    activate: async context =>
-      context.reducers.set("box-region", boxRegionReducer)
-  });
-  modules.register(starterExperimentPlugin);
+  await modules.activateAll();
 
-  await modules.activateAll({
-    eventBus: new EventBus(),
-    reducers,
-    experiments: experimentRegistry
-  });
-
-  const reducer = reducers.get("box-region");
-
-  if (!reducer) {
-    throw new Error("Reducer box-region unavailable");
-  }
+  const reducer = modules.resolveContribution(
+    "reducers",
+    REGION_BOX_REDUCER_CONTRIBUTION_ID
+  );
+  const experimentRegistry = new ExperimentRegistry().registerCatalog(
+    modules.resolveContribution(
+      "catalogs",
+      STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID
+    )
+  );
 
   const appearanceRuntime = new AppearanceRuntime();
   const geometryRegistry=createDefaultGeometryRegistry();

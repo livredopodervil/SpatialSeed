@@ -148,7 +148,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/reducer.js?build=20260801-0045a1";
+} from "../../region-box/src/index.js?build=20260802-0047b";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -338,26 +338,30 @@ import {
   ExperimentRegistry,
   buildExperimentInvocation,
   normalizeExperimentDefinition
-} from "../../experiment-runtime/src/index.js?build=20260718-0027f";
+} from "../../experiment-runtime/src/index.js?build=20260802-0047b";
 import {
+  STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID,
   starterExperimentDefinitions,
-  starterExperimentPlugin
-} from "../../experiment-plugin/src/index.js?build=20260718-0027f";
+  starterExperimentModule
+} from "../../experiment-plugin/src/index.js?build=20260802-0047b";
 import {
   formatExperimentCommand,
   normalizeExperimentControlValue,
   summarizeExperimentPlan
 } from "../../experiment-panel/src/index.js?build=20260718-0027f";
 import {
-  ModuleRegistry,
-  selectCapabilities
-} from "../../plugin-api/src/ModuleRegistry.js";
+  ModuleRegistry
+} from "../../plugin-api/src/index.js?build=20260802-0047b";
+import {
+  createModuleRegistryTests
+} from "./ModuleRegistryTests.js?build=20260802-0047b";
 import {
   BenchmarkRunner
 } from "../../benchmarks/src/index.js?build=20260802-0047a";
 
 export function createRuntimeLayerTests() {
   return {
+    "module-v2": createModuleRegistryTests(),
     "performance-baseline": {
       "benchmark compacto mede estrutura sem tocar a cena ativa"() {
         const runner = new BenchmarkRunner({
@@ -11809,6 +11813,20 @@ assets: {
         );
       },
 
+      "catálogo inválido não deixa definições parciais"() {
+        const registry = new ExperimentRegistry();
+        const definition = createExperimentDefinition();
+
+        assertThrowsMessage(
+          () => registry.registerCatalog([
+            { ...definition, id: "math.catalog-entry" },
+            { ...definition, id: "math.catalog-entry" }
+          ]),
+          "Experimento duplicado"
+        );
+        assertDeepEqual(registry.list(), []);
+      },
+
       "registro rejeita controles e limites incompatíveis"() {
         const definition = createExperimentDefinition();
 
@@ -11894,60 +11912,42 @@ assets: {
     },
 
     "experiment-plugin": {
-      "capabilities entregam somente referências declaradas"() {
-        const experiments = new ExperimentRegistry();
-        const selected = selectCapabilities(
-          ["experiments"],
-          {
-            experiments,
-            renderer: { unsafe: true },
-            dom: { unsafe: true }
-          },
-          "experiment.fixture"
-        );
-
-        assertEqual(selected.experiments, experiments);
-        assertEqual(Object.hasOwn(selected, "renderer"), false);
-        assertEqual(Object.hasOwn(selected, "dom"), false);
-        assertEqual(Object.isFrozen(selected), true);
-      },
-
-      "capability ausente falha fechada"() {
-        assertThrowsMessage(
-          () => selectCapabilities(
-            ["experiments"],
-            { renderer: {} },
-            "experiment.fixture"
-          ),
-          "requires unavailable capability: experiments"
-        );
-      },
-
-      "manifesto de módulo é validado e descrito"() {
+      "manifesto declara o catálogo sem carregar handlers": async () => {
         const registry = new ModuleRegistry()
-          .register(starterExperimentPlugin);
+          .register(starterExperimentModule);
+
+        const [registered] = registry.describe();
+        assertEqual(registered.state, "registered");
+        assertDeepEqual(
+          registered.contributes.catalogs.map(item => item.id),
+          [STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID]
+        );
+
+        await registry.activateAll();
         const [description] = registry.describe();
 
-        assertEqual(description.id, "experiments.starter");
-        assertDeepEqual(description.capabilities, ["experiments"]);
+        assertEqual(
+          description.id,
+          "spatialseed.procedural.experiments.starter"
+        );
+        assertEqual(description.state, "active");
         assertEqual(description.failed, false);
         assertEqual(description.error, null);
+        assertEqual(description.status.definitions, 3);
+        await registry.dispose();
       },
 
-      "plugin inicial registra catálogo sem receber host inteiro"() {
-        const experiments = new ExperimentRegistry();
-        const activated = starterExperimentPlugin.activate({ experiments });
+      "catálogo inicial é materializado atomicamente": async () => {
+        const experiments = await createStarterExperimentRegistry();
 
-        assertEqual(activated.registered, 3);
         assertDeepEqual(
           experiments.list().map(item => item.id).sort(),
           ["math.helix", "math.polar-flower", "math.sine-wave"]
         );
       },
 
-      "fontes iniciais produzem planos determinísticos válidos"() {
-        const registry = new ExperimentRegistry();
-        starterExperimentPlugin.activate({ experiments: registry });
+      "fontes iniciais produzem planos determinísticos válidos": async () => {
+        const registry = await createStarterExperimentRegistry();
         const expectedCounts = {
           "math.helix": 96,
           "math.polar-flower": 240,
@@ -16249,6 +16249,19 @@ function createProjectServiceRecoveryHarness({ sandboxId, store }) {
     renderer,
     sandbox
   };
+}
+
+async function createStarterExperimentRegistry() {
+  const modules = new ModuleRegistry().register(starterExperimentModule);
+  await modules.activateAll();
+  const registry = new ExperimentRegistry().registerCatalog(
+    modules.resolveContribution(
+      "catalogs",
+      STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID
+    )
+  );
+  await modules.dispose();
+  return registry;
 }
 
 function createExperimentDefinition() {
