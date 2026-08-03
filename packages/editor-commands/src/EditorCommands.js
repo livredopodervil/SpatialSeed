@@ -480,6 +480,22 @@ export function createEditorCommands({
           repeatable: true,
           label: "Criar varredura"
         })
+      .register("profile.extrude.create", args =>
+        configured("path.sketch", args, invocation =>
+          pathTools.createExtrude(invocation)), {
+          category: "path-tools",
+          mutates: true,
+          repeatable: true,
+          label: "Extrudar perfil existente"
+        })
+      .register("profile.revolve.create", args =>
+        configured("path.sketch", args, invocation =>
+          pathTools.createRevolve(invocation)), {
+          category: "path-tools",
+          mutates: true,
+          repeatable: true,
+          label: "Revolucionar perfil existente"
+        })
       .register("path.array.create", args =>
         configured("path.array", args, invocation =>
           pathTools.arraySelection(invocation)), {
@@ -784,12 +800,10 @@ export function createEditorCommands({
       return projectService.save();
     })
     .register("project.open", ({ text }) => {
-      requireObjectMode("abrir outro projeto");
       canMutateProject("abrir outro projeto");
       return projectService.openText(text);
     })
     .register("project.new", () => {
-      requireObjectMode("criar outro projeto");
       canMutateProject("criar outro projeto");
       return projectService.newProject();
     });

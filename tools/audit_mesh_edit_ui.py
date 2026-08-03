@@ -100,6 +100,8 @@ for needle in [
     'id="path-profile-object"',
     'id="path-create-tube"',
     'id="path-create-sweep"',
+    'id="path-create-extrude"',
+    'id="path-create-revolve"',
     'id="path-create-array"',
     'id="path-sketch-begin"',
     'id="path-from-selection-create"',
@@ -144,12 +146,15 @@ for needle in [
     'id="path-sketch-affine-u-length"',
     'id="path-sketch-affine-color"',
     'id="path-sketch-affine-move-x"',
-    'id="path-sketch-affine-rotate-z"'
+    'id="path-sketch-affine-rotate-z"',
+    'id="edit-tool-input-slots"',
+    'id="edit-tool-apply"',
+    'data-authoring-feature-id="feature.sweep"'
 ]:
     require("apps/web/index.html", needle)
 
 for needle in [
-    'static apiVersion = "mesh-edit-panel-v9"',
+    'static apiVersion = "mesh-edit-panel-v11"',
     '"mesh.topology.apply"',
     '"mesh.component.mode.set"',
     '"mesh.selection.apply"',
@@ -159,9 +164,14 @@ for needle in [
     'this.#click("mesh-frame-world", "edit.context.frame.set"',
     'this.#click("mesh-frame-local", "edit.context.frame.set"',
     'this.#click("mesh-frame-viewer", "edit.context.frame.set"',
-    '"path.tube.create"',
-    '"path.sweep.create"',
-    '"path.array.create"',
+    '"authoring.tool.activate"',
+    '"authoring.tool.execute"',
+    '"authoring.tool.focus"',
+    '"authoring.tool.input.bind"',
+    '"feature.sweep"',
+    '"feature.extrude"',
+    '"feature.revolve"',
+    "#renderToolInputSlots",
     "#bindBrushGeometryParameters",
     '"affineRotateZ", "path-sketch-affine-rotate-z"',
     '"affineULength",',
@@ -281,7 +291,7 @@ for needle in [
     require("packages/edit-hud/src/EditHud.js", needle)
 for needle in [
     '.register("history.status"',
-    "const unsubscribeHistory = sandbox.subscribe",
+    "subscribeHistory: listener => sandbox.subscribe",
     "listener(editContext.status())"
 ]:
     require("apps/web/bootstrap/createWebRuntime.js", needle)

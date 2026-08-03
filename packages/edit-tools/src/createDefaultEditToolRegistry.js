@@ -93,6 +93,8 @@ export function createDefaultEditToolRegistry({
         ),
         enumParameter("profileExtraction", "Extração do perfil", [
           { value: "auto", label: "Automática" },
+          { value: "sketch", label: "Esboço semântico" },
+          { value: "centerline", label: "Contorno central fechado" },
           { value: "contour", label: "Contorno declarado" },
           { value: "boundary", label: "Maior contorno planar" }
         ], "auto", { when: { mode: "sweep" } }),

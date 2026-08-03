@@ -1,6 +1,6 @@
 # Roadmap do SpatialSeed
 
-> Documento vivo. Auditado em 29 de julho de 2026 durante o marco `0040b`.
+> Documento vivo. Auditado em 2 de agosto de 2026 durante o marco `0047g`.
 > A ordem expressa dependências técnicas, não promessa de prazo.
 
 ## Regra de planejamento
@@ -319,8 +319,25 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - régua e transferidor são overlays efêmeros locais ao viewer;
 - `viewer.camera.reset` restaura o estado inicial controlado da câmera.
 
+### 0047e–0047g — Catálogo, desenho e entradas semânticas — implementado
+
+- fachada única de capacidades para HUD, painel, console, procedures e agentes;
+- mover, girar, escalar e operações de mesh encaminhados às autoridades atuais;
+- intenções distintas de tubo, distribuição, sweep, extrusão e revolução sobre
+  o mesmo contrato de captura;
+- esboços 2D preservam papéis de caminho, perfil e boundary sem depender do
+  provider ou do estilo renderizado;
+- `feature.sweep`, `feature.extrude` e `feature.revolve` recebem fontes por slots
+  explícitos e expõem seus parâmetros no painel da ferramenta em foco;
+- círculo e polígono contornado são equivalentes como perfil, com adaptação
+  conservadora para tubos fechados antigos;
+- troca de projeto cancela sessões transitórias antes de substituir o documento;
+- erros operacionais são recuperáveis e não ocupam a superfície de falha fatal.
+
 ### Próximas extensões geométricas
 
+- receitas procedurais vinculadas para sweep, extrude e lathe, com avaliação
+  incremental, cache e conversão explícita para malha;
 - redefinição paramétrica de objetos pelo Inspector com preview e commit único;
 - cotas persistentes e referências de medição por plano;
 - trim, extend, offset, fillet e constraints geométricas 2D;

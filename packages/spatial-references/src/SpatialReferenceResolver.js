@@ -2,6 +2,9 @@ import * as THREE from "three";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js";
 import { topologyOf } from "../../mesh-editor-core/src/index.js";
 import {
+  normalizeSketchDescriptor
+} from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
+import {
   bufferDescriptorFromGeometry,
   orderEdgeChain,
   projectPlanarProfile,
@@ -11,18 +14,21 @@ import {
 
 const PATH_EXTRACTIONS = Object.freeze([
   "auto",
+  "sketch",
   "centerline",
   "boundary",
   "loose-edges"
 ]);
 const PROFILE_EXTRACTIONS = Object.freeze([
   "auto",
+  "sketch",
+  "centerline",
   "contour",
   "boundary"
 ]);
 
 export class SpatialReferenceResolver {
-  static apiVersion = "spatial-reference-resolver-v2";
+  static apiVersion = "spatial-reference-resolver-v3";
   #referenceState = null;
   #references = Object.freeze([]);
   #referenceById = new Map();
@@ -180,11 +186,15 @@ export class SpatialReferenceResolver {
     const { state, hierarchy, object } = this.#objectContext(normalized);
     const descriptor = this.geometryRegistry.describeLegacyObject(object);
     const extraction = normalized.extraction === "auto"
-      ? this.#automaticPathExtraction(descriptor)
+      ? this.#automaticPathExtraction(object, descriptor)
       : normalized.extraction;
     let localPoints;
     let closed = Boolean(normalized.closed);
-    if (extraction === "centerline") {
+    if (extraction === "sketch") {
+      const sketch = semanticSketch(object, "path");
+      localPoints = sketch.points.map(([x, y]) => [x, y, 0]);
+      closed = normalized.closed ?? sketch.closed;
+    } else if (extraction === "centerline") {
       if (!Array.isArray(descriptor.points) ||
           !descriptor.points.every(point => Array.isArray(point) && point.length === 3)) {
         throw new Error(
@@ -235,10 +245,25 @@ export class SpatialReferenceResolver {
     const { hierarchy, object } = this.#objectContext(normalized);
     const descriptor = this.geometryRegistry.describeLegacyObject(object);
     const extraction = normalized.extraction === "auto"
-      ? this.#automaticProfileExtraction(descriptor)
+      ? this.#automaticProfileExtraction(object, descriptor)
       : normalized.extraction;
     let localPoints;
-    if (extraction === "contour") {
+    if (extraction === "sketch") {
+      const sketch = semanticSketch(object, "profile");
+      localPoints = sketch.points.map(([x, y]) => [x, y, 0]);
+    } else if (extraction === "centerline") {
+      if (
+        descriptor.type !== "tube" ||
+        !descriptor.closed ||
+        !Array.isArray(descriptor.points) ||
+        descriptor.points.length < 3
+      ) {
+        throw new Error(
+          `${object.name ?? object.id} não possui um contorno central fechado.`
+        );
+      }
+      localPoints = descriptor.points.map(point => [...point]);
+    } else if (extraction === "contour") {
       if (!Array.isArray(descriptor.contour) || descriptor.contour.length < 3) {
         throw new Error(`${object.name ?? object.id} não possui contorno 2D declarado.`);
       }
@@ -334,7 +359,14 @@ export class SpatialReferenceResolver {
     return { geometry, topology: topologyOf(buffer) };
   }
 
-  #automaticPathExtraction(descriptor) {
+  #automaticPathExtraction(object, descriptor) {
+    const sketch = optionalSemanticSketch(object);
+    if (sketch) {
+      if (sketch.roles.includes("path")) return "sketch";
+      throw new Error(
+        `${object.name ?? object.id} não declara um caminho semântico.`
+      );
+    }
     if (descriptor.type === "tube" && Array.isArray(descriptor.points)) {
       return "centerline";
     }
@@ -351,9 +383,24 @@ export class SpatialReferenceResolver {
     );
   }
 
-  #automaticProfileExtraction(descriptor) {
+  #automaticProfileExtraction(object, descriptor) {
+    const sketch = optionalSemanticSketch(object);
+    if (sketch) {
+      if (sketch.roles.includes("profile")) return "sketch";
+      throw new Error(
+        `${object.name ?? object.id} não declara um perfil semântico.`
+      );
+    }
     if (["shape", "extrude"].includes(descriptor.type) && descriptor.contour) {
       return "contour";
+    }
+    if (
+      descriptor.type === "tube" &&
+      descriptor.closed &&
+      Array.isArray(descriptor.points) &&
+      descriptor.points.length >= 3
+    ) {
+      return "centerline";
     }
     const geometry = this.geometryRegistry.create(descriptor);
     try {
@@ -371,29 +418,51 @@ export class SpatialReferenceResolver {
     if (["group", "camera", "light"].includes(object.kind)) return null;
     let geometryType = null;
     let curveType = null;
+    let geometryClosed = false;
     let topology = null;
     try {
       const descriptor = this.geometryRegistry.describeLegacyObject(object);
       geometryType = descriptor.type;
       curveType = descriptor.curveType ?? null;
+      geometryClosed = Boolean(descriptor.closed);
       topology = this.geometryRegistry.renderProfile(descriptor).topology;
     } catch {}
-    const pathExtractions = geometryType === "tube"
-      ? ["auto", "centerline", "boundary"]
-      : topology === "open-surface"
-        ? ["auto", "boundary", "loose-edges"]
-        : [];
-    const profileExtractions = ["shape", "extrude"].includes(geometryType)
-      ? ["auto", "contour", "boundary"]
-      : topology === "open-surface"
-        ? ["auto", "boundary"]
-        : [];
+    const sketch = optionalSemanticSketch(object);
+    const hasSketchPath = sketch?.roles.includes("path");
+    const hasSketchProfile = sketch?.roles.includes("profile");
+    const pathExtractions = sketch
+      ? hasSketchPath
+        ? ["auto", "sketch", ...(geometryType === "tube" ? ["centerline"] : [])]
+        : []
+      : geometryType === "tube"
+        ? ["auto", "centerline", "boundary"]
+        : topology === "open-surface"
+          ? ["auto", "boundary", "loose-edges"]
+          : [];
+    const legacyClosedCenterline = geometryType === "tube" && geometryClosed;
+    const profileExtractions = sketch
+      ? hasSketchProfile
+        ? [
+            "auto",
+            "sketch",
+            ...(["shape", "extrude"].includes(geometryType) ? ["contour"] : []),
+            ...(legacyClosedCenterline ? ["centerline"] : [])
+          ]
+        : []
+      : ["shape", "extrude"].includes(geometryType)
+        ? ["auto", "contour", "boundary"]
+        : legacyClosedCenterline
+          ? ["auto", "centerline"]
+          : topology === "open-surface"
+            ? ["auto", "boundary"]
+            : [];
     return Object.freeze({
       id: object.id,
       name: object.name ?? object.id,
       kind: object.kind,
       geometryType,
       curveType,
+      sketchRoles: Object.freeze([...(sketch?.roles ?? [])]),
       pathExtractions: Object.freeze(pathExtractions),
       profileExtractions: Object.freeze(profileExtractions)
     });
@@ -426,6 +495,25 @@ export class SpatialReferenceResolver {
     this.#selectedReferenceKey = null;
     this.#selectedReferences = null;
   }
+}
+
+function optionalSemanticSketch(object) {
+  if (!object?.sketch) return null;
+  try {
+    return normalizeSketchDescriptor(object.sketch);
+  } catch {
+    return null;
+  }
+}
+
+function semanticSketch(object, role) {
+  const sketch = optionalSemanticSketch(object);
+  if (!sketch?.roles.includes(role)) {
+    throw new Error(
+      `${object?.name ?? object?.id ?? "O objeto"} não declara o papel ${role}.`
+    );
+  }
+  return sketch;
 }
 
 function normalizeReference(reference, allowedExtractions) {

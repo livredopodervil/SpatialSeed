@@ -338,7 +338,7 @@
     <div id="edit-hud-draw-tools" class="edit-hud-group" data-edit-hud-group="draw" aria-label="Autoria por desenho"></div>
     <div id="edit-hud-creation-tools" class="edit-hud-group edit-hud-context-actions" data-edit-hud-group="creation" aria-label="Criação e procedimentos">
       <button id="edit-hud-tube-from-object" type="button" title="Criar tubo usando objeto selecionado como caminho">⌇</button>
-      <button id="edit-hud-sweep-from-objects" type="button" title="Criar varredura usando perfil e caminho selecionados">⇝</button>
+      <button id="edit-hud-sweep-from-objects" type="button" data-authoring-feature-id="feature.sweep" title="Criar varredura usando perfil e caminho selecionados">⇝</button>
       <button id="edit-hud-array-along-path" type="button" title="Distribuir seleção ao longo do caminho selecionado">⋯</button>
     </div>
     <div class="edit-hud-group edit-hud-context-actions" data-edit-hud-group="actions" aria-label="Ações contextuais">
@@ -786,13 +786,15 @@
         <button id="edit-workspace-redo-global" type="button">Refazer projeto</button>
       </div>
       <details id="edit-tool-parameter-panel" class="edit-tool-parameter-panel">
-        <summary>Configuração lembrada das ferramentas</summary>
+        <summary>Ferramenta em foco · entradas e parâmetros</summary>
         <label class="mesh-tool-parameter-select">
           <span>Ferramenta</span>
           <select id="edit-tool-parameter-select"></select>
         </label>
+        <div id="edit-tool-input-slots" class="edit-tool-input-slots"></div>
         <div id="edit-tool-parameter-fields" class="mesh-form-grid"></div>
         <div class="actions">
+          <button id="edit-tool-apply" type="button">Aplicar ferramenta</button>
           <button id="edit-tool-parameter-reset" type="button">Restaurar padrão desta ferramenta</button>
         </div>
         <small id="edit-tool-parameter-status">
@@ -959,9 +961,9 @@
       <div class="path-context-group" data-path-context="object">
         <div class="mesh-form-grid">
           <label><span>Objeto de caminho</span><select id="path-reference-object"></select></label>
-          <label><span>Extração</span><select id="path-reference-extraction"><option value="auto">Automática</option><option value="centerline">Linha central declarada</option><option value="boundary">Maior contorno</option><option value="loose-edges">Arestas soltas</option></select></label>
+          <label><span>Extração</span><select id="path-reference-extraction"><option value="auto">Automática</option><option value="sketch">Esboço semântico</option><option value="centerline">Linha central declarada</option><option value="boundary">Maior contorno</option><option value="loose-edges">Arestas soltas</option></select></label>
           <label><span>Objeto de perfil</span><select id="path-profile-object"></select></label>
-          <label><span>Extração do perfil</span><select id="path-profile-extraction"><option value="auto">Automática</option><option value="contour">Contorno declarado</option><option value="boundary">Maior contorno planar</option></select></label>
+          <label><span>Extração do perfil</span><select id="path-profile-extraction"><option value="auto">Automática</option><option value="sketch">Esboço semântico</option><option value="centerline">Contorno central fechado</option><option value="contour">Contorno declarado</option><option value="boundary">Maior contorno planar</option></select></label>
         </div>
         <div class="mesh-checkbox-grid">
           <label><input id="path-caps" type="checkbox" checked> Tampar varredura aberta</label>
@@ -982,6 +984,10 @@
           <label><span>Escala inicial</span><input id="path-sweep-scale-start" type="number" value="1" step="0.1"></label>
           <label><span>Escala final</span><input id="path-sweep-scale-end" type="number" value="1" step="0.1"></label>
           <button id="path-create-sweep" type="button">Extrudar perfil pelo caminho</button>
+        </div>
+        <div class="actions">
+          <button id="path-create-extrude" type="button">Extrudar o perfil selecionado</button>
+          <button id="path-create-revolve" type="button">Revolucionar o perfil selecionado</button>
         </div>
         <div class="mesh-form-grid">
           <label><span>Quantidade de cópias</span><input id="path-array-count" type="number" min="1" max="10000" value="8" step="1"></label>
@@ -1310,6 +1316,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260802-0047f"></script>
+<script type="module" src="./boot.js?build=20260802-0047g"></script>
 </body>
 </html>

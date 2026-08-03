@@ -12,7 +12,7 @@ import {
 } from "../../tests/src/index.js?build=20260802-0047d";
 import {
   activateRuntimeTestPlugin
-} from "./RuntimeTestPlugin.js?build=20260802-0047f";
+} from "./RuntimeTestPlugin.js?build=20260802-0047g";
 
 export const runtimeDiagnosticsManifest = Object.freeze({
   id: "spatialseed.diagnostics.runtime-tests",

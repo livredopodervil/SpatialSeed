@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import {
+  normalizeSketchDescriptor
+} from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
+import {
   normalizeAppearanceBinding
 } from "../../appearance-binding/src/index.js?build=20260730-0041b";
 import {
@@ -18,7 +21,7 @@ import {
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 
 export class StrokeFusionService {
-  static apiVersion = "stroke-fusion-service-v4";
+  static apiVersion = "stroke-fusion-service-v5";
 
   constructor({
     sandbox,
@@ -72,6 +75,7 @@ export class StrokeFusionService {
   createStroke({
     name = null,
     geometry,
+    sketch = null,
     position = [0, 0, 0],
     rotation = [0, 0, 0, 1],
     scale = [1, 1, 1],
@@ -83,6 +87,9 @@ export class StrokeFusionService {
     source = "planar-stroke"
   } = {}) {
     const tube = this.geometryRegistry.normalize(geometry);
+    const normalizedSketch = sketch
+      ? normalizeSketchDescriptor(sketch)
+      : null;
     if (tube.type !== "tube") {
       throw new TypeError("Fusão automática exige geometria do tipo tube.");
     }
@@ -162,6 +169,7 @@ export class StrokeFusionService {
           scale: [1, 1, 1],
           selectionAnchorPolicy: "bounds-center",
           geometry: persistedBundle,
+          ...(normalizedSketch ? { sketch: normalizedSketch } : {}),
           appearanceBinding: binding,
           ...appearance,
           source
@@ -210,11 +218,12 @@ export class StrokeFusionService {
           });
           persistedStroke = strokeBundleFindStroke(persistedBundle, strokeId) ??
             strokeBundleStrokes(persistedBundle).at(-1);
+          const targetWithoutSketch = omitSketch(structuredClone(target));
           changed = this.sandbox.dispatch({
             type: "stroke-bundle.merge",
             sourceIds,
             object: {
-              ...structuredClone(target),
+              ...targetWithoutSketch,
               kind: "stroke-bundle",
               geometry: persistedBundle,
               source
@@ -254,6 +263,7 @@ export class StrokeFusionService {
             scale: [1, 1, 1],
             selectionAnchorPolicy: "bounds-center",
             geometry: persistedBundle,
+            ...(normalizedSketch ? { sketch: normalizedSketch } : {}),
             appearanceBinding: binding,
             ...appearance,
             source
@@ -376,11 +386,12 @@ export class StrokeFusionService {
       }
     );
     const sourceIds = objects.map(object => String(object.id));
+    const targetWithoutSketch = omitSketch(structuredClone(target));
     const changed = this.sandbox.dispatch({
       type: "stroke-bundle.merge",
       sourceIds,
       object: {
-        ...structuredClone(target),
+        ...targetWithoutSketch,
         kind: "stroke-bundle",
         name: name ?? target.name ?? `Traços × ${merged.strokeCount}`,
         geometry: merged,
@@ -655,6 +666,11 @@ function vector(value, length, label) {
 
 function maximumScale(value) {
   return Math.max(...vector(value, 3, "escala").map(Math.abs));
+}
+
+function omitSketch(object) {
+  delete object.sketch;
+  return object;
 }
 
 function nonNegative(value, label) {

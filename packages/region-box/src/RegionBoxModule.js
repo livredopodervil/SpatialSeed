@@ -1,7 +1,7 @@
 import {
   MODULE_MANIFEST_VERSION
 } from "../../plugin-api/src/index.js?build=20260802-0047b";
-import { boxRegionReducer } from "./reducer.js?build=20260801-0045a1";
+import { boxRegionReducer } from "./reducer.js?build=20260802-0047g";
 
 export const REGION_BOX_REDUCER_CONTRIBUTION_ID =
   "spatialseed.document.reducer.box-region";

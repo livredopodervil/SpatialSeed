@@ -116,6 +116,96 @@ const PATH_SKETCH_PRESETS = Object.freeze([
       group: "draw",
       order: 50
     })
+  }),
+  Object.freeze({
+    id: "feature.sweep",
+    label: "Varredura por perfil e caminho",
+    description:
+      "Cria uma varredura usando perfil e caminho existentes explicitamente.",
+    family: "feature",
+    kind: "operation",
+    preset: Object.freeze({ mode: "sweep" }),
+    excludeParameters: Object.freeze([
+      "planeSource",
+      "inputSamplePixels",
+      "simplify",
+      "smoothIterations",
+      "profileObjectId",
+      "profileExtraction",
+      "materialMode",
+      "opacityMultiplier"
+    ]),
+    executeCommand: "path.sweep.create",
+    inputs: Object.freeze([
+      sketchInput("profile", "profile", ["selection", "reference"], "Perfil transversal"),
+      sketchInput("path", "path", ["selection", "reference"], "Caminho longitudinal")
+    ]),
+    presentation: Object.freeze({
+      label: "Varredura",
+      icon: "⇝",
+      group: "feature",
+      order: 60
+    })
+  }),
+  Object.freeze({
+    id: "feature.extrude",
+    label: "Extrusão linear de perfil",
+    description:
+      "Extruda linearmente um perfil existente, selecionado ou informado.",
+    family: "feature",
+    kind: "operation",
+    preset: Object.freeze({ mode: "extrude" }),
+    excludeParameters: Object.freeze([
+      "planeSource",
+      "inputSamplePixels",
+      "simplify",
+      "smoothIterations",
+      "curveType",
+      "tension",
+      "closed",
+      "materialMode",
+      "opacityMultiplier"
+    ]),
+    executeCommand: "profile.extrude.create",
+    inputs: Object.freeze([
+      sketchInput("profile", "profile", ["selection", "reference"], "Perfil planar")
+    ]),
+    presentation: Object.freeze({
+      label: "Extrusão",
+      icon: "⇧",
+      group: "feature",
+      order: 70
+    })
+  }),
+  Object.freeze({
+    id: "feature.revolve",
+    label: "Revolução de perfil",
+    description:
+      "Revoluciona um perfil existente em torno do eixo Y de seu plano.",
+    family: "feature",
+    kind: "operation",
+    preset: Object.freeze({ mode: "revolve" }),
+    excludeParameters: Object.freeze([
+      "planeSource",
+      "inputSamplePixels",
+      "simplify",
+      "smoothIterations",
+      "curveType",
+      "tension",
+      "closed",
+      "materialMode",
+      "opacityMultiplier"
+    ]),
+    executeCommand: "profile.revolve.create",
+    inputs: Object.freeze([
+      sketchInput("profile", "profile", ["selection", "reference"], "Perfil de revolução")
+    ]),
+    presentation: Object.freeze({
+      label: "Revolução",
+      icon: "⟳",
+      group: "feature",
+      order: 80
+    })
   })
 ]);
 
@@ -178,7 +268,7 @@ const CANCEL_COMMANDS = Object.freeze({
 });
 
 export class EditToolRegistryAdapter {
-  static apiVersion = "edit-tool-registry-adapter-v2";
+  static apiVersion = "edit-tool-registry-adapter-v3";
 
   id = "edit-tool-registry";
   #entries = new Map();
@@ -243,7 +333,8 @@ export class EditToolRegistryAdapter {
   status(toolId, { context = {} } = {}) {
     const entry = this.#entry(toolId);
     const lifecycle = this.lifecycle.status();
-    let active = lifecycle.activeAction === entry.native.id;
+    let active = entry.descriptor.kind === "continuous" &&
+      lifecycle.activeAction === entry.native.id;
     if (active && entry.preset) {
       active = presetMatches(
         this.parameters.values(entry.native.id),
@@ -279,7 +370,7 @@ export class EditToolRegistryAdapter {
         this.executeCommand("edit.tool.parameters.set", {
           toolId: entry.native.id,
           patch: {
-            ...structuredClone(input),
+            ...activationParameters(entry, input),
             ...(entry.preset ?? {})
           }
         });
@@ -298,7 +389,7 @@ export class EditToolRegistryAdapter {
     return this.executeCommand(
       entry.native.command,
       Object.freeze({
-        ...structuredClone(input ?? {}),
+        ...activationParameters(entry, input),
         ...(entry.preset ?? {})
       })
     );
@@ -423,31 +514,32 @@ export class EditToolRegistryAdapter {
 
 function presetDescriptor(legacy, preset) {
   const parameters = parametersForPreset(legacy.parameters, preset);
+  const continuous = preset.kind !== "operation";
   return Object.freeze({
     id: preset.id,
     label: preset.label,
     description: preset.description,
     family: preset.family,
-    kind: "continuous",
-    lifecycle: "continuous",
+    kind: continuous ? "continuous" : "operation",
+    lifecycle: continuous ? "continuous" : "single-shot",
     contexts: CONTEXTS[legacy.id],
     inputs: preset.inputs,
     parameters,
     presentation: preset.presentation,
     operations: Object.freeze({
-      activate: true,
+      activate: continuous,
       execute: true,
       finish: false,
-      cancel: true,
+      cancel: continuous,
       parameters: true
     }),
     capabilities: Object.freeze({
-      preview: true,
+      preview: continuous,
       undo: true,
       repeat: true,
       procedural: true,
       agent: true,
-      pointer: true
+      pointer: continuous
     }),
     source: Object.freeze({
       nativeId: legacy.id,
@@ -521,6 +613,30 @@ function parametersForPreset(parameters, presetDefinition) {
 
 function operationArguments(entry, input) {
   const source = normalizePatch(input);
+  if (entry.descriptor.id === "feature.sweep") {
+    const {
+      sweepSegments,
+      sweepTwistDegrees,
+      sweepColor,
+      closed,
+      ...rest
+    } = source;
+    return {
+      ...rest,
+      segments: sweepSegments,
+      twistDegrees: sweepTwistDegrees,
+      color: sweepColor,
+      closedPath: closed
+    };
+  }
+  if (entry.descriptor.id === "feature.extrude") {
+    const { extrudeColor, ...rest } = source;
+    return { ...rest, color: extrudeColor };
+  }
+  if (entry.descriptor.id === "feature.revolve") {
+    const { revolveColor, ...rest } = source;
+    return { ...rest, color: revolveColor };
+  }
   if (!entry.native.id.startsWith("mesh.")) {
     return source;
   }
@@ -543,6 +659,24 @@ function operationArguments(entry, input) {
       ...declaredOptions,
       ...providedOptions
     }
+  };
+}
+
+function activationParameters(entry, input) {
+  const source = normalizePatch(input ?? {});
+  if (entry.descriptor.id !== "draw.sweep" || !source.profile) {
+    return source;
+  }
+  const profile = normalizePatch(source.profile);
+  delete source.profile;
+  return {
+    ...source,
+    ...(profile.objectId !== undefined
+      ? { profileObjectId: String(profile.objectId) }
+      : {}),
+    ...(profile.extraction !== undefined
+      ? { profileExtraction: String(profile.extraction) }
+      : {})
   };
 }
 

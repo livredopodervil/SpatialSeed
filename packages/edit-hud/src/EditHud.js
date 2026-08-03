@@ -2,7 +2,7 @@ import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
-} from "./HudContextHeuristics.js?build=20260802-0047f";
+} from "./HudContextHeuristics.js?build=20260802-0047g";
 
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
@@ -74,7 +74,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
 });
 
 export class EditHud {
-  static apiVersion = "edit-hud-v4";
+  static apiVersion = "edit-hud-v5";
 
   #unsubscribe = null;
   #unsubscribeHistory = null;
@@ -830,9 +830,13 @@ export class EditHud {
     this.#element("edit-hud-tube-from-object").addEventListener("click", () =>
       this.#createTubeFromHeuristic()
     );
-    this.#element("edit-hud-sweep-from-objects").addEventListener("click", () =>
-      this.#createSweepFromHeuristic()
-    );
+    for (const button of this.root.querySelectorAll(
+      "[data-authoring-feature-id]"
+    )) {
+      button.addEventListener("click", () =>
+        this.#focusFeature(button.dataset.authoringFeatureId)
+      );
+    }
     this.#element("edit-hud-array-along-path").addEventListener("click", () =>
       this.#arrayAlongHeuristicPath()
     );
@@ -1458,11 +1462,60 @@ export class EditHud {
       if (tool) visible += 1;
     }
     if (group) group.dataset.contextHidden = visible ? "false" : "true";
+    this.#refreshFeatureTools();
+  }
+
+  #refreshFeatureTools() {
+    const tools = this.query("authoring.tools.list", {
+      family: "feature",
+      includeUnavailable: true
+    }) ?? [];
+    const byId = new Map(tools.map(tool => [tool.id, tool]));
+    for (const button of this.root.querySelectorAll(
+      "[data-authoring-feature-id]"
+    )) {
+      const tool = byId.get(button.dataset.authoringFeatureId);
+      const hasInputs = tool?.id === "feature.sweep"
+        ? Boolean(this.#heuristic?.canSweepFromObjects)
+        : Boolean(this.#heuristic?.profileInputReference);
+      const available = Boolean(tool?.state?.available);
+      button.hidden = !tool;
+      button.disabled = !available;
+      button.dataset.available = available ? "true" : "false";
+      button.dataset.inputsReady = hasInputs ? "true" : "false";
+      button.title = available
+        ? hasInputs
+          ? tool.description || tool.label
+          : `${tool.description || tool.label} Escolha as entradas no painel.`
+        : `${tool?.label ?? button.dataset.authoringFeatureId}: ${
+            tool?.state?.reason ?? "ferramenta indisponível"
+          }`;
+    }
   }
 
   #buildGeometryTools() {
     const group = this.#element("edit-hud-creation-tools");
     const anchor = this.#element("edit-hud-tube-from-object");
+    const featureTools = [...(this.query("authoring.tools.list", {
+      family: "feature",
+      includeUnavailable: true
+    }) ?? [])].sort((left, right) =>
+      left.presentation.order - right.presentation.order ||
+      left.label.localeCompare(right.label)
+    );
+    for (const tool of featureTools) {
+      const existing = group.querySelector(
+        `[data-authoring-feature-id="${tool.id}"]`
+      );
+      const button = existing ?? this.root.ownerDocument.createElement("button");
+      button.type = "button";
+      button.id ||= `edit-hud-tool-${safeId(tool.id)}`;
+      button.dataset.authoringFeatureId = tool.id;
+      button.textContent = tool.presentation.icon;
+      button.title = tool.description || tool.label;
+      button.setAttribute("aria-label", tool.label);
+      if (!existing) group.insertBefore(button, anchor);
+    }
     this.#geometryCatalog = [...(this.query("geometry.catalog") ?? [])]
       .sort((left, right) =>
         geometryToolPriority(left.type) - geometryToolPriority(right.type) ||
@@ -1532,11 +1585,15 @@ export class EditHud {
     const tube = this.#element("edit-hud-tube-from-object");
     const sweep = this.#element("edit-hud-sweep-from-objects");
     const array = this.#element("edit-hud-array-along-path");
+    const features = [...group.querySelectorAll(
+      "[data-authoring-feature-id]"
+    )];
+    const otherFeatures = features.filter(button => button !== sweep);
     const referenceTools = heuristic?.canSweepFromObjects
-      ? [sweep, tube, array]
+      ? [sweep, ...otherFeatures, tube, array]
       : heuristic?.canTubeFromObject
-        ? [tube, array, sweep]
-        : [tube, sweep, array];
+        ? [tube, array, ...features]
+        : [...features, tube, array];
     const order = heuristic?.pathReference
       ? [...referenceTools, ...geometryButtons]
       : [...geometryButtons, ...referenceTools];
@@ -1576,23 +1633,25 @@ export class EditHud {
     if (!reference) return this.#reportError(
       "Selecione um objeto que possa fornecer um caminho."
     );
-    return this.#execute("path.tube.create", {
-      path: { source: "object", objectId: reference.id, extraction: "auto" }
+    return this.#execute("authoring.tool.execute", {
+      toolId: "path.tube",
+      input: {
+        path: { source: "object", objectId: reference.id, extraction: "auto" }
+      }
     });
   }
 
-  #createSweepFromHeuristic() {
-    const path = this.#heuristic?.pathReference;
-    const profile = this.#heuristic?.profileReference;
-    if (!path || !profile) {
-      return this.#reportError(
-        "Selecione um objeto-caminho e um objeto-perfil compatível."
+  #focusFeature(toolId) {
+    const result = this.#execute("authoring.tool.focus", { toolId });
+    this.#element("edit-hud-open").click();
+    globalThis.requestAnimationFrame?.(() => {
+      const panel = this.root.ownerDocument.querySelector(
+        "#edit-tool-parameter-panel"
       );
-    }
-    return this.#execute("path.sweep.create", {
-      path: { source: "object", objectId: path.id, extraction: "auto" },
-      profile: { source: "object", objectId: profile.id, extraction: "auto" }
+      if (panel) panel.open = true;
+      panel?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
     });
+    return result;
   }
 
   #arrayAlongHeuristicPath() {
@@ -1600,8 +1659,11 @@ export class EditHud {
     if (!path) return this.#reportError(
       "Selecione um caminho e os objetos que serão distribuídos."
     );
-    return this.#execute("path.array.create", {
-      path: { source: "object", objectId: path.id, extraction: "auto" }
+    return this.#execute("authoring.tool.execute", {
+      toolId: "path.array",
+      input: {
+        path: { source: "object", objectId: path.id, extraction: "auto" }
+      }
     });
   }
 

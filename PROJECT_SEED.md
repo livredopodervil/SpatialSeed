@@ -172,16 +172,22 @@ forma fluida para pessoas, procedures, agentes e colaboração. Preservar PWA,
 desempenho e comportamento existente é requisito de cada incremento, não o
 objetivo que deve consumir a maior parte do trabalho.
 
-O build `0047f` faz a primeira família visual nascer da fachada
-`authoring.tool.*`: tubo, distribuição, sweep, extrusão de perfil e revolução
-possuem intenções, ícones, entradas e parâmetros próprios, embora reutilizem o
-mesmo capturador. HUD e painel consultam os descritores canônicos; mover,
-girar, escalar, extrude, inset e split também já entram pela porta comum.
+O build `0047g` acrescenta entradas semânticas à fachada `authoring.tool.*`.
+Círculo, retângulo, polígono e demais formas planares preservam um esboço
+independente da malha usada para exibi-los. `feature.sweep`,
+`feature.extrude` e `feature.revolve` recebem perfil, caminho e eixo por slots
+explícitos; seleção, HUD, painel, console e procedures usam os mesmos
+descritores e parâmetros. A ferramenta em foco é estado local de apresentação,
+sem copiar documento, histórico ou controller gestual. Trocar o projeto também
+encerra sessões transitórias antes de substituir a cena, e falhas operacionais
+deixam de ocupar a superfície persistente reservada a erros fatais.
 
-O próximo incremento deve levar o mesmo modelo de apresentação aos perfis de
-aplicação e aos modificadores compartilhados de objeto/malha. O primeiro novo
-operador geométrico candidato é um recorte/inset por `boundary` desenhado; ele
-deve existir de verdade no núcleo topológico antes de ser anunciado no HUD.
+O próximo incremento deve tornar sweep, extrude e lathe receitas procedurais
+vinculadas, com avaliação/cache incremental e conversão explícita para malha.
+Depois dele, a consolidação deve avançar para protocolos CAD 2D, projeção sobre
+superfícies, restrições gerais do gizmo e modificadores compartilhados. Um
+recorte/inset por `boundary` desenhado só deve aparecer quando existir um
+operador topológico real, não como alias do inset escalar atual.
 
 Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PATH_REFERENCES_0037A.md`,
@@ -197,7 +203,8 @@ Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/project/WEB_APPLICATION_PROFILES.md` e
 `docs/project/BASELINE_GATES.md`. O contrato transitório de ferramentas está em
 `docs/AUTHORING_TOOL_CAPABILITIES_0047E.md` e
-`docs/DRAWN_AUTHORING_0047F.md`.
+`docs/DRAWN_AUTHORING_0047F.md`; esboços e slots explícitos estão em
+`docs/SEMANTIC_SKETCH_INPUTS_0047G.md`.
 
 ## Protocolo para nova LLM
 

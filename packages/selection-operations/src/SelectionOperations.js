@@ -25,9 +25,12 @@ import {
   compactUniformFamilyColors,
   normalizeAppearanceBinding
 } from "../../appearance-binding/src/index.js?build=20260730-0041b";
+import {
+  normalizeSketchDescriptor
+} from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v8";
+  static apiVersion = "selection-operations-v9";
 
   constructor({
     editor,
@@ -100,6 +103,7 @@ export class SelectionOperations {
   createGeometry({
     name = null,
     geometry,
+    sketch = null,
     position = [0, 0, 0],
     rotation = [0, 0, 0, 1],
     placement = null,
@@ -126,6 +130,7 @@ export class SelectionOperations {
       position: [...(frame?.origin ?? position)],
       rotation: [...(frame?.rotation ?? rotation)],
       geometry: descriptor,
+      ...(sketch ? { sketch: normalizeSketchDescriptor(sketch) } : {}),
       ...this.#creationAppearance(color, material),
       ...(appearanceBinding
         ? {

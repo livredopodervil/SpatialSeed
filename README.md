@@ -79,6 +79,13 @@ O botão **Editar** abre um workspace único para seleção, transformação, cr
 
 A seção **Caminhos** do workspace **Editar** aceita objetos como referências geométricas. Um tubo pode fornecer sua linha central; superfícies abertas podem fornecer contornos ou arestas soltas; formas e extrusões podem fornecer perfis planares. As mesmas referências alimentam criação de tubo, varredura de perfil e distribuição hierárquica ao longo do caminho. O frame da varredura usa transporte paralelo para reduzir torções artificiais. Nesta versão, as referências são snapshots independentes, não modificadores vinculados. O build 0037b acrescenta desenho livre no plano do viewer, ajuste Bézier, criação de caminhos a partir de vértices/arestas/faces e um workspace adaptativo com HUD em grade. O build 0037c torna o HUD icônico e contextual, mantém as ferramentas essenciais visíveis, memoriza criação e materiais e introduz luzes persistentes editáveis. O build 0039e transforma a distribuição desenhada em um pincel progressivo por espaçamento, com fonte na seleção ou no catálogo e preview instanciado reutilizável. O build 0039f expõe os parâmetros completos da geometria, orienta o pincel pelo plano ou caminho e aceita expressões afins com `i`, `u`, distância e curvatura em tempo real. O build 0039g torna `u` causal por distância, conserva o prefixo já aceito, prepara as cópias lógicas durante o gesto, mantém o preview no handoff e acrescenta cor paramétrica e escala negativa por inversão cromática. A correção 0039g1 rearma traços persistentes sem recapturar recursos invariantes, aguarda a publicação observável e remove varreduras de objetos passivos das trocas de ferramenta. O build 0039g2 rearma o pincel depois de undo/redo, corrige a composição visual da cor afim para todas as geometrias e acrescenta seleção retangular, por pincel, laço e borracha com índice espacial cacheado e commit atômico. O build 0040a separa planos de visualização, edição e desenho, expõe pivô e setores cromáticos no HUD e acrescenta ponto, segmento, polilinha, retângulo, círculo, arco e polígono no plano arbitrário. O build 0040b preserva `pan/pinch` durante ferramentas, acrescenta órbita com três dedos, remove o teto do HUD, compartilha passos de grade/ângulo entre 2D e 3D e adiciona régua, transferidor e reset do viewer. Consulte [Referências espaciais e ferramentas por caminho — build 0037a](docs/PATH_REFERENCES_0037A.md), [Workspace adaptativo e curvas editáveis — build 0037b](docs/EDIT_WORKSPACE_0037B.md), [HUD contextual, luzes e materiais — build 0037c](docs/EDIT_HUD_0037C.md), [Pincel progressivo por caminho — build 0039e](docs/PATH_BRUSH_AUTHORING_0039E.md), [Parâmetros geométricos e pincel afim — build 0039f](docs/AFFINE_PATH_BRUSH_0039F.md), [Pincel causal e commit incremental — builds 0039g–0039g2](docs/INCREMENTAL_PATH_BRUSH_0039G.md), [Gestos de seleção cacheados — build 0039g2](docs/SELECTION_GESTURES_0039G2.md), [Autoria planar, pivô e ferramentas 2D — build 0040a](docs/PLANAR_AUTHORING_0040A.md) e [Multitoque, snap e medição — build 0040b](docs/MEASUREMENT_INPUT_0040B.md).
 
+O build 0047g conserva um esboço semântico nas formas 2D, independentemente de
+contorno, preenchimento ou provider. Círculos e polígonos fechados podem ser
+usados igualmente como perfis; sweep, extrusão e revolução recebem perfil e
+caminho por slots explícitos e expõem os mesmos parâmetros no HUD, painel e
+porta procedural. As fontes ainda são snapshots. Consulte [Esboços semânticos
+e entradas explícitas — build 0047g](docs/SEMANTIC_SKETCH_INPUTS_0047G.md).
+
 ## Execução local
 
 O projeto usa módulos ES nativos e dependências vendorizadas. Não há etapa obrigatória de compilação nem `npm install`.
@@ -318,6 +325,9 @@ tool activate draw.sweep profileObjectId=perfil sweepSegments=48
 tool activate draw.extrude depth=2 bevelEnabled=false
 tool activate draw.revolve revolveSegments=48 phiLengthDeg=270
 tool run draw.extrude points=[[0,0,0],[2,0,0],[2,1,0]] frame={"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0],"normal":[0,0,1]} depth=2
+tool run feature.extrude profile={"objectId":"hexagono","extraction":"sketch"} depth=2
+tool run feature.sweep profile={"objectId":"perfil"} path={"objectId":"curva"} sweepTwistDegrees=30
+tool run feature.revolve profile={"objectId":"perfil"} phiLengthDeg=270
 tool get draw.array
 tool reset draw.extrude
 tool run mesh.extrude distance=2
@@ -325,12 +335,15 @@ tool cancel
 ```
 
 As cinco capacidades `draw.*` são intenções visíveis distintas sobre o mesmo
-capturador de caminho ou perfil. O HUD e o painel de parâmetros já são gerados
-por esses descritores. Ativar `transform.translate` seleciona o gizmo; uma
-transformação numérica continua sendo uma operação diferente, como `move` ou o
-comando editorial correspondente. Consulte
+capturador de caminho ou perfil. As três capacidades `feature.*` operam sobre
+fontes selecionadas ou vinculadas nos slots da ferramenta em foco. HUD e painel
+de parâmetros são gerados pelos mesmos descritores. Ativar
+`transform.translate` seleciona o gizmo; uma transformação numérica continua
+sendo uma operação diferente, como `move` ou o comando editorial
+correspondente. Consulte
 [`AUTHORING_TOOL_CAPABILITIES_0047E.md`](docs/AUTHORING_TOOL_CAPABILITIES_0047E.md)
-e [`DRAWN_AUTHORING_0047F.md`](docs/DRAWN_AUTHORING_0047F.md).
+[`DRAWN_AUTHORING_0047F.md`](docs/DRAWN_AUTHORING_0047F.md) e
+[`SEMANTIC_SKETCH_INPUTS_0047G.md`](docs/SEMANTIC_SKETCH_INPUTS_0047G.md).
 
 ### Propriedades compartilhadas
 

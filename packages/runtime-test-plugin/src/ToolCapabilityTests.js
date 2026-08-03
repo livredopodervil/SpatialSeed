@@ -2,11 +2,12 @@ import {
   EditToolRegistryAdapter,
   ToolCapabilityFacade,
   ToolParameterStore,
+  ToolWorkspaceController,
   TransformToolAdapter,
   createDefaultEditToolRegistry,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../edit-tools/src/index.js?build=20260802-0047f";
+} from "../../edit-tools/src/index.js?build=20260802-0047g";
 import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260802-0047f";
@@ -18,7 +19,7 @@ export function createToolCapabilityTests() {
       const descriptions = fixture.facade.list();
       const ids = descriptions.map(item => item.id);
 
-      assertEqual(descriptions.length, 18);
+      assertEqual(descriptions.length, 21);
       assertEqual(ids.includes("transform.translate"), true);
       assertEqual(ids.includes("transform.rotate"), true);
       assertEqual(ids.includes("transform.scale"), true);
@@ -27,6 +28,9 @@ export function createToolCapabilityTests() {
       assertEqual(ids.includes("draw.sweep"), true);
       assertEqual(ids.includes("draw.extrude"), true);
       assertEqual(ids.includes("draw.revolve"), true);
+      assertEqual(ids.includes("feature.sweep"), true);
+      assertEqual(ids.includes("feature.extrude"), true);
+      assertEqual(ids.includes("feature.revolve"), true);
       assertEqual(ids.includes("path.sketch"), false);
       assertEqual(fixture.facade.describe("draw.tube").presentation.icon, "〰");
       assertEqual(fixture.facade.describe("draw.array").presentation.icon, "⋯");
@@ -49,6 +53,11 @@ export function createToolCapabilityTests() {
       assertEqual(
         fixture.facade.describe("draw.extrude").capabilities.procedural,
         true
+      );
+      assertEqual(fixture.facade.describe("feature.extrude").kind, "operation");
+      assertEqual(
+        fixture.facade.describe("feature.extrude").operations.activate,
+        false
       );
       assertEqual(Object.isFrozen(fixture.facade.describe("draw.tube")), true);
       assertEqual(
@@ -261,6 +270,42 @@ export function createToolCapabilityTests() {
       fixture.dispose();
     },
 
+    "features existentes usam slots explícitos e os mesmos parâmetros"() {
+      const fixture = createFacadeFixture();
+      fixture.facade.setParameters("feature.extrude", {
+        depth: 2.75,
+        bevelEnabled: false
+      });
+      fixture.facade.execute("feature.extrude", {
+        profile: { objectId: "hexagono", extraction: "sketch" }
+      });
+      fixture.facade.setParameters("feature.sweep", {
+        sweepSegments: 48,
+        sweepTwistDegrees: 30,
+        scaleEnd: 0.5
+      });
+      fixture.facade.execute("feature.sweep", {
+        profile: { objectId: "hexagono" },
+        path: { objectId: "curva" }
+      });
+
+      const extrude = fixture.calls.find(call =>
+        call.id === "profile.extrude.create"
+      );
+      const sweep = fixture.calls.find(call => call.id === "path.sweep.create");
+      assertNear(extrude.args.depth, 2.75);
+      assertEqual(extrude.args.bevelEnabled, false);
+      assertEqual(extrude.args.profile.objectId, "hexagono");
+      assertEqual(extrude.args.profile.extraction, "sketch");
+      assertEqual(sweep.args.profile.objectId, "hexagono");
+      assertEqual(sweep.args.path.objectId, "curva");
+      assertEqual(sweep.args.segments, 48);
+      assertNear(sweep.args.twistDegrees, 30);
+      assertNear(sweep.args.scaleEnd, 0.5);
+      assertEqual(Object.hasOwn(extrude.args, "inputSamplePixels"), false);
+      fixture.dispose();
+    },
+
     "restaurar um preset não apaga parâmetros lembrados dos demais"() {
       const fixture = createFacadeFixture();
       fixture.facade.setParameters("draw.tube", { radius: 0.42 });
@@ -362,6 +407,100 @@ export function createToolCapabilityTests() {
         fixture.facade.capabilities().commands.execute,
         "authoring.tool.execute"
       );
+      fixture.dispose();
+    },
+
+    "workspace separa foco visual e resolve entradas pela seleção"() {
+      const fixture = createFacadeFixture();
+      const selection = {
+        activeMember: { objectId: "hexagono" },
+        members: [
+          { objectId: "hexagono" },
+          { objectId: "curva" }
+        ]
+      };
+      const references = [
+        {
+          id: "hexagono",
+          name: "Hexágono",
+          pathExtractions: ["auto", "sketch"],
+          profileExtractions: ["auto", "sketch"]
+        },
+        {
+          id: "curva",
+          name: "Curva",
+          pathExtractions: ["auto", "centerline"],
+          profileExtractions: []
+        }
+      ];
+      const workspace = new ToolWorkspaceController({
+        facade: fixture.facade,
+        selection: () => selection,
+        references: () => references
+      });
+      const commands = new RegistryFixture();
+      const queries = new RegistryFixture();
+      installToolCapabilityRuntime({
+        commands,
+        queries,
+        facade: fixture.facade,
+        workspace
+      });
+
+      commands.execute("authoring.tool.focus", {
+        toolId: "feature.sweep"
+      });
+      const status = queries.execute("authoring.tool.workspace");
+      commands.execute("authoring.tool.execute", {
+        toolId: "feature.sweep"
+      });
+      const sweep = fixture.calls.find(call => call.id === "path.sweep.create");
+
+      assertEqual(status.focusedToolId, "feature.sweep");
+      assertEqual(status.ready, true);
+      assertEqual(status.inputs[0].binding.objectId, "hexagono");
+      assertEqual(status.inputs[1].binding.objectId, "curva");
+      assertEqual(sweep.args.profile.objectId, "hexagono");
+      assertEqual(sweep.args.path.objectId, "curva");
+
+      references.push({
+        id: "perfil-unico",
+        name: "Perfil único",
+        pathExtractions: [],
+        profileExtractions: ["auto", "contour"]
+      });
+      selection.members = [
+        { objectId: "hexagono" },
+        { objectId: "perfil-unico" }
+      ];
+      commands.execute("authoring.tool.input.bind", {
+        toolId: "feature.sweep",
+        inputId: "path",
+        binding: { objectId: "hexagono", extraction: "sketch" }
+      });
+      const reserved = queries.execute("authoring.tool.workspace", {
+        toolId: "feature.sweep"
+      });
+      assertEqual(reserved.inputs[0].binding.objectId, "perfil-unico");
+      assertEqual(reserved.inputs[1].binding.objectId, "hexagono");
+
+      commands.execute("authoring.tool.input.bind", {
+        toolId: "feature.extrude",
+        inputId: "profile",
+        binding: { objectId: "hexagono", extraction: "sketch" }
+      });
+      commands.execute("authoring.tool.execute", {
+        toolId: "feature.extrude"
+      });
+      const extrude = fixture.calls.find(call =>
+        call.id === "profile.extrude.create"
+      );
+      assertEqual(extrude.args.profile.extraction, "sketch");
+      assertEqual(
+        fixture.facade.status().activeToolIds.includes("feature.extrude"),
+        false
+      );
+      workspace.dispose();
       fixture.dispose();
     },
 

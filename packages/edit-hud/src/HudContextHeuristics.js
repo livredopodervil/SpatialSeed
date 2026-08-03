@@ -105,6 +105,10 @@ export function deriveHudContext({
     selectedReferences.filter(reference => reference.pathExtractions?.length),
     activeObjectId
   );
+  const profileInputReference = preferredReference(
+    selectedReferences.filter(reference => reference.profileExtractions?.length),
+    activeObjectId
+  );
   const profileReference = preferredReference(
     selectedReferences.filter(reference =>
       reference.id !== pathReference?.id && reference.profileExtractions?.length
@@ -170,6 +174,9 @@ export function deriveHudContext({
     activeObjectId,
     pathReference: pathReference ? Object.freeze({ ...pathReference }) : null,
     profileReference: profileReference ? Object.freeze({ ...profileReference }) : null,
+    profileInputReference: profileInputReference
+      ? Object.freeze({ ...profileInputReference })
+      : null,
     canTubeFromObject: !meshActive && Boolean(pathReference),
     canSweepFromObjects: !meshActive && Boolean(pathReference && profileReference),
     canArrayAlongPath: !meshActive && Boolean(pathReference && selectedObjects >= 2),

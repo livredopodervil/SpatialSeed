@@ -17,6 +17,9 @@ import {
   normalizeStrokeBundleDescriptor,
   rebaseStrokeBundleOrigin
 } from "../../stroke-resources/src/index.js?build=20260801-0045a1";
+import {
+  normalizeSketchDescriptor
+} from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
 
 function updateById(objects, id, updater) {
   const index = objects.findIndex(object => object.id === id);
@@ -323,7 +326,8 @@ export function boxRegionReducer(state, command, context = {}) {
           trustedUniqueId: Boolean(command.trustedUniqueId)
         }
       );
-      const object = Object.freeze({ ...existing, geometry });
+      const existingWithoutSketch = omitSketch(existing);
+      const object = Object.freeze({ ...existingWithoutSketch, geometry });
       const objects = updateById(
         state.objects,
         objectId,
@@ -711,6 +715,9 @@ export function boxRegionReducer(state, command, context = {}) {
         ...(geometry
           ? { geometry }
           : { size: command.size ?? [2, 2, 2] }),
+        ...(command.sketch
+          ? { sketch: normalizeSketchDescriptor(command.sketch) }
+          : {}),
         ...(command.appearanceId
           ? { appearanceId: String(command.appearanceId) }
           : {
@@ -751,7 +758,14 @@ export function boxRegionReducer(state, command, context = {}) {
       const objects = updateById(
         state.objects,
         command.id,
-        object => ({ ...object, kind: geometry.type, geometry })
+        object => ({
+          ...omitSketch(object),
+          kind: geometry.type,
+          geometry,
+          ...(command.sketch
+            ? { sketch: normalizeSketchDescriptor(command.sketch) }
+            : {})
+        })
       );
       if (objects === state.objects) return { state, changes: [] };
       return {
@@ -1155,6 +1169,9 @@ function freezeStrokeBundleObject(
       "Escala do conjunto de traços inválida."
     ),
     geometry,
+    ...(command.sketch
+      ? { sketch: normalizeSketchDescriptor(command.sketch) }
+      : {}),
     selectionAnchorPolicy: normalizeSelectionAnchorPolicy(
       command.selectionAnchorPolicy ?? geometry.selectionAnchorPolicy
     ),
@@ -1182,6 +1199,12 @@ function freezeStrokeBundleObject(
     instanceState: Object.freeze({}),
     source: String(command.source ?? "stroke-bundle")
   });
+}
+
+function omitSketch(object) {
+  const result = { ...object };
+  delete result.sketch;
+  return result;
 }
 
 

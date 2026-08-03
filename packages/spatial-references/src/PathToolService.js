@@ -35,7 +35,7 @@ const SKETCH_GEOMETRY_PLAN_VERSION = 1;
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 
 export class PathToolService {
-  static apiVersion = "path-tool-service-v9";
+  static apiVersion = "path-tool-service-v10";
   #issuedArrayBrushPlans = new WeakSet();
   #issuedPathCreatePlans = new WeakSet();
   #issuedSketchGeometryPlans = new WeakSet();
@@ -571,6 +571,77 @@ export class PathToolService {
       path: summary(resolvedPath),
       profile: summary(resolvedProfile),
       diagnostics: sweep.diagnostics
+    });
+  }
+
+  createExtrude({
+    profile = {},
+    name = null,
+    depth = 1,
+    extrudeSteps = 1,
+    curveSegments = 12,
+    bevelEnabled = true,
+    bevelThickness = 0.2,
+    bevelSize = 0.1,
+    bevelOffset = 0,
+    bevelSegments = 3,
+    color = "#70c8ff"
+  } = {}) {
+    this.#assertCanMutate("extrudar um perfil existente");
+    const resolvedProfile = this.resolver.resolveProfile(profile);
+    const result = this.selectionOperations.createGeometry({
+      name: name || `Extrusão — ${resolvedProfile.objectName}`,
+      position: resolvedProfile.origin,
+      rotation: resolvedProfile.quaternion,
+      geometry: {
+        type: "extrude",
+        contour: resolvedProfile.points,
+        holes: [],
+        depth: positive(depth, "depth"),
+        steps: integerAtLeast(extrudeSteps, 1, "extrudeSteps"),
+        curveSegments: integerAtLeast(curveSegments, 1, "curveSegments"),
+        bevelEnabled: Boolean(bevelEnabled),
+        bevelThickness: nonNegative(bevelThickness, "bevelThickness"),
+        bevelSize: nonNegative(bevelSize, "bevelSize"),
+        bevelOffset: finite(bevelOffset, "bevelOffset"),
+        bevelSegments: integerAtLeast(bevelSegments, 0, "bevelSegments")
+      },
+      color
+    });
+    return Object.freeze({
+      ...result,
+      tool: "extrude-profile-reference",
+      profile: summary(resolvedProfile)
+    });
+  }
+
+  createRevolve({
+    profile = {},
+    name = null,
+    revolveSegments = 32,
+    phiStartDeg = 0,
+    phiLengthDeg = 360,
+    color = "#70c8ff"
+  } = {}) {
+    this.#assertCanMutate("revolucionar um perfil existente");
+    const resolvedProfile = this.resolver.resolveProfile(profile);
+    const result = this.selectionOperations.createGeometry({
+      name: name || `Revolução — ${resolvedProfile.objectName}`,
+      position: resolvedProfile.origin,
+      rotation: resolvedProfile.quaternion,
+      geometry: {
+        type: "lathe",
+        points: resolvedProfile.points,
+        segments: integerAtLeast(revolveSegments, 3, "revolveSegments"),
+        phiStartDeg: finite(phiStartDeg, "phiStartDeg"),
+        phiLengthDeg: positive(phiLengthDeg, "phiLengthDeg")
+      },
+      color
+    });
+    return Object.freeze({
+      ...result,
+      tool: "revolve-profile-reference",
+      profile: summary(resolvedProfile)
     });
   }
 

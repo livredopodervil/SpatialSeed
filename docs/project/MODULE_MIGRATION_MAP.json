@@ -237,6 +237,10 @@
       "target": "authoring",
       "disposition": "preserve-command-backed-operations"
     },
+    "packages/sketch-descriptor": {
+      "target": "kernel",
+      "disposition": "preserve-semantic-sketch-contract"
+    },
     "packages/spatial-references": {
       "target": "authoring",
       "disposition": "preserve-reference-and-path-services"

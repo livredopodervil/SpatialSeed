@@ -15,18 +15,21 @@ export {
 export {
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "./createDefaultEditToolRegistry.js?build=20260802-0047f";
+} from "./createDefaultEditToolRegistry.js?build=20260802-0047g";
 export {
   TOOL_CAPABILITY_DESCRIPTOR_VERSION,
   ToolCapabilityFacade
-} from "./ToolCapabilityFacade.js?build=20260802-0047f";
+} from "./ToolCapabilityFacade.js?build=20260802-0047g";
 export {
   TransformToolAdapter
-} from "./TransformToolAdapter.js?build=20260802-0047f";
+} from "./TransformToolAdapter.js?build=20260802-0047g";
 export {
   EditToolRegistryAdapter
-} from "./EditToolRegistryAdapter.js?build=20260802-0047f";
+} from "./EditToolRegistryAdapter.js?build=20260802-0047g";
+export {
+  ToolWorkspaceController
+} from "./ToolWorkspaceController.js?build=20260802-0047g";
 export {
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "./createDefaultToolCapabilityFacade.js?build=20260802-0047f";
+} from "./createDefaultToolCapabilityFacade.js?build=20260802-0047g";

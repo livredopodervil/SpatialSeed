@@ -95,7 +95,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260731-0044a";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260802-0047g";
 import {
   explicitFamilyTransformAt,
   familyMemberResourcePath,
@@ -112,7 +112,7 @@ import {
   strokeBundleStrokes,
   StrokeCompactionScheduler,
   StrokeFusionService
-} from "../../stroke-resources/src/index.js?build=20260801-0045a1";
+} from "../../stroke-resources/src/index.js?build=20260802-0047g";
 import {
   buildResourceTree,
   createVirtualResourceTree,
@@ -157,7 +157,7 @@ import {
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260801-0045a1";
+} from "../../geometry-registry/src/index.js?build=20260802-0047g";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -232,7 +232,7 @@ import {
 import {
   PlanarSketchController,
   createPlanarPrimitive
-} from "../../planar-authoring/src/index.js?build=20260730-0040e";
+} from "../../planar-authoring/src/index.js?build=20260802-0047g";
 import {
   ObjectPlacementController
 } from "../../object-placement/src/index.js?build=20260730-0040e";
@@ -244,7 +244,7 @@ import {
 } from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260802-0047a";
+} from "../../editor-commands/src/EditorCommands.js?build=20260802-0047g";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -256,7 +256,7 @@ import {
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../edit-tools/src/index.js?build=20260802-0047f";
+} from "../../edit-tools/src/index.js?build=20260802-0047g";
 import {
   deriveHudContext,
   geometryToolIcon,
@@ -279,7 +279,7 @@ import {
   samplePathFrames,
   samplePathFrameTailBySpacing,
   samplePathFramesBySpacing
-} from "../../spatial-references/src/index.js?build=20260731-0044b";
+} from "../../spatial-references/src/index.js?build=20260802-0047g";
 import {
   WEB_APPLICATION_DEFINITION_VERSION,
   WEB_RUNTIME_EXTENSION_API_VERSION,
@@ -356,7 +356,7 @@ import {
 } from "./ModuleRegistryTests.js?build=20260802-0047b";
 import {
   createToolCapabilityTests
-} from "./ToolCapabilityTests.js?build=20260802-0047f";
+} from "./ToolCapabilityTests.js?build=20260802-0047g";
 import {
   BenchmarkRunner
 } from "../../benchmarks/src/index.js?build=20260802-0047a";
@@ -1118,6 +1118,7 @@ export function createRuntimeLayerTests() {
             type: "polygon"
           }
         ];
+        const sketches = new Map();
         for (const entry of cases) {
           const plan = createPlanarPrimitive({
             frame,
@@ -1128,7 +1129,14 @@ export function createRuntimeLayerTests() {
           assertEqual(registry.normalize(plan.geometry).type, entry.type);
           assertNear(plan.position[2], 2);
           assertVectorNear(plan.rotation, frame.quaternion);
+          assertEqual(Boolean(plan.sketch?.descriptorVersion), true);
+          sketches.set(entry.mode, plan.sketch);
         }
+        assertEqual(sketches.get("circle").roles.includes("profile"), true);
+        assertEqual(sketches.get("polygon").roles.includes("profile"), true);
+        assertEqual(sketches.get("rectangle").roles.includes("boundary"), true);
+        assertEqual(sketches.get("arc").roles.includes("profile"), false);
+        assertEqual(sketches.get("line").roles.includes("path"), true);
       },
 
       "retângulo preserva centro e dimensões no plano local"() {
@@ -1154,6 +1162,37 @@ export function createRuntimeLayerTests() {
           planarFrameCoordinates(frame, plan.position),
           [1, 1, 0]
         );
+      },
+
+      "retângulo contornado preserva o mesmo esboço do preenchido"() {
+        const frame = planarFrameFromPoints([
+          [10, 20, 30],
+          [10, 21, 30],
+          [9, 20, 30]
+        ]);
+        const plan = createPlanarPrimitive({
+          frame,
+          points: [
+            planarFramePoint(frame, [-2, -1, 0]),
+            planarFramePoint(frame, [4, 3, 0])
+          ],
+          settings: {
+            mode: "rectangle",
+            style: "stroke"
+          }
+        });
+
+        assertEqual(plan.geometry.type, "tube");
+        assertDeepEqual(plan.sketch.points, [
+          [-3, -2],
+          [3, -2],
+          [3, 2],
+          [-3, 2]
+        ]);
+        assertNear(plan.sketch.primitive.width, 6);
+        assertNear(plan.sketch.primitive.height, 4);
+        assertEqual(plan.sketch.roles.includes("profile"), true);
+        assertEqual(plan.sketch.roles.includes("boundary"), true);
       },
 
       "gesto 2D publica uma vez e rearma sem varrer a cena"() {
@@ -1186,6 +1225,7 @@ export function createRuntimeLayerTests() {
         );
         assertEqual(calls.length, 1);
         assertEqual(calls[0].geometry.type, "tube");
+        assertEqual(calls[0].sketch.roles.includes("path"), true);
         assertEqual(completed.length, 1);
         assertEqual(controller.status().active, true);
         assertEqual(controller.status().pointCount, 0);
@@ -1726,6 +1766,29 @@ export function createRuntimeLayerTests() {
         toolParameters.dispose();
       },
 
+      "novo projeto permite ao serviço encerrar uma edição de malha ativa"() {
+        const calls = [];
+        const commands = createEditorCommands({
+          editor: {},
+          renderer: {},
+          selectionOperations: {},
+          meshEditor: { active: true },
+          projectService: {
+            newProject() {
+              calls.push("newProject");
+              return { changed: true };
+            }
+          },
+          benchmarkRunner: {},
+          resourceAudit: {}
+        });
+
+        const result = commands.execute("project.new");
+
+        assertEqual(result.changed, true);
+        assertDeepEqual(calls, ["newProject"]);
+      },
+
       "ajuste de desenho ativo atualiza o preview sem comando de documento"() {
         const toolParameters = new ToolParameterStore({
           registry: createDefaultEditToolRegistry(),
@@ -1984,6 +2047,25 @@ export function createRuntimeLayerTests() {
         assertEqual(result.canArrayAlongPath, true);
         assertEqual(result.pathReference.id, "path");
         assertEqual(result.profileReference.id, "profile");
+        assertEqual(result.profileInputReference.id, "profile");
+      },
+
+      "um único esboço fechado continua disponível como perfil"() {
+        const result = deriveHudContext({
+          state: { meshActive: false },
+          selection: {
+            members: [{ objectId: "hexagon" }],
+            activeMember: { objectId: "hexagon" }
+          },
+          references: [{
+            id: "hexagon",
+            pathExtractions: ["auto", "sketch"],
+            profileExtractions: ["auto", "sketch"]
+          }]
+        });
+        assertEqual(result.pathReference.id, "hexagon");
+        assertEqual(result.profileReference, null);
+        assertEqual(result.profileInputReference.id, "hexagon");
       }
     },
 
@@ -2223,6 +2305,31 @@ export function createRuntimeLayerTests() {
         );
       },
 
+      "perfil existente produz extrusão e revolução pelos mesmos descritores"() {
+        const fixture = createPathToolFixture();
+        const extrude = fixture.service.createExtrude({
+          profile: { objectId: "profile-source", extraction: "contour" },
+          depth: 2.25,
+          bevelEnabled: false
+        });
+        const revolve = fixture.service.createRevolve({
+          profile: { objectId: "profile-source", extraction: "contour" },
+          revolveSegments: 24,
+          phiLengthDeg: 180
+        });
+        const extruded = fixture.sandbox.getObject(extrude.id);
+        const revolved = fixture.sandbox.getObject(revolve.id);
+
+        assertEqual(extruded.geometry.type, "extrude");
+        assertNear(extruded.geometry.depth, 2.25);
+        assertEqual(extruded.geometry.bevelEnabled, false);
+        assertEqual(revolved.geometry.type, "lathe");
+        assertEqual(revolved.geometry.segments, 24);
+        assertNear(revolved.geometry.phiLengthDeg, 180);
+        assertEqual(extrude.profile.objectId, "profile-source");
+        assertEqual(revolve.profile.objectId, "profile-source");
+      },
+
       "resolver usa pontos declarados do tubo no espaço mundial"() {
         const region = new Region(
           { id: "path-reference-region", name: "Path", type: "box-region" },
@@ -2261,6 +2368,139 @@ export function createRuntimeLayerTests() {
         assertDeepEqual(path.points[0], [10, 2, -1]);
         assertDeepEqual(path.points[1], [12, 2, -1]);
         assertEqual(path.closed, false);
+      },
+
+      "esboço semântico e tubo fechado antigo fornecem perfis equivalentes"() {
+        const frame = planarFrameFromPoints([
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 1, 0]
+        ]);
+        const polygon = createPlanarPrimitive({
+          frame,
+          points: [[0, 0, 0], [2, 0, 0]],
+          settings: { mode: "polygon", style: "stroke", sides: 6 }
+        });
+        const region = new Region(
+          {
+            id: "semantic-profile-region",
+            name: "Semantic profiles",
+            type: "box-region"
+          },
+          {
+            schemaVersion: 1,
+            objects: [
+              {
+                id: "semantic-hexagon",
+                kind: polygon.geometry.type,
+                name: "Hexágono semântico",
+                position: polygon.position,
+                rotation: polygon.rotation,
+                scale: [1, 1, 1],
+                geometry: polygon.geometry,
+                sketch: polygon.sketch
+              },
+              {
+                id: "legacy-hexagon",
+                kind: "tube",
+                name: "Hexágono antigo",
+                position: [5, 0, 0],
+                rotation: [0, 0, 0, 1],
+                scale: [1, 1, 1],
+                geometry: {
+                  type: "tube",
+                  points: polygon.sketch.points.map(([x, y]) => [x, y, 0]),
+                  tubularSegments: 24,
+                  radius: 0.05,
+                  radialSegments: 6,
+                  closed: true,
+                  curveType: "polyline",
+                  tension: 0.5
+                }
+              }
+            ]
+          }
+        );
+        const resolver = new SpatialReferenceResolver({
+          sandbox: new Sandbox(region, boxRegionReducer),
+          editor: new EditorState(),
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        const semantic = resolver.resolveProfile({
+          objectId: "semantic-hexagon"
+        });
+        const legacy = resolver.resolveProfile({ objectId: "legacy-hexagon" });
+        const references = new Map(
+          resolver.listObjects().map(reference => [reference.id, reference])
+        );
+
+        assertEqual(semantic.extraction, "sketch");
+        assertEqual(legacy.extraction, "centerline");
+        assertEqual(semantic.points.length, 6);
+        assertEqual(legacy.points.length, 6);
+        assertEqual(
+          references.get("semantic-hexagon").profileExtractions.includes("sketch"),
+          true
+        );
+        assertEqual(
+          references.get("legacy-hexagon").profileExtractions.includes("centerline"),
+          true
+        );
+      },
+
+      "aparência preenchida não promove arco semântico a perfil"() {
+        const frame = planarFrameFromPoints([
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 1, 0]
+        ]);
+        const arcs = ["stroke", "fill"].map(style => ({
+          style,
+          plan: createPlanarPrimitive({
+            frame,
+            points: [[0, 0, 0], [2, 0, 0]],
+            settings: {
+              mode: "arc",
+              style,
+              arcAngleDegrees: 120
+            }
+          })
+        }));
+        const region = new Region(
+          {
+            id: "semantic-arc-region",
+            name: "Semantic arcs",
+            type: "box-region"
+          },
+          {
+            schemaVersion: 1,
+            objects: arcs.map(({ style, plan }) => ({
+              id: `semantic-arc-${style}`,
+              kind: plan.geometry.type,
+              name: `Arco ${style}`,
+              position: plan.position,
+              rotation: plan.rotation,
+              scale: [1, 1, 1],
+              geometry: plan.geometry,
+              sketch: plan.sketch
+            }))
+          }
+        );
+        const resolver = new SpatialReferenceResolver({
+          sandbox: new Sandbox(region, boxRegionReducer),
+          editor: new EditorState(),
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        const references = resolver.listObjects();
+
+        for (const reference of references) {
+          assertEqual(reference.pathExtractions.includes("sketch"), true);
+          assertDeepEqual(reference.profileExtractions, []);
+          assertThrowsMessage(
+            () => resolver.resolveProfile({ objectId: reference.id }),
+            "não declara um perfil semântico"
+          );
+        }
       },
 
       "provider cria polilinhas e Bézier cúbicas como BufferGeometry"() {

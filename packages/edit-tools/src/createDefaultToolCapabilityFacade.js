@@ -31,7 +31,8 @@ export function createDefaultToolCapabilityFacade({
 export function installToolCapabilityRuntime({
   commands,
   queries,
-  facade
+  facade,
+  workspace = null
 }) {
   if (!commands?.register || !queries?.register) {
     throw new TypeError(
@@ -45,14 +46,26 @@ export function installToolCapabilityRuntime({
   commands
     .register(
       "authoring.tool.activate",
-      ({ toolId, options = {}, context = null } = {}) =>
-        facade.activate(toolId, options, context),
+      ({ toolId, options = {}, context = null } = {}) => {
+        workspace?.focus(toolId);
+        return facade.activate(
+          toolId,
+          workspace?.resolve(toolId, options) ?? options,
+          context
+        );
+      },
       canonicalMetadata("activate")
     )
     .register(
       "authoring.tool.execute",
-      ({ toolId, input = {}, context = null } = {}) =>
-        facade.execute(toolId, input, context),
+      ({ toolId, input = {}, context = null } = {}) => {
+        workspace?.focus(toolId);
+        return facade.execute(
+          toolId,
+          workspace?.resolve(toolId, input) ?? input,
+          context
+        );
+      },
       canonicalMetadata("execute", {
         effect: "delegated",
         delegatesMutation: true
@@ -72,15 +85,49 @@ export function installToolCapabilityRuntime({
     )
     .register(
       "authoring.tool.parameters.set",
-      ({ toolId, patch = {} } = {}) =>
-        facade.setParameters(toolId, patch),
+      ({ toolId, patch = {} } = {}) => {
+        workspace?.focus(toolId);
+        return facade.setParameters(toolId, patch);
+      },
       canonicalMetadata("parameters", { effect: "local-preference" })
     )
     .register(
       "authoring.tool.parameters.reset",
-      ({ toolId } = {}) => facade.resetParameters(toolId),
+      ({ toolId } = {}) => {
+        workspace?.focus(toolId);
+        return facade.resetParameters(toolId);
+      },
       canonicalMetadata("parameters", { effect: "local-preference" })
     );
+
+  if (workspace) {
+    commands
+      .register(
+        "authoring.tool.focus",
+        ({ toolId } = {}) => workspace.focus(toolId),
+        canonicalMetadata("focus", { effect: "local-preference" })
+      )
+      .register(
+        "authoring.tool.focus.clear",
+        () => workspace.clearFocus(),
+        canonicalMetadata("focus", { effect: "local-preference" })
+      )
+      .register(
+        "authoring.tool.input.bind",
+        args => workspace.bind(args),
+        canonicalMetadata("input", { effect: "local-preference" })
+      )
+      .register(
+        "authoring.tool.input.use-selection",
+        args => workspace.useSelection(args),
+        canonicalMetadata("input", { effect: "local-preference" })
+      )
+      .register(
+        "authoring.tool.input.clear",
+        args => workspace.clearInput(args),
+        canonicalMetadata("input", { effect: "local-preference" })
+      );
+  }
 
   queries
     .register("authoring.tools.list", args => facade.list(args))
@@ -91,6 +138,10 @@ export function installToolCapabilityRuntime({
       toolId,
       values: facade.getParameters(toolId)
     }));
+  if (workspace) {
+    queries.register("authoring.tool.workspace", args =>
+      workspace.status(args));
+  }
 
   return facade;
 }

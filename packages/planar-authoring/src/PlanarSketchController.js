@@ -7,6 +7,9 @@ import {
 import {
   constrainPlanarPoint
 } from "./PlanarConstraints.js?build=20260730-0040e";
+import {
+  createPlanarSketchDescriptor
+} from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
 
 const MODES = Object.freeze([
   "point",
@@ -36,7 +39,7 @@ const DEFAULTS = Object.freeze({
 });
 
 export class PlanarSketchController {
-  static apiVersion = "planar-sketch-controller-v2";
+  static apiVersion = "planar-sketch-controller-v3";
 
   #active = null;
   #listeners = new Set();
@@ -161,6 +164,7 @@ export class PlanarSketchController {
     const creation = {
       name: options.name ?? plan.name,
       geometry: plan.geometry,
+      sketch: plan.sketch,
       position: plan.position,
       rotation: plan.rotation,
       color: settings.color
@@ -902,9 +906,23 @@ export function createPlanarPrimitive({
     planarFrameCoordinates(normalizedFrame, point)
   );
   const mode = normalizedSettings.mode;
+  const complete = plan => freezePlan({
+    ...plan,
+    sketch: planarSketchForPlan({
+      mode,
+      style: normalizedSettings.style,
+      local,
+      objectOrigin: planarFrameCoordinates(
+        normalizedFrame,
+        plan.position
+      ),
+      settings: normalizedSettings,
+      geometry: plan.geometry
+    })
+  });
   if (mode === "point") {
     const [x, y] = local[0];
-    return freezePlan({
+    return complete({
       name: "Ponto 2D",
       geometry: {
         type: "circle",
@@ -922,7 +940,7 @@ export function createPlanarPrimitive({
       throw new Error("A polilinha exige ao menos dois pontos.");
     }
     const center = localBoundsCenter(local);
-    return freezePlan({
+    return complete({
       name: "Polilinha 2D",
       geometry: strokeGeometry(
         local.map(([x, y]) => [x - center[0], y - center[1], 0]),
@@ -949,7 +967,7 @@ export function createPlanarPrimitive({
   }
   if (mode === "line") {
     const center = [(first[0] + last[0]) / 2, (first[1] + last[1]) / 2];
-    return freezePlan({
+    return complete({
       name: "Segmento 2D",
       geometry: strokeGeometry([
         [first[0] - center[0], first[1] - center[1], 0],
@@ -985,7 +1003,7 @@ export function createPlanarPrimitive({
           [halfX, halfY, 0],
           [-halfX, halfY, 0]
         ], normalizedSettings, true);
-    return freezePlan({
+    return complete({
       name: "Retângulo 2D",
       geometry,
       position: planarFramePoint(
@@ -1008,7 +1026,7 @@ export function createPlanarPrimitive({
           thetaLengthDeg: 360
         }
       : ringGeometry(radius, 360, 0, normalizedSettings);
-    return freezePlan({
+    return complete({
       name: "Círculo 2D",
       geometry,
       position: planarFramePoint(
@@ -1023,7 +1041,7 @@ export function createPlanarPrimitive({
     const thetaStartDeg = signedAngle < 0
       ? startAngle + signedAngle
       : startAngle;
-    return freezePlan({
+    return complete({
       name: "Arco 2D",
       geometry: normalizedSettings.style === "fill"
         ? {
@@ -1063,7 +1081,7 @@ export function createPlanarPrimitive({
           normalizedSettings,
           true
         );
-    return freezePlan({
+    return complete({
       name: "Polígono 2D",
       geometry,
       position: planarFramePoint(
@@ -1115,6 +1133,132 @@ function regularPolygonPoints(sides, radius, startAngleDegrees) {
       Math.sin(angle) * radius,
       0
     ];
+  });
+}
+
+function planarSketchForPlan({
+  mode,
+  style,
+  local,
+  objectOrigin,
+  settings,
+  geometry
+}) {
+  const relative = points => points.map(point => [
+    point[0] - objectOrigin[0],
+    point[1] - objectOrigin[1]
+  ]);
+  let points;
+  let closed = false;
+  let primitive;
+
+  if (mode === "point") {
+    points = [[0, 0]];
+    primitive = {
+      type: "point",
+      radius: settings.strokeWidth
+    };
+  } else if (mode === "line") {
+    points = relative([local[0], local.at(-1)]);
+    primitive = { type: "line" };
+  } else if (mode === "polyline") {
+    points = relative(local);
+    closed = settings.closed;
+    primitive = { type: "polyline" };
+  } else if (mode === "rectangle") {
+    const width = Math.abs(local.at(-1)[0] - local[0][0]);
+    const height = Math.abs(local.at(-1)[1] - local[0][1]);
+    const halfX = width / 2;
+    const halfY = height / 2;
+    points = [
+      [-halfX, -halfY],
+      [halfX, -halfY],
+      [halfX, halfY],
+      [-halfX, halfY]
+    ];
+    closed = true;
+    primitive = {
+      type: "rectangle",
+      width,
+      height
+    };
+  } else if (mode === "circle") {
+    const radius = Math.hypot(
+      local.at(-1)[0] - local[0][0],
+      local.at(-1)[1] - local[0][1]
+    );
+    points = sampleArcPoints(radius, 0, 360, settings.segments, {
+      includeEnd: false
+    });
+    closed = true;
+    primitive = { type: "circle", radius };
+  } else if (mode === "arc") {
+    const dx = local.at(-1)[0] - local[0][0];
+    const dy = local.at(-1)[1] - local[0][1];
+    const radius = Math.hypot(dx, dy);
+    const start = Math.atan2(dy, dx) * 180 / Math.PI;
+    const length = settings.arcAngleDegrees;
+    const thetaStart = length < 0 ? start + length : start;
+    points = sampleArcPoints(
+      radius,
+      thetaStart,
+      Math.abs(length),
+      settings.segments
+    );
+    primitive = {
+      type: "arc",
+      radius,
+      startAngleDeg: thetaStart,
+      angleDeg: Math.abs(length)
+    };
+  } else if (mode === "polygon") {
+    const dx = local.at(-1)[0] - local[0][0];
+    const dy = local.at(-1)[1] - local[0][1];
+    const radius = Math.hypot(dx, dy);
+    const startAngleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+    points = regularPolygonPoints(
+      settings.sides,
+      radius,
+      startAngleDeg
+    ).map(([x, y]) => [x, y]);
+    closed = true;
+    primitive = {
+      type: "polygon",
+      sides: settings.sides,
+      radius,
+      startAngleDeg
+    };
+  } else {
+    throw new RangeError(`Esboço 2D desconhecido: ${mode}.`);
+  }
+
+  return createPlanarSketchDescriptor({
+    mode,
+    style,
+    points,
+    closed,
+    primitive
+  });
+}
+
+function sampleArcPoints(
+  radius,
+  startAngleDeg,
+  lengthDeg,
+  segments,
+  { includeEnd = true } = {}
+) {
+  const divisions = Math.max(
+    1,
+    Math.ceil(Number(segments) * Number(lengthDeg) / 360)
+  );
+  const total = includeEnd ? divisions + 1 : divisions;
+  return Array.from({ length: total }, (_, index) => {
+    const angle = (
+      Number(startAngleDeg) +
+      Number(lengthDeg) * index / divisions
+    ) * Math.PI / 180;
+    return [Math.cos(angle) * radius, Math.sin(angle) * radius];
   });
 }
 
@@ -1205,10 +1349,11 @@ function resultCreatedIds(result) {
   return result?.id ? [String(result.id)] : [];
 }
 
-function freezePlan({ name, geometry, position, rotation }) {
+function freezePlan({ name, geometry, sketch, position, rotation }) {
   return Object.freeze({
     name,
     geometry: Object.freeze(structuredClone(geometry)),
+    sketch: Object.freeze(structuredClone(sketch)),
     position: Object.freeze([...position]),
     rotation: Object.freeze([...rotation])
   });

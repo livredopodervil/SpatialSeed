@@ -217,11 +217,19 @@ export function bindWebInterface({
     })
   });
 
-  function showError(error) {
-    $("error-box").hidden = false;
-    $("error-box").textContent = error?.stack || String(error);
-    $("status").textContent = "Falha parcial";
+  function showError(error, { fatal = false } = {}) {
     console.error(error);
+    const persistent = fatal || error?.fatal === true ||
+      error?.severity === "fatal";
+    if (persistent) {
+      $("error-box").hidden = false;
+      $("error-box").textContent = error?.stack || String(error);
+      $("status").textContent = "Falha fatal";
+      return;
+    }
+    $("error-box").hidden = true;
+    $("error-box").textContent = "";
+    showNotice(error?.message || String(error), 5000);
   }
 
   function refreshUiNow() {
@@ -314,7 +322,7 @@ export function bindWebInterface({
       }
 
       showError(error);
-      return { changed: false, reason: "internal-error" };
+      return { changed: false, reason: "recoverable-error" };
     }
   }
 

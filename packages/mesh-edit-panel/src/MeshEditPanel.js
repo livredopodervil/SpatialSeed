@@ -1,7 +1,7 @@
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 
 export class MeshEditPanel {
-  static apiVersion = "mesh-edit-panel-v10";
+  static apiVersion = "mesh-edit-panel-v11";
   #creationReferencesSource = null;
   #referenceOptionsSource = null;
   #referenceById = new Map();
@@ -14,7 +14,8 @@ export class MeshEditPanel {
     subscribeContext = null,
     subscribeSketch = null,
     subscribePlanarSketch = null,
-    subscribeToolParameters = null
+    subscribeToolParameters = null,
+    subscribeToolWorkspace = null
   }) {
     if (!root) throw new TypeError("MeshEditPanel exige root.");
     this.root = root;
@@ -29,6 +30,7 @@ export class MeshEditPanel {
     ).filter(definition => definition.operations?.parameters);
     this.parameterToolId = "draw.tube";
     this.unsubscribeToolParameters = null;
+    this.unsubscribeToolWorkspace = null;
     this.unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
     this.unsubscribeContext = subscribeContext?.(() => this.refresh()) ?? null;
     this.unsubscribeSketch = subscribeSketch?.(snapshot =>
@@ -64,6 +66,9 @@ export class MeshEditPanel {
       this.#refreshToolParameterPanel();
       this.#restoreRememberedToolControls();
       this.#renderBrushGeometryParameters();
+    }) ?? null;
+    this.unsubscribeToolWorkspace = subscribeToolWorkspace?.(() => {
+      this.#refreshToolParameterPanel();
     }) ?? null;
     this.#restoreRememberedToolControls();
     this.#renderBrushGeometryParameters();
@@ -782,6 +787,7 @@ export class MeshEditPanel {
     this.unsubscribeSketch?.();
     this.unsubscribePlanarSketch?.();
     this.unsubscribeToolParameters?.();
+    this.unsubscribeToolWorkspace?.();
     document.removeEventListener("keydown", this.onKeyDown, true);
     globalThis.removeEventListener?.(
       "spatialseed:geometry-default-changed",
@@ -807,7 +813,31 @@ export class MeshEditPanel {
     }
     select.addEventListener("change", () => {
       this.parameterToolId = select.value;
+      this.#execute("authoring.tool.focus", {
+        toolId: this.parameterToolId
+      });
+      this.#element("edit-tool-parameter-panel").open = true;
       this.#renderToolParameterFields();
+    });
+    this.#element("edit-tool-apply").addEventListener("click", () => {
+      const definition = this.#toolDefinition();
+      const continuous = definition?.kind === "continuous";
+      const result = this.#execute(
+        continuous
+          ? "authoring.tool.activate"
+          : "authoring.tool.execute",
+        continuous
+          ? { toolId: this.parameterToolId, options: {} }
+          : { toolId: this.parameterToolId }
+      );
+      if (result) {
+        this.#text(
+          "edit-tool-parameter-status",
+          `${definition?.label ?? "Ferramenta"} ${
+            continuous ? "ativada" : "aplicada"
+          }.`
+        );
+      }
     });
     this.#element("edit-tool-parameter-reset").addEventListener("click", () => {
       const result = this.#execute("authoring.tool.parameters.reset", {
@@ -827,9 +857,17 @@ export class MeshEditPanel {
 
   #refreshToolParameterPanel() {
     const select = this.#element("edit-tool-parameter-select");
+    const workspace = this.query("authoring.tool.workspace") ?? {};
     const status = this.query("authoring.tool.status") ?? {};
-    const active = (status.activeToolIds ?? []).find(id =>
+    const active = (
+      workspace.focusedToolId &&
+      this.toolDefinitions.some(definition =>
+        definition.id === workspace.focusedToolId
+      )
+        ? workspace.focusedToolId
+        : (status.activeToolIds ?? []).find(id =>
       this.toolDefinitions.some(definition => definition.id === id)
+        )
     );
     if (active && this.toolDefinitions.some(definition => definition.id === active) &&
         active !== this.parameterToolId) {
@@ -839,6 +877,7 @@ export class MeshEditPanel {
       this.#renderToolParameterFields();
       return;
     }
+    this.#renderToolInputSlots();
     const result = this.query("authoring.tool.parameters.get", {
       toolId: this.parameterToolId
     });
@@ -859,6 +898,7 @@ export class MeshEditPanel {
     const container = this.#element("edit-tool-parameter-fields");
     if (!definition) {
       container.replaceChildren();
+      this.#element("edit-tool-input-slots").replaceChildren();
       return;
     }
     const result = this.query("authoring.tool.parameters.get", {
@@ -886,6 +926,139 @@ export class MeshEditPanel {
         ? "Uma versão futura gravou estes parâmetros; este build preserva o registro sem alterá-lo."
         : `${definition.label}: alterações válidas são lembradas automaticamente.`
     );
+    this.#renderToolInputSlots(definition);
+  }
+
+  #renderToolInputSlots(definition = this.#toolDefinition()) {
+    const container = this.#element("edit-tool-input-slots");
+    if (!definition) {
+      container.replaceChildren();
+      this.#element("edit-tool-apply").disabled = true;
+      return;
+    }
+    const workspace = this.query("authoring.tool.workspace", {
+      toolId: definition.id
+    }) ?? { inputs: [], ready: true };
+    container.replaceChildren(...(workspace.inputs ?? []).map(input =>
+      this.#toolInputField(definition, input)
+    ));
+    const state = this.query("authoring.tool.status", {
+      toolId: definition.id
+    })?.state ?? { available: true };
+    const apply = this.#element("edit-tool-apply");
+    apply.hidden = !definition.operations?.execute;
+    apply.disabled = !workspace.ready || !state.available;
+    apply.textContent = definition.kind === "continuous"
+      ? "Ativar ferramenta"
+      : "Aplicar ferramenta";
+    if (!workspace.ready || !state.available) {
+      this.#text(
+        "edit-tool-parameter-status",
+        state.reason ?? workspace.reason ?? "Ferramenta indisponível."
+      );
+    }
+  }
+
+  #toolInputField(definition, input) {
+    const document = this.root.ownerDocument;
+    const field = document.createElement("div");
+    field.className = "edit-tool-input-slot";
+    const title = document.createElement("span");
+    title.textContent = input.label;
+    const source = document.createElement("small");
+    if (input.binding?.source === "gesture") {
+      source.textContent = "Será capturado pelo gesto de desenho.";
+      field.append(title, source);
+      return field;
+    }
+    if (input.role === "selection" && !input.compatibleReferences?.length) {
+      source.textContent = input.binding
+        ? `${input.binding.count} item(ns) na seleção atual.`
+        : "Use a seleção do contexto atual.";
+      field.append(title, source);
+      return field;
+    }
+    const select = document.createElement("select");
+    const automatic = document.createElement("option");
+    automatic.value = "";
+    automatic.textContent = "Usar seleção automaticamente";
+    select.append(automatic, ...(input.compatibleReferences ?? []).map(reference => {
+      const option = document.createElement("option");
+      option.value = reference.id;
+      option.textContent = `${reference.name ?? reference.id}${
+        reference.selected ? " · selecionado" : ""
+      }`;
+      return option;
+    }));
+    if (input.binding?.source !== "selection" && input.binding?.objectId) {
+      select.value = input.binding.objectId;
+    }
+    const extraction = document.createElement("select");
+    const activeReference = (input.compatibleReferences ?? []).find(reference =>
+      reference.id === input.binding?.objectId
+    );
+    const extractions = activeReference?.extractions?.length
+      ? activeReference.extractions
+      : ["auto"];
+    extraction.replaceChildren(...extractions.map(value => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = extractionLabel(value);
+      return option;
+    }));
+    extraction.value = extractions.includes(input.binding?.extraction)
+      ? input.binding.extraction
+      : "auto";
+    extraction.disabled = !input.binding?.objectId;
+    select.addEventListener("change", () => {
+      if (!select.value) {
+        this.#execute("authoring.tool.input.clear", {
+          toolId: definition.id,
+          inputId: input.id
+        });
+      } else {
+        this.#execute("authoring.tool.input.bind", {
+          toolId: definition.id,
+          inputId: input.id,
+          binding: {
+            objectId: select.value,
+            extraction: "auto"
+          }
+        });
+      }
+      this.#refreshToolParameterPanel();
+    });
+    extraction.addEventListener("change", () => {
+      if (!input.binding?.objectId) return;
+      this.#execute("authoring.tool.input.bind", {
+        toolId: definition.id,
+        inputId: input.id,
+        binding: {
+          objectId: input.binding.objectId,
+          extraction: extraction.value
+        }
+      });
+      this.#refreshToolParameterPanel();
+    });
+    const useSelection = document.createElement("button");
+    useSelection.type = "button";
+    useSelection.textContent = "Usar seleção";
+    useSelection.addEventListener("click", () => {
+      this.#execute("authoring.tool.input.use-selection", {
+        toolId: definition.id,
+        inputId: input.id
+      });
+      this.#refreshToolParameterPanel();
+    });
+    source.textContent = input.binding?.objectName
+      ? `${input.binding.objectName} · ${input.binding.extraction}`
+      : input.required ? "Entrada obrigatória." : "Entrada opcional.";
+    field.append(title, select, extraction, useSelection, source);
+    return field;
+  }
+
+  #toolDefinition() {
+    return this.toolDefinitions.find(item => item.id === this.parameterToolId);
   }
 
   #toolParameterField(definition, parameter, values) {
@@ -1150,34 +1323,40 @@ export class MeshEditPanel {
     this.#click("planar-sketch-cancel", "planar.sketch.cancel");
     this.#click("planar-edit-selected", "planar.edit.begin");
 
-    this.#click("path-sketch-begin", "path.sketch.begin", () => ({
-      mode: this.#element("path-sketch-mode").value,
-      planeSource: this.#element("path-sketch-plane").value,
-      inputSamplePixels: this.#integer("path-sketch-sample"),
-      simplify: this.#number("path-sketch-simplify"),
-      smoothIterations: this.#integer("path-sketch-smoothing"),
-      radius: this.#number("path-sketch-radius"),
-      curveType: this.#element("path-sketch-curve").value,
-      sourceMode: this.#element("path-sketch-source").value,
-      geometryType: this.#element("path-sketch-geometry").value,
-      sourceColor: this.#element("path-sketch-source-color").value,
-      spacingMode: this.#element("path-sketch-spacing-mode").value,
-      spacingWorld: this.#number("path-sketch-spacing-world"),
-      spacingScale: this.#number("path-sketch-spacing-scale"),
-      align: this.#element("path-sketch-align").checked,
-      twistDegrees: this.#number("path-sketch-twist"),
-      orientationMode: this.#element("path-sketch-orientation").value,
-      affineMoveX: this.#element("path-sketch-affine-move-x").value,
-      affineMoveY: this.#element("path-sketch-affine-move-y").value,
-      affineMoveZ: this.#element("path-sketch-affine-move-z").value,
-      affineRotateX: this.#element("path-sketch-affine-rotate-x").value,
-      affineRotateY: this.#element("path-sketch-affine-rotate-y").value,
-      affineRotateZ: this.#element("path-sketch-affine-rotate-z").value,
-      affineScale: this.#element("path-sketch-affine-scale").value,
-      affineULength: this.#number("path-sketch-affine-u-length"),
-      affineColor: this.#element("path-sketch-affine-color").value,
-      closed: this.#element("path-sketch-closed").checked
-    }));
+    this.#click("path-sketch-begin", "authoring.tool.activate", () => {
+      const mode = this.#element("path-sketch-mode").value;
+      return {
+        toolId: `draw.${mode}`,
+        options: {
+          mode,
+          planeSource: this.#element("path-sketch-plane").value,
+          inputSamplePixels: this.#integer("path-sketch-sample"),
+          simplify: this.#number("path-sketch-simplify"),
+          smoothIterations: this.#integer("path-sketch-smoothing"),
+          radius: this.#number("path-sketch-radius"),
+          curveType: this.#element("path-sketch-curve").value,
+          sourceMode: this.#element("path-sketch-source").value,
+          geometryType: this.#element("path-sketch-geometry").value,
+          sourceColor: this.#element("path-sketch-source-color").value,
+          spacingMode: this.#element("path-sketch-spacing-mode").value,
+          spacingWorld: this.#number("path-sketch-spacing-world"),
+          spacingScale: this.#number("path-sketch-spacing-scale"),
+          align: this.#element("path-sketch-align").checked,
+          twistDegrees: this.#number("path-sketch-twist"),
+          orientationMode: this.#element("path-sketch-orientation").value,
+          affineMoveX: this.#element("path-sketch-affine-move-x").value,
+          affineMoveY: this.#element("path-sketch-affine-move-y").value,
+          affineMoveZ: this.#element("path-sketch-affine-move-z").value,
+          affineRotateX: this.#element("path-sketch-affine-rotate-x").value,
+          affineRotateY: this.#element("path-sketch-affine-rotate-y").value,
+          affineRotateZ: this.#element("path-sketch-affine-rotate-z").value,
+          affineScale: this.#element("path-sketch-affine-scale").value,
+          affineULength: this.#number("path-sketch-affine-u-length"),
+          affineColor: this.#element("path-sketch-affine-color").value,
+          closed: this.#element("path-sketch-closed").checked
+        }
+      };
+    });
     this.#click("path-sketch-cancel", "path.sketch.cancel");
     this.#click("path-from-selection-create", "path.from-mesh-selection.create", () => ({
       curveType: this.#element("path-from-selection-curve").value,
@@ -1200,29 +1379,46 @@ export class MeshEditPanel {
     this.#element("path-profile-object").addEventListener("change", () =>
       this.#refreshExtractionSelects()
     );
-    this.#click("path-create-tube", "path.tube.create", () => ({
-      path: this.#pathReference(),
-      radius: this.#number("path-tube-radius"),
-      tubularSegments: this.#integer("path-tube-segments"),
-      radialSegments: this.#integer("path-radial-segments"),
-      closed: this.#optionalBoolean("path-tube-closed")
+    this.#click("path-create-tube", "authoring.tool.execute", () => ({
+      toolId: "path.tube",
+      input: {
+        path: this.#pathReference(),
+        radius: this.#number("path-tube-radius"),
+        tubularSegments: this.#integer("path-tube-segments"),
+        radialSegments: this.#integer("path-radial-segments"),
+        closed: this.#optionalBoolean("path-tube-closed")
+      }
     }));
-    this.#click("path-create-sweep", "path.sweep.create", () => ({
-      path: this.#pathReference(),
-      profile: this.#profileReference(),
-      segments: this.#integer("path-sweep-segments"),
-      closedPath: this.#optionalBoolean("path-sweep-closed"),
-      twistDegrees: this.#number("path-sweep-twist"),
-      scaleStart: this.#number("path-sweep-scale-start"),
-      scaleEnd: this.#number("path-sweep-scale-end"),
-      caps: this.#element("path-caps").checked
+    this.#click("path-create-sweep", "authoring.tool.execute", () => ({
+      toolId: "feature.sweep",
+      input: {
+        path: this.#pathReference(),
+        profile: this.#profileReference(),
+        sweepSegments: this.#integer("path-sweep-segments"),
+        closed: this.#optionalBoolean("path-sweep-closed"),
+        sweepTwistDegrees: this.#number("path-sweep-twist"),
+        scaleStart: this.#number("path-sweep-scale-start"),
+        scaleEnd: this.#number("path-sweep-scale-end"),
+        caps: this.#element("path-caps").checked
+      }
     }));
-    this.#click("path-create-array", "path.array.create", () => ({
-      path: this.#pathReference(),
-      count: this.#integer("path-array-count"),
-      align: this.#element("path-array-align").checked,
-      closed: this.#optionalBoolean("path-array-closed"),
-      includePathObject: this.#element("path-array-include-reference").checked
+    this.#click("path-create-extrude", "authoring.tool.execute", () => ({
+      toolId: "feature.extrude",
+      input: { profile: this.#profileReference() }
+    }));
+    this.#click("path-create-revolve", "authoring.tool.execute", () => ({
+      toolId: "feature.revolve",
+      input: { profile: this.#profileReference() }
+    }));
+    this.#click("path-create-array", "authoring.tool.execute", () => ({
+      toolId: "path.array",
+      input: {
+        path: this.#pathReference(),
+        count: this.#integer("path-array-count"),
+        align: this.#element("path-array-align").checked,
+        closed: this.#optionalBoolean("path-array-closed"),
+        includePathObject: this.#element("path-array-include-reference").checked
+      }
     }));
     this.#element("path-inspect-reference").addEventListener("click", () => {
       try {
@@ -2256,6 +2452,7 @@ function geometryParameterNumber(control, parameter) {
 function extractionLabel(value) {
   return ({
     auto: "Automática",
+    sketch: "Esboço semântico",
     centerline: "Linha central declarada",
     boundary: "Maior contorno",
     "loose-edges": "Arestas soltas",

@@ -1417,6 +1417,39 @@ html[data-toolbar-layout="vertical"] #selection-panel{
   gap:.5rem;
   margin-bottom:.55rem;
 }
+.edit-tool-input-slots{
+  display:grid;
+  gap:.45rem;
+  margin-bottom:.65rem;
+}
+.edit-tool-input-slot{
+  display:grid;
+  grid-template-columns:minmax(6rem,.6fr) minmax(0,1.1fr) minmax(7rem,.8fr) auto;
+  align-items:center;
+  gap:.4rem;
+  padding:.45rem;
+  border:1px solid #8bbcff20;
+  border-radius:.45rem;
+  background:#0b1b2a99;
+}
+.edit-tool-input-slot>span{
+  color:#d7eaff;
+  font-size:.78rem;
+  font-weight:600;
+}
+.edit-tool-input-slot>small{
+  grid-column:1/-1;
+  color:#9fb4ca;
+}
+@media(max-width:700px){
+  .edit-tool-input-slot{
+    grid-template-columns:minmax(0,1fr);
+  }
+  .edit-tool-input-slot>*{
+    grid-column:1;
+    min-width:0;
+  }
+}
 .mesh-form-grid .mesh-tool-parameter-boolean{
   display:flex;
   align-items:center;

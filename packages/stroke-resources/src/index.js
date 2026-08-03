@@ -39,4 +39,4 @@ export {
 
 export {
   StrokeFusionService
-} from "./StrokeFusionService.js?build=20260801-0045a1";
+} from "./StrokeFusionService.js?build=20260802-0047g";

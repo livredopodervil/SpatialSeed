@@ -823,7 +823,7 @@ documental distinta.
 
 **Estado:** planejada; etapa zero, primeira fatia do kernel v2, isolamento do
 perfil diagnóstico e primeira família visual canônica implementados até o
-incremento 0047f.
+incremento 0047g.
 
 O aplicativo mantido convergirá para oito módulos acíclicos: `kernel`,
 `document`, `procedural`, `authoring`, `viewer`, `renderer-three`, `interface` e
@@ -933,6 +933,53 @@ contorno. Um futuro inset desenhado deverá consumir `boundary`, validar a
 topologia e confirmar uma única transação, sem alias visual para o algoritmo
 triangular atual. Consulte
 [`DRAWN_AUTHORING_0047F.md`](../DRAWN_AUTHORING_0047F.md).
+
+## D-050 — Esboço semântico é contrato do kernel, não aparência geométrica
+
+**Estado:** implementada inicialmente no incremento 0047g.
+
+Formas planares conservam um `SketchDescriptor` local e imutável com pontos,
+primitiva e papéis `point`, `path`, `profile` e `boundary`. O contrato pertence
+ao kernel; a geometria renderizada, sua espessura e seu preenchimento não
+determinam esses papéis. Operações sobre objetos existentes usam slots
+explícitos e IDs `feature.sweep`, `feature.extrude` e `feature.revolve`.
+
+**Motivação:** círculo contornado era renderizado como `ring`, enquanto um
+hexágono contornado era renderizado como `tube`; inferir semântica do provider
+fazia apenas o primeiro ser encontrado como perfil. `draw.extrude` também
+significava desenhar um novo perfil e não podia representar a intenção
+“extrudar o perfil selecionado”. Colocar o contrato no registro procedural
+criaria dependências proibidas do documento e da autoria para providers.
+
+**Consequências:** estilos diferentes da mesma forma oferecem as mesmas
+entradas. Tubos fechados antigos são adaptados conservadoramente pelo contorno
+central, sem migração destrutiva. Editar a geometria como malha remove um
+esboço que ficou obsoleto. A ferramenta em foco e os vínculos dos slots são
+estado local de apresentação; controllers, parâmetros, documento e histórico
+continuam autoritativos em suas camadas. As fontes são vetoriais; imagens e
+texturas não são interpretadas como perfil. Referências continuam snapshots
+até o grafo procedural posterior. Consulte
+[`SEMANTIC_SKETCH_INPUTS_0047G.md`](../SEMANTIC_SKETCH_INPUTS_0047G.md).
+
+## D-051 — Substituição de projeto cancela transientes e erro operacional é recuperável
+
+**Estado:** implementada inicialmente no incremento 0047g.
+
+`newProject`, `openText` e recuperação preparam a troca cancelando edição de
+mesh, desenhos, posicionamento, medição, alvos e workspace local antes de
+substituir a cena. Erros posteriores ao boot são avisos temporários, exceto
+quando marcados explicitamente como fatais.
+
+**Motivação:** bloquear `project.new` enquanto a malha estava em edição impedia
+o próprio coordenador de encerrar essa sessão; a exceção resultante permanecia
+na caixa global e parecia uma falha irrecuperável. Ferramentas transitórias não
+devem sobreviver à autoridade documental que lhes servia de base.
+
+**Consequências:** criar outro projeto durante edição descarta a sessão local e
+chega a uma cena nova coerente. Salvar ainda exige finalização explícita da
+malha. Falta de entrada, validação e indisponibilidade contextual desaparecem
+após sucesso, cancelamento ou troca de contexto; somente falha de inicialização
+ou integridade marcada como fatal ocupa a caixa persistente.
 
 ## Decisões superadas ou rejeitadas
 

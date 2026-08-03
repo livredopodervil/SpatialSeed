@@ -1,6 +1,6 @@
 # Main Proposal: núcleo cristalizado e extensões internas
 
-Status: implementação incremental; baseline, primeira fatia do kernel v2, isolamento diagnóstico, HTTPS canônico e primeira família visual canônica materializados até o build `0047f`, sem merge da branch 0046
+Status: implementação incremental; baseline, primeira fatia do kernel v2, isolamento diagnóstico, HTTPS canônico e entradas semânticas de autoria materializados até o build `0047g`, sem merge da branch 0046
 Base obrigatória: `d556306c8b921363c26c56f49cb532e8e2e2b0f9` (`origin/main`)  
 Fonte de ideias, não de integração: `cfc63ca813ca722e9755b7a23c6d484287e9c289` e o estado local exportado da 0046  
 Data da análise: 2026-08-02
@@ -450,3 +450,21 @@ O `mesh.inset` triangular permanece fora da captura por contorno: sua
 implementação atual aceita apenas `amount`. A fronteira canônica já possui o
 papel `boundary`, mas ele somente será conectado quando o núcleo topológico
 implementar o recorte planar correspondente.
+
+O incremento `0047g` consolida a semântica antes da próxima camada procedural:
+
+1. `SketchDescriptor` é um contrato puro de kernel; aparência e provider não
+   decidem se uma forma é caminho, perfil ou boundary;
+2. círculo, retângulo, polígono e polilinha preservam seus esboços, enquanto
+   tubos fechados antigos possuem adaptação conservadora como perfil;
+3. `feature.sweep`, `feature.extrude` e `feature.revolve` recebem slots
+   explícitos, compartilham parâmetros com os presets desenhados e são
+   projetados no HUD e no painel pelo catálogo;
+4. foco e vínculos de entrada pertencem a um workspace local sem documento,
+   histórico ou estado gestual paralelo;
+5. substituição de projeto encerra sessões transitórias, e erros operacionais
+   não ocupam a superfície reservada a falhas fatais.
+
+Extrude e lathe continuam paramétricos pelos providers atuais, mas as fontes
+são snapshots; sweep ainda termina em buffer. A fatia seguinte deverá manter
+receitas vinculadas e cache avaliável, com conversão explícita para malha.

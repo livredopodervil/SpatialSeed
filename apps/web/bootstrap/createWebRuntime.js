@@ -13,7 +13,7 @@ import {
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260802-0047b";
+} from "../../../packages/region-box/src/index.js?build=20260802-0047g";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260801-0045a1";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
 import {
@@ -23,8 +23,8 @@ import {
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260802-0047f";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0044a";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260802-0047a";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260802-0047g";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260802-0047g";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import {
   activateWebRuntimeExtensions,
@@ -44,7 +44,10 @@ import {
 } from "../../../packages/property-registry/src/index.js?build=20260727-0037c";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260801-0045a1";
+} from "../../../packages/geometry-registry/src/index.js?build=20260802-0047g";
+import {
+  SKETCH_DESCRIPTOR_VERSION
+} from "../../../packages/sketch-descriptor/src/index.js?build=20260802-0047g";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -97,21 +100,22 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260729-0040a";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260802-0047f";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260802-0047g";
 import {
   EditContextController
 } from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260802-0047f";
+} from "../../../packages/edit-hud/src/index.js?build=20260802-0047g";
 import {
   ToolLifecycleController,
   ToolParameterStore,
+  ToolWorkspaceController,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260802-0047f";
+} from "../../../packages/edit-tools/src/index.js?build=20260802-0047g";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260730-0040e";
@@ -120,12 +124,12 @@ import {
 } from "../../../packages/drawing-target/src/index.js?build=20260730-0042c";
 import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260731-0044a";
+} from "../../../packages/planar-authoring/src/index.js?build=20260802-0047g";
 import {
   StrokeCompactionScheduler,
   StrokeFusionService,
   replaceStrokePointInBundle
-} from "../../../packages/stroke-resources/src/index.js?build=20260801-0045a1";
+} from "../../../packages/stroke-resources/src/index.js?build=20260802-0047g";
 import {
   MeasurementController
 } from "../../../packages/measurement-tools/src/index.js?build=20260730-0040e";
@@ -134,7 +138,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260802-0047f";
+} from "../../../packages/spatial-references/src/index.js?build=20260802-0047g";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -695,7 +699,9 @@ export async function createWebRuntime({
     planarSketch.refreshDrawingFrame?.();
   });
 
+  let toolWorkspace = null;
   const resetTransientAuthoring = ({ operation }) => {
+    if (meshEditor.active) meshEditor.cancel();
     const path = pathSketch.resetForProjectChange({
       reason: `project:${String(operation)}`
     });
@@ -709,6 +715,7 @@ export async function createWebRuntime({
       }
     }
     drawingTarget.resetForProjectChange();
+    toolWorkspace?.clear();
     toolLifecycle.cancelAction();
     return path;
   };
@@ -1418,17 +1425,28 @@ export async function createWebRuntime({
     drawingTarget,
     execute: (id, args) => commands.execute(id, args)
   });
+  toolWorkspace = new ToolWorkspaceController({
+    facade: toolCapabilities,
+    selection: () => editor.selection.snapshot(),
+    references: () => pathTools.listReferences({ includeSelection: true })
+  });
   installToolCapabilityRuntime({
     commands,
     queries,
-    facade: toolCapabilities
+    facade: toolCapabilities,
+    workspace: toolWorkspace
   });
   const unsubscribeToolCapabilities = toolCapabilities.subscribe(
     snapshot => runtime.emit("authoring.tools.changed", snapshot)
   );
+  const unsubscribeToolWorkspace = toolWorkspace.subscribe(
+    snapshot => runtime.emit("authoring.tool.workspace.changed", snapshot)
+  );
   runtime
     .onDispose(() => toolCapabilities.dispose())
+    .onDispose(() => toolWorkspace.dispose())
     .onDispose(unsubscribeToolCapabilities)
+    .onDispose(unsubscribeToolWorkspace)
     .onDispose(() => sharedAnimations.dispose())
     .onDispose(() => animationRuntime.dispose());
 
@@ -1841,7 +1859,8 @@ export async function createWebRuntime({
     subscribeContext: listener => editContext.subscribe(listener),
     subscribeSketch: listener => pathSketch.subscribe(listener),
     subscribePlanarSketch: listener => planarSketch.subscribe(listener),
-    subscribeToolParameters: listener => toolParameters.subscribe(listener)
+    subscribeToolParameters: listener => toolParameters.subscribe(listener),
+    subscribeToolWorkspace: listener => toolWorkspace.subscribe(listener)
   });
   const editHud = new EditHud({
     root: editHudRoot,
@@ -1979,7 +1998,17 @@ export async function createWebRuntime({
     .register("runtime.performance", () => runtime.metrics());
 
   capabilities
-    .register("authoringTools", () => toolCapabilities.capabilities())
+    .register("authoringTools", () => ({
+      ...toolCapabilities.capabilities(),
+      workspaceApiVersion: ToolWorkspaceController.apiVersion,
+      focus: "authoring.tool.focus",
+      inputBindings: [
+        "authoring.tool.input.bind",
+        "authoring.tool.input.use-selection",
+        "authoring.tool.input.clear"
+      ],
+      workspaceQuery: "authoring.tool.workspace"
+    }))
     .register("recovery", () => ({
       apiVersion: SandboxRecoveryController.apiVersion,
       storeApiVersion: IndexedDbRecoveryStore.apiVersion,
@@ -2008,7 +2037,13 @@ export async function createWebRuntime({
       toolApiVersion: PathToolService.apiVersion,
       parameterStoreApiVersion: ToolParameterStore.apiVersion,
       referenceKinds: ["path", "profile", "point"],
-      tools: ["tube", "sweep", "array", "draw-tube", "draw-array"],
+      tools: [
+        "tube", "sweep", "extrude", "revolve", "array",
+        "draw-tube", "draw-array", "draw-sweep", "draw-extrude",
+        "draw-revolve"
+      ],
+      semanticSketchVersion: SKETCH_DESCRIPTOR_VERSION,
+      sketchRoles: ["point", "path", "profile", "boundary"],
       preview: "local-ephemeral",
       brushOrientation: ["preserve", "plane", "path"],
       affineBrushVariables: PATH_BRUSH_AFFINE_VARIABLES,
