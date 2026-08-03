@@ -314,16 +314,23 @@ tool status
 tool activate transform.translate
 tool activate draw.tube radius=0.12 radialSegments=8
 tool activate draw.array sourceMode=catalog geometryType=sphere spacingMode=world spacingWorld=0.5
+tool activate draw.sweep profileObjectId=perfil sweepSegments=48
+tool activate draw.extrude depth=2 bevelEnabled=false
+tool activate draw.revolve revolveSegments=48 phiLengthDeg=270
+tool run draw.extrude points=[[0,0,0],[2,0,0],[2,1,0]] frame={"origin":[0,0,0],"xAxis":[1,0,0],"yAxis":[0,1,0],"normal":[0,0,1]} depth=2
 tool get draw.array
+tool reset draw.extrude
 tool run mesh.extrude distance=2
 tool cancel
 ```
 
-`draw.tube` e `draw.array` são intenções visíveis distintas sobre o mesmo
-capturador de caminho. Ativar `transform.translate` seleciona o gizmo; uma
+As cinco capacidades `draw.*` são intenções visíveis distintas sobre o mesmo
+capturador de caminho ou perfil. O HUD e o painel de parâmetros já são gerados
+por esses descritores. Ativar `transform.translate` seleciona o gizmo; uma
 transformação numérica continua sendo uma operação diferente, como `move` ou o
 comando editorial correspondente. Consulte
-[`AUTHORING_TOOL_CAPABILITIES_0047E.md`](docs/AUTHORING_TOOL_CAPABILITIES_0047E.md).
+[`AUTHORING_TOOL_CAPABILITIES_0047E.md`](docs/AUTHORING_TOOL_CAPABILITIES_0047E.md)
+e [`DRAWN_AUTHORING_0047F.md`](docs/DRAWN_AUTHORING_0047F.md).
 
 ### Propriedades compartilhadas
 

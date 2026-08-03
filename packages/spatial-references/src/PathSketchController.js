@@ -48,11 +48,32 @@ const DEFAULTS = Object.freeze({
   affineRotateZ: "0",
   affineScale: "1",
   affineULength: 1,
-  affineColor: "source"
+  affineColor: "source",
+  profileObjectId: "",
+  profileExtraction: "auto",
+  sweepSegments: 32,
+  sweepTwistDegrees: 0,
+  scaleStart: 1,
+  scaleEnd: 1,
+  caps: true,
+  sweepColor: "#7f9cff",
+  depth: 1,
+  extrudeSteps: 1,
+  curveSegments: 12,
+  bevelEnabled: true,
+  bevelThickness: 0.2,
+  bevelSize: 0.1,
+  bevelOffset: 0,
+  bevelSegments: 3,
+  extrudeColor: "#66b5a3",
+  revolveSegments: 32,
+  phiStartDeg: 0,
+  phiLengthDeg: 360,
+  revolveColor: "#d29b62"
 });
 
 export class PathSketchController {
-  static apiVersion = "path-sketch-controller-v11";
+  static apiVersion = "path-sketch-controller-v12";
 
   #active = null;
   #listeners = new Set();
@@ -177,9 +198,18 @@ export class PathSketchController {
     const targetType = drawingTargetStatus?.type === "surface"
       ? "surface"
       : "plane";
+    if (["extrude", "revolve"].includes(settings.mode) &&
+        targetType === "surface") {
+      throw new Error(
+        "Perfis de extrusão e revolução exigem um plano; libere o alvo de superfície ou escolha um plano de desenho."
+      );
+    }
     const frame = targetType === "surface"
       ? surfaceFallbackFrame(this.renderer, drawingTargetStatus)
       : resolveFrame(this.renderer, settings.planeSource);
+    const profile = settings.mode === "sweep"
+      ? this.pathTools.resolveSketchProfile(settings)
+      : null;
     const affineModifier = settings.mode === "array"
       ? this.pathTools.compileArrayBrushModifier(settings)
       : null;
@@ -207,6 +237,8 @@ export class PathSketchController {
       colorModifier,
       arrayPlan: null,
       pathPlan: null,
+      profile,
+      profileKey: sketchProfileKey(settings),
       brushSettingsKey: brushSettingsKey(settings),
       resolvedSpacing: brush
         ? this.pathTools.resolveArrayBrushSpacing({
@@ -346,6 +378,12 @@ export class PathSketchController {
       ...this.#active.settings,
       ...patch
     });
+    if (["extrude", "revolve"].includes(settings.mode) &&
+        this.#active.targetType === "surface") {
+      throw new Error(
+        "Perfis de extrusão e revolução exigem um plano; libere o alvo de superfície ou escolha um plano de desenho."
+      );
+    }
     const affineModifier = settings.mode === "array"
       ? this.pathTools.compileArrayBrushModifier(settings)
       : null;
@@ -353,6 +391,12 @@ export class PathSketchController {
       ? this.pathTools.compileArrayBrushColorModifier(settings)
       : null;
     let brush = this.#active.brush;
+    const profileKey = sketchProfileKey(settings);
+    const profile = settings.mode === "sweep"
+      ? this.#active.profile && this.#active.profileKey === profileKey
+        ? this.#active.profile
+        : this.pathTools.resolveSketchProfile(settings)
+      : null;
     const nextBrushSettingsKey = brushSettingsKey(settings);
     if (settings.mode === "array" &&
         (!brush ||
@@ -380,6 +424,8 @@ export class PathSketchController {
     this.#active.colorModifier = colorModifier;
     this.#active.arrayPlan = null;
     this.#active.pathPlan = null;
+    this.#active.profile = profile;
+    this.#active.profileKey = profileKey;
     this.#active.brushSettingsKey = nextBrushSettingsKey;
     this.#active.sourceIds = brush?.sourceIds ?? Object.freeze([]);
     this.#active.resolvedSpacing = brush
@@ -728,6 +774,7 @@ export class PathSketchController {
           : rawPoints,
         sourceIds: active.sourceIds,
         frame: active.frame,
+        profile: active.profile,
         targetType: active.targetType,
         surfaceTarget: active.surfaceTarget,
         surfacePlacements: active.surfacePlacements,
@@ -1051,35 +1098,25 @@ export class PathSketchController {
         this.#previewTube.visible = false;
       } else {
         this.#clearArrayPreview();
-        const pathPlan = this.pathTools.preparePathCreatePlan({
+        const pathPlan = this.pathTools.prepareSketchOutputPlan({
+          ...active.settings,
           points: prepared,
-          name: active.settings.name || "Tubo desenhado",
-          radius: active.settings.radius,
-          tubularSegments: Math.max(
-            active.settings.tubularSegments,
-            prepared.length * 4
-          ),
-          radialSegments: active.settings.radialSegments,
-          closed: active.settings.closed,
+          name: active.settings.name || sketchDefaultName(active.settings.mode),
+          frame: active.frame,
+          resolvedProfile: active.profile,
           curveType,
-          tension: active.settings.tension,
-          color: active.settings.color,
-          materialMode: active.settings.materialMode,
-          opacityMultiplier: active.settings.opacityMultiplier
+          tubularSegments: active.settings.mode === "tube"
+            ? Math.max(
+                active.settings.tubularSegments,
+                prepared.length * 4
+              )
+            : active.settings.tubularSegments
         });
         active.pathPlan = pathPlan;
         active.arrayPlan = null;
-        const geometry = this.geometryRegistry.create({
-          ...pathPlan.geometry,
-          tubularSegments: Math.min(
-            pathPlan.geometry.tubularSegments,
-            Math.max(8, pathPlan.points.length * 4)
-          ),
-          radialSegments: Math.min(
-            pathPlan.geometry.radialSegments,
-            12
-          )
-        });
+        const geometry = this.geometryRegistry.create(
+          previewGeometryDescriptor(pathPlan)
+        );
         this.#previewTube.geometry = updateDynamicPreviewGeometry(
           this.#previewTube.geometry,
           geometry
@@ -1191,12 +1228,12 @@ export class PathSketchController {
       return handoff;
     }
     const handoff = {
-      kind: "tube",
+      kind: "geometry",
       projectEpoch: this.#projectEpoch,
       disposed: false,
       mesh: this.#previewTube
     };
-    handoff.mesh.name = `path-sketch-tube-handoff-${
+    handoff.mesh.name = `path-sketch-geometry-handoff-${
       this.#commitSequence
     }`;
     handoff.mesh.userData.pathSketchHandoff = true;
@@ -1376,21 +1413,19 @@ export class PathSketchController {
             })
           : prepareFreehandPoints(sourcePoints, job.settings)
       );
-      job.plan = this.pathTools.preparePathCreatePlan({
+      job.plan = this.pathTools.prepareSketchOutputPlan({
+        ...job.settings,
         points: prepared,
-        name: job.settings.name || "Tubo desenhado",
-        radius: job.settings.radius,
-        tubularSegments: Math.max(
-          job.settings.tubularSegments,
-          prepared.length * 4
-        ),
-        radialSegments: job.settings.radialSegments,
-        closed: job.settings.closed,
+        name: job.settings.name || sketchDefaultName(job.mode),
+        frame: job.frame,
+        resolvedProfile: job.profile,
         curveType,
-        tension: job.settings.tension,
-        color: job.settings.color,
-        materialMode: job.settings.materialMode,
-        opacityMultiplier: job.settings.opacityMultiplier
+        tubularSegments: job.mode === "tube"
+          ? Math.max(
+              job.settings.tubularSegments,
+              prepared.length * 4
+            )
+          : job.settings.tubularSegments
       });
       job.points = job.plan.points;
     }
@@ -1454,7 +1489,8 @@ export class PathSketchController {
             brush: job.brush,
             anchorPolicy: job.settings.anchorPolicy
           })
-        : this.#createStroke && job.settings.autoFuse
+        : job.mode === "tube" &&
+          this.#createStroke && job.settings.autoFuse
           ? this.#createStroke({
               name: plan.name,
               geometry: plan.geometry,
@@ -1465,7 +1501,7 @@ export class PathSketchController {
               fusionTolerance: job.settings.fusionTolerance,
               source: "path-sketch"
             })
-          : this.pathTools.commitPathCreatePlan({ plan });
+          : this.pathTools.commitSketchOutputPlan({ plan });
       const dispatchMs = nowMs() - dispatchStartedAt;
       this.#commitDiagnostics.dispatchedStrokes += 1;
       this.#commitDiagnostics.lastQueueWaitMs = queueWaitMs;
@@ -1746,7 +1782,7 @@ export class PathSketchController {
       handoff.cache?.clear?.();
       return;
     }
-    if (handoff.kind === "tube") {
+    if (["tube", "geometry"].includes(handoff.kind)) {
       this.renderer.scene.remove(handoff.mesh);
       handoff.mesh?.geometry?.dispose?.();
       handoff.mesh?.material?.dispose?.();
@@ -1811,9 +1847,51 @@ function applyPathPlanTransform(mesh, plan) {
     ? plan.position
     : [0, 0, 0];
   mesh.position.fromArray(position);
-  mesh.quaternion.identity();
+  if (Array.isArray(plan?.rotation) && plan.rotation.length === 4) {
+    mesh.quaternion.fromArray(plan.rotation).normalize();
+  } else {
+    mesh.quaternion.identity();
+  }
   mesh.scale.set(1, 1, 1);
   mesh.updateMatrixWorld(true);
+}
+
+function previewGeometryDescriptor(plan) {
+  const geometry = plan?.geometry ?? {};
+  if (geometry.type === "tube") {
+    return {
+      ...geometry,
+      tubularSegments: Math.min(
+        geometry.tubularSegments,
+        Math.max(8, (plan.points?.length ?? 2) * 4)
+      ),
+      radialSegments: Math.min(geometry.radialSegments, 12)
+    };
+  }
+  if (geometry.type === "extrude") {
+    return {
+      ...geometry,
+      steps: Math.min(geometry.steps, 16),
+      curveSegments: Math.min(geometry.curveSegments, 16),
+      bevelSegments: Math.min(geometry.bevelSegments, 6)
+    };
+  }
+  if (geometry.type === "lathe") {
+    return {
+      ...geometry,
+      segments: Math.min(geometry.segments, 64)
+    };
+  }
+  return geometry;
+}
+
+function sketchDefaultName(mode) {
+  return {
+    tube: "Tubo desenhado",
+    sweep: "Extrusão por caminho desenhado",
+    extrude: "Extrusão de perfil desenhado",
+    revolve: "Revolução de perfil desenhado"
+  }[mode] ?? "Geometria desenhada";
 }
 
 function resetPreviewTransform(object) {
@@ -1828,6 +1906,7 @@ function isPathSketchHandoff(object) {
   const name = String(object?.name ?? "");
   return Boolean(object?.userData?.pathSketchHandoff) ||
     name.startsWith("path-sketch-tube-handoff-") ||
+    name.startsWith("path-sketch-geometry-handoff-") ||
     name.startsWith("path-sketch-array-handoff-");
 }
 
@@ -2130,11 +2209,64 @@ function normalizeSettings(value) {
     affineScale: expression(value.affineScale, "affineScale"),
     affineULength: positive(value.affineULength, "affineULength"),
     affineColor: expression(value.affineColor, "affineColor"),
+    profileObjectId: String(value.profileObjectId ?? "").trim(),
+    profileExtraction: String(
+      value.profileExtraction ?? "auto"
+    ).trim().toLowerCase(),
+    sweepSegments: integerAtLeast(
+      value.sweepSegments,
+      1,
+      "sweepSegments"
+    ),
+    sweepTwistDegrees: finite(
+      value.sweepTwistDegrees,
+      "sweepTwistDegrees"
+    ),
+    scaleStart: nonZero(value.scaleStart, "scaleStart"),
+    scaleEnd: nonZero(value.scaleEnd, "scaleEnd"),
+    caps: value.caps !== false,
+    sweepColor: String(value.sweepColor),
+    depth: positive(value.depth, "depth"),
+    extrudeSteps: integerAtLeast(
+      value.extrudeSteps,
+      1,
+      "extrudeSteps"
+    ),
+    curveSegments: integerAtLeast(
+      value.curveSegments,
+      1,
+      "curveSegments"
+    ),
+    bevelEnabled: value.bevelEnabled !== false,
+    bevelThickness: nonNegative(
+      value.bevelThickness,
+      "bevelThickness"
+    ),
+    bevelSize: nonNegative(value.bevelSize, "bevelSize"),
+    bevelOffset: finite(value.bevelOffset, "bevelOffset"),
+    bevelSegments: integerAtLeast(
+      value.bevelSegments,
+      0,
+      "bevelSegments"
+    ),
+    extrudeColor: String(value.extrudeColor),
+    revolveSegments: integerAtLeast(
+      value.revolveSegments,
+      3,
+      "revolveSegments"
+    ),
+    phiStartDeg: finite(value.phiStartDeg, "phiStartDeg"),
+    phiLengthDeg: positive(value.phiLengthDeg, "phiLengthDeg"),
+    revolveColor: String(value.revolveColor),
     continuous: Boolean(value.continuous),
     name: value.name === undefined ? null : String(value.name)
   };
-  if (!["tube", "array"].includes(result.mode)) {
-    throw new RangeError("O desenho aceita resultado tube ou array.");
+  if (!["tube", "array", "sweep", "extrude", "revolve"].includes(
+    result.mode
+  )) {
+    throw new RangeError(
+      "O desenho aceita tubo, distribuição, varredura, extrusão ou revolução."
+    );
   }
   if (!["first", "bounds", "world"].includes(result.anchorPolicy)) {
     throw new RangeError("A âncora deve usar início, centro dos limites ou mundo.");
@@ -2160,10 +2292,34 @@ function normalizeSettings(value) {
   if (!/^#[0-9a-f]{6}$/i.test(result.sourceColor)) {
     throw new TypeError("A cor do pincel deve usar a forma #rrggbb.");
   }
+  for (const [id, color] of [
+    ["sweepColor", result.sweepColor],
+    ["extrudeColor", result.extrudeColor],
+    ["revolveColor", result.revolveColor]
+  ]) {
+    if (!/^#[0-9a-f]{6}$/i.test(color)) {
+      throw new TypeError(`${id} deve usar a forma #rrggbb.`);
+    }
+  }
+  if (!["auto", "contour", "boundary"].includes(
+    result.profileExtraction
+  )) {
+    throw new RangeError(
+      "A extração do perfil deve ser auto, contour ou boundary."
+    );
+  }
   if (!["centripetal", "chordal", "catmullrom", "polyline", "bezier"].includes(result.curveType)) {
     throw new RangeError(
       "O desenho livre aceita Catmull-Rom, Bézier ajustada ou polilinha."
     );
+  }
+  if (result.mode === "sweep") {
+    result.twistDegrees = result.sweepTwistDegrees;
+    result.color = result.sweepColor;
+  } else if (result.mode === "extrude") {
+    result.color = result.extrudeColor;
+  } else if (result.mode === "revolve") {
+    result.color = result.revolveColor;
   }
   return Object.freeze(result);
 }
@@ -2177,6 +2333,14 @@ function brushSettingsKey(settings) {
     settings.sourceMode === "catalog" ? settings.sourceColor : null,
     settings.sourceMode === "catalog" ? settings.materialMode : null,
     settings.sourceMode === "catalog" ? settings.opacityMultiplier : null
+  ]);
+}
+
+function sketchProfileKey(settings) {
+  if (settings.mode !== "sweep") return null;
+  return JSON.stringify([
+    settings.profileObjectId,
+    settings.profileExtraction
   ]);
 }
 
@@ -2398,6 +2562,14 @@ function positive(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) {
     throw new RangeError(`${name} deve ser positivo.`);
+  }
+  return number;
+}
+
+function nonZero(value, name) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || Math.abs(number) < 1e-12) {
+    throw new RangeError(`${name} deve ser finito e diferente de zero.`);
   }
   return number;
 }

@@ -3,7 +3,7 @@ import {
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 export class DevConsole {
-  static apiVersion = "dev-console-v11";
+  static apiVersion = "dev-console-v12";
 
   constructor({
     editor,
@@ -1820,18 +1820,16 @@ export class DevConsole {
         this.#number(value)
       );
       const sourceGeometry = pathDrawGeometryOptions(options);
+      const output = pathDrawOutputOptions(options);
       return this.commands.execute("path.sketch.begin", {
         ...providedText(options, "mode", "mode"),
         ...providedText(options, "plane", "planeSource"),
         ...providedInteger(options, "sample", "inputSamplePixels"),
         ...providedNumber(options, "simplify", "simplify"),
         ...providedInteger(options, "smoothing", "smoothIterations"),
-        ...providedNumber(options, "radius", "radius"),
-        ...providedInteger(options, "segments", "tubularSegments"),
-        ...providedInteger(options, "radial", "radialSegments"),
+        ...output,
         ...providedText(options, "curve", "curveType"),
         ...providedNumber(options, "tension", "tension"),
-        ...providedText(options, "color", "color"),
         ...providedBoolean(options, "closed", "closed"),
         ...providedText(options, "source", "sourceMode"),
         ...providedText(options, "geometry", "geometryType"),
@@ -1944,6 +1942,12 @@ export class DevConsole {
         toolId: tokens[0]
       });
     }
+    if (action === "reset") {
+      this.#expectExact(tokens, 1, "tool reset id");
+      return this.commands.execute("authoring.tool.parameters.reset", {
+        toolId: tokens[0]
+      });
+    }
     if (["activate", "run", "set"].includes(action)) {
       const toolId = tokens.shift();
       if (!toolId) {
@@ -1973,7 +1977,7 @@ export class DevConsole {
       return this.commands.execute(`authoring.tool.${action}`, { toolId });
     }
     throw new Error(
-      "Uso: tool list|show|status|activate|run|get|set|finish|cancel|help."
+      "Uso: tool list|show|status|activate|run|get|set|reset|finish|cancel|help."
     );
   }
 
@@ -2004,6 +2008,7 @@ export class DevConsole {
         "tool run id [parâmetro=valor ...]",
         "tool get id",
         "tool set id parâmetro=valor [...]",
+        "tool reset id",
         "tool finish [id]",
         "tool cancel [id]"
       ],
@@ -2011,12 +2016,18 @@ export class DevConsole {
         "tool activate transform.translate",
         "tool activate draw.tube radius=0.12 radialSegments=8",
         "tool activate draw.array sourceMode=catalog geometryType=sphere spacingMode=world spacingWorld=0.5",
+        "tool activate draw.sweep profileObjectId=perfil sweepSegments=48",
+        "tool activate draw.extrude depth=2 bevelEnabled=false",
+        "tool activate draw.revolve revolveSegments=48 phiLengthDeg=270",
+        "tool run draw.extrude points=[[0,0,0],[2,0,0],[2,1,0]] frame={\"origin\":[0,0,0],\"xAxis\":[1,0,0],\"yAxis\":[0,1,0],\"normal\":[0,0,1]} depth=2",
         "tool run mesh.extrude distance=2",
         "tool set draw.array affineRotateZ=360*u affineScale=0.5+u"
       ],
       notes: [
         "Mover, girar e escalar usam os mesmos IDs nos contextos objeto e malha.",
-        "draw.tube e draw.array são intenções distintas sobre o mesmo capturador de caminho.",
+        "As cinco intenções draw.* usam o mesmo capturador e expõem entradas e parâmetros próprios.",
+        "draw.sweep exige um perfil selecionado ou profileObjectId; draw.extrude e draw.revolve desenham o próprio perfil.",
+        "tool run draw.* recebe points e permite usar a mesma capacidade sem gesto de ponteiro.",
         "A fachada encaminha para os comandos existentes; não mantém documento ou histórico próprios."
       ]
     };
@@ -2031,6 +2042,9 @@ export class DevConsole {
         "path draw mode=array source=selection spacing=auto align=on twist=0",
         "path draw mode=array source=catalog geometry=sphere params={\"radius\":0.4} spacing=0.75",
         "path draw mode=array orientation=plane uLength=4 rotateZ=360*u scale=0.5+u colorExpr=hsl(360*u,0.8,0.55)",
+        "path draw mode=sweep profile=id segments=32 twist=0 scaleStart=1 scaleEnd=1 caps=on",
+        "path draw mode=extrude depth=1 steps=1 bevel=on color=#66b5a3",
+        "path draw mode=revolve segments=32 phiStart=0 phiLength=360 color=#d29b62",
         "path tube object=id radius=0.25 segments=64 radial=8 closed=off",
         "path sweep path=id profile=id pathExtraction=auto profileExtraction=auto segments=32 twist=0 scaleStart=1 scaleEnd=1 caps=on",
         "path array object=id count=8 align=on closed=off includePath=off",
@@ -3227,6 +3241,63 @@ function pathDrawGeometryOptions(options) {
       type: String(options.geometry)
     }
   };
+}
+
+function pathDrawOutputOptions(options) {
+  const mode = String(options.mode ?? "tube").trim().toLowerCase();
+  if (mode === "tube") {
+    return {
+      ...providedNumber(options, "radius", "radius"),
+      ...providedInteger(options, "segments", "tubularSegments"),
+      ...providedInteger(options, "radial", "radialSegments"),
+      ...providedText(options, "color", "color")
+    };
+  }
+  if (mode === "sweep") {
+    return {
+      ...providedText(options, "profile", "profileObjectId"),
+      ...providedText(
+        options,
+        "profileExtraction",
+        "profileExtraction"
+      ),
+      ...providedInteger(options, "segments", "sweepSegments"),
+      ...providedInteger(options, "sweepSegments", "sweepSegments"),
+      ...providedNumber(options, "twist", "sweepTwistDegrees"),
+      ...providedNumber(
+        options,
+        "sweepTwist",
+        "sweepTwistDegrees"
+      ),
+      ...providedNumber(options, "scaleStart", "scaleStart"),
+      ...providedNumber(options, "scaleEnd", "scaleEnd"),
+      ...providedBoolean(options, "caps", "caps"),
+      ...providedText(options, "color", "sweepColor")
+    };
+  }
+  if (mode === "extrude") {
+    return {
+      ...providedNumber(options, "depth", "depth"),
+      ...providedInteger(options, "steps", "extrudeSteps"),
+      ...providedInteger(options, "curveSegments", "curveSegments"),
+      ...providedBoolean(options, "bevel", "bevelEnabled"),
+      ...providedNumber(options, "bevelThickness", "bevelThickness"),
+      ...providedNumber(options, "bevelSize", "bevelSize"),
+      ...providedNumber(options, "bevelOffset", "bevelOffset"),
+      ...providedInteger(options, "bevelSegments", "bevelSegments"),
+      ...providedText(options, "color", "extrudeColor")
+    };
+  }
+  if (mode === "revolve") {
+    return {
+      ...providedInteger(options, "segments", "revolveSegments"),
+      ...providedInteger(options, "revolveSegments", "revolveSegments"),
+      ...providedNumber(options, "phiStart", "phiStartDeg"),
+      ...providedNumber(options, "phiLength", "phiLengthDeg"),
+      ...providedText(options, "color", "revolveColor")
+    };
+  }
+  return {};
 }
 
 function pathReferenceFromOptions(options, { objectKey, extractionKey }) {

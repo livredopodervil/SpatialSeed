@@ -209,6 +209,7 @@
         <label><input type="checkbox" data-edit-hud-group-toggle="drawing-target" checked> Alvo de desenho</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="appearance" checked> Aparência</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="planar" checked> Ferramentas 2D</label>
+        <label><input type="checkbox" data-edit-hud-group-toggle="draw" checked> Autoria por desenho</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="measure" checked> Medição</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="lifecycle" checked> Continuidade</label>
         <label><input type="checkbox" data-edit-hud-group-toggle="creation" checked> Criação e procedimentos</label>
@@ -334,6 +335,7 @@
       <label title="Manter ferramenta ativa"><input id="edit-hud-keep-tool" type="checkbox"><span>📌</span></label>
       <button id="edit-hud-repeat" type="button" title="Repetir última operação">⟳</button>
     </div>
+    <div id="edit-hud-draw-tools" class="edit-hud-group" data-edit-hud-group="draw" aria-label="Autoria por desenho"></div>
     <div id="edit-hud-creation-tools" class="edit-hud-group edit-hud-context-actions" data-edit-hud-group="creation" aria-label="Criação e procedimentos">
       <button id="edit-hud-tube-from-object" type="button" title="Criar tubo usando objeto selecionado como caminho">⌇</button>
       <button id="edit-hud-sweep-from-objects" type="button" title="Criar varredura usando perfil e caminho selecionados">⇝</button>
@@ -344,7 +346,6 @@
       <button id="edit-hud-create-light" type="button" data-hud-context="object" title="Criar luz com os últimos parâmetros memorizados">☀</button>
       <button id="edit-hud-material" type="button" data-hud-context="object" title="Abrir material, luz e criação no painel Editar">◒</button>
       <button id="edit-hud-enter-mesh" type="button" data-hud-context="object" title="Entrar na edição da malha selecionada">▦</button>
-      <button id="edit-hud-draw-path" type="button" data-hud-context="object" title="Desenhar spline à mão livre no viewer">〰</button>
       <button id="edit-hud-group" type="button" data-hud-context="object" title="Agrupar objetos selecionados">⊞</button>
       <button id="edit-hud-ungroup" type="button" data-hud-context="object" title="Desagrupar seleção">⊟</button>
       <button id="edit-hud-fuse-families" type="button" data-hud-context="object" title="Compactar instâncias compatíveis em uma família">▦</button>
@@ -876,12 +877,12 @@
       <legend>Caminhos e curvas</legend>
       <div class="path-context-group" data-path-context="object">
         <p class="mesh-section-note">
-          Escolha primeiro o resultado e depois desenhe no plano. O tubo acompanha
-          o traço continuamente; o pincel acrescenta novas instâncias conforme a
-          distância percorrida, usando a seleção ou qualquer geometria do catálogo.
+          Escolha primeiro o resultado e depois desenhe no plano. A mesma captura
+          produz tubos, distribuições, extrusão por caminho e perfis de extrusão
+          ou revolução; os parâmetros completos ficam no configurador canônico.
         </p>
         <div class="mesh-form-grid">
-          <label><span>Resultado</span><select id="path-sketch-mode"><option value="tube">Tubo contínuo</option><option value="array">Pincel de geometrias</option></select></label>
+          <label><span>Resultado</span><select id="path-sketch-mode"><option value="tube">Tubo contínuo</option><option value="array">Pincel de geometrias</option><option value="sweep">Extrusão pelo caminho desenhado</option><option value="extrude">Perfil desenhado → extrusão</option><option value="revolve">Perfil desenhado → revolução</option></select></label>
           <label><span>Plano do desenho</span><select id="path-sketch-plane"><option value="locked-or-viewer">Desenho → edição → visualização → viewer</option><option value="drawing">Plano de desenho</option><option value="edit">Plano de edição</option><option value="viewer">Viewer atual</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
           <label><span>Curva</span><select id="path-sketch-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="chordal">Catmull-Rom chordal</option><option value="catmullrom">Catmull-Rom uniforme</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
           <label><span>Fluidez do gesto (px)</span><input id="path-sketch-sample" type="number" min="1" max="64" value="6" step="1"></label>
@@ -1309,6 +1310,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260802-0047e"></script>
+<script type="module" src="./boot.js?build=20260802-0047f"></script>
 </body>
 </html>

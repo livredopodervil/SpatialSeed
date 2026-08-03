@@ -1,6 +1,6 @@
 # Main Proposal: núcleo cristalizado e extensões internas
 
-Status: implementação incremental; baseline, primeira fatia do kernel v2, isolamento diagnóstico, HTTPS canônico e fachada de ferramentas materializados até o build `0047e`, sem merge da branch 0046
+Status: implementação incremental; baseline, primeira fatia do kernel v2, isolamento diagnóstico, HTTPS canônico e primeira família visual canônica materializados até o build `0047f`, sem merge da branch 0046
 Base obrigatória: `d556306c8b921363c26c56f49cb532e8e2e2b0f9` (`origin/main`)  
 Fonte de ideias, não de integração: `cfc63ca813ca722e9755b7a23c6d484287e9c289` e o estado local exportado da 0046  
 Data da análise: 2026-08-02
@@ -434,3 +434,19 @@ O incremento não reorganiza visualmente o HUD. A próxima fatia deve usar esse
 catálogo numa família visual real e remover os bindings hardcoded equivalentes,
 priorizando fluidez humana e disponibilidade procedural em vez de modularização
 sem efeito perceptível.
+
+O incremento `0047f` contém a primeira projeção visual dessa porta:
+
+1. descritores v2 com papéis de entrada e reset canônico de parâmetros;
+2. cinco intenções `draw.*` sobre o mesmo capturador de caminho/perfil;
+3. HUD de autoria por desenho e painel genérico de parâmetros alimentados pelo
+   catálogo, sem descoberta pelo DOM;
+4. transformação e as operações topológicas já catalogadas encaminhadas por
+   `authoring.tool.*` nas superfícies migradas;
+5. planos imutáveis para sweep desenhado, extrusão de perfil e revolução, com
+   preview e commit pela autoridade existente.
+
+O `mesh.inset` triangular permanece fora da captura por contorno: sua
+implementação atual aceita apenas `amount`. A fronteira canônica já possui o
+papel `boundary`, mas ele somente será conectado quando o núcleo topológico
+implementar o recorte planar correspondente.

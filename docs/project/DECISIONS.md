@@ -822,8 +822,8 @@ documental distinta.
 ## D-046 — A modularização usa oito fronteiras e gates monotônicos
 
 **Estado:** planejada; etapa zero, primeira fatia do kernel v2, isolamento do
-perfil diagnóstico e porta canônica de autoria implementados até o incremento
-0047e.
+perfil diagnóstico e primeira família visual canônica implementados até o
+incremento 0047f.
 
 O aplicativo mantido convergirá para oito módulos acíclicos: `kernel`,
 `document`, `procedural`, `authoring`, `viewer`, `renderer-three`, `interface` e
@@ -906,6 +906,33 @@ cada família visual migrada deve passar a consumir o catálogo e remover, no
 mesmo incremento, seus bindings e listas hardcoded. As condições de remoção de
 cada adapter estão registradas em
 [`AUTHORING_TOOL_CAPABILITIES_0047E.md`](../AUTHORING_TOOL_CAPABILITIES_0047E.md).
+
+## D-049 — Caminhos e perfis são papéis de entrada reutilizáveis
+
+**Estado:** implementada inicialmente no incremento 0047f.
+
+O descritor canônico de ferramenta declara entradas semânticas separadamente
+da forma de captura. `path`, `profile`, `selection`, `boundary` e `point` são
+papéis; `draw`, seleção, referência e catálogo são fontes possíveis. Uma
+capacidade pode assim aceitar caminho ou perfil desenhado sem incorporar outra
+cópia do controller de ponteiro.
+
+**Motivação:** o desenho livre já sustentava tubo e distribuição, enquanto
+sweep, extrusão e revolução consumiam estruturas geometricamente equivalentes
+por outras entradas. Criar um gesto para cada operação duplicaria plano,
+suavização, preview, cancelamento e persistência. Em sentido inverso, tratar
+qualquer operação escalar como se aceitasse caminho produziria uma promessa
+sem correspondente topológico.
+
+**Consequências:** `draw.tube`, `draw.array`, `draw.sweep`, `draw.extrude` e
+`draw.revolve` compartilham uma captura, mas possuem parâmetros e apresentação
+independentes. O perfil do sweep é resolvido uma vez na ativação; perfis de
+extrusão e revolução são projetados no frame do plano. `mesh.inset` continua
+escalar e declara somente seleção até existir um operador real de recorte por
+contorno. Um futuro inset desenhado deverá consumir `boundary`, validar a
+topologia e confirmar uma única transação, sem alias visual para o algoritmo
+triangular atual. Consulte
+[`DRAWN_AUTHORING_0047F.md`](../DRAWN_AUTHORING_0047F.md).
 
 ## Decisões superadas ou rejeitadas
 

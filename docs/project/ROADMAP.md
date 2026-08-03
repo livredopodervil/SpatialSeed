@@ -440,6 +440,11 @@ Estas atividades não precisam esperar um marco próprio.
   visuais substituídos, sem inferência pelo DOM;
 - tornar intenções, contexto, parâmetros e estado ativo legíveis, reduzindo
   navegação entre painéis e recuperação por troca artificial de ferramenta;
+- aplicar perfis visuais por aplicação sobre os IDs canônicos, permitindo
+  ordenar, ocultar, fixar e promover parâmetros sem copiar estado da ferramenta;
+- implementar recorte/inset por contorno desenhado como operador topológico
+  único antes de expor `boundary` nessa capacidade; não adaptar o inset escalar
+  com semântica fictícia;
 - corrigir o ajuste de fonte do editor de procedimentos;
 - melhorar alças de redimensionamento para toque;
 - revisar densidade da toolbar em telas pequenas;

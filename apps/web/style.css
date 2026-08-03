@@ -1854,6 +1854,7 @@ html[data-toolbar-layout="vertical"] #selection-panel{
 .edit-hud-group[data-edit-hud-group="navigation"]>*{--hud-sector-rgb:58,196,181}
 .edit-hud-group[data-edit-hud-group="reference"]>*{--hud-sector-rgb:255,105,132}
 .edit-hud-group[data-edit-hud-group="planar"]>*{--hud-sector-rgb:65,210,143}
+.edit-hud-group[data-edit-hud-group="draw"]>*{--hud-sector-rgb:90,190,116}
 .edit-hud-group[data-edit-hud-group="measure"]>*{--hud-sector-rgb:39,185,214}
 .edit-hud-group[data-edit-hud-group="lifecycle"]>*{--hud-sector-rgb:155,205,82}
 .edit-hud-group[data-edit-hud-group="creation"]>*{--hud-sector-rgb:188,113,235}

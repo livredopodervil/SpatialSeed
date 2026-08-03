@@ -6,10 +6,10 @@ import {
   createDefaultEditToolRegistry,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../edit-tools/src/index.js?build=20260802-0047e";
+} from "../../edit-tools/src/index.js?build=20260802-0047f";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260802-0047e";
+} from "../../devtools/src/DevConsole.js?build=20260802-0047f";
 
 export function createToolCapabilityTests() {
   return {
@@ -18,15 +18,38 @@ export function createToolCapabilityTests() {
       const descriptions = fixture.facade.list();
       const ids = descriptions.map(item => item.id);
 
-      assertEqual(descriptions.length, 15);
+      assertEqual(descriptions.length, 18);
       assertEqual(ids.includes("transform.translate"), true);
       assertEqual(ids.includes("transform.rotate"), true);
       assertEqual(ids.includes("transform.scale"), true);
       assertEqual(ids.includes("draw.tube"), true);
       assertEqual(ids.includes("draw.array"), true);
+      assertEqual(ids.includes("draw.sweep"), true);
+      assertEqual(ids.includes("draw.extrude"), true);
+      assertEqual(ids.includes("draw.revolve"), true);
       assertEqual(ids.includes("path.sketch"), false);
       assertEqual(fixture.facade.describe("draw.tube").presentation.icon, "〰");
       assertEqual(fixture.facade.describe("draw.array").presentation.icon, "⋯");
+      assertEqual(fixture.facade.describe("draw.extrude").presentation.icon, "⇧");
+      assertEqual(fixture.facade.describe("draw.revolve").presentation.icon, "⟳");
+      assertDeepEqual(
+        fixture.facade.describe("draw.sweep").inputs.map(input => input.role),
+        ["path", "profile"]
+      );
+      assertDeepEqual(
+        fixture.facade.describe("draw.extrude").inputs.map(input => input.role),
+        ["profile"]
+      );
+      assertEqual(
+        fixture.facade.describe("draw.extrude").inputs[0].sources.includes(
+          "points"
+        ),
+        true
+      );
+      assertEqual(
+        fixture.facade.describe("draw.extrude").capabilities.procedural,
+        true
+      );
       assertEqual(Object.isFrozen(fixture.facade.describe("draw.tube")), true);
       assertEqual(
         JSON.parse(JSON.stringify(fixture.facade.describe("draw.tube"))).id,
@@ -57,6 +80,19 @@ export function createToolCapabilityTests() {
       assertEqual(object.includes("draw.tube"), true);
       assertEqual(object.includes("mesh.inset"), false);
       assertEqual(object.includes("transform.rotate"), true);
+      const profileOnSurface = fixture.facade.status({
+        toolId: "draw.extrude",
+        context: {
+          subjectLevel: "object",
+          meshActive: false,
+          drawingTargetType: "surface"
+        }
+      });
+      assertEqual(profileOnSurface.state.available, false);
+      assertEqual(
+        profileOnSurface.state.reason.includes("plano de desenho"),
+        true
+      );
       fixture.dispose();
     },
 
@@ -143,10 +179,52 @@ export function createToolCapabilityTests() {
       fixture.dispose();
     },
 
-    "cada preset expõe somente os parâmetros pertinentes"() {
+    "execução procedural usa pontos sem simular gesto de ponteiro"() {
+      const fixture = createFacadeFixture();
+      const frame = {
+        origin: [0, 0, 0],
+        xAxis: [1, 0, 0],
+        yAxis: [0, 1, 0],
+        normal: [0, 0, 1]
+      };
+      const result = fixture.facade.execute(
+        "draw.extrude",
+        {
+          points: [[0, 0, 0], [2, 0, 0], [2, 1, 0]],
+          frame,
+          depth: 2.25
+        },
+        {
+          subjectLevel: "object",
+          meshActive: false,
+          drawingTargetType: "surface"
+        }
+      );
+      const call = fixture.calls.at(-1);
+
+      assertEqual(result.result.changed, true);
+      assertEqual(call.id, "profile.extrude.points.create");
+      assertNear(call.args.depth, 2.25);
+      assertEqual(call.args.extrudeSteps, 1);
+      assertDeepEqual(call.args.frame, frame);
+      assertEqual(
+        fixture.facade.status().activeToolIds.includes("draw.extrude"),
+        false
+      );
+      assertEqual(
+        fixture.calls.some(item => item.id === "path.sketch.begin"),
+        false
+      );
+      fixture.dispose();
+    },
+
+    "cada preset expõe somente seus parâmetros e entradas pertinentes"() {
       const fixture = createFacadeFixture();
       const tube = fixture.facade.getParameters("draw.tube");
       const array = fixture.facade.getParameters("draw.array");
+      const sweep = fixture.facade.getParameters("draw.sweep");
+      const extrude = fixture.facade.getParameters("draw.extrude");
+      const revolve = fixture.facade.getParameters("draw.revolve");
 
       assertEqual(Object.hasOwn(tube, "mode"), false);
       assertEqual(Object.hasOwn(tube, "radius"), true);
@@ -154,6 +232,18 @@ export function createToolCapabilityTests() {
       assertEqual(Object.hasOwn(array, "mode"), false);
       assertEqual(Object.hasOwn(array, "radius"), false);
       assertEqual(Object.hasOwn(array, "spacingWorld"), true);
+      assertEqual(Object.hasOwn(sweep, "profileObjectId"), true);
+      assertEqual(Object.hasOwn(sweep, "sweepSegments"), true);
+      assertEqual(Object.hasOwn(sweep, "depth"), false);
+      assertEqual(Object.hasOwn(extrude, "depth"), true);
+      assertEqual(Object.hasOwn(extrude, "bevelEnabled"), true);
+      assertEqual(Object.hasOwn(extrude, "profileObjectId"), false);
+      assertEqual(Object.hasOwn(extrude, "curveType"), false);
+      assertEqual(Object.hasOwn(extrude, "closed"), false);
+      assertEqual(Object.hasOwn(revolve, "revolveSegments"), true);
+      assertEqual(Object.hasOwn(revolve, "phiLengthDeg"), true);
+      assertEqual(Object.hasOwn(revolve, "depth"), false);
+      assertEqual(Object.hasOwn(revolve, "tension"), false);
 
       const changed = fixture.facade.setParameters("draw.array", {
         spacingMode: "world",
@@ -167,6 +257,34 @@ export function createToolCapabilityTests() {
       assertThrowsMessage(
         () => fixture.facade.setParameters("draw.array", { radius: 2 }),
         "Parâmetro desconhecido"
+      );
+      fixture.dispose();
+    },
+
+    "restaurar um preset não apaga parâmetros lembrados dos demais"() {
+      const fixture = createFacadeFixture();
+      fixture.facade.setParameters("draw.tube", { radius: 0.42 });
+      fixture.facade.setParameters("draw.extrude", {
+        depth: 3.5,
+        bevelEnabled: false
+      });
+
+      const restored = fixture.facade.resetParameters("draw.extrude");
+
+      assertNear(restored.values.depth, 1);
+      assertEqual(restored.values.bevelEnabled, true);
+      assertNear(fixture.facade.getParameters("draw.tube").radius, 0.42);
+      assertDeepEqual(
+        fixture.facade.describe("draw.revolve").actions,
+        {
+          activate: "authoring.tool.activate",
+          execute: "authoring.tool.execute",
+          finish: null,
+          cancel: "authoring.tool.cancel",
+          getParameters: "authoring.tool.parameters.get",
+          setParameters: "authoring.tool.parameters.set",
+          resetParameters: "authoring.tool.parameters.reset"
+        }
       );
       fixture.dispose();
     },
@@ -193,9 +311,8 @@ export function createToolCapabilityTests() {
           tool: "select"
         }
       });
-      const result = fixture.facade.execute("mesh.extrude", {
-        distance: 2.5
-      });
+      fixture.facade.setParameters("mesh.extrude", { distance: 2.5 });
+      const result = fixture.facade.execute("mesh.extrude");
       const topology = fixture.calls.filter(call =>
         call.id === "mesh.topology.apply"
       );
@@ -227,12 +344,20 @@ export function createToolCapabilityTests() {
         "authoring.tool.parameters.get",
         { toolId: "draw.tube" }
       );
+      commands.execute("authoring.tool.parameters.set", {
+        toolId: "draw.revolve",
+        patch: { revolveSegments: 48 }
+      });
+      const reset = commands.execute("authoring.tool.parameters.reset", {
+        toolId: "draw.revolve"
+      });
 
       assertEqual(list.some(item => item.id === "transform.rotate"), true);
       assertEqual(activated.toolId, "transform.rotate");
       assertEqual(activated.result.tool, "rotate");
       assertEqual(parameters.toolId, "draw.tube");
       assertEqual(Object.hasOwn(parameters.values, "radius"), true);
+      assertEqual(reset.values.revolveSegments, 32);
       assertDeepEqual(
         fixture.facade.capabilities().commands.execute,
         "authoring.tool.execute"
@@ -262,6 +387,13 @@ export function createToolCapabilityTests() {
       const configured = devConsole.execute(
         "tool set draw.array spacingMode=world spacingWorld=0.5"
       )[0];
+      const reset = devConsole.execute("tool reset draw.revolve")[0];
+      const procedural = devConsole.execute(
+        "tool run draw.extrude " +
+        "points=[[0,0,0],[2,0,0],[2,1,0]] " +
+        "frame={\"origin\":[0,0,0],\"xAxis\":[1,0,0]," +
+        "\"yAxis\":[0,1,0],\"normal\":[0,0,1]} depth=2"
+      )[0];
       const activeBeforeCancel = fixture.facade.status().activeToolIds;
       const cancelled = devConsole.execute("tool cancel")[0];
 
@@ -276,6 +408,16 @@ export function createToolCapabilityTests() {
         0.14
       );
       assertEqual(configured.ok, true);
+      assertEqual(reset.ok, true);
+      assertEqual(reset.result.values.revolveSegments, 32);
+      assertEqual(procedural.ok, true);
+      assertEqual(
+        fixture.calls.some(call =>
+          call.id === "profile.extrude.points.create" &&
+          call.args.depth === 2
+        ),
+        true
+      );
       assertNear(configured.result.values.spacingWorld, 0.5);
       assertEqual(activeBeforeCancel.includes("draw.tube"), true);
       assertEqual(activeBeforeCancel.includes("draw.array"), false);
@@ -297,6 +439,34 @@ export function createToolCapabilityTests() {
       assertDeepEqual(facade.status().adapters, ["adapter-a"]);
       assertEqual(facade.list().length, 1);
       facade.dispose();
+
+      assertThrowsMessage(
+        () => new ToolCapabilityFacade({
+          adapters: [{
+            id: "invalid-inputs",
+            list: () => [{
+              id: "fixture.inputs",
+              kind: "operation",
+              contexts: ["object"],
+              operations: { execute: true },
+              inputs: [
+                {
+                  id: "path",
+                  role: "path",
+                  sources: ["points"]
+                },
+                {
+                  id: "path",
+                  role: "path",
+                  sources: ["reference"]
+                }
+              ]
+            }],
+            execute: () => ({ changed: false })
+          }]
+        }),
+        "Entrada canônica duplicada"
+      );
     }
   };
 }
@@ -350,6 +520,9 @@ function createFacadeFixture({
     }
     if (id === "edit.tool.parameters.set") {
       return parameters.set(args.toolId, args.patch);
+    }
+    if (id === "edit.tool.parameters.reset") {
+      return parameters.reset(args.toolId);
     }
     if (id === "path.sketch.begin" || id === "planar.sketch.begin") {
       const nativeId = id.slice(0, -".begin".length);

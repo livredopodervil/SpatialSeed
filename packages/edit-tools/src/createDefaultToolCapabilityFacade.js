@@ -7,16 +7,21 @@ export function createDefaultToolCapabilityFacade({
   registry,
   parameters,
   lifecycle,
+  drawingTarget = null,
   execute
 }) {
   return new ToolCapabilityFacade({
-    context: () => editContext.status(),
+    context: () => Object.freeze({
+      ...editContext.status(),
+      drawingTargetType: drawingTarget?.status?.().type ?? "plane"
+    }),
     adapters: [
       new TransformToolAdapter({ editContext, execute }),
       new EditToolRegistryAdapter({
         registry,
         parameters,
         lifecycle,
+        drawingTarget,
         execute
       })
     ]
@@ -69,6 +74,11 @@ export function installToolCapabilityRuntime({
       "authoring.tool.parameters.set",
       ({ toolId, patch = {} } = {}) =>
         facade.setParameters(toolId, patch),
+      canonicalMetadata("parameters", { effect: "local-preference" })
+    )
+    .register(
+      "authoring.tool.parameters.reset",
+      ({ toolId } = {}) => facade.resetParameters(toolId),
       canonicalMetadata("parameters", { effect: "local-preference" })
     );
 

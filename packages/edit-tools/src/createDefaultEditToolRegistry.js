@@ -22,7 +22,10 @@ export function createDefaultEditToolRegistry({
       parameters: [
         enumParameter("mode", "Resultado", [
           { value: "tube", label: "Tubo contínuo" },
-          { value: "array", label: "Pincel de geometrias" }
+          { value: "array", label: "Pincel de geometrias" },
+          { value: "sweep", label: "Extrusão por caminho desenhado" },
+          { value: "extrude", label: "Extrudar perfil desenhado" },
+          { value: "revolve", label: "Revolucionar perfil desenhado" }
         ], "tube"),
         enumParameter("planeSource", "Plano do desenho", [
           {
@@ -82,6 +85,93 @@ export function createDefaultEditToolRegistry({
           0,
           { minimum: 0, maximum: 2, step: 0.01, when: { mode: "tube" } }
         ),
+        stringParameter(
+          "profileObjectId",
+          "ID do perfil (vazio = seleção ativa)",
+          "",
+          { when: { mode: "sweep" } }
+        ),
+        enumParameter("profileExtraction", "Extração do perfil", [
+          { value: "auto", label: "Automática" },
+          { value: "contour", label: "Contorno declarado" },
+          { value: "boundary", label: "Maior contorno planar" }
+        ], "auto", { when: { mode: "sweep" } }),
+        numberParameter("sweepSegments", "Segmentos da varredura", 32, {
+          integer: true,
+          minimum: 1,
+          when: { mode: "sweep" }
+        }),
+        numberParameter("sweepTwistDegrees", "Torção total (°)", 0, {
+          when: { mode: "sweep" }
+        }),
+        numberParameter("scaleStart", "Escala inicial", 1, {
+          when: { mode: "sweep" }
+        }),
+        numberParameter("scaleEnd", "Escala final", 1, {
+          when: { mode: "sweep" }
+        }),
+        booleanParameter("caps", "Tampar extremidades", true, {
+          when: { mode: "sweep" }
+        }),
+        colorParameter("sweepColor", "Cor da extrusão", "#7f9cff", {
+          when: { mode: "sweep" }
+        }),
+        numberParameter("depth", "Profundidade", 1, {
+          minimum: 0.001,
+          step: 0.1,
+          when: { mode: "extrude" }
+        }),
+        numberParameter("extrudeSteps", "Passos da extrusão", 1, {
+          integer: true,
+          minimum: 1,
+          when: { mode: "extrude" }
+        }),
+        numberParameter("curveSegments", "Segmentos de curva", 12, {
+          integer: true,
+          minimum: 1,
+          when: { mode: "extrude" }
+        }),
+        booleanParameter("bevelEnabled", "Bisel", true, {
+          when: { mode: "extrude" }
+        }),
+        numberParameter("bevelThickness", "Espessura do bisel", 0.2, {
+          minimum: 0,
+          step: 0.05,
+          when: { mode: "extrude", bevelEnabled: true }
+        }),
+        numberParameter("bevelSize", "Tamanho do bisel", 0.1, {
+          minimum: 0,
+          step: 0.05,
+          when: { mode: "extrude", bevelEnabled: true }
+        }),
+        numberParameter("bevelOffset", "Deslocamento do bisel", 0, {
+          step: 0.05,
+          when: { mode: "extrude", bevelEnabled: true }
+        }),
+        numberParameter("bevelSegments", "Segmentos do bisel", 3, {
+          integer: true,
+          minimum: 0,
+          when: { mode: "extrude", bevelEnabled: true }
+        }),
+        colorParameter("extrudeColor", "Cor da extrusão", "#66b5a3", {
+          when: { mode: "extrude" }
+        }),
+        numberParameter("revolveSegments", "Segmentos da revolução", 32, {
+          integer: true,
+          minimum: 3,
+          when: { mode: "revolve" }
+        }),
+        numberParameter("phiStartDeg", "Ângulo inicial (°)", 0, {
+          when: { mode: "revolve" }
+        }),
+        numberParameter("phiLengthDeg", "Extensão angular (°)", 360, {
+          minimum: 0.001,
+          maximum: 360,
+          when: { mode: "revolve" }
+        }),
+        colorParameter("revolveColor", "Cor da revolução", "#d29b62", {
+          when: { mode: "revolve" }
+        }),
         enumParameter("sourceMode", "Fonte do pincel", [
           { value: "selection", label: "Seleção atual" },
           { value: "catalog", label: "Geometria do catálogo" }

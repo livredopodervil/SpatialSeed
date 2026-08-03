@@ -5,6 +5,15 @@ const PATH_SKETCH_PRESETS = Object.freeze([
     description: "Captura um caminho livre e cria um tubo contínuo.",
     family: "draw",
     preset: Object.freeze({ mode: "tube" }),
+    executeCommand: "path.stroke.create",
+    inputs: Object.freeze([
+      sketchInput(
+        "path",
+        "path",
+        ["draw", "points"],
+        "Traço no plano ou superfície"
+      )
+    ]),
     presentation: Object.freeze({
       label: "Desenhar tubo",
       icon: "〰",
@@ -19,24 +28,132 @@ const PATH_SKETCH_PRESETS = Object.freeze([
       "Captura um caminho livre e distribui a seleção ou uma geometria.",
     family: "draw",
     preset: Object.freeze({ mode: "array" }),
+    executeCommand: "path.array.points.create",
+    inputs: Object.freeze([
+      sketchInput(
+        "path",
+        "path",
+        ["draw", "points"],
+        "Traço de distribuição"
+      ),
+      sketchInput("source", "selection", ["selection", "catalog"], "Fonte do pincel")
+    ]),
     presentation: Object.freeze({
       label: "Distribuir ao desenhar",
       icon: "⋯",
       group: "draw",
       order: 20
     })
+  }),
+  Object.freeze({
+    id: "draw.sweep",
+    label: "Extrudar pelo caminho desenhado",
+    description:
+      "Captura um caminho livre e varre por ele o perfil selecionado ou informado.",
+    family: "draw",
+    preset: Object.freeze({ mode: "sweep" }),
+    executeCommand: "path.sweep.points.create",
+    inputs: Object.freeze([
+      sketchInput(
+        "path",
+        "path",
+        ["draw", "points"],
+        "Caminho longitudinal"
+      ),
+      sketchInput("profile", "profile", ["selection", "reference"], "Perfil transversal")
+    ]),
+    presentation: Object.freeze({
+      label: "Extrudar pelo caminho desenhado",
+      icon: "⇝",
+      group: "draw",
+      order: 30
+    })
+  }),
+  Object.freeze({
+    id: "draw.extrude",
+    label: "Desenhar perfil e extrudar",
+    description:
+      "Captura um perfil fechado no plano e cria uma extrusão linear.",
+    family: "draw",
+    preset: Object.freeze({ mode: "extrude" }),
+    excludeParameters: Object.freeze(["curveType", "tension", "closed"]),
+    executeCommand: "profile.extrude.points.create",
+    inputs: Object.freeze([
+      sketchInput(
+        "profile",
+        "profile",
+        ["draw", "points"],
+        "Perfil fechado"
+      )
+    ]),
+    presentation: Object.freeze({
+      label: "Desenhar perfil e extrudar",
+      icon: "⇧",
+      group: "draw",
+      order: 40
+    })
+  }),
+  Object.freeze({
+    id: "draw.revolve",
+    label: "Desenhar perfil e revolucionar",
+    description:
+      "Captura um perfil no plano e o gira em torno do eixo Y desse plano.",
+    family: "draw",
+    preset: Object.freeze({ mode: "revolve" }),
+    excludeParameters: Object.freeze(["curveType", "tension", "closed"]),
+    executeCommand: "profile.revolve.points.create",
+    inputs: Object.freeze([
+      sketchInput(
+        "profile",
+        "profile",
+        ["draw", "points"],
+        "Perfil de revolução"
+      )
+    ]),
+    presentation: Object.freeze({
+      label: "Desenhar perfil e revolucionar",
+      icon: "⟳",
+      group: "draw",
+      order: 50
+    })
   })
 ]);
 
 const PRESENTATION = Object.freeze({
-  "planar.sketch": Object.freeze({ icon: "✎", group: "draw", order: 30 }),
-  "path.tube": Object.freeze({ icon: "⌇", group: "path", order: 40 }),
-  "path.sweep": Object.freeze({ icon: "⇝", group: "path", order: 50 }),
-  "path.array": Object.freeze({ icon: "⋯", group: "path", order: 60 }),
-  "path.from-selection": Object.freeze({ icon: "⌁", group: "path", order: 70 }),
-  "mesh.extrude": Object.freeze({ icon: "⇧", group: "mesh", order: 80 }),
-  "mesh.inset": Object.freeze({ icon: "▣", group: "mesh", order: 90 }),
-  "mesh.split": Object.freeze({ icon: "÷", group: "mesh", order: 100 })
+  "planar.sketch": Object.freeze({ icon: "✎", group: "draw", order: 60 }),
+  "path.tube": Object.freeze({ icon: "⌇", group: "path", order: 70 }),
+  "path.sweep": Object.freeze({ icon: "⇝", group: "path", order: 80 }),
+  "path.array": Object.freeze({ icon: "⋯", group: "path", order: 90 }),
+  "path.from-selection": Object.freeze({ icon: "⌁", group: "path", order: 100 }),
+  "mesh.extrude": Object.freeze({ icon: "⇧", group: "mesh", order: 110 }),
+  "mesh.inset": Object.freeze({ icon: "▣", group: "mesh", order: 120 }),
+  "mesh.split": Object.freeze({ icon: "÷", group: "mesh", order: 130 })
+});
+
+const TOOL_INPUTS = Object.freeze({
+  "path.tube": Object.freeze([
+    sketchInput("path", "path", ["selection", "reference"], "Caminho existente")
+  ]),
+  "path.sweep": Object.freeze([
+    sketchInput("path", "path", ["selection", "reference"], "Caminho existente"),
+    sketchInput("profile", "profile", ["selection", "reference"], "Perfil existente")
+  ]),
+  "path.array": Object.freeze([
+    sketchInput("path", "path", ["selection", "reference"], "Caminho existente"),
+    sketchInput("source", "selection", ["selection"], "Objetos distribuídos")
+  ]),
+  "path.from-selection": Object.freeze([
+    sketchInput("selection", "selection", ["mesh-selection"], "Componentes ordenados")
+  ]),
+  "mesh.extrude": Object.freeze([
+    sketchInput("selection", "selection", ["mesh-selection"], "Componentes de malha")
+  ]),
+  "mesh.inset": Object.freeze([
+    sketchInput("selection", "selection", ["mesh-selection"], "Faces de malha")
+  ]),
+  "mesh.split": Object.freeze([
+    sketchInput("selection", "selection", ["mesh-selection"], "Arestas de malha")
+  ])
 });
 
 const CONTEXTS = Object.freeze({
@@ -61,13 +178,19 @@ const CANCEL_COMMANDS = Object.freeze({
 });
 
 export class EditToolRegistryAdapter {
-  static apiVersion = "edit-tool-registry-adapter-v1";
+  static apiVersion = "edit-tool-registry-adapter-v2";
 
   id = "edit-tool-registry";
   #entries = new Map();
   #definitions;
 
-  constructor({ registry, parameters, lifecycle, execute }) {
+  constructor({
+    registry,
+    parameters,
+    lifecycle,
+    drawingTarget = null,
+    execute
+  }) {
     if (!registry?.describe || !registry?.definition) {
       throw new TypeError("EditToolRegistryAdapter exige EditToolRegistry.");
     }
@@ -83,6 +206,7 @@ export class EditToolRegistryAdapter {
     this.registry = registry;
     this.parameters = parameters;
     this.lifecycle = lifecycle;
+    this.drawingTarget = drawingTarget;
     this.executeCommand = execute;
 
     const definitions = [];
@@ -93,7 +217,8 @@ export class EditToolRegistryAdapter {
           this.#entries.set(descriptor.id, Object.freeze({
             descriptor,
             native: legacy,
-            preset: preset.preset
+            preset: preset.preset,
+            executeCommand: preset.executeCommand
           }));
           definitions.push(descriptor);
         }
@@ -103,7 +228,8 @@ export class EditToolRegistryAdapter {
       this.#entries.set(descriptor.id, Object.freeze({
         descriptor,
         native: legacy,
-        preset: null
+        preset: null,
+        executeCommand: null
       }));
       definitions.push(descriptor);
     }
@@ -114,7 +240,7 @@ export class EditToolRegistryAdapter {
     return this.#definitions;
   }
 
-  status(toolId) {
+  status(toolId, { context = {} } = {}) {
     const entry = this.#entry(toolId);
     const lifecycle = this.lifecycle.status();
     let active = lifecycle.activeAction === entry.native.id;
@@ -124,7 +250,18 @@ export class EditToolRegistryAdapter {
         entry.preset
       );
     }
-    return Object.freeze({ active, available: true });
+    const profileOnSurface = ["draw.extrude", "draw.revolve"].includes(
+      entry.descriptor.id
+    ) && (
+      context.drawingTargetType ?? this.drawingTarget?.status?.().type
+    ) === "surface";
+    return Object.freeze({
+      active,
+      available: !profileOnSurface,
+      reason: profileOnSurface
+        ? "perfis exigem um plano de desenho"
+        : null
+    });
   }
 
   activate(toolId, input = {}) {
@@ -169,12 +306,18 @@ export class EditToolRegistryAdapter {
 
   execute(toolId, input = {}) {
     const entry = this.#entry(toolId);
-    if (entry.descriptor.kind === "continuous") {
+    if (entry.descriptor.kind === "continuous" && !entry.executeCommand) {
       return this.activate(toolId, input);
     }
+    const configuredInput = entry.descriptor.operations.parameters
+      ? {
+          ...this.getParameters(toolId),
+          ...normalizePatch(input)
+        }
+      : normalizePatch(input);
     return this.executeCommand(
-      entry.native.command,
-      operationArguments(entry, input)
+      entry.executeCommand ?? entry.native.command,
+      operationArguments(entry, configuredInput)
     );
   }
 
@@ -237,10 +380,33 @@ export class EditToolRegistryAdapter {
     return this.getParameters(toolId);
   }
 
+  resetParameters(toolId) {
+    const entry = this.#entry(toolId);
+    if (entry.preset) {
+      const defaults = this.registry.defaults(entry.native.id);
+      const patch = Object.fromEntries(
+        entry.descriptor.parameters.map(parameter => [
+          parameter.id,
+          structuredClone(defaults[parameter.id])
+        ])
+      );
+      this.executeCommand("edit.tool.parameters.set", {
+        toolId: entry.native.id,
+        patch
+      });
+      return this.getParameters(toolId);
+    }
+    this.executeCommand("edit.tool.parameters.reset", {
+      toolId: entry.native.id
+    });
+    return this.getParameters(toolId);
+  }
+
   subscribe(listener) {
     const unsubscribers = [
       this.lifecycle.subscribe(() => listener()),
-      this.parameters.subscribe(() => listener())
+      this.parameters.subscribe(() => listener()),
+      this.drawingTarget?.subscribe?.(() => listener())
     ];
     return () => {
       for (const unsubscribe of unsubscribers.reverse()) unsubscribe?.();
@@ -256,7 +422,7 @@ export class EditToolRegistryAdapter {
 }
 
 function presetDescriptor(legacy, preset) {
-  const parameters = parametersForPreset(legacy.parameters, preset.preset);
+  const parameters = parametersForPreset(legacy.parameters, preset);
   return Object.freeze({
     id: preset.id,
     label: preset.label,
@@ -265,6 +431,7 @@ function presetDescriptor(legacy, preset) {
     kind: "continuous",
     lifecycle: "continuous",
     contexts: CONTEXTS[legacy.id],
+    inputs: preset.inputs,
     parameters,
     presentation: preset.presentation,
     operations: Object.freeze({
@@ -278,7 +445,7 @@ function presetDescriptor(legacy, preset) {
       preview: true,
       undo: true,
       repeat: true,
-      procedural: false,
+      procedural: true,
       agent: true,
       pointer: true
     }),
@@ -305,6 +472,7 @@ function legacyDescriptor(legacy) {
     kind: continuous ? "continuous" : "operation",
     lifecycle: continuous ? "continuous" : "single-shot",
     contexts: CONTEXTS[legacy.id] ?? Object.freeze(["object"]),
+    inputs: TOOL_INPUTS[legacy.id] ?? Object.freeze([]),
     parameters: legacy.parameters,
     presentation: Object.freeze({
       label: legacy.label,
@@ -332,9 +500,11 @@ function legacyDescriptor(legacy) {
   });
 }
 
-function parametersForPreset(parameters, preset) {
+function parametersForPreset(parameters, presetDefinition) {
+  const preset = presetDefinition.preset;
+  const excluded = new Set(presetDefinition.excludeParameters ?? []);
   return Object.freeze(parameters.flatMap(parameter => {
-    if (parameter.id === "mode") return [];
+    if (parameter.id === "mode" || excluded.has(parameter.id)) return [];
     if (parameter.when?.mode !== undefined &&
         parameter.when.mode !== preset.mode) {
       return [];
@@ -354,21 +524,25 @@ function operationArguments(entry, input) {
   if (!entry.native.id.startsWith("mesh.")) {
     return source;
   }
-  const options = source.options && typeof source.options === "object" &&
+  const providedOptions = source.options && typeof source.options === "object" &&
     !Array.isArray(source.options)
     ? structuredClone(source.options)
     : {};
   const args = { ...source };
   delete args.options;
+  const declaredOptions = {};
   for (const parameter of entry.descriptor.parameters) {
     if (args[parameter.id] === undefined) continue;
-    options[parameter.id] = args[parameter.id];
+    declaredOptions[parameter.id] = args[parameter.id];
     delete args[parameter.id];
   }
   return {
     ...args,
     operation: entry.native.id.slice("mesh.".length),
-    options
+    options: {
+      ...declaredOptions,
+      ...providedOptions
+    }
   };
 }
 
@@ -392,4 +566,14 @@ function normalizePatch(value) {
     throw new TypeError("Argumentos da ferramenta devem formar um objeto.");
   }
   return structuredClone(value);
+}
+
+function sketchInput(id, role, sources, label) {
+  return Object.freeze({
+    id,
+    role,
+    sources: Object.freeze([...sources]),
+    label,
+    required: true
+  });
 }

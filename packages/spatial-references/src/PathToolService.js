@@ -30,12 +30,16 @@ const ARRAY_BRUSH_PLAN_TYPE = "array-brush-stroke-plan";
 const ARRAY_BRUSH_PLAN_VERSION = 1;
 const PATH_CREATE_PLAN_TYPE = "path-create-plan";
 const PATH_CREATE_PLAN_VERSION = 1;
+const SKETCH_GEOMETRY_PLAN_TYPE = "sketch-geometry-plan";
+const SKETCH_GEOMETRY_PLAN_VERSION = 1;
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 
 export class PathToolService {
-  static apiVersion = "path-tool-service-v8";
+  static apiVersion = "path-tool-service-v9";
   #issuedArrayBrushPlans = new WeakSet();
   #issuedPathCreatePlans = new WeakSet();
+  #issuedSketchGeometryPlans = new WeakSet();
+  #issuedSketchProfiles = new WeakSet();
   #sceneCacheRevision = null;
   #sceneCacheState = null;
   #sceneCacheHierarchy = null;
@@ -91,6 +95,206 @@ export class PathToolService {
     return this.commitPathCreatePlan({
       plan: this.preparePathCreatePlan(options),
       preserveSelection: Boolean(options.preserveSelection)
+    });
+  }
+
+  createSketchGeometry(options = {}) {
+    return this.commitSketchOutputPlan({
+      plan: this.prepareSketchOutputPlan(options)
+    });
+  }
+
+  resolveSketchProfile(options = {}) {
+    const resolved = this.resolver.resolveProfile(
+      normalizeProfileReference(options)
+    );
+    this.#issuedSketchProfiles.add(resolved);
+    return resolved;
+  }
+
+  prepareSketchOutputPlan(options = {}) {
+    const mode = String(options.mode ?? "tube").trim().toLowerCase();
+    if (mode === "tube") {
+      return this.preparePathCreatePlan(options);
+    }
+    if (!["sweep", "extrude", "revolve"].includes(mode)) {
+      throw new RangeError(`Resultado de desenho desconhecido: ${mode}.`);
+    }
+
+    const points = mode === "sweep"
+      ? this.prepareSketchPoints({
+          points: options.points,
+          curveType: options.curveType,
+          tension: options.tension
+        })
+      : Object.freeze(
+          normalizePointList(
+            options.points,
+            mode === "extrude" ? 3 : 2,
+            "perfil desenhado"
+          ).map(point => Object.freeze([...point]))
+        );
+    const color = colorValue(options.color ?? "#70c8ff");
+    const appearanceBinding = normalizeAppearanceBinding({
+      colorMode: "uniform",
+      uniformColor: color,
+      materialMode: options.materialMode,
+      opacityMultiplier: options.opacityMultiplier
+    }, { fallbackColor: color });
+    let plan;
+
+    if (mode === "sweep") {
+      const resolvedProfile = options.resolvedProfile ??
+        this.resolveSketchProfile(options);
+      if (!this.#issuedSketchProfiles.has(resolvedProfile)) {
+        throw new Error(
+          "O perfil da varredura não foi resolvido por este serviço."
+        );
+      }
+      const sweep = createSweepGeometryDescriptor({
+        pathPoints: points,
+        profilePoints: resolvedProfile.points,
+        segments: integerAtLeast(
+          options.sweepSegments ?? options.segments ?? 32,
+          1,
+          "sweepSegments"
+        ),
+        closedPath: Boolean(options.closed),
+        curveType: String(options.curveType ?? "centripetal"),
+        tension: finite(options.tension ?? 0.5, "tension"),
+        twistDegrees: finite(options.twistDegrees ?? 0, "twistDegrees"),
+        scaleStart: nonZero(options.scaleStart ?? 1, "scaleStart"),
+        scaleEnd: nonZero(options.scaleEnd ?? 1, "scaleEnd"),
+        caps: options.caps !== false,
+        initialNormal: resolvedProfile.xAxis
+      });
+      plan = {
+        mode,
+        inputRole: "path",
+        name: String(
+          options.name || `Extrusão por caminho — ${resolvedProfile.objectName}`
+        ),
+        position: sweep.origin,
+        rotation: [0, 0, 0, 1],
+        geometry: this.resolver.geometryRegistry.normalize(sweep.geometry),
+        points,
+        profile: summary(resolvedProfile),
+        diagnostics: sweep.diagnostics
+      };
+    } else {
+      const profile = projectSketchProfile({
+        points,
+        frame: options.frame,
+        minimum: mode === "extrude" ? 3 : 2
+      });
+      const geometry = mode === "extrude"
+        ? {
+            type: "extrude",
+            contour: profile.points,
+            holes: [],
+            depth: positive(options.depth ?? 1, "depth"),
+            steps: integerAtLeast(
+              options.extrudeSteps ?? options.steps ?? 1,
+              1,
+              "extrudeSteps"
+            ),
+            curveSegments: integerAtLeast(
+              options.curveSegments ?? 12,
+              1,
+              "curveSegments"
+            ),
+            bevelEnabled: options.bevelEnabled !== false,
+            bevelThickness: nonNegative(
+              options.bevelThickness ?? 0.2,
+              "bevelThickness"
+            ),
+            bevelSize: nonNegative(
+              options.bevelSize ?? 0.1,
+              "bevelSize"
+            ),
+            bevelOffset: finite(
+              options.bevelOffset ?? 0,
+              "bevelOffset"
+            ),
+            bevelSegments: integerAtLeast(
+              options.bevelSegments ?? 3,
+              0,
+              "bevelSegments"
+            )
+          }
+        : {
+            type: "lathe",
+            points: profile.points,
+            segments: integerAtLeast(
+              options.revolveSegments ?? options.segments ?? 32,
+              3,
+              "revolveSegments"
+            ),
+            phiStartDeg: finite(options.phiStartDeg ?? 0, "phiStartDeg"),
+            phiLengthDeg: positive(
+              options.phiLengthDeg ?? 360,
+              "phiLengthDeg"
+            )
+          };
+      plan = {
+        mode,
+        inputRole: "profile",
+        name: String(options.name || (
+          mode === "extrude"
+            ? "Extrusão de perfil desenhado"
+            : "Revolução de perfil desenhado"
+        )),
+        position: profile.frame.origin,
+        rotation: profile.frame.quaternion,
+        geometry: this.resolver.geometryRegistry.normalize(geometry),
+        points,
+        profilePoints: profile.points,
+        frame: profile.frame,
+        diagnostics: Object.freeze({
+          inputPoints: points.length,
+          profilePoints: profile.points.length,
+          closedProfile: mode === "extrude"
+        })
+      };
+    }
+
+    const prepared = deepFreeze({
+      type: SKETCH_GEOMETRY_PLAN_TYPE,
+      version: SKETCH_GEOMETRY_PLAN_VERSION,
+      ...plan,
+      color,
+      appearanceBinding,
+      pointCount: points.length
+    });
+    this.#issuedSketchGeometryPlans.add(prepared);
+    return prepared;
+  }
+
+  commitSketchOutputPlan({ plan } = {}) {
+    if (plan?.type === PATH_CREATE_PLAN_TYPE) {
+      return this.commitPathCreatePlan({ plan });
+    }
+    this.#assertCanMutate("criar geometria pelo desenho");
+    const validated = validateSketchGeometryPlan(plan, {
+      issued: this.#issuedSketchGeometryPlans.has(plan)
+    });
+    const result = this.selectionOperations.createGeometry({
+      name: validated.name,
+      position: validated.position,
+      rotation: validated.rotation,
+      geometry: validated.geometry,
+      color: validated.color,
+      appearanceBinding: validated.appearanceBinding
+    });
+    return Object.freeze({
+      ...result,
+      tool: `draw-${validated.mode}`,
+      mode: validated.mode,
+      inputRole: validated.inputRole,
+      pointCount: validated.pointCount,
+      profile: validated.profile ?? null,
+      diagnostics: validated.diagnostics ?? null,
+      preparedPlan: true
     });
   }
 
@@ -2054,6 +2258,140 @@ function arrayBrushMutableTailCopies(curveType) {
   return 4;
 }
 
+function normalizeProfileReference(options = {}) {
+  const source = options.profile && typeof options.profile === "object" &&
+    !Array.isArray(options.profile)
+    ? structuredClone(options.profile)
+    : {};
+  const objectId = String(
+    options.profileObjectId ?? source.objectId ?? ""
+  ).trim();
+  const extraction = String(
+    options.profileExtraction ?? source.extraction ?? "auto"
+  ).trim().toLowerCase();
+  return Object.freeze({
+    ...source,
+    ...(objectId ? { objectId } : {}),
+    extraction
+  });
+}
+
+function projectSketchProfile({ points, frame, minimum }) {
+  if (!frame || typeof frame !== "object") {
+    throw new TypeError("O perfil desenhado exige um plano de desenho.");
+  }
+  const origin = new THREE.Vector3().fromArray(
+    vector3(frame.origin, "frame.origin")
+  );
+  const normal = new THREE.Vector3().fromArray(
+    vector3(frame.normal, "frame.normal")
+  ).normalize();
+  const xAxis = new THREE.Vector3().fromArray(
+    vector3(frame.xAxis, "frame.xAxis")
+  ).normalize();
+  const yAxis = new THREE.Vector3().fromArray(
+    vector3(frame.yAxis, "frame.yAxis")
+  ).normalize();
+  if (Math.abs(xAxis.dot(yAxis)) > 1e-6 ||
+      Math.abs(xAxis.dot(normal)) > 1e-6 ||
+      Math.abs(yAxis.dot(normal)) > 1e-6 ||
+      xAxis.clone().cross(yAxis).dot(normal) < 1 - 1e-6) {
+    throw new Error(
+      "O plano do perfil deve possuir eixos ortogonais e orientação destrógira."
+    );
+  }
+  const quaternion = new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(xAxis, yAxis, normal)
+  ).normalize().toArray();
+  const projected = [];
+  for (const point of points) {
+    const delta = new THREE.Vector3().fromArray(
+      vector3(point, "ponto do perfil")
+    ).sub(origin);
+    const next = [delta.dot(xAxis), delta.dot(yAxis)];
+    const previous = projected.at(-1);
+    if (!previous || Math.hypot(
+      next[0] - previous[0],
+      next[1] - previous[1]
+    ) > 1e-9) {
+      projected.push(next);
+    }
+  }
+  if (projected.length > minimum && near2(
+    projected[0],
+    projected.at(-1)
+  )) {
+    projected.pop();
+  }
+  if (projected.length < minimum) {
+    throw new RangeError(
+      `O perfil desenhado exige ao menos ${minimum} pontos distintos.`
+    );
+  }
+  if (minimum >= 3 && Math.abs(signedArea2(projected)) < 1e-10) {
+    throw new Error("O perfil desenhado possui área nula.");
+  }
+  return Object.freeze({
+    points: Object.freeze(
+      projected.map(point => Object.freeze(point))
+    ),
+    frame: Object.freeze({
+      origin: Object.freeze(origin.toArray()),
+      normal: Object.freeze(normal.toArray()),
+      xAxis: Object.freeze(xAxis.toArray()),
+      yAxis: Object.freeze(yAxis.toArray()),
+      quaternion: Object.freeze(quaternion),
+      source: frame.source ?? null
+    })
+  });
+}
+
+function validateSketchGeometryPlan(plan, { issued = false } = {}) {
+  if (plan?.type !== SKETCH_GEOMETRY_PLAN_TYPE ||
+      plan?.version !== SKETCH_GEOMETRY_PLAN_VERSION) {
+    throw new TypeError("Plano preparado de geometria desenhada inválido.");
+  }
+  if (!issued || !Object.isFrozen(plan)) {
+    throw new Error(
+      "O plano de geometria desenhada não foi emitido por este serviço."
+    );
+  }
+  if (!["sweep", "extrude", "revolve"].includes(plan.mode)) {
+    throw new RangeError("Modo do plano de geometria desenhada inválido.");
+  }
+  if (!Array.isArray(plan.position) || plan.position.length !== 3 ||
+      !plan.position.every(value => Number.isFinite(Number(value)))) {
+    throw new TypeError("Posição da geometria desenhada inválida.");
+  }
+  if (!Array.isArray(plan.rotation) || plan.rotation.length !== 4 ||
+      !plan.rotation.every(value => Number.isFinite(Number(value)))) {
+    throw new TypeError("Rotação da geometria desenhada inválida.");
+  }
+  if (!plan.geometry || typeof plan.geometry !== "object") {
+    throw new TypeError("Descritor da geometria desenhada ausente.");
+  }
+  if (!Number.isInteger(plan.pointCount) || plan.pointCount < 2) {
+    throw new RangeError("Geometria desenhada exige ao menos dois pontos.");
+  }
+  return plan;
+}
+
+function near2(left, right, epsilon = 1e-9) {
+  return Math.hypot(
+    Number(left[0]) - Number(right[0]),
+    Number(left[1]) - Number(right[1])
+  ) <= epsilon;
+}
+
+function signedArea2(points) {
+  let sum = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const [x1, y1] = points[index];
+    const [x2, y2] = points[(index + 1) % points.length];
+    sum += x1 * y2 - x2 * y1;
+  }
+  return sum * 0.5;
+}
 
 function validatePathCreatePlan(plan, { issued = false } = {}) {
   if (plan?.type !== PATH_CREATE_PLAN_TYPE ||
@@ -2209,6 +2547,14 @@ function positive(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) {
     throw new RangeError(`${name} deve ser positivo.`);
+  }
+  return number;
+}
+
+function nonNegative(value, name) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) {
+    throw new RangeError(`${name} deve ser não negativo.`);
   }
   return number;
 }

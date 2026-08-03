@@ -167,7 +167,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260802-0047e";
+} from "../../devtools/src/DevConsole.js?build=20260802-0047f";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -256,7 +256,7 @@ import {
   ToolParameterStore,
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "../../edit-tools/src/index.js?build=20260802-0047e";
+} from "../../edit-tools/src/index.js?build=20260802-0047f";
 import {
   deriveHudContext,
   geometryToolIcon,
@@ -356,7 +356,7 @@ import {
 } from "./ModuleRegistryTests.js?build=20260802-0047b";
 import {
   createToolCapabilityTests
-} from "./ToolCapabilityTests.js?build=20260802-0047e";
+} from "./ToolCapabilityTests.js?build=20260802-0047f";
 import {
   BenchmarkRunner
 } from "../../benchmarks/src/index.js?build=20260802-0047a";
@@ -1849,6 +1849,18 @@ export function createRuntimeLayerTests() {
           "orientation=plane uLength=4 rotateZ=360*u scale=0.5-u " +
           "colorExpr=hsl(360*fract(u),0.8,0.55)"
         );
+        console.execute(
+          "path draw mode=sweep profile=profile-a segments=40 " +
+          "twist=15 scaleStart=0.5 scaleEnd=1.5 caps=off"
+        );
+        console.execute(
+          "path draw mode=extrude depth=2 steps=3 curveSegments=18 " +
+          "bevel=off color=#123456"
+        );
+        console.execute(
+          "path draw mode=revolve segments=48 phiStart=10 " +
+          "phiLength=180 color=#654321"
+        );
         assertEqual(Object.hasOwn(calls[0].args, "radius"), false);
         assertEqual(calls[1].id, "path.sketch.begin");
         assertDeepEqual(calls[1].args, {});
@@ -1874,6 +1886,24 @@ export function createRuntimeLayerTests() {
           calls[2].args.affineColor,
           "hsl(360*fract(u),0.8,0.55)"
         );
+        assertEqual(calls[3].args.mode, "sweep");
+        assertEqual(calls[3].args.profileObjectId, "profile-a");
+        assertEqual(calls[3].args.sweepSegments, 40);
+        assertNear(calls[3].args.sweepTwistDegrees, 15);
+        assertNear(calls[3].args.scaleStart, 0.5);
+        assertNear(calls[3].args.scaleEnd, 1.5);
+        assertEqual(calls[3].args.caps, false);
+        assertEqual(calls[4].args.mode, "extrude");
+        assertNear(calls[4].args.depth, 2);
+        assertEqual(calls[4].args.extrudeSteps, 3);
+        assertEqual(calls[4].args.curveSegments, 18);
+        assertEqual(calls[4].args.bevelEnabled, false);
+        assertEqual(calls[4].args.extrudeColor, "#123456");
+        assertEqual(calls[5].args.mode, "revolve");
+        assertEqual(calls[5].args.revolveSegments, 48);
+        assertNear(calls[5].args.phiStartDeg, 10);
+        assertNear(calls[5].args.phiLengthDeg, 180);
+        assertEqual(calls[5].args.revolveColor, "#654321");
         const invalid = console.execute(
           "path draw mode=array params={\"radius\":0.4}"
         )[0];
@@ -2083,6 +2113,114 @@ export function createRuntimeLayerTests() {
         const radial = a.clone().add(b).add(c).multiplyScalar(1 / 3);
         radial.z = 0;
         assertEqual(normal.dot(radial) > 0, true);
+      },
+
+      "mesma captura prepara caminho de varredura com perfil selecionável"() {
+        const fixture = createPathToolFixture();
+        const profile = fixture.service.resolveSketchProfile({
+          profileObjectId: "profile-source",
+          profileExtraction: "contour"
+        });
+        const plan = fixture.service.prepareSketchOutputPlan({
+          mode: "sweep",
+          points: [[0, 0, 0], [0, 1, 0], [1, 2, 0]],
+          resolvedProfile: profile,
+          curveType: "polyline",
+          sweepSegments: 4,
+          caps: true,
+          color: "#7f9cff"
+        });
+        const before = fixture.sandbox.objectCount;
+        const result = fixture.service.commitSketchOutputPlan({ plan });
+        const object = fixture.sandbox.getObject(result.id);
+
+        assertEqual(plan.mode, "sweep");
+        assertEqual(plan.inputRole, "path");
+        assertEqual(plan.profile.objectId, "profile-source");
+        assertEqual(plan.geometry.type, "buffer");
+        assertEqual(plan.diagnostics.rings, 5);
+        assertEqual(result.changed, true);
+        assertEqual(fixture.sandbox.objectCount, before + 1);
+        assertEqual(object.geometry.type, "buffer");
+        assertThrowsMessage(
+          () => fixture.service.prepareSketchOutputPlan({
+            mode: "sweep",
+            points: [[0, 0, 0], [0, 1, 0]],
+            resolvedProfile: structuredClone(profile)
+          }),
+          "não foi resolvido"
+        );
+      },
+
+      "perfil desenhado produz extrusão no frame do desenho"() {
+        const fixture = createPathToolFixture();
+        const frame = Object.freeze({
+          origin: [10, 2, -3],
+          xAxis: [1, 0, 0],
+          yAxis: [0, 0, -1],
+          normal: [0, 1, 0],
+          quaternion: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+          source: "test-plane"
+        });
+        const plan = fixture.service.prepareSketchOutputPlan({
+          mode: "extrude",
+          points: [
+            [9, 2, -2],
+            [11, 2, -2],
+            [11, 2, -4],
+            [9, 2, -4]
+          ],
+          frame,
+          depth: 2.5,
+          bevelEnabled: false,
+          color: "#66b5a3"
+        });
+        const result = fixture.service.commitSketchOutputPlan({ plan });
+        const object = fixture.sandbox.getObject(result.id);
+
+        assertEqual(plan.mode, "extrude");
+        assertEqual(plan.inputRole, "profile");
+        assertDeepEqual(plan.geometry.contour, [
+          [-1, -1],
+          [1, -1],
+          [1, 1],
+          [-1, 1]
+        ]);
+        assertNear(plan.geometry.depth, 2.5);
+        assertDeepEqual(object.position, frame.origin);
+        object.rotation.forEach((value, index) =>
+          assertNear(value, frame.quaternion[index])
+        );
+        assertEqual(object.geometry.type, "extrude");
+      },
+
+      "perfil desenhado produz revolução e rejeita plano forjado"() {
+        const fixture = createPathToolFixture();
+        const frame = {
+          origin: [0, 0, 0],
+          xAxis: [1, 0, 0],
+          yAxis: [0, 1, 0],
+          normal: [0, 0, 1],
+          quaternion: [0, 0, 0, 1]
+        };
+        const plan = fixture.service.prepareSketchOutputPlan({
+          mode: "revolve",
+          points: [[0, -1, 0], [1, -1, 0], [1, 1, 0], [0, 1, 0]],
+          frame,
+          revolveSegments: 24,
+          phiLengthDeg: 180,
+          color: "#d29b62"
+        });
+
+        assertEqual(plan.geometry.type, "lathe");
+        assertEqual(plan.geometry.segments, 24);
+        assertNear(plan.geometry.phiLengthDeg, 180);
+        assertThrowsMessage(
+          () => fixture.service.commitSketchOutputPlan({
+            plan: Object.freeze({ ...plan })
+          }),
+          "não foi emitido"
+        );
       },
 
       "resolver usa pontos declarados do tubo no espaço mundial"() {
@@ -3488,6 +3626,101 @@ export function createRuntimeLayerTests() {
           assertEqual(
             fixture.sandbox.getObject(completed.result.id).kind,
             "stroke-bundle"
+          );
+          assertEqual(controller.status().active, false);
+          assertEqual(
+            controller.transientStatus().scene.handoffs,
+            0
+          );
+          assertEqual(
+            fixture.sandbox.getHistoryDiagnostics().commandCount,
+            1
+          );
+        } finally {
+          controller.dispose();
+          if (previousAddEventListener === undefined) {
+            delete globalThis.addEventListener;
+          } else {
+            globalThis.addEventListener = previousAddEventListener;
+          }
+          if (previousRemoveEventListener === undefined) {
+            delete globalThis.removeEventListener;
+          } else {
+            globalThis.removeEventListener = previousRemoveEventListener;
+          }
+          if (previousRequestAnimationFrame === undefined) {
+            delete globalThis.requestAnimationFrame;
+          } else {
+            globalThis.requestAnimationFrame =
+              previousRequestAnimationFrame;
+          }
+          if (previousCancelAnimationFrame === undefined) {
+            delete globalThis.cancelAnimationFrame;
+          } else {
+            globalThis.cancelAnimationFrame =
+              previousCancelAnimationFrame;
+          }
+        }
+      },
+
+      "controlador desenha perfil de extrusão com preview e commit únicos"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        const previousRequestAnimationFrame =
+          globalThis.requestAnimationFrame;
+        const previousCancelAnimationFrame =
+          globalThis.cancelAnimationFrame;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        delete globalThis.requestAnimationFrame;
+        delete globalThis.cancelAnimationFrame;
+        const fixture = createPathToolFixture();
+        const renderer = createPathSketchRendererStub();
+        let completed = null;
+        const controller = new PathSketchController({
+          renderer,
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          onCompleted: value => { completed = value; }
+        });
+        try {
+          controller.begin({
+            mode: "extrude",
+            planeSource: "world-xy",
+            curveType: "polyline",
+            inputSamplePixels: 1,
+            simplify: 0,
+            smoothIterations: 0,
+            depth: 2,
+            bevelEnabled: false
+          });
+          renderer.canvas.emit(
+            "pointerdown",
+            pathPointerEvent(1, 20, 20)
+          );
+          renderer.canvas.emit(
+            "pointermove",
+            pathPointerEvent(1, 80, 20)
+          );
+          assertEqual(controller.status().previewCount, 0);
+          renderer.canvas.emit(
+            "pointermove",
+            pathPointerEvent(1, 80, 80)
+          );
+          assertEqual(controller.status().previewCount, 1);
+          renderer.canvas.emit(
+            "pointerup",
+            pathPointerEvent(1, 20, 80)
+          );
+
+          assert(completed);
+          assertEqual(completed.result.mode, "extrude");
+          assertEqual(completed.preparedPlan.inputRole, "profile");
+          assertEqual(completed.preparedPlan.geometry.type, "extrude");
+          assertNear(completed.preparedPlan.geometry.depth, 2);
+          assertEqual(
+            fixture.sandbox.getObject(completed.result.id).geometry.type,
+            "extrude"
           );
           assertEqual(controller.status().active, false);
           assertEqual(

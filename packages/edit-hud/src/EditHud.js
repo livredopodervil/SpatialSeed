@@ -2,19 +2,19 @@ import {
   deriveHudContext,
   geometryToolIcon,
   geometryToolPriority
-} from "./HudContextHeuristics.js?build=20260730-0041b";
+} from "./HudContextHeuristics.js?build=20260802-0047f";
 
 const STORAGE_KEY = "spatialseed.edit.hud.v1";
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 const GEOMETRY_CREATION_STORAGE_KEY = "spatialseed.geometry.creation.defaults.v1";
 const STATIC_GROUP_ORDER = Object.freeze([
   "subject", "tool", "quick", "selection", "frame", "axes",
-  "snap", "navigation", "reference", "drawing-target", "appearance", "planar", "measure", "lifecycle",
+  "snap", "navigation", "reference", "drawing-target", "appearance", "planar", "draw", "measure", "lifecycle",
   "creation", "actions", "session"
 ]);
 const STATIC_ACTION_ORDER = Object.freeze([
   "edit-hud-create", "edit-hud-create-light", "edit-hud-material",
-  "edit-hud-enter-mesh", "edit-hud-draw-path", "edit-hud-group",
+  "edit-hud-enter-mesh", "edit-hud-group",
   "edit-hud-ungroup", "edit-hud-fuse-families", "edit-hud-fuse-strokes",
   "edit-hud-duplicate", "edit-hud-delete",
   "edit-hud-select-all", "edit-hud-select-none", "edit-hud-select-invert",
@@ -64,6 +64,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
     "drawing-target": true,
     appearance: true,
     planar: true,
+    draw: true,
     measure: true,
     lifecycle: true,
     creation: true,
@@ -73,10 +74,11 @@ const DEFAULT_PREFERENCES = Object.freeze({
 });
 
 export class EditHud {
-  static apiVersion = "edit-hud-v3";
+  static apiVersion = "edit-hud-v4";
 
   #unsubscribe = null;
   #unsubscribeHistory = null;
+  #unsubscribeTools = null;
   #historyFrame = null;
   #preferences = structuredClone(DEFAULT_PREFERENCES);
   #drag = null;
@@ -96,6 +98,7 @@ export class EditHud {
     execute,
     subscribe,
     subscribeHistory = null,
+    subscribeTools = null,
     openWorkspace = null
   }) {
     if (!root) throw new TypeError("EditHud exige root.");
@@ -107,6 +110,7 @@ export class EditHud {
     this.execute = execute;
     this.openWorkspace = openWorkspace;
     this.#loadPreferences();
+    this.#buildCanonicalDrawTools();
     this.#buildGeometryTools();
     this.#prepareHints();
     this.#bind();
@@ -115,12 +119,16 @@ export class EditHud {
     this.#unsubscribeHistory = subscribeHistory?.(() =>
       this.#scheduleHistoryRefresh()
     ) ?? null;
+    this.#unsubscribeTools = subscribeTools?.(() =>
+      this.#refreshCanonicalTools()
+    ) ?? null;
     this.refresh();
   }
 
   dispose() {
     this.#unsubscribe?.();
     this.#unsubscribeHistory?.();
+    this.#unsubscribeTools?.();
     if (this.#historyFrame !== null) {
       if (typeof globalThis.cancelAnimationFrame === "function") {
         globalThis.cancelAnimationFrame(this.#historyFrame);
@@ -399,9 +407,23 @@ export class EditHud {
       ));
     }
     for (const button of this.root.querySelectorAll("[data-edit-tool]")) {
+      button.addEventListener("click", () => {
+        const mode = button.dataset.editTool;
+        if (["translate", "rotate", "scale"].includes(mode)) {
+          this.#execute("authoring.tool.activate", {
+            toolId: `transform.${mode}`
+          });
+          return;
+        }
+        this.#execute("edit.context.tool.set", { mode });
+      });
+    }
+    for (const button of this.root.querySelectorAll(
+      "[data-authoring-tool-id]"
+    )) {
       button.addEventListener("click", () => this.#execute(
-        "edit.context.tool.set",
-        { mode: button.dataset.editTool }
+        "authoring.tool.activate",
+        { toolId: button.dataset.authoringToolId }
       ));
     }
     for (const button of this.root.querySelectorAll("[data-edit-selection-operation]")) {
@@ -802,7 +824,6 @@ export class EditHud {
       this.#beginRememberedObjectPlacement()
     );
     action("edit-hud-enter-mesh", "mesh.edit.enter");
-    action("edit-hud-draw-path", "path.sketch.begin");
     this.#element("edit-hud-create-light").addEventListener("click", () =>
       this.#createRememberedLight()
     );
@@ -855,15 +876,15 @@ export class EditHud {
     action("edit-hud-create-face", "mesh.topology.apply", () => ({ operation: "create-face" }));
     action("edit-hud-fill", "mesh.topology.apply", () => ({ operation: "fill" }));
     action("edit-hud-weld", "mesh.topology.apply", () => ({ operation: "weld" }));
-    action("edit-hud-extrude", "mesh.topology.apply", () => ({
-      operation: "extrude"
+    action("edit-hud-extrude", "authoring.tool.execute", () => ({
+      toolId: "mesh.extrude"
     }));
-    action("edit-hud-inset", "mesh.topology.apply", () => ({
-      operation: "inset"
+    action("edit-hud-inset", "authoring.tool.execute", () => ({
+      toolId: "mesh.inset"
     }));
-    action("edit-hud-split", "mesh.topology.apply", () => ({
-      operation: "split",
-      options: { parameter: 0.5 }
+    action("edit-hud-split", "authoring.tool.execute", () => ({
+      toolId: "mesh.split",
+      input: { parameter: 0.5 }
     }));
     action("edit-hud-collapse", "mesh.topology.apply", () => ({ operation: "collapse" }));
     action("edit-hud-flip-edge", "mesh.topology.apply", () => ({ operation: "flip-edge" }));
@@ -1386,8 +1407,57 @@ export class EditHud {
     this.#element("edit-hud-array-along-path").disabled = !heuristic.canArrayAlongPath;
     this.#element("edit-hud-create").dataset.active =
       state.activeAction === "object.place" ? "true" : "false";
-    this.#element("edit-hud-draw-path").dataset.active =
-      state.activeAction === "path.sketch" ? "true" : "false";
+    this.#refreshCanonicalTools();
+  }
+
+  #buildCanonicalDrawTools() {
+    const group = this.#element("edit-hud-draw-tools");
+    const tools = this.query("authoring.tools.list", {
+      family: "draw",
+      includeUnavailable: true
+    }) ?? [];
+    group.replaceChildren(...[...tools]
+      .sort((left, right) =>
+        left.presentation.order - right.presentation.order ||
+        left.label.localeCompare(right.label)
+      )
+      .map(tool => {
+        const button = this.root.ownerDocument.createElement("button");
+        button.type = "button";
+        button.id = `edit-hud-tool-${safeId(tool.id)}`;
+        button.dataset.authoringToolId = tool.id;
+        button.textContent = tool.presentation.icon;
+        button.title = tool.description || tool.label;
+        button.setAttribute("aria-label", tool.label);
+        return button;
+      }));
+  }
+
+  #refreshCanonicalTools() {
+    const tools = this.query("authoring.tools.list", {
+      family: "draw",
+      includeUnavailable: true
+    }) ?? [];
+    const byId = new Map(tools.map(tool => [tool.id, tool]));
+    const group = this.root.querySelector('[data-edit-hud-group="draw"]');
+    let visible = 0;
+    for (const button of group?.querySelectorAll(
+      "[data-authoring-tool-id]"
+    ) ?? []) {
+      const tool = byId.get(button.dataset.authoringToolId);
+      const available = Boolean(tool?.state?.available);
+      button.hidden = !tool;
+      button.disabled = !available;
+      button.dataset.available = available ? "true" : "false";
+      button.dataset.active = tool?.state?.active ? "true" : "false";
+      button.title = available
+        ? tool.description || tool.label
+        : `${tool?.label ?? button.dataset.authoringToolId}: ${
+            tool?.state?.reason ?? "indisponível"
+          }`;
+      if (tool) visible += 1;
+    }
+    if (group) group.dataset.contextHidden = visible ? "false" : "true";
   }
 
   #buildGeometryTools() {
@@ -1943,7 +2013,6 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-create-light": ["Criar luz", "Cria uma luz com tipo, cor, intensidade e sombras memorizados."],
   "edit-hud-material": ["Materiais e luzes", "Abre no painel Editar os parâmetros do material ou da luz selecionada."],
   "edit-hud-enter-mesh": ["Editar malha", "Isola a malha do objeto selecionado e inicia uma sessão local de edição de componentes."],
-  "edit-hud-draw-path": ["Desenhar spline", "Desenha à mão livre e une automaticamente tubos que se tocam. Toque novamente no ícone para desarmar."],
   "edit-hud-group": ["Agrupar", "Cria um grupo contendo os objetos selecionados."],
   "edit-hud-ungroup": ["Desagrupar", "Remove o grupo selecionado e preserva seus filhos na cena."],
   "edit-hud-fuse-families": ["Compactar instâncias", "Combina famílias instanciadas compatíveis sem criar um objeto completo para cada membro. Use para distribuições, repetições e pincéis geométricos."],

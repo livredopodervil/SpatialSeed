@@ -1,7 +1,7 @@
 const CREATION_STORAGE_KEY = "spatialseed.edit.creation-material.v1";
 
 export class MeshEditPanel {
-  static apiVersion = "mesh-edit-panel-v9";
+  static apiVersion = "mesh-edit-panel-v10";
   #creationReferencesSource = null;
   #referenceOptionsSource = null;
   #referenceById = new Map();
@@ -24,8 +24,10 @@ export class MeshEditPanel {
     this.creationDefaults = loadCreationDefaults();
     this.geometryCatalog = this.query("geometry.catalog") ?? [];
     this.brushGeometryRenderKey = null;
-    this.toolDefinitions = this.query("edit.tools.describe") ?? [];
-    this.parameterToolId = "path.sketch";
+    this.toolDefinitions = (
+      this.query("authoring.tools.list", { includeUnavailable: true }) ?? []
+    ).filter(definition => definition.operations?.parameters);
+    this.parameterToolId = "draw.tube";
     this.unsubscribeToolParameters = null;
     this.unsubscribe = subscribe?.(snapshot => this.refresh(snapshot)) ?? null;
     this.unsubscribeContext = subscribeContext?.(() => this.refresh()) ?? null;
@@ -315,9 +317,7 @@ export class MeshEditPanel {
     this.#text(
       "path-sketch-status",
       sketch.active
-        ? `Desenho ${
-            sketch.mode === "array" ? "com pincel geométrico" : "de tubo"
-          }: ${sketch.pointCount} pontos; preview ${
+        ? `${sketchModeLabel(sketch.mode)}: ${sketch.pointCount} pontos; preview ${
             sketch.previewCount ?? 0
           }${sketch.previewTruncated ? " (limite visual)" : ""}${
             source
@@ -797,28 +797,23 @@ export class MeshEditPanel {
       option.textContent = `${definition.label} · ${definition.family}`;
       return option;
     }));
-    const status = this.query("edit.tool.parameters.status") ?? {};
-    const preferred = this.toolDefinitions.some(
-      definition => definition.id === status.activeToolId
-    )
-      ? status.activeToolId
-      : this.parameterToolId;
+    const status = this.query("authoring.tool.status") ?? {};
+    const preferred = (status.activeToolIds ?? []).find(id =>
+      this.toolDefinitions.some(definition => definition.id === id)
+    ) ?? this.parameterToolId;
     if (this.toolDefinitions.some(definition => definition.id === preferred)) {
       this.parameterToolId = preferred;
       select.value = preferred;
     }
     select.addEventListener("change", () => {
       this.parameterToolId = select.value;
-      this.#execute("edit.tool.parameters.activate", {
-        toolId: this.parameterToolId
-      });
       this.#renderToolParameterFields();
     });
     this.#element("edit-tool-parameter-reset").addEventListener("click", () => {
-      const values = this.#execute("edit.tool.parameters.reset", {
+      const result = this.#execute("authoring.tool.parameters.reset", {
         toolId: this.parameterToolId
       });
-      if (values) {
+      if (result?.values) {
         this.#renderToolParameterFields();
         this.#text(
           "edit-tool-parameter-status",
@@ -832,8 +827,10 @@ export class MeshEditPanel {
 
   #refreshToolParameterPanel() {
     const select = this.#element("edit-tool-parameter-select");
-    const status = this.query("edit.tool.parameters.status") ?? {};
-    const active = status.activeToolId;
+    const status = this.query("authoring.tool.status") ?? {};
+    const active = (status.activeToolIds ?? []).find(id =>
+      this.toolDefinitions.some(definition => definition.id === id)
+    );
     if (active && this.toolDefinitions.some(definition => definition.id === active) &&
         active !== this.parameterToolId) {
       this.parameterToolId = active;
@@ -842,7 +839,7 @@ export class MeshEditPanel {
       this.#renderToolParameterFields();
       return;
     }
-    const result = this.query("edit.tool.parameters.get", {
+    const result = this.query("authoring.tool.parameters.get", {
       toolId: this.parameterToolId
     });
     if (!result?.values) return;
@@ -864,7 +861,7 @@ export class MeshEditPanel {
       container.replaceChildren();
       return;
     }
-    const result = this.query("edit.tool.parameters.get", {
+    const result = this.query("authoring.tool.parameters.get", {
       toolId: definition.id
     });
     const values = result?.values ?? {};
@@ -907,7 +904,7 @@ export class MeshEditPanel {
     control.addEventListener("change", () => {
       try {
         const value = readParameterControlValue(control, parameter);
-        const next = this.#execute("edit.tool.parameters.set", {
+        const next = this.#execute("authoring.tool.parameters.set", {
           toolId: definition.id,
           patch: { [parameter.id]: value }
         });
@@ -915,7 +912,7 @@ export class MeshEditPanel {
           this.#refreshToolParameterPanel();
           return;
         }
-        this.#applyToolParameterVisibility(next);
+        this.#applyToolParameterVisibility(next.values);
         this.#restoreRememberedToolControls();
         this.#text(
           "edit-tool-parameter-status",
@@ -1006,7 +1003,9 @@ export class MeshEditPanel {
   }
 
   #refreshSketchModeVisibility() {
-    const arrayMode = this.#element("path-sketch-mode").value === "array";
+    const mode = this.#element("path-sketch-mode").value;
+    const arrayMode = mode === "array";
+    const tubeMode = mode === "tube";
     const catalogSource =
       this.#element("path-sketch-source").value === "catalog";
     const spacingMode =
@@ -1034,7 +1033,7 @@ export class MeshEditPanel {
       this.#element("path-sketch-spacing-scale")).hidden =
         !arrayMode || spacingMode !== "auto";
     (this.#element("path-sketch-radius").closest("label") ??
-      this.#element("path-sketch-radius")).hidden = arrayMode;
+      this.#element("path-sketch-radius")).hidden = !tubeMode;
     this.#element("path-sketch-geometry-settings").hidden =
       !arrayMode || !catalogSource;
     this.#element("path-sketch-affine-settings").hidden = !arrayMode;
@@ -1048,10 +1047,16 @@ export class MeshEditPanel {
       ));
     }
     for (const button of this.root.querySelectorAll("[data-edit-workspace-tool]")) {
-      button.addEventListener("click", () => this.#execute(
-        "edit.context.tool.set",
-        { mode: button.dataset.editWorkspaceTool }
-      ));
+      button.addEventListener("click", () => {
+        const mode = button.dataset.editWorkspaceTool;
+        if (["translate", "rotate", "scale"].includes(mode)) {
+          this.#execute("authoring.tool.activate", {
+            toolId: `transform.${mode}`
+          });
+          return;
+        }
+        this.#execute("edit.context.tool.set", { mode });
+      });
     }
     for (const button of this.root.querySelectorAll("[data-edit-workspace-selection]")) {
       button.addEventListener("click", () => this.#execute(
@@ -1318,17 +1323,17 @@ export class MeshEditPanel {
     ]) {
       this.#click(id, "mesh.topology.apply", () => ({ operation }));
     }
-    this.#click("mesh-extrude", "mesh.topology.apply", () => ({
-      operation: "extrude",
-      options: { distance: this.#number("mesh-extrude-distance") }
+    this.#click("mesh-extrude", "authoring.tool.execute", () => ({
+      toolId: "mesh.extrude",
+      input: { distance: this.#number("mesh-extrude-distance") }
     }));
-    this.#click("mesh-inset", "mesh.topology.apply", () => ({
-      operation: "inset",
-      options: { amount: this.#number("mesh-inset-amount") }
+    this.#click("mesh-inset", "authoring.tool.execute", () => ({
+      toolId: "mesh.inset",
+      input: { amount: this.#number("mesh-inset-amount") }
     }));
-    this.#click("mesh-split", "mesh.topology.apply", () => ({
-      operation: "split",
-      options: { parameter: this.#number("mesh-split-parameter") }
+    this.#click("mesh-split", "authoring.tool.execute", () => ({
+      toolId: "mesh.split",
+      input: { parameter: this.#number("mesh-split-parameter") }
     }));
     this.#element("mesh-deform-operation").addEventListener("change", () => {
       const presets = {
@@ -1999,6 +2004,16 @@ function rememberedToolControls() {
       number: true
     })
   ];
+}
+
+function sketchModeLabel(mode) {
+  return {
+    tube: "Desenho de tubo",
+    array: "Desenho com pincel geométrico",
+    sweep: "Extrusão pelo caminho desenhado",
+    extrude: "Desenho do perfil de extrusão",
+    revolve: "Desenho do perfil de revolução"
+  }[mode] ?? "Autoria por desenho";
 }
 
 function toolControl(toolId, parameterId, controlId, options = {}) {

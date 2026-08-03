@@ -172,14 +172,16 @@ forma fluida para pessoas, procedures, agentes e colaboração. Preservar PWA,
 desempenho e comportamento existente é requisito de cada incremento, não o
 objetivo que deve consumir a maior parte do trabalho.
 
-O build `0047e` introduz a fachada `authoring.tool.*` como porta única de
-descrição, estado, parâmetros e invocação. Ela adapta explicitamente as fontes
-atuais e não lê o DOM. O próximo incremento deve fazer uma primeira família
-visual completa — transformações e/ou desenho de caminho — nascer desses
-descritores no HUD e no editor de layout, retirando no mesmo patch os IDs,
-listas e listeners hardcoded que essa família substituir. A migração deve ser
-guiada pelos fluxos reais de uso: menos navegação, intenções nomeadas, estado
-ativo evidente e os mesmos comandos disponíveis de forma humana e procedural.
+O build `0047f` faz a primeira família visual nascer da fachada
+`authoring.tool.*`: tubo, distribuição, sweep, extrusão de perfil e revolução
+possuem intenções, ícones, entradas e parâmetros próprios, embora reutilizem o
+mesmo capturador. HUD e painel consultam os descritores canônicos; mover,
+girar, escalar, extrude, inset e split também já entram pela porta comum.
+
+O próximo incremento deve levar o mesmo modelo de apresentação aos perfis de
+aplicação e aos modificadores compartilhados de objeto/malha. O primeiro novo
+operador geométrico candidato é um recorte/inset por `boundary` desenhado; ele
+deve existir de verdade no núcleo topológico antes de ser anunciado no HUD.
 
 Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/PATH_REFERENCES_0037A.md`,
@@ -194,7 +196,8 @@ Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/project/MAIN_PROPOSAL_ARCHITECTURE.md`,
 `docs/project/WEB_APPLICATION_PROFILES.md` e
 `docs/project/BASELINE_GATES.md`. O contrato transitório de ferramentas está em
-`docs/AUTHORING_TOOL_CAPABILITIES_0047E.md`.
+`docs/AUTHORING_TOOL_CAPABILITIES_0047E.md` e
+`docs/DRAWN_AUTHORING_0047F.md`.
 
 ## Protocolo para nova LLM
 

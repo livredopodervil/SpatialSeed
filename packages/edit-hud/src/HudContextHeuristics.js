@@ -8,8 +8,10 @@ const BASE_GROUP_ORDER = Object.freeze([
   "snap",
   "navigation",
   "reference",
+  "drawing-target",
   "appearance",
   "planar",
+  "draw",
   "lifecycle",
   "creation",
   "actions",
@@ -23,7 +25,6 @@ const OBJECT_ACTIONS = Object.freeze([
   "edit-hud-ungroup",
   "edit-hud-enter-mesh",
   "edit-hud-material",
-  "edit-hud-draw-path",
   "edit-hud-create-light"
 ]);
 
@@ -116,26 +117,26 @@ export function deriveHudContext({
   let groupOrder;
   if (actionActive) {
     groupOrder = [
-      "quick", "lifecycle", "planar", "appearance", "creation", "tool", "selection",
-      "subject", "actions", "axes", "snap", "frame", "reference",
+      "quick", "lifecycle", "draw", "planar", "drawing-target", "appearance",
+      "creation", "tool", "selection", "subject", "actions", "axes", "snap", "frame", "reference",
       "navigation", "session"
     ];
   } else if (meshActive) {
     groupOrder = [
       "subject", "selection", "quick", "tool", "actions", "appearance", "axes", "snap",
-      "frame", "reference", "planar", "navigation", "lifecycle",
-      "creation", "session"
+      "frame", "reference", "planar", "draw", "drawing-target", "navigation",
+      "lifecycle", "creation", "session"
     ];
   } else if (hasSelection) {
     groupOrder = [
       "selection", "quick", "appearance", "actions", "tool", "subject", "creation",
-      "planar", "reference", "frame", "axes", "snap", "navigation",
+      "draw", "planar", "drawing-target", "reference", "frame", "axes", "snap", "navigation",
       "lifecycle", "session"
     ];
   } else {
     groupOrder = [
-      "creation", "appearance", "planar", "tool", "selection", "quick", "subject",
-      "reference", "frame", "axes", "snap", "navigation", "lifecycle",
+      "creation", "draw", "appearance", "planar", "drawing-target", "tool",
+      "selection", "quick", "subject", "reference", "frame", "axes", "snap", "navigation", "lifecycle",
       "actions", "session"
     ];
   }
@@ -148,7 +149,6 @@ export function deriveHudContext({
     ]
     : [
       ...(hasSelection ? OBJECT_ACTIONS : [
-        "edit-hud-draw-path",
         "edit-hud-create-light",
         "edit-hud-material",
         "edit-hud-enter-mesh",

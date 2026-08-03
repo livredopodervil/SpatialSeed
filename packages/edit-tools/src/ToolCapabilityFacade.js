@@ -1,5 +1,5 @@
 export const TOOL_CAPABILITY_DESCRIPTOR_VERSION =
-  "spatial-seed-tool-capability-v1";
+  "spatial-seed-tool-capability-v2";
 
 const TOOL_KINDS = new Set(["mode", "continuous", "operation"]);
 const TOOL_LIFECYCLES = new Set(["sticky", "continuous", "single-shot"]);
@@ -10,9 +10,16 @@ const TOOL_OPERATIONS = Object.freeze([
   "cancel",
   "parameters"
 ]);
+const TOOL_INPUT_ROLES = new Set([
+  "path",
+  "profile",
+  "selection",
+  "boundary",
+  "point"
+]);
 
 export class ToolCapabilityFacade {
-  static apiVersion = "tool-capability-facade-v1";
+  static apiVersion = "tool-capability-facade-v2";
 
   #adapters = new Map();
   #entries = new Map();
@@ -181,6 +188,25 @@ export class ToolCapabilityFacade {
     });
   }
 
+  resetParameters(toolId) {
+    this.#assertActive();
+    const entry = this.#entry(toolId);
+    if (!entry.descriptor.operations.parameters ||
+        typeof entry.adapter.resetParameters !== "function") {
+      throw new Error(
+        `Ferramenta ${entry.descriptor.id} não permite restaurar parâmetros.`
+      );
+    }
+    const values = entry.adapter.resetParameters(
+      entry.descriptor.id,
+      { descriptor: entry.descriptor }
+    );
+    return deepFreeze({
+      toolId: entry.descriptor.id,
+      values: structuredClone(values ?? {})
+    });
+  }
+
   capabilities() {
     this.#assertActive();
     return deepFreeze({
@@ -193,7 +219,8 @@ export class ToolCapabilityFacade {
         execute: "authoring.tool.execute",
         finish: "authoring.tool.finish",
         cancel: "authoring.tool.cancel",
-        setParameters: "authoring.tool.parameters.set"
+        setParameters: "authoring.tool.parameters.set",
+        resetParameters: "authoring.tool.parameters.reset"
       },
       queries: {
         list: "authoring.tools.list",
@@ -240,7 +267,10 @@ export class ToolCapabilityFacade {
     }
     const resolvedContext = this.#resolveContext(context);
     const state = this.#state(entry, resolvedContext);
-    if (requireAvailable && !state.available) {
+    const explicitlyBoundExecution = operation === "execute" &&
+      Array.isArray(input?.points) &&
+      descriptor.inputs.some(item => item.sources.includes("points"));
+    if (requireAvailable && !state.available && !explicitlyBoundExecution) {
       throw new Error(
         `Ferramenta ${descriptor.id} indisponível: ${
           state.reason ?? "contexto incompatível"
@@ -359,6 +389,12 @@ function normalizeDescriptor(source, adapterId) {
   }
   const presentation = source.presentation ?? {};
   const capabilities = source.capabilities ?? {};
+  const inputs = Object.freeze((source.inputs ?? []).map((input, index) =>
+    normalizeToolInput(input, id, index)
+  ));
+  if (new Set(inputs.map(input => input.id)).size !== inputs.length) {
+    throw new TypeError(`Entrada canônica duplicada na ferramenta ${id}.`);
+  }
   const nativeId = String(source.source?.nativeId ?? id);
   const descriptor = {
     descriptorVersion: TOOL_CAPABILITY_DESCRIPTOR_VERSION,
@@ -371,6 +407,7 @@ function normalizeDescriptor(source, adapterId) {
     kind,
     lifecycle,
     contexts: Object.freeze(contexts),
+    inputs,
     parameters: deepFreeze(structuredClone(source.parameters ?? [])),
     presentation: Object.freeze({
       label: String(presentation.label ?? source.label ?? id),
@@ -405,11 +442,44 @@ function normalizeDescriptor(source, adapterId) {
         : null,
       setParameters: operations.parameters
         ? "authoring.tool.parameters.set"
+        : null,
+      resetParameters: operations.parameters
+        ? "authoring.tool.parameters.reset"
         : null
     })
   };
   structuredClone(descriptor);
   return deepFreeze(descriptor);
+}
+
+function normalizeToolInput(source, toolId, index) {
+  if (!source || typeof source !== "object" || Array.isArray(source)) {
+    throw new TypeError(
+      `Entrada ${index + 1} inválida na ferramenta ${toolId}.`
+    );
+  }
+  const id = normalizeId(source.id, "entrada");
+  const role = String(source.role ?? "").trim().toLowerCase();
+  if (!TOOL_INPUT_ROLES.has(role)) {
+    throw new TypeError(
+      `Papel de entrada inválido em ${toolId}.${id}: ${role}.`
+    );
+  }
+  const sources = [...new Set((source.sources ?? [])
+    .map(value => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean))];
+  if (!sources.length) {
+    throw new TypeError(
+      `Entrada ${toolId}.${id} deve declarar ao menos uma fonte.`
+    );
+  }
+  return Object.freeze({
+    id,
+    role,
+    label: String(source.label ?? id),
+    required: source.required !== false,
+    sources: Object.freeze(sources)
+  });
 }
 
 function assertAdapterOperations(adapter, descriptor) {
@@ -422,9 +492,10 @@ function assertAdapterOperations(adapter, descriptor) {
       );
     }
     if (operation === "parameters" &&
-        typeof adapter.setParameters !== "function") {
+        (typeof adapter.setParameters !== "function" ||
+         typeof adapter.resetParameters !== "function")) {
       throw new TypeError(
-        `Adapter ${adapter.id} não implementa setParameters para ${descriptor.id}.`
+        `Adapter ${adapter.id} não implementa set/resetParameters para ${descriptor.id}.`
       );
     }
   }

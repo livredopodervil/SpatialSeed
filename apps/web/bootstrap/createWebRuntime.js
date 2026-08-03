@@ -20,7 +20,7 @@ import {
   createVirtualResourceTree,
   parseResourcePath
 } from "../../../packages/resource-tree/src/index.js?build=20260801-0045a1";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260802-0047e";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260802-0047f";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260731-0044a";
@@ -97,13 +97,13 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260729-0040a";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260729-0040a";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260802-0047f";
 import {
   EditContextController
 } from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260731-0044b";
+} from "../../../packages/edit-hud/src/index.js?build=20260802-0047f";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -111,7 +111,7 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260802-0047e";
+} from "../../../packages/edit-tools/src/index.js?build=20260802-0047f";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260730-0040e";
@@ -134,7 +134,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260731-0044b";
+} from "../../../packages/spatial-references/src/index.js?build=20260802-0047f";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -539,8 +539,9 @@ export async function createWebRuntime({
       const effectiveCurveType = preparedPlan?.path?.curveType ??
         preparedPlan?.curveType ??
         (targetType === "surface" ? "polyline" : settings.curveType);
-      const repeatable = settings.mode === "array"
-        ? {
+      let repeatable;
+      if (settings.mode === "array") {
+        repeatable = {
             id: "path.array.points.create",
             args: {
               points,
@@ -572,8 +573,9 @@ export async function createWebRuntime({
               affineColor: settings.affineColor
             },
             label: "Distribuir no caminho desenhado"
-          }
-        : {
+          };
+      } else if (settings.mode === "tube") {
+        repeatable = {
             id: "path.stroke.create",
             args: {
               points,
@@ -595,6 +597,45 @@ export async function createWebRuntime({
             },
             label: "Criar tubo desenhado"
           };
+      } else {
+        const commandsByMode = {
+          sweep: Object.freeze({
+            id: "path.sweep.points.create",
+            label: "Extrudar perfil no caminho desenhado"
+          }),
+          extrude: Object.freeze({
+            id: "profile.extrude.points.create",
+            label: "Extrudar perfil desenhado"
+          }),
+          revolve: Object.freeze({
+            id: "profile.revolve.points.create",
+            label: "Revolucionar perfil desenhado"
+          })
+        };
+        const command = commandsByMode[settings.mode];
+        repeatable = {
+          id: command.id,
+          args: {
+            ...settings,
+            points,
+            frame,
+            curveType: effectiveCurveType,
+            mode: settings.mode,
+            ...(settings.mode === "sweep"
+              ? {
+                  profileObjectId:
+                    preparedPlan?.profile?.objectId ??
+                    settings.profileObjectId,
+                  profileExtraction:
+                    preparedPlan?.profile?.extraction ??
+                    settings.profileExtraction
+                }
+              : {}),
+            continuous: false
+          },
+          label: command.label
+        };
+      }
       toolLifecycle.remember(repeatable);
       toolLifecycle.completeAction("path.sketch");
     },
@@ -753,6 +794,37 @@ export async function createWebRuntime({
       label: "Criar tubo desenhado"
     }
   );
+  for (const [id, mode, label] of [
+    [
+      "path.sweep.points.create",
+      "sweep",
+      "Extrudar perfil no caminho desenhado"
+    ],
+    [
+      "profile.extrude.points.create",
+      "extrude",
+      "Extrudar perfil desenhado"
+    ],
+    [
+      "profile.revolve.points.create",
+      "revolve",
+      "Revolucionar perfil desenhado"
+    ]
+  ]) {
+    commands.register(
+      id,
+      args => pathTools.createSketchGeometry({
+        ...args,
+        mode
+      }),
+      {
+        category: "path-tools",
+        mutates: true,
+        repeatable: true,
+        label
+      }
+    );
+  }
   commands.register(
     "drawing.target.set",
     args => drawingTarget.set(args),
@@ -1343,6 +1415,7 @@ export async function createWebRuntime({
     registry: toolRegistry,
     parameters: toolParameters,
     lifecycle: toolLifecycle,
+    drawingTarget,
     execute: (id, args) => commands.execute(id, args)
   });
   installToolCapabilityRuntime({
@@ -1788,7 +1861,8 @@ export async function createWebRuntime({
         unsubscribeDrawingTarget();
       };
     },
-    subscribeHistory: listener => sandbox.subscribe(() => listener())
+    subscribeHistory: listener => sandbox.subscribe(() => listener()),
+    subscribeTools: listener => toolCapabilities.subscribe(listener)
   });
   runtime.onDispose(() => renderer.disposeToolGestureNavigation());
   runtime.onDispose(() => editHud.dispose());
