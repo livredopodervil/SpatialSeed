@@ -84,6 +84,9 @@ import {
   scaleWorldTrsWithoutShear
 } from "./LocalBoundsScale.js?build=20260804-0048b";
 import {
+  VisualCommitHandoff
+} from "./VisualCommitHandoff.js?build=20260804-0048c1";
+import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
   familyMemberResourcePath,
@@ -110,6 +113,7 @@ export class ThreeRegionRenderer {
   #objectVisualListeners = new Set();
   #selectionSnapshot = null;
   #session = null;
+  #visualCommitHandoff = new VisualCommitHandoff();
   #tap = null;
   #lastPointer = null;
   #meshTopologyCache = new WeakMap();
@@ -254,6 +258,7 @@ export class ThreeRegionRenderer {
   #boundsScale = null;
   #boundsScalePickCycle = null;
   #meshEdit = null;
+  #meshEditHiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
   #inputDiagnostics = {
     pointerDown: 0,
     pointerUp: 0,
@@ -712,11 +717,6 @@ export class ThreeRegionRenderer {
     snapLine.visible = false;
     snapLine.renderOrder = 1299;
 
-    group.add(mesh, wire, faceOverlay, edgeOverlay, markers, snapMarker, snapLine);
-    this.scene.add(group);
-    this.#batchManager.update(id, new THREE.Matrix4().makeScale(0, 0, 0));
-    this.#flushBatchBounds();
-
     this.#meshEdit = {
       objectId: id,
       descriptor,
@@ -754,8 +754,13 @@ export class ThreeRegionRenderer {
       onTransformPreview:
         typeof onTransformPreview === "function" ? onTransformPreview : null,
       onTransformCommit:
-        typeof onTransformCommit === "function" ? onTransformCommit : null
+        typeof onTransformCommit === "function" ? onTransformCommit : null,
+      commitPending: false
     };
+    group.add(mesh, wire, faceOverlay, edgeOverlay, markers, snapMarker, snapLine);
+    this.scene.add(group);
+    this.#setMeshEditSourceVisible(false);
+    this.#flushBatchBounds();
     this.#updateMeshEditMarkerGeometry();
     this.#updateMeshEditEdgeGeometry();
     this.#updateMeshEditFaceOverlay();
@@ -936,30 +941,31 @@ export class ThreeRegionRenderer {
     if (!edit) return false;
     if (this.#session?.kind === "mesh") this.#session = null;
     this.transform.detach();
-    this.scene.remove(edit.group);
-    edit.mesh.geometry.dispose?.();
-    edit.mesh.material.dispose?.();
-    edit.wire.material.dispose?.();
-    edit.markers.geometry.dispose?.();
-    edit.markers.material.dispose?.();
-    edit.edgeOverlay.geometry.dispose?.();
-    edit.edgeOverlay.material.dispose?.();
-    edit.faceOverlay.geometry.dispose?.();
-    edit.faceOverlay.material.dispose?.();
-    edit.snapMarker.geometry.dispose?.();
-    edit.snapMarker.material.dispose?.();
-    edit.snapLine.geometry.dispose?.();
-    edit.snapLine.material.dispose?.();
-    if (restoreBatch) {
-      const proxy = this.#meshes.get(edit.objectId);
-      const matrix = proxy?.userData.canonicalWorldMatrix;
-      if (matrix) this.#batchManager.update(edit.objectId, matrix);
-    }
+    if (restoreBatch) this.#setMeshEditSourceVisible(true);
     this.#meshEdit = null;
+    this.#disposeMeshEditVisual(edit);
     this.#flushBatchBounds();
     this.#configureTransformForEditor();
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
+    return true;
+  }
+
+  deferMeshEditCommit() {
+    const edit = this.#meshEdit;
+    if (!edit || edit.commitPending) return false;
+    if (this.#session?.kind === "mesh") this.#session = null;
+    edit.commitPending = true;
+    edit.onVertexPick = null;
+    edit.onComponentPick = null;
+    edit.onTransformStart = null;
+    edit.onTransformPreview = null;
+    edit.onTransformCommit = null;
+    this.#setMeshEditSourceVisible(false);
+    this.transform.detach();
+    this.transform.enabled = false;
+    this.transform.getHelper().visible = false;
+    this.orbit.enabled = true;
     return true;
   }
 
@@ -968,6 +974,7 @@ export class ThreeRegionRenderer {
     if (!edit) return Object.freeze({ active: false });
     return Object.freeze({
       active: true,
+      commitPending: Boolean(edit.commitPending),
       objectId: edit.objectId,
       vertexCount: edit.descriptor.positions.length,
       edgeCount: edit.topology.edgeCount,
@@ -2325,13 +2332,16 @@ export class ThreeRegionRenderer {
     proxy.userData.size = object.size ? [...object.size] : [0,0,0];
     proxy.userData.canonicalWorldMatrix = [...worldMatrix];
     proxy.userData.appearanceBinding = appearanceBindingForObject(object);
+    const visualWorldMatrix = this.#visualCommitHandoff.has(object.id)
+      ? this.#visualCommitHandoff.project(object.id, worldMatrix)
+      : worldMatrix;
 
     if (
       !this.#session &&
       !this.#animationTargetIds.has(object.id) &&
       !this.#sharedTransformObjectIds.has(object.id)
     ) {
-      applyProjectedWorldMatrix(proxy,worldMatrix);
+      applyProjectedWorldMatrix(proxy, visualWorldMatrix);
     }
 
     if (object.kind === "light") {
@@ -2428,22 +2438,26 @@ export class ThreeRegionRenderer {
 
     this.#applyObjectInstanceColor(object.id);
     if (this.#meshEdit?.objectId === object.id) {
-      const location = this.#batchManager.locationOf(object.id);
-      const batch = location
-        ? this.#batchManager.getBatch(location.batchKey)
-        : null;
-      if (batch) {
-        const previousMaterial = this.#meshEdit.mesh.material;
-        this.#meshEdit.mesh.material = this.#cloneBatchMaterial(
-          batch,
-          object.id
-        );
-        previousMaterial.dispose?.();
+      if (this.#meshEdit.commitPending) {
+        const edit = this.#meshEdit;
+        this.#meshEdit = null;
+        this.#disposeMeshEditVisual(edit);
+        this.#configureTransformForEditor();
+      } else {
+        const location = this.#batchManager.locationOf(object.id);
+        const batch = location
+          ? this.#batchManager.getBatch(location.batchKey)
+          : null;
+        if (batch) {
+          const previousMaterial = this.#meshEdit.mesh.material;
+          this.#meshEdit.mesh.material = this.#cloneBatchMaterial(
+            batch,
+            object.id
+          );
+          previousMaterial.dispose?.();
+        }
+        this.#setMeshEditSourceVisible(false);
       }
-      this.#batchManager.update(
-        object.id,
-        new THREE.Matrix4().makeScale(0, 0, 0)
-      );
     }
   }
 
@@ -2451,6 +2465,12 @@ export class ThreeRegionRenderer {
     const startedAt = performance.now();
     const proxy = this.#meshes.get(id);
     if (!proxy) return false;
+    this.#visualCommitHandoff.remove(id);
+    if (this.#meshEdit?.objectId === id) {
+      const edit = this.#meshEdit;
+      this.#meshEdit = null;
+      this.#disposeMeshEditVisual(edit);
+    }
 
     const cameraVisual = Boolean(this.#cameraVisuals.has(id));
     const lightVisual = Boolean(this.#lightVisuals.has(id));
@@ -3029,6 +3049,7 @@ export class ThreeRegionRenderer {
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
+    this.#visualCommitHandoff.releaseAcknowledged();
   }
 
   #finishLocalizedSceneUpdate() {
@@ -3047,6 +3068,7 @@ export class ThreeRegionRenderer {
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
+    this.#visualCommitHandoff.releaseAcknowledged();
   }
 
   #scheduleHierarchyRefresh(state) {
@@ -3745,6 +3767,13 @@ export class ThreeRegionRenderer {
     }
 
     if (this.#meshEdit) {
+      if (this.#meshEdit.commitPending) {
+        this.transform.detach();
+        this.transform.enabled = false;
+        this.transform.getHelper().visible = false;
+        this.orbit.enabled = true;
+        return;
+      }
       const enabled = ["translate", "rotate", "scale"].includes(mode) &&
         this.#meshEdit.selectedIndices.size > 0;
       this.transform.enabled = enabled;
@@ -3787,7 +3816,9 @@ export class ThreeRegionRenderer {
     if (this.#session) return;
 
     if (this.#meshEdit) {
-      if (!this.#meshEdit.selectedIndices.size) return;
+      if (this.#meshEdit.commitPending ||
+          !this.#meshEdit.selectedIndices.size) return;
+      this.#setMeshEditSourceVisible(false);
       this.#meshEdit.onTransformStart?.();
       this.transformAnchor.updateMatrixWorld(true);
       this.#session = {
@@ -4101,7 +4132,7 @@ export class ThreeRegionRenderer {
         }
       }
 
-      const changed=!transforms.length || this.dispatch({
+      const changed = transforms.length > 0 && this.dispatch({
         type: "selection.transform-world",
         selection: this.#selectionSnapshot,
         pivot: {
@@ -4111,7 +4142,8 @@ export class ThreeRegionRenderer {
         transforms
       });
 
-      if (!changed) this.#restorePreviewSession(session);
+      if (changed) this.#beginSelectionVisualHandoff(session);
+      else this.#restorePreviewSession(session);
       this.#emitTransformPreview(
         changed ? "end" : "cancel",
         session
@@ -4135,6 +4167,24 @@ export class ThreeRegionRenderer {
       this.#transformLifecycleDiagnostics.lastCommitMs=
         performance.now()-startedAt;
     }
+  }
+
+  #beginSelectionVisualHandoff(session) {
+    if (session?.kind !== "selection") return 0;
+    let begun = 0;
+    for (const [objectId, snapshot] of session.previewObjects) {
+      const proxy = this.#meshes.get(objectId);
+      if (!proxy) continue;
+      proxy.updateMatrixWorld(true);
+      if (this.#visualCommitHandoff.beginObject(
+        objectId,
+        snapshot.matrixWorld.elements,
+        proxy.matrixWorld.toArray()
+      )) {
+        begun += 1;
+      }
+    }
+    return begun;
   }
 
   #restorePreviewSession(session) {
@@ -4299,6 +4349,10 @@ export class ThreeRegionRenderer {
 
     const object = this.#objectsById.get(id) ?? null;
     const proxy = this.#meshes.get(id) ?? null;
+    if (proxy && this.#visualCommitHandoff.has(id)) {
+      proxy.updateMatrixWorld(true);
+      return proxy.getWorldPosition(new THREE.Vector3());
+    }
     const defaultPolicy = object && (
       object.kind === "instance-family" ||
       object.kind === "stroke-bundle" ||
@@ -4345,6 +4399,10 @@ export class ThreeRegionRenderer {
     if (this.#session) return;
 
     if (this.#meshEdit) {
+      if (this.#meshEdit.commitPending) {
+        this.transform.detach();
+        return;
+      }
       const pivot = selectedVertexPivotWorld({
         positions: this.#meshEdit.descriptor.positions,
         selectedIndices: this.#meshEdit.selectedIndices,
@@ -4851,7 +4909,10 @@ export class ThreeRegionRenderer {
       pivotPosition: this.getSelectionPivotPosition(),
       selection: this.#selectionSnapshot,
       selectionAppearance: this.#selectionOutlines.diagnostics(),
-      lifecycle:structuredClone(this.#transformLifecycleDiagnostics)
+      lifecycle: Object.freeze({
+        ...structuredClone(this.#transformLifecycleDiagnostics),
+        visualHandoff: this.#visualCommitHandoff.status()
+      })
     };
   }
 
@@ -5476,6 +5537,39 @@ export class ThreeRegionRenderer {
       throw new Error("Nenhuma edição de malha está ativa no viewer.");
     }
     return this.#meshEdit;
+  }
+
+  #setMeshEditSourceVisible(visible) {
+    const edit = this.#meshEdit;
+    if (!edit) return false;
+    const proxy = this.#meshes.get(edit.objectId);
+    const matrix = visible
+      ? proxy?.userData.canonicalWorldMatrix
+      : this.#meshEditHiddenMatrix;
+    if (!matrix) return false;
+    const location = this.#batchManager.locationOf(edit.objectId);
+    const changed = this.#batchManager.update(edit.objectId, matrix);
+    if (changed) this.#markBatchDirty(location?.batchKey);
+    return changed;
+  }
+
+  #disposeMeshEditVisual(edit) {
+    if (!edit) return false;
+    this.scene.remove(edit.group);
+    edit.mesh.geometry.dispose?.();
+    edit.mesh.material.dispose?.();
+    edit.wire.material.dispose?.();
+    edit.markers.geometry.dispose?.();
+    edit.markers.material.dispose?.();
+    edit.edgeOverlay.geometry.dispose?.();
+    edit.edgeOverlay.material.dispose?.();
+    edit.faceOverlay.geometry.dispose?.();
+    edit.faceOverlay.material.dispose?.();
+    edit.snapMarker.geometry.dispose?.();
+    edit.snapMarker.material.dispose?.();
+    edit.snapLine.geometry.dispose?.();
+    edit.snapLine.material.dispose?.();
+    return true;
   }
 
   #setMeshEditPositions(positions, {

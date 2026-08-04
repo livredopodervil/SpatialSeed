@@ -207,6 +207,10 @@ import {
   scaleWorldTrsWithoutShear
 } from "../../renderer-three/src/LocalBoundsScale.js?build=20260804-0048b";
 import {
+  VisualCommitHandoff,
+  matricesApproximatelyEqual
+} from "../../renderer-three/src/VisualCommitHandoff.js?build=20260804-0048c1";
+import {
   MeshEditController,
   applyMeshTopologyOperation,
   affineDeltaWorld,
@@ -225,7 +229,7 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260729-0040a";
+} from "../../mesh-editor-core/src/index.js?build=20260804-0048c1";
 import {
   EditContextController,
   axesFromConstraint,
@@ -449,6 +453,81 @@ export function createRuntimeLayerTests() {
             samples: 5
           }
         }]);
+      }
+    },
+
+    "visual-commit-handoff": {
+      "estado canônico anterior não substitui o preview confirmado"() {
+        const handoff = new VisualCommitHandoff();
+        const previous = identityMatrix();
+        const expected = translationMatrix(4, -2, 1);
+        assertEqual(handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: previous,
+          expectedWorldMatrix: expected
+        }]), 1);
+
+        const stale = handoff.project("moving", previous);
+        assertDeepEqual(stale, expected);
+        assertEqual(handoff.status().staleSuppressed, 1);
+        assertEqual(handoff.status().pending, 1);
+
+        const acknowledged = handoff.project("moving", expected);
+        assertDeepEqual(acknowledged, expected);
+        assertEqual(handoff.status().acknowledged, 1);
+        assertEqual(handoff.releaseAcknowledged(), 1);
+        assertEqual(handoff.status().pending, 0);
+      },
+
+      "commits encadeados preservam somente o preview mais recente"() {
+        const handoff = new VisualCommitHandoff();
+        const initial = identityMatrix();
+        const first = translationMatrix(1, 0, 0);
+        const second = translationMatrix(2, 0, 0);
+        handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: initial,
+          expectedWorldMatrix: first
+        }]);
+        handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: first,
+          expectedWorldMatrix: second
+        }]);
+
+        const firstAcknowledgement = handoff.project("moving", first);
+        assertDeepEqual(firstAcknowledgement, second);
+        assertEqual(handoff.status().staleSuppressed, 1);
+        const secondAcknowledgement = handoff.project("moving", second);
+        assertDeepEqual(secondAcknowledgement, second);
+        assertEqual(handoff.status().acknowledged, 1);
+        assertEqual(handoff.status().chained, 1);
+      },
+
+      "estado posterior conflitante prevalece sem bloquear sincronização"() {
+        const handoff = new VisualCommitHandoff();
+        const previous = identityMatrix();
+        const expected = translationMatrix(1, 0, 0);
+        const newer = translationMatrix(3, 0, 0);
+        handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: previous,
+          expectedWorldMatrix: expected
+        }]);
+
+        const result = handoff.project("moving", newer);
+        assertDeepEqual(result, newer);
+        assertEqual(handoff.status().superseded, 1);
+        assertEqual(handoff.status().pending, 0);
+      },
+
+      "reconhecimento compara uma matriz por objeto sem percorrer vértices"() {
+        const left = translationMatrix(2, 3, 4);
+        const right = [...left];
+        right[12] += 1e-8;
+        assertEqual(matricesApproximatelyEqual(left, right), true);
+        right[12] += 1e-3;
+        assertEqual(matricesApproximatelyEqual(left, right), false);
       }
     },
 
@@ -4763,9 +4842,12 @@ export function createRuntimeLayerTests() {
           objectId: "mesh-box"
         });
         let visual = null;
+        let deferredCommits = 0;
+        let immediateEnds = 0;
         const renderer = {
           beginMeshEdit(args) { visual = args; },
-          endMeshEdit() { visual = null; },
+          endMeshEdit() { immediateEnds += 1; visual = null; },
+          deferMeshEditCommit() { deferredCommits += 1; return true; },
           updateMeshEditGeometry(geometry) { visual.geometry = geometry; },
           updateMeshEditSelection() {},
           updateMeshEditOptions() {},
@@ -4792,6 +4874,8 @@ export function createRuntimeLayerTests() {
         const result = controller.commit();
         const object = sandbox.getSnapshot().objects[0];
         assertEqual(result.changed, true);
+        assertEqual(deferredCommits, 1);
+        assertEqual(immediateEnds, 0);
         assertEqual(object.geometry.type, "buffer");
         assertEqual(object.kind, "buffer");
         assertEqual(

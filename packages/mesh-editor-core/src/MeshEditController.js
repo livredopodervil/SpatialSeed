@@ -256,7 +256,9 @@ export class MeshEditController {
       geometry,
       source: "mesh-edit"
     });
-    this.renderer.endMeshEdit({ restoreBatch: true });
+    const deferred = changed &&
+      this.renderer.deferMeshEditCommit?.() === true;
+    if (!deferred) this.renderer.endMeshEdit({ restoreBatch: true });
     this.#session = null;
     this.#notify();
     return Object.freeze({
