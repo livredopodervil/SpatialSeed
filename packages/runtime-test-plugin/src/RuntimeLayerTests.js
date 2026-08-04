@@ -460,7 +460,7 @@ export function createRuntimeLayerTests() {
       "estado canônico anterior não substitui o preview confirmado"() {
         const handoff = new VisualCommitHandoff();
         const previous = identityMatrix();
-        const expected = translationMatrix(4, -2, 1);
+        const expected = translationMatrix([4, -2, 1]);
         assertEqual(handoff.begin([{
           objectId: "moving",
           previousWorldMatrix: previous,
@@ -482,8 +482,8 @@ export function createRuntimeLayerTests() {
       "commits encadeados preservam somente o preview mais recente"() {
         const handoff = new VisualCommitHandoff();
         const initial = identityMatrix();
-        const first = translationMatrix(1, 0, 0);
-        const second = translationMatrix(2, 0, 0);
+        const first = translationMatrix([1, 0, 0]);
+        const second = translationMatrix([2, 0, 0]);
         handoff.begin([{
           objectId: "moving",
           previousWorldMatrix: initial,
@@ -507,8 +507,8 @@ export function createRuntimeLayerTests() {
       "estado posterior conflitante prevalece sem bloquear sincronização"() {
         const handoff = new VisualCommitHandoff();
         const previous = identityMatrix();
-        const expected = translationMatrix(1, 0, 0);
-        const newer = translationMatrix(3, 0, 0);
+        const expected = translationMatrix([1, 0, 0]);
+        const newer = translationMatrix([3, 0, 0]);
         handoff.begin([{
           objectId: "moving",
           previousWorldMatrix: previous,
@@ -524,8 +524,8 @@ export function createRuntimeLayerTests() {
       "rollback pré-dispatch preserva um handoff anterior encadeado"() {
         const handoff = new VisualCommitHandoff();
         const initial = identityMatrix();
-        const first = translationMatrix(1, 0, 0);
-        const second = translationMatrix(2, 0, 0);
+        const first = translationMatrix([1, 0, 0]);
+        const second = translationMatrix([2, 0, 0]);
         handoff.begin([{
           objectId: "moving",
           previousWorldMatrix: initial,
@@ -544,7 +544,7 @@ export function createRuntimeLayerTests() {
       },
 
       "reconhecimento compara uma matriz por objeto sem percorrer vértices"() {
-        const left = translationMatrix(2, 3, 4);
+        const left = translationMatrix([2, 3, 4]);
         const right = [...left];
         right[12] += 1e-8;
         assertEqual(matricesApproximatelyEqual(left, right), true);
