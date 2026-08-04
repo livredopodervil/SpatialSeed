@@ -1,3 +1,106 @@
+
+const HUD_LAYOUT_STORE_BRIDGE_EVENT = "spatialseed:hud-layout-store-document";
+const HUD_LAYOUT_STORE_BRIDGE_STORAGE_KEY = "spatialseed.hud.layout.storeBridge.v1";
+
+function cloneHudLayoutBridgeDocument(document) {
+  if (!document || typeof document !== "object") return null;
+  try {
+    if (typeof structuredClone === "function") return structuredClone(document);
+  } catch {
+    // fall through to JSON clone
+  }
+  try {
+    return JSON.parse(JSON.stringify(document));
+  } catch {
+    return null;
+  }
+}
+
+function readHudLayoutBridgeDocument() {
+  if (typeof window === "undefined" || !window.localStorage) return null;
+  try {
+    return JSON.parse(window.localStorage.getItem(HUD_LAYOUT_STORE_BRIDGE_STORAGE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function writeHudLayoutBridgeDocument(document) {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  const clone = cloneHudLayoutBridgeDocument(document);
+  if (!clone) return;
+  try {
+    window.localStorage.setItem(HUD_LAYOUT_STORE_BRIDGE_STORAGE_KEY, JSON.stringify(clone));
+  } catch {
+    // storage may be unavailable
+  }
+}
+
+function installHudLayoutStoreBridge(store, replaceDocument) {
+  if (typeof window === "undefined" || !store || typeof replaceDocument !== "function") return;
+  if (store.__spatialseedHudLayoutStoreBridgeInstalled) return;
+  Object.defineProperty(store, "__spatialseedHudLayoutStoreBridgeInstalled", {
+    value: true,
+    enumerable: false,
+    configurable: false
+  });
+
+  const applyDocument = document => {
+    const clone = cloneHudLayoutBridgeDocument(document);
+    if (!clone || window.__spatialseedHudLayoutStoreBridgeApplying) return;
+    window.__spatialseedHudLayoutStoreBridgeApplying = true;
+    try {
+      replaceDocument(clone);
+    } finally {
+      window.__spatialseedHudLayoutStoreBridgeApplying = false;
+    }
+  };
+
+  window.addEventListener(HUD_LAYOUT_STORE_BRIDGE_EVENT, event => {
+    if (event.detail?.source === store) return;
+    applyDocument(event.detail?.document);
+  });
+
+  const stored = readHudLayoutBridgeDocument();
+  if (stored) queueMicrotask(() => applyDocument(stored));
+}
+
+function broadcastHudLayoutStoreDocument(store, document) {
+  if (typeof window === "undefined" || window.__spatialseedHudLayoutStoreBridgeApplying) return;
+  const clone = cloneHudLayoutBridgeDocument(document);
+  if (!clone) return;
+  writeHudLayoutBridgeDocument(clone);
+  queueMicrotask(() => {
+    window.dispatchEvent(new CustomEvent(HUD_LAYOUT_STORE_BRIDGE_EVENT, {
+      detail: { source: store, document: clone }
+    }));
+  });
+}
+
+function normalizeHudVisibilityPatchAliases(patch = {}, { item = false } = {}) {
+  if (!patch || typeof patch !== "object") return {};
+  const next = { ...patch };
+
+  if ("hidden" in next && !("visibility" in next)) {
+    next.visibility = next.hidden ? "hidden" : item ? "inherit" : "always";
+  }
+
+  if ("visible" in next && !("visibility" in next)) {
+    next.visibility = next.visible ? item ? "inherit" : "always" : "hidden";
+    delete next.visible;
+  }
+
+  if (next.visibility === "hidden") {
+    next.hidden = true;
+  } else if (next.visibility === "always" || next.visibility === "auto") {
+    next.hidden = false;
+  } else if (item && next.visibility === "inherit") {
+    delete next.hidden;
+  }
+
+  return next;
+}
+
 import {
   HUD_LAYOUT_SCHEMA_VERSION,
   HUD_LAYOUT_STORAGE_KEY,
@@ -39,6 +142,7 @@ export class HudLayoutStore {
     itemDescriptors = {},
     legacyPreferences = null
   } = {}) {
+    installHudLayoutStoreBridge(this, document => this.#replace(document));
     this.#storage = storage ?? null;
     this.#key = String(key || HUD_LAYOUT_STORAGE_KEY);
     this.#sectionIds = uniqueStrings([...sectionIds, ...familyIds]);
@@ -238,7 +342,8 @@ export class HudLayoutStore {
     const id = requiredId(sectionId, "seção");
     const document = this.snapshot();
     const profile = activeProfile(document);
-    profile.sections[id] = normalizeSectionPolicy({ ...(profile.sections[id] ?? {}), ...patch });
+    const visibilityPatch = normalizeHudVisibilityPatchAliases(patch);
+    profile.sections[id] = normalizeSectionPolicy({ ...(profile.sections[id] ?? {}), ...visibilityPatch });
     this.#replace(document);
     return this.profile();
   }
@@ -247,6 +352,7 @@ export class HudLayoutStore {
 
   updateItem(itemId, patch = {}) {
     const id = requiredId(itemId, "ferramenta");
+    const visibilityPatch = normalizeHudVisibilityPatchAliases(patch, { item: true });
     const document = this.snapshot();
     const profile = activeProfile(document);
     const canonicalPatch = {
@@ -536,6 +642,7 @@ export class HudLayoutStore {
   }
 
   #replace(document) {
+    broadcastHudLayoutStoreDocument(this, document);
     this.#document = normalizeHudLayoutDocument(document, this.#normalizationOptions());
     try { this.#storage?.setItem?.(this.#key, JSON.stringify(this.#document)); }
     catch {}

@@ -111,7 +111,6 @@ export class EditHud {
   #layoutInteraction = null;
   #unsubscribeLayout = null;
   #lastLayoutSignature = null;
-  #lastLayoutInputSignature = null;
   #hudRegistry = null;
   #uiModules = null;
   #commandCatalog = [];
@@ -367,7 +366,7 @@ export class EditHud {
     this.root.dataset.heuristicContext = this.#heuristic.reason;
     this.#refreshContextActions(state, this.#heuristic);
     this.#refreshGeometryTools();
-    /* #applyPreferences já aplica o layout adaptativo. */
+    this.#applyAdaptiveLayout(this.#heuristic);
     this.#applyPreferences();
     this.#refreshParameterAliases();
     for (const button of this.root.querySelectorAll("[data-planar-tool]")) {
@@ -1514,7 +1513,6 @@ export class EditHud {
     });
     this.#unsubscribeLayout = this.#layoutStore.subscribe(() => {
       this.#lastLayoutSignature = null;
-      this.#lastLayoutInputSignature = null;
       this.#adoptActiveLayoutViewport();
       this.#syncLegacyGroupPreferences();
       this.#applyPreferences();
@@ -1524,7 +1522,6 @@ export class EditHud {
     this.#unsubscribeUiApplication = this.#uiApplicationComposer?.subscribe?.(snapshot => {
       this.#applyApplicationUiProfile(snapshot);
       this.#lastLayoutSignature = null;
-      this.#lastLayoutInputSignature = null;
       this.#applyAdaptiveLayout(this.#heuristic);
       this.#layoutCustomizer?.render?.();
     }) ?? null;
@@ -1569,7 +1566,6 @@ export class EditHud {
     this.#layoutCustomizer?.setDescriptors?.(this.#layoutDescriptors);
     this.#layoutInteraction?.setDescriptors?.(this.#layoutDescriptors);
     this.#lastLayoutSignature = null;
-    this.#lastLayoutInputSignature = null;
     this.#applyAdaptiveLayout(this.#heuristic);
   }
 
@@ -1749,30 +1745,16 @@ export class EditHud {
       ...this.#creationLayoutOrder(heuristic)
     ];
     const { familyContext, itemContext } = this.#layoutContext();
-    const inputSignature = JSON.stringify({
-      adaptive,
-      groupOrder,
-      adaptiveItemOrder,
-      familyContext,
-      itemContext
-    });
-    if (
-      inputSignature === this.#lastLayoutInputSignature &&
-      this.#lastLayoutSignature !== null
-    ) {
-      return;
-    }
-    const profile = this.#layoutStore.profile();
     const plan = resolveHudLayoutPlan({
       descriptors: this.#layoutDescriptors,
-      profile,
+      profile: this.#layoutStore.profile(),
       adaptiveGroupOrder: groupOrder,
       adaptiveItemOrder,
       familyContext,
       itemContext
     });
+    const profile = this.#layoutStore.profile();
     const signature = hudLayoutSignature(plan, profile);
-    this.#lastLayoutInputSignature = inputSignature;
     if (signature === this.#lastLayoutSignature) return;
     applyHudLayoutPlan(plan, { root: this.root, profile });
     this.#lastLayoutSignature = signature;

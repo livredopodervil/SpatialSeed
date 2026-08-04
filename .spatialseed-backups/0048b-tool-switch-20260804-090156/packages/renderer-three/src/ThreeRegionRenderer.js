@@ -1548,13 +1548,12 @@ export class ThreeRegionRenderer {
   }
 
   setTransformMode(mode) {
-    /*
-     * EditorState publica a mudança de forma síncrona e o subscriber do
-     * renderer já configura TransformControls, navegação, âncora e marcadores.
-     * Repetir essas operações aqui reconstruía o gizmo até três vezes por
-     * toque, com custo proporcional à seleção e às famílias compactas.
-     */
-    return this.editorState.setToolMode(mode);
+    this.editorState.setPivotEditing(false);
+    this.editorState.setToolMode(mode);
+    this.#interactionMode = mode;
+    if (["translate", "rotate", "scale"].includes(mode)) this.transform.setMode(mode);
+    this.#configureTransformForEditor();
+    this.#rebuildAnchor();
   }
 
   acquireToolGestureNavigation(owner = "interactive-tool") {

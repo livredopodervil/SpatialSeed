@@ -310,7 +310,8 @@ export function normalizeSectionPolicy(value = {}, fallback = null) {
     present: source.present === undefined ? base.present !== false : Boolean(source.present),
     label: Object.hasOwn(source, "label") ? nullableString(source.label, null) : nullableString(base.label, null),
     visibility: normalizeVisibility(source.visibility, normalizeVisibility(base.visibility, DEFAULT_SECTION_POLICY.visibility, false), false),
-    zone: normalizeZone(source.zone, normalizeZone(base.zone, DEFAULT_SECTION_POLICY.zone, false), false),
+
+    hidden: source.visibility === "hidden" || source.hidden === true,    zone: normalizeZone(source.zone, normalizeZone(base.zone, DEFAULT_SECTION_POLICY.zone, false), false),
     order: Object.hasOwn(source, "order") ? nullableInteger(source.order, null) : nullableInteger(base.order, null),
     color: normalizeColor(source.color, normalizeColor(base.color, DEFAULT_SECTION_POLICY.color)),
     x: Object.hasOwn(source, "x") ? nullableNonNegativeInteger(source.x, null) : nullableNonNegativeInteger(base.x, null),
@@ -351,7 +352,8 @@ export function normalizeItemPolicy(value = {}, fallback = null, { descriptor = 
     icon: Object.hasOwn(source, "icon") ? nullableString(source.icon, null) : nullableString(base.icon, null),
     section: Object.hasOwn(source, "section") ? nullableString(source.section, null) : nullableString(base.section, null),
     visibility: normalizeVisibility(source.visibility, normalizeVisibility(base.visibility, DEFAULT_ITEM_POLICY.visibility, true), true),
-    zone: normalizeZone(source.zone, normalizeZone(base.zone, DEFAULT_ITEM_POLICY.zone, true), true),
+
+    hidden: source.visibility === "hidden" || source.hidden === true,    zone: normalizeZone(source.zone, normalizeZone(base.zone, DEFAULT_ITEM_POLICY.zone, true), true),
     order: Object.hasOwn(source, "order") ? nullableInteger(source.order, null) : nullableInteger(base.order, null),
     x: Object.hasOwn(source, "x") ? nullableNonNegativeInteger(source.x, null) : nullableNonNegativeInteger(base.x, null),
     y: Object.hasOwn(source, "y") ? nullableNonNegativeInteger(source.y, null) : nullableNonNegativeInteger(base.y, null),

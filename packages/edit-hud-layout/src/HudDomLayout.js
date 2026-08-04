@@ -56,7 +56,7 @@ export function applyHudLayoutPlan(plan = [], { root = plan[0]?.element?.closest
     const section = sectionElements.get(item.section) ?? ensureSectionElement(strip, item.section, item.section);
     const itemContainer = ensureSectionShell(section);
     if (element.parentElement !== itemContainer) itemContainer.append(element);
-    element.hidden = Boolean(item.hidden);
+    element.hidden = Boolean(item.hidden) || item.visibility === "hidden" || item.present === false;
     element.style.order = String(item.order);
     element.style.gridColumn = `${Math.max(0, item.x ?? 0) + 1} / span ${item.width ?? item.cellWidth ?? 1}`;
     element.style.gridRow = `${Math.max(0, item.y ?? 0) + 1} / span ${item.height ?? item.cellHeight ?? 1}`;
@@ -217,7 +217,7 @@ function ensureSectionShell(group) {
 }
 
 function applySectionPolicy(group, section) {
-  group.hidden = Boolean(section.hidden);
+  group.hidden = Boolean(section.hidden) || section.visibility === "hidden" || section.present === false;
   group.style.order = String(section.order);
   group.style.gridColumn = `${Math.max(0, section.x ?? 0) + 1} / span ${section.width ?? 4}`;
   group.style.gridRow = `${Math.max(0, section.y ?? 0) + 1} / span ${section.height ?? 2}`;

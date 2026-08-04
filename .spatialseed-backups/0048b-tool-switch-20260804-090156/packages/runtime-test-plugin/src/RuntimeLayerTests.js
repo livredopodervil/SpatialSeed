@@ -15206,22 +15206,6 @@ assets: {
         assertEqual(editor.snapshot().tool.transformMode, "rotate");
       },
 
-      "troca de ferramenta é atômica e idempotente"() {
-        const editor = new EditorState();
-        let notifications = 0;
-        const unsubscribe = editor.subscribe((snapshot, event) => {
-          if (event.type !== "initial") notifications += 1;
-        });
-        editor.setPivotEditing(true);
-        notifications = 0;
-        assertEqual(editor.setToolMode("rotate"), true);
-        assertEqual(editor.snapshot().pivot.editing, false);
-        assertEqual(notifications, 1);
-        assertEqual(editor.setToolMode("rotate"), false);
-        assertEqual(notifications, 1);
-        unsubscribe();
-      },
-
       "operações e gesto são explícitos"() {
         const editor = new EditorState();
         editor.setSelectionOperation("add");
