@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260802-0047g";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260804-0048c1";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260804-0048d1";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
 import {
   createVirtualResourceTree,
@@ -97,7 +97,7 @@ import {
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260804-0048c1";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260804-0048d1";
 import {
   MeshEditPanel
 } from "../../../packages/mesh-edit-panel/src/index.js?build=20260802-0047g";

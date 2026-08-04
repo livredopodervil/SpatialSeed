@@ -250,15 +250,25 @@ export class MeshEditController {
           type: "buffer",
           normals: session.topologyOptions.autoNormals ? [] : session.descriptor.normals
         });
-    const changed = this.sandbox.dispatch({
-      type: "object.geometry.replace",
-      id: session.objectId,
-      geometry,
-      source: "mesh-edit"
-    });
-    const deferred = changed &&
-      this.renderer.deferMeshEditCommit?.() === true;
-    if (!deferred) this.renderer.endMeshEdit({ restoreBatch: true });
+    const deferred = this.renderer.deferMeshEditCommit?.() === true;
+    let changed = false;
+    try {
+      changed = this.sandbox.dispatch({
+        type: "object.geometry.replace",
+        id: session.objectId,
+        geometry,
+        source: "mesh-edit"
+      });
+    } catch (error) {
+      if (deferred) this.renderer.cancelDeferredMeshEditCommit?.();
+      throw error;
+    }
+    if (!changed) {
+      if (deferred) this.renderer.cancelDeferredMeshEditCommit?.();
+      else this.renderer.endMeshEdit({ restoreBatch: true });
+    } else if (!deferred) {
+      this.renderer.endMeshEdit({ restoreBatch: true });
+    }
     this.#session = null;
     this.#notify();
     return Object.freeze({

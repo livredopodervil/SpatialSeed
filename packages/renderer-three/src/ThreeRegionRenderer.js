@@ -85,7 +85,7 @@ import {
 } from "./LocalBoundsScale.js?build=20260804-0048b";
 import {
   VisualCommitHandoff
-} from "./VisualCommitHandoff.js?build=20260804-0048c1";
+} from "./VisualCommitHandoff.js?build=20260804-0048d1";
 import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
@@ -259,6 +259,7 @@ export class ThreeRegionRenderer {
   #boundsScalePickCycle = null;
   #meshEdit = null;
   #meshEditHiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+  #meshEditHiddenObjectIds = new Set();
   #inputDiagnostics = {
     pointerDown: 0,
     pointerUp: 0,
@@ -797,6 +798,7 @@ export class ThreeRegionRenderer {
     this.#updateMeshEditEdgeGeometry();
     this.#updateMeshEditFaceOverlay();
     this.#refreshMeshEditInfluence();
+    this.#configureTransformForEditor();
     this.#rebuildAnchor();
     return this.getMeshEditStatus();
   }
@@ -829,6 +831,7 @@ export class ThreeRegionRenderer {
     this.#refreshMeshEditInfluence();
     this.#updateMeshEditEdgeGeometry();
     this.#updateMeshEditFaceOverlay();
+    this.#configureTransformForEditor();
     this.#rebuildAnchor();
     return this.getMeshEditStatus();
   }
@@ -941,7 +944,11 @@ export class ThreeRegionRenderer {
     if (!edit) return false;
     if (this.#session?.kind === "mesh") this.#session = null;
     this.transform.detach();
-    if (restoreBatch) this.#setMeshEditSourceVisible(true);
+    if (restoreBatch) {
+      this.#setMeshEditSourceVisible(true, edit.objectId);
+    } else {
+      this.#meshEditHiddenObjectIds.delete(edit.objectId);
+    }
     this.#meshEdit = null;
     this.#disposeMeshEditVisual(edit);
     this.#flushBatchBounds();
@@ -956,16 +963,22 @@ export class ThreeRegionRenderer {
     if (!edit || edit.commitPending) return false;
     if (this.#session?.kind === "mesh") this.#session = null;
     edit.commitPending = true;
-    edit.onVertexPick = null;
-    edit.onComponentPick = null;
-    edit.onTransformStart = null;
-    edit.onTransformPreview = null;
-    edit.onTransformCommit = null;
-    this.#setMeshEditSourceVisible(false);
+    this.#setMeshEditSourceVisible(false, edit.objectId);
     this.transform.detach();
     this.transform.enabled = false;
     this.transform.getHelper().visible = false;
     this.orbit.enabled = true;
+    return true;
+  }
+
+  cancelDeferredMeshEditCommit() {
+    const edit = this.#meshEdit;
+    if (!edit?.commitPending) return false;
+    edit.commitPending = false;
+    this.#setMeshEditSourceVisible(false, edit.objectId);
+    this.#configureTransformForEditor();
+    this.#rebuildAnchor();
+    this.#updateSelectionAppearance();
     return true;
   }
 
@@ -2440,6 +2453,7 @@ export class ThreeRegionRenderer {
     if (this.#meshEdit?.objectId === object.id) {
       if (this.#meshEdit.commitPending) {
         const edit = this.#meshEdit;
+        this.#setMeshEditSourceVisible(true, edit.objectId);
         this.#meshEdit = null;
         this.#disposeMeshEditVisual(edit);
         this.#configureTransformForEditor();
@@ -2466,6 +2480,7 @@ export class ThreeRegionRenderer {
     const proxy = this.#meshes.get(id);
     if (!proxy) return false;
     this.#visualCommitHandoff.remove(id);
+    this.#meshEditHiddenObjectIds.delete(id);
     if (this.#meshEdit?.objectId === id) {
       const edit = this.#meshEdit;
       this.#meshEdit = null;
@@ -3525,7 +3540,7 @@ export class ThreeRegionRenderer {
         const added = this.#batchManager.add({
           objectId: object.id,
           batchKey,
-          matrix: proxy.matrix,
+          matrix: this.#effectiveBatchMatrix(object.id, proxy.matrix),
           descriptor: {
             geometry: geometry.value,
             material: material.value.material,
@@ -3545,7 +3560,7 @@ export class ThreeRegionRenderer {
       this.#batchManager.add({
         objectId: object.id,
         batchKey,
-        matrix: proxy.matrix,
+        matrix: this.#effectiveBatchMatrix(object.id, proxy.matrix),
         descriptor: {
           geometry: batch.geometry,
           material: batch.material,
@@ -3685,7 +3700,10 @@ export class ThreeRegionRenderer {
       ) > 0;
     }
     const location = this.#batchManager.locationOf(objectId);
-    const changed = this.#batchManager.update(objectId, proxy.matrix);
+    const changed = this.#batchManager.update(
+      objectId,
+      this.#effectiveBatchMatrix(objectId, proxy.matrix)
+    );
     if (changed) this.#markBatchDirty(location?.batchKey);
     return changed;
   }
@@ -4044,6 +4062,7 @@ export class ThreeRegionRenderer {
     if (!this.#session) return;
     const startedAt=performance.now();
     const session=this.#session;
+    let selectionHandoff = null;
     this.#session=null;
 
     try {
@@ -4132,6 +4151,7 @@ export class ThreeRegionRenderer {
         }
       }
 
+      selectionHandoff = this.#beginSelectionVisualHandoff(session);
       const changed = transforms.length > 0 && this.dispatch({
         type: "selection.transform-world",
         selection: this.#selectionSnapshot,
@@ -4142,8 +4162,11 @@ export class ThreeRegionRenderer {
         transforms
       });
 
-      if (changed) this.#beginSelectionVisualHandoff(session);
-      else this.#restorePreviewSession(session);
+      if (!changed) {
+        this.#visualCommitHandoff.rollbackTransaction(selectionHandoff);
+        selectionHandoff = null;
+        this.#restorePreviewSession(session);
+      }
       this.#emitTransformPreview(
         changed ? "end" : "cancel",
         session
@@ -4151,6 +4174,9 @@ export class ThreeRegionRenderer {
       this.#transformLifecycleDiagnostics.commits += 1;
       this.#transformLifecycleDiagnostics.lastError=null;
     } catch (error) {
+      if (selectionHandoff) {
+        this.#visualCommitHandoff.rollbackTransaction(selectionHandoff);
+      }
       this.#restorePreviewSession(session);
       this.#emitTransformPreview("cancel", session);
       const diagnostics=this.#transformLifecycleDiagnostics;
@@ -4170,21 +4196,21 @@ export class ThreeRegionRenderer {
   }
 
   #beginSelectionVisualHandoff(session) {
-    if (session?.kind !== "selection") return 0;
-    let begun = 0;
+    if (session?.kind !== "selection") {
+      return this.#visualCommitHandoff.beginTransaction([]);
+    }
+    const entries = [];
     for (const [objectId, snapshot] of session.previewObjects) {
       const proxy = this.#meshes.get(objectId);
       if (!proxy) continue;
       proxy.updateMatrixWorld(true);
-      if (this.#visualCommitHandoff.beginObject(
+      entries.push({
         objectId,
-        snapshot.matrixWorld.elements,
-        proxy.matrixWorld.toArray()
-      )) {
-        begun += 1;
-      }
+        previousWorldMatrix: snapshot.matrixWorld.toArray(),
+        expectedWorldMatrix: proxy.matrixWorld.toArray()
+      });
     }
-    return begun;
+    return this.#visualCommitHandoff.beginTransaction(entries);
   }
 
   #restorePreviewSession(session) {
@@ -4265,7 +4291,10 @@ export class ThreeRegionRenderer {
       const proxy = this.#meshes.get(id);
       const canonical = proxy?.userData.canonicalWorldMatrix;
       if (!proxy || !canonical) continue;
-      nextTransforms.push({ id, worldMatrix: canonical });
+      const visual = this.#visualCommitHandoff.has(id)
+        ? this.#visualCommitHandoff.project(id, canonical)
+        : canonical;
+      nextTransforms.push({ id, worldMatrix: visual });
     }
     this.#applySharedPreviewTransforms(nextTransforms);
   }
@@ -5539,16 +5568,28 @@ export class ThreeRegionRenderer {
     return this.#meshEdit;
   }
 
-  #setMeshEditSourceVisible(visible) {
-    const edit = this.#meshEdit;
-    if (!edit) return false;
-    const proxy = this.#meshes.get(edit.objectId);
-    const matrix = visible
-      ? proxy?.userData.canonicalWorldMatrix
-      : this.#meshEditHiddenMatrix;
-    if (!matrix) return false;
-    const location = this.#batchManager.locationOf(edit.objectId);
-    const changed = this.#batchManager.update(edit.objectId, matrix);
+  #effectiveBatchMatrix(objectId, matrix) {
+    return this.#meshEditHiddenObjectIds.has(String(objectId))
+      ? this.#meshEditHiddenMatrix
+      : matrix;
+  }
+
+  #setMeshEditSourceVisible(
+    visible,
+    objectId = this.#meshEdit?.objectId
+  ) {
+    const id = String(objectId ?? "").trim();
+    if (!id) return false;
+    if (visible) this.#meshEditHiddenObjectIds.delete(id);
+    else this.#meshEditHiddenObjectIds.add(id);
+    const proxy = this.#meshes.get(id);
+    const canonical = proxy?.userData.canonicalWorldMatrix ?? proxy?.matrix;
+    if (!canonical) return false;
+    const location = this.#batchManager.locationOf(id);
+    const changed = this.#batchManager.update(
+      id,
+      this.#effectiveBatchMatrix(id, canonical)
+    );
     if (changed) this.#markBatchDirty(location?.batchKey);
     return changed;
   }

@@ -4,6 +4,7 @@ const MAX_STALE_MATRICES_PER_OBJECT = 4;
 export class VisualCommitHandoff {
   #pending = new Map();
   #acknowledgedIds = [];
+  #nextGeneration = 1;
   #diagnostics = {
     begun: 0,
     chained: 0,
@@ -11,58 +12,87 @@ export class VisualCommitHandoff {
     staleSuppressed: 0,
     superseded: 0,
     cancelled: 0,
+    rolledBack: 0,
     released: 0,
     maximumPending: 0
   };
 
   begin(entries = []) {
-    let begun = 0;
-    for (const raw of entries) {
-      if (this.beginObject(
-        raw?.objectId,
-        raw?.previousWorldMatrix,
-        raw?.expectedWorldMatrix
-      )) {
-        begun += 1;
-      }
-    }
-    return begun;
+    return this.beginTransaction(entries).begun;
   }
 
-  beginObject(objectId, previousWorldMatrix, expectedWorldMatrix) {
-    const id = String(objectId ?? "").trim();
-    if (!id) return false;
-    const previous = assertMatrix(previousWorldMatrix);
-    const expected = assertMatrix(expectedWorldMatrix);
-    if (matricesApproximatelyEqual(previous, expected)) return false;
+  beginTransaction(entries = []) {
+    const records = [];
+    for (const raw of entries) {
+      const id = String(raw?.objectId ?? "").trim();
+      if (!id) continue;
+      const previous = cloneMatrix(raw?.previousWorldMatrix);
+      const expected = cloneMatrix(raw?.expectedWorldMatrix);
+      if (matricesApproximatelyEqual(previous, expected)) continue;
 
-    const existing = this.#pending.get(id);
-    const staleWorldMatrices = existing
-      ? [...existing.staleWorldMatrices]
-      : [];
-    if (existing) {
-      appendUniqueMatrix(staleWorldMatrices, existing.expectedWorldMatrix);
-    }
-    appendUniqueMatrix(staleWorldMatrices, previous);
-    if (staleWorldMatrices.length > MAX_STALE_MATRICES_PER_OBJECT) {
-      staleWorldMatrices.splice(
-        0,
-        staleWorldMatrices.length - MAX_STALE_MATRICES_PER_OBJECT
-      );
+      const existing = this.#pending.get(id) ?? null;
+      const staleWorldMatrices = existing
+        ? existing.staleWorldMatrices.map(matrix => [...matrix])
+        : [];
+      if (existing) {
+        appendUniqueMatrix(staleWorldMatrices, existing.expectedWorldMatrix);
+      }
+      appendUniqueMatrix(staleWorldMatrices, previous);
+      if (staleWorldMatrices.length > MAX_STALE_MATRICES_PER_OBJECT) {
+        staleWorldMatrices.splice(
+          0,
+          staleWorldMatrices.length - MAX_STALE_MATRICES_PER_OBJECT
+        );
+      }
+
+      const generation = this.#nextGeneration++;
+      records.push(Object.freeze({
+        id,
+        generation,
+        previous: existing ? clonePending(existing) : null
+      }));
+      this.#pending.set(id, {
+        generation,
+        staleWorldMatrices,
+        expectedWorldMatrix: expected,
+        acknowledged: false
+      });
+      this.#diagnostics.begun += 1;
+      if (existing) this.#diagnostics.chained += 1;
     }
 
-    this.#pending.set(id, {
-      staleWorldMatrices,
-      expectedWorldMatrix: expected,
-      acknowledged: false
-    });
-    this.#diagnostics.begun += 1;
-    if (existing) this.#diagnostics.chained += 1;
     this.#diagnostics.maximumPending = Math.max(
       this.#diagnostics.maximumPending,
       this.#pending.size
     );
-    return true;
+    return Object.freeze({
+      begun: records.length,
+      records: Object.freeze(records)
+    });
+  }
+
+  beginObject(objectId, previousWorldMatrix, expectedWorldMatrix) {
+    return this.beginTransaction([{
+      objectId,
+      previousWorldMatrix,
+      expectedWorldMatrix
+    }]).begun > 0;
+  }
+
+  rollbackTransaction(transaction) {
+    let count = 0;
+    for (const record of transaction?.records ?? []) {
+      const current = this.#pending.get(record.id);
+      if (!current || current.generation !== record.generation) continue;
+      if (record.previous) {
+        this.#pending.set(record.id, clonePending(record.previous));
+      } else {
+        this.#pending.delete(record.id);
+      }
+      count += 1;
+    }
+    this.#diagnostics.rolledBack += count;
+    return count;
   }
 
   project(objectId, incomingWorldMatrix) {
@@ -161,11 +191,20 @@ export function matricesApproximatelyEqual(
   return true;
 }
 
-function assertMatrix(value) {
+function cloneMatrix(value) {
   if (!Array.isArray(value) || value.length !== 16) {
     throw new TypeError("O handoff visual exige uma matriz 4x4.");
   }
-  return value;
+  return value.map(Number);
+}
+
+function clonePending(entry) {
+  return {
+    generation: entry.generation,
+    staleWorldMatrices: entry.staleWorldMatrices.map(matrix => [...matrix]),
+    expectedWorldMatrix: [...entry.expectedWorldMatrix],
+    acknowledged: Boolean(entry.acknowledged)
+  };
 }
 
 function appendUniqueMatrix(target, matrix) {
@@ -174,6 +213,6 @@ function appendUniqueMatrix(target, matrix) {
   )) {
     return false;
   }
-  target.push(matrix);
+  target.push([...matrix]);
   return true;
 }

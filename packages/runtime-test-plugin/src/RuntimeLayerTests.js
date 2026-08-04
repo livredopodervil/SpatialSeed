@@ -209,7 +209,7 @@ import {
 import {
   VisualCommitHandoff,
   matricesApproximatelyEqual
-} from "../../renderer-three/src/VisualCommitHandoff.js?build=20260804-0048c1";
+} from "../../renderer-three/src/VisualCommitHandoff.js?build=20260804-0048d1";
 import {
   MeshEditController,
   applyMeshTopologyOperation,
@@ -229,7 +229,7 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260804-0048c1";
+} from "../../mesh-editor-core/src/index.js?build=20260804-0048d1";
 import {
   EditContextController,
   axesFromConstraint,
@@ -519,6 +519,28 @@ export function createRuntimeLayerTests() {
         assertDeepEqual(result, newer);
         assertEqual(handoff.status().superseded, 1);
         assertEqual(handoff.status().pending, 0);
+      },
+
+      "rollback pré-dispatch preserva um handoff anterior encadeado"() {
+        const handoff = new VisualCommitHandoff();
+        const initial = identityMatrix();
+        const first = translationMatrix(1, 0, 0);
+        const second = translationMatrix(2, 0, 0);
+        handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: initial,
+          expectedWorldMatrix: first
+        }]);
+        const transaction = handoff.beginTransaction([{
+          objectId: "moving",
+          previousWorldMatrix: first,
+          expectedWorldMatrix: second
+        }]);
+
+        assertEqual(handoff.rollbackTransaction(transaction), 1);
+        assertDeepEqual(handoff.project("moving", first), first);
+        assertEqual(handoff.status().rolledBack, 1);
+        assertEqual(handoff.status().acknowledged, 1);
       },
 
       "reconhecimento compara uma matriz por objeto sem percorrer vértices"() {
@@ -4844,10 +4866,22 @@ export function createRuntimeLayerTests() {
         let visual = null;
         let deferredCommits = 0;
         let immediateEnds = 0;
+        const commitEvents = [];
+        const unsubscribeCommitOrder = sandbox.subscribe(() => {
+          commitEvents.push("sandbox-change");
+        });
         const renderer = {
           beginMeshEdit(args) { visual = args; },
           endMeshEdit() { immediateEnds += 1; visual = null; },
-          deferMeshEditCommit() { deferredCommits += 1; return true; },
+          deferMeshEditCommit() {
+            deferredCommits += 1;
+            commitEvents.push("defer");
+            return true;
+          },
+          cancelDeferredMeshEditCommit() {
+            commitEvents.push("cancel-defer");
+            return true;
+          },
           updateMeshEditGeometry(geometry) { visual.geometry = geometry; },
           updateMeshEditSelection() {},
           updateMeshEditOptions() {},
@@ -4871,9 +4905,14 @@ export function createRuntimeLayerTests() {
         assertEqual(controller.status().stale, false);
         const undoDepthBeforeCommit =
           sandbox.getHistoryDiagnostics().undoDepth;
+        commitEvents.length = 0;
         const result = controller.commit();
         const object = sandbox.getSnapshot().objects[0];
         assertEqual(result.changed, true);
+        assertDeepEqual(commitEvents.slice(0, 2), [
+          "defer",
+          "sandbox-change"
+        ]);
         assertEqual(deferredCommits, 1);
         assertEqual(immediateEnds, 0);
         assertEqual(object.geometry.type, "buffer");
@@ -4887,6 +4926,7 @@ export function createRuntimeLayerTests() {
           sandbox.getSnapshot().objects[0].geometry.type,
           "box"
         );
+        unsubscribeCommitOrder();
       },
 
       "frame do viewer permanece congelado após mover a câmera"() {
