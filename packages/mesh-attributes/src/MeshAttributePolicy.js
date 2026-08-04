@@ -7,8 +7,8 @@ export const MESH_NORMAL_POLICIES = Object.freeze([
   "recompute-all"
 ]);
 
-export function normalizeMeshNormalPolicy(value = "recompute-local") {
-  const normalized = String(value ?? "recompute-local").trim().toLowerCase();
+export function normalizeMeshNormalPolicy(value = "preserve") {
+  const normalized = String(value ?? "preserve").trim().toLowerCase();
   if (!MESH_NORMAL_POLICIES.includes(normalized)) {
     throw new RangeError(`Política de normais desconhecida: ${value}.`);
   }
@@ -67,7 +67,7 @@ export function prepareMeshCommitDescriptor({
   before,
   after,
   autoNormals = true,
-  normalPolicy = "recompute-local",
+  normalPolicy = "preserve",
   epsilon = DEFAULT_EPSILON
 } = {}) {
   const source = normalizeDescriptorShape(before);
@@ -89,31 +89,36 @@ export function prepareMeshCommitDescriptor({
   let normals = target.normals.map(point => [...point]);
 
   if (autoNormals) {
-    if (change.topologyChanged || policy === "recompute-all") {
-      normals = [];
-    } else if (change.positionsChanged) {
-      if (policy === "preserve") {
+    const targetHasNormals = target.normals.length === target.positions.length;
+    const sourceFitsTarget = source.normals.length === target.positions.length;
+    if (policy === "preserve") {
+      if (targetHasNormals) {
+        normals = target.normals.map(point => [...point]);
+      } else if (!change.topologyChanged && sourceFitsTarget) {
         normals = source.normals.map(point => [...point]);
-      } else if (
-        policy === "recompute-local" &&
-        source.normals.length === source.positions.length &&
-        source.indices.length === target.indices.length
-      ) {
-        normals = recomputeLocalVertexNormals({
-          positions: target.positions,
-          indices: target.indices,
-          sourceNormals: source.normals,
-          changedVertexIndices: change.changedVertexIndices
-        });
       } else {
         normals = [];
       }
-    } else if (change.normalsChanged) {
-      // Uma operação explícita de normais pode deliberadamente invalidar o
-      // atributo para que o adaptador o recalcule integralmente.
+    } else if (policy === "recompute-all") {
+      normals = recomputeLocalVertexNormals({
+        positions: target.positions,
+        indices: target.indices,
+        sourceNormals: sourceFitsTarget ? source.normals : target.normals,
+        changedVertexIndices: target.positions.map((_, index) => index)
+      });
+    } else if (change.positionsChanged && !change.topologyChanged &&
+        source.normals.length === source.positions.length &&
+        source.indices.length === target.indices.length) {
+      normals = recomputeLocalVertexNormals({
+        positions: target.positions,
+        indices: target.indices,
+        sourceNormals: source.normals,
+        changedVertexIndices: change.changedVertexIndices
+      });
+    } else if (targetHasNormals) {
       normals = target.normals.map(point => [...point]);
     } else {
-      normals = source.normals.map(point => [...point]);
+      normals = [];
     }
   }
 

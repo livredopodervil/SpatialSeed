@@ -211,11 +211,15 @@ import {
   matricesApproximatelyEqual
 } from "../../renderer-three/src/VisualCommitHandoff.js?build=20260804-0048d1";
 import {
+  MeshEditVisibility
+} from "../../renderer-three/src/MeshEditVisibility.js?build=20260804-0048g1";
+import {
   MeshEditController,
   MeshToolRegistry,
   applyMeshTopologyOperation,
   affineDeltaWorld,
   applyMeshDeformation,
+  buildGeometricVertexIdentity,
   buildMeshTopology,
   createMeshInfluenceField,
   coincidentVertexGroups,
@@ -233,7 +237,7 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260804-0048f1";
+} from "../../mesh-editor-core/src/index.js?build=20260804-0048g1";
 import {
   EditContextController,
   axesFromConstraint,
@@ -5098,6 +5102,127 @@ export function createRuntimeLayerTests() {
           policy: "transform-together"
         });
         assertDeepEqual(selected, [0,1,2,3,5]);
+      },
+
+      "falloff geodésico usa identidade geométrica nas costuras"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [
+            [0,0,0], [1,0,0], [2,0,0],
+            [0,0,0], [0,1,0], [0,2,0]
+          ],
+          indices: [0,1,2, 3,4,5],
+          normals: [],
+          uvs: []
+        };
+        const identity = buildGeometricVertexIdentity({
+          positions: descriptor.positions,
+          indices: descriptor.indices
+        });
+        assertEqual(identity.renderVertexCount, 6);
+        assertEqual(identity.geometricVertexCount, 5);
+        const field = createMeshInfluenceField({
+          descriptor,
+          selectedIndices: [0],
+          objectWorldMatrix: new THREE.Matrix4().toArray(),
+          radius: 2,
+          metric: "geodesic",
+          falloff: "linear",
+          geometricIdentity: identity
+        });
+        const weight = new Map(field.affectedIndices.map(
+          (index, order) => [index, field.weights[order]]
+        ));
+        assertNear(weight.get(0), 1);
+        assertNear(weight.get(3), 1);
+        assertNear(weight.get(1), 0.5);
+        assertNear(weight.get(4), 0.5);
+        assertNear(weight.get(2), 0);
+        assertNear(weight.get(5), 0);
+      },
+
+      "movimento posicional preserva normais por padrão"() {
+        const before = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1]],
+          uvs: [[0,0], [1,0], [0,1]],
+          edges: []
+        };
+        const after = structuredClone(before);
+        after.positions[2] = [0,1,0.5];
+        const prepared = prepareMeshCommitDescriptor({ before, after });
+        assertEqual(prepared.changed, true);
+        assertDeepEqual(prepared.descriptor.normals, before.normals);
+        assertDeepEqual(prepared.descriptor.uvs, before.uvs);
+      },
+
+      "sanitização remapeia e preserva normais e UVs"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0], [9,9,9]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1], [1,0,0]],
+          uvs: [[0,0], [1,0], [0,1], [0.5,0.5]],
+          edges: []
+        };
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology: topologyOf(descriptor),
+          componentMode: "vertex",
+          selectedIndices: [],
+          operation: "cleanup",
+          options: { removeUnused: true }
+        });
+        assertEqual(result.descriptor.positions.length, 3);
+        assertDeepEqual(result.descriptor.normals, descriptor.normals.slice(0,3));
+        assertDeepEqual(result.descriptor.uvs, descriptor.uvs.slice(0,3));
+      },
+
+      "visibilidade de edição oculta o recurso real do proprietário"() {
+        const manager = new InstanceBatchManager();
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshBasicMaterial();
+        manager.add({
+          objectId: "owner",
+          resourceId: "owner:resource:0",
+          ownerId: "owner",
+          batchKey: "mesh-visibility",
+          matrix: new THREE.Matrix4().makeTranslation(4, 5, 6),
+          descriptor: { geometry, material, capacity: 4 }
+        });
+        const dirty = [];
+        const visibility = new MeshEditVisibility({
+          batchManager: manager,
+          markBatchDirty: key => dirty.push(key)
+        });
+        const hidden = visibility.setHidden(
+          "owner",
+          true,
+          new THREE.Matrix4().makeTranslation(4, 5, 6)
+        );
+        assertEqual(hidden.standardResourceCount, 1);
+        assertEqual(hidden.standardWrites, 1);
+        const location = manager.locationOf("owner");
+        const batch = manager.getBatch(location.batchKey);
+        const matrix = new THREE.Matrix4();
+        batch.mesh.getMatrixAt(location.instanceIndex, matrix);
+        const scale = new THREE.Vector3();
+        matrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+        assertVectorNear(scale.toArray(), [0,0,0]);
+        visibility.setHidden(
+          "owner",
+          false,
+          new THREE.Matrix4().makeTranslation(4, 5, 6)
+        );
+        batch.mesh.getMatrixAt(location.instanceIndex, matrix);
+        assertVectorNear(
+          new THREE.Vector3().setFromMatrixPosition(matrix).toArray(),
+          [4,5,6]
+        );
+        assert(dirty.length >= 2);
+        manager.clear({ disposeGeometry: true, disposeMaterial: true });
       },
 
       "registro descreve ferramentas e mantém executor legado substituível"() {

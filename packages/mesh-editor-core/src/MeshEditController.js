@@ -192,7 +192,7 @@ export class MeshEditController {
         manifoldOnly: true,
         removeUnused: true,
         autoNormals: true,
-        normalPolicy: "recompute-local",
+        normalPolicy: "preserve",
         preserveBoundary: true
       },
       display: {
@@ -860,6 +860,11 @@ export class MeshEditController {
       display: Object.freeze({ ...session.display }),
       affectedCount: rendererStatus.affectedCount ??
         session.selectedIndices.size,
+      renderVertexCount: rendererStatus.renderVertexCount ??
+        session.descriptor.positions.length,
+      geometricVertexCount: rendererStatus.geometricVertexCount ??
+        session.groups.groups.length,
+      sourceVisibility: rendererStatus.sourceVisibility ?? null,
       snapCandidate: rendererStatus.snapCandidate ?? null,
       canUndo: session.history.index > 0,
       canRedo: session.history.index < session.history.entries.length - 1,

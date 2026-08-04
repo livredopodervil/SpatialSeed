@@ -1,4 +1,4 @@
-export { MeshEditController } from "./MeshEditController.js?build=20260804-0048f1";
+export { MeshEditController } from "./MeshEditController.js?build=20260804-0048g1";
 export { buildMeshTopology, geodesicVertexDistances, closestPointOnSegment } from "./MeshTopology.js";
 export {
   DEFAULT_MESH_DEFORMATION_SETTINGS,
@@ -7,7 +7,7 @@ export {
   evaluateMeshFalloff,
   normalizeMeshDeformationSettings,
   transformLocalPositionsWithInfluenceInto
-} from "./MeshDeformation.js";
+} from "./MeshDeformation.js?build=20260804-0048g1";
 export {
   MESH_CONSTRAINTS,
   affineDeltaWorld,
@@ -37,7 +37,7 @@ export {
   meshSelectionOperation,
   normalizeMeshComponentMode,
   topologyOf
-} from "./MeshTopologyOperations.js";
+} from "./MeshTopologyOperations.js?build=20260804-0048g1";
 
 export {
   MESH_COINCIDENCE_POLICIES,
@@ -58,3 +58,10 @@ export {
   MeshToolRegistry,
   createDefaultMeshToolRegistry
 } from "../../mesh-tool-registry/src/index.js";
+
+export {
+  buildGeometricVertexIdentity,
+  expandGeometricValues,
+  geometricIndicesForVertices,
+  renderVerticesForGeometricIndices
+} from "../../mesh-geometric-identity/src/index.js?build=20260804-0048g1";

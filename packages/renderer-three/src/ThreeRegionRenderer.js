@@ -66,10 +66,13 @@ import {
   createMeshInfluenceField,
   normalizeMeshDeformationSettings,
   transformLocalPositionsWithInfluenceInto
-} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260727-0036d";
+} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260804-0048g1";
 import {
   normalizeMeshComponentMode
-} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260727-0036d";
+} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260804-0048g1";
+import {
+  buildGeometricVertexIdentity
+} from "../../mesh-geometric-identity/src/index.js?build=20260804-0048g1";
 import {
   normalizeScreenSelectionGesture,
   ScreenSelectionIndex
@@ -86,6 +89,9 @@ import {
 import {
   VisualCommitHandoff
 } from "./VisualCommitHandoff.js?build=20260804-0048d1";
+import {
+  MeshEditVisibility
+} from "./MeshEditVisibility.js?build=20260804-0048g1";
 import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
@@ -258,8 +264,7 @@ export class ThreeRegionRenderer {
   #boundsScale = null;
   #boundsScalePickCycle = null;
   #meshEdit = null;
-  #meshEditHiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
-  #meshEditHiddenObjectIds = new Set();
+  #meshEditVisibility = null;
   #inputDiagnostics = {
     pointerDown: 0,
     pointerUp: 0,
@@ -348,6 +353,11 @@ export class ThreeRegionRenderer {
         this.scene.remove(batch.mesh);
         if (batch.materialKey) this.#materialCache.release(batch.materialKey);
       }
+    });
+    this.#meshEditVisibility = new MeshEditVisibility({
+      batchManager: this.#batchManager,
+      heterogeneousBatchManager: this.#heterogeneousBatchManager,
+      markBatchDirty: batchKey => this.#markBatchDirty(batchKey)
     });
 
     this.camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
@@ -739,6 +749,7 @@ export class ThreeRegionRenderer {
       snap,
       deformation,
       topology: buildMeshTopology(descriptor),
+      geometricIdentity: null,
       influenceField: null,
       influence: new Map(),
       snapMarker,
@@ -758,6 +769,11 @@ export class ThreeRegionRenderer {
         typeof onTransformCommit === "function" ? onTransformCommit : null,
       commitPending: false
     };
+    this.#meshEdit.geometricIdentity = buildGeometricVertexIdentity({
+      positions: descriptor.positions,
+      indices: descriptor.indices ?? [],
+      vertexNeighbors: this.#meshEdit.topology.vertexNeighbors
+    });
     group.add(mesh, wire, faceOverlay, edgeOverlay, markers, snapMarker, snapLine);
     this.scene.add(group);
     this.#setMeshEditSourceVisible(false);
@@ -784,6 +800,11 @@ export class ThreeRegionRenderer {
     if (previousGeometry !== nextGeometry) previousGeometry.dispose?.();
     edit.descriptor = descriptor;
     edit.topology = buildMeshTopology(descriptor);
+    edit.geometricIdentity = buildGeometricVertexIdentity({
+      positions: descriptor.positions,
+      indices: descriptor.indices ?? [],
+      vertexNeighbors: edit.topology.vertexNeighbors
+    });
     edit.lastSnapCandidate = null;
     edit.selectedIndices = new Set(
       [...edit.selectedIndices].filter(index => index < descriptor.positions.length)
@@ -947,7 +968,7 @@ export class ThreeRegionRenderer {
     if (restoreBatch) {
       this.#setMeshEditSourceVisible(true, edit.objectId);
     } else {
-      this.#meshEditHiddenObjectIds.delete(edit.objectId);
+      this.#meshEditVisibility.remove(edit.objectId);
     }
     this.#meshEdit = null;
     this.#disposeMeshEditVisual(edit);
@@ -1009,6 +1030,10 @@ export class ThreeRegionRenderer {
       }),
       affectedCount: edit.influenceField?.affectedIndices.length ??
         edit.selectedIndices.size,
+      geometricVertexCount: edit.influenceField?.geometricVertexCount ??
+        edit.descriptor.positions.length,
+      renderVertexCount: edit.descriptor.positions.length,
+      sourceVisibility: this.#meshEditVisibility.status(edit.objectId),
       snapCandidate: edit.lastSnapCandidate
         ? Object.freeze({
             type: edit.lastSnapCandidate.type,
@@ -2480,7 +2505,7 @@ export class ThreeRegionRenderer {
     const proxy = this.#meshes.get(id);
     if (!proxy) return false;
     this.#visualCommitHandoff.remove(id);
-    this.#meshEditHiddenObjectIds.delete(id);
+    this.#meshEditVisibility.remove(id);
     if (this.#meshEdit?.objectId === id) {
       const edit = this.#meshEdit;
       this.#meshEdit = null;
@@ -3699,13 +3724,10 @@ export class ThreeRegionRenderer {
         proxy.matrixWorld
       ) > 0;
     }
-    const location = this.#batchManager.locationOf(objectId);
-    const changed = this.#batchManager.update(
+    return this.#meshEditVisibility.writeOwnerMatrix(
       objectId,
-      this.#effectiveBatchMatrix(objectId, proxy.matrix)
-    );
-    if (changed) this.#markBatchDirty(location?.batchKey);
-    return changed;
+      proxy.matrix
+    ) > 0;
   }
 
   #worldBoundsForProxy(proxy, target = new THREE.Box3()) {
@@ -5533,6 +5555,7 @@ export class ThreeRegionRenderer {
       selectedIndices: edit.selectedIndices,
       objectWorldMatrix: edit.objectWorldMatrix,
       frameQuaternion: edit.frameQuaternion,
+      geometricIdentity: edit.geometricIdentity,
       ...edit.deformation
     });
     edit.influenceField = field;
@@ -5569,9 +5592,7 @@ export class ThreeRegionRenderer {
   }
 
   #effectiveBatchMatrix(objectId, matrix) {
-    return this.#meshEditHiddenObjectIds.has(String(objectId))
-      ? this.#meshEditHiddenMatrix
-      : matrix;
+    return this.#meshEditVisibility.effectiveMatrix(objectId, matrix);
   }
 
   #setMeshEditSourceVisible(
@@ -5580,18 +5601,14 @@ export class ThreeRegionRenderer {
   ) {
     const id = String(objectId ?? "").trim();
     if (!id) return false;
-    if (visible) this.#meshEditHiddenObjectIds.delete(id);
-    else this.#meshEditHiddenObjectIds.add(id);
     const proxy = this.#meshes.get(id);
     const canonical = proxy?.userData.canonicalWorldMatrix ?? proxy?.matrix;
     if (!canonical) return false;
-    const location = this.#batchManager.locationOf(id);
-    const changed = this.#batchManager.update(
+    return this.#meshEditVisibility.setHidden(
       id,
-      this.#effectiveBatchMatrix(id, canonical)
-    );
-    if (changed) this.#markBatchDirty(location?.batchKey);
-    return changed;
+      !visible,
+      canonical
+    ).changed;
   }
 
   #disposeMeshEditVisual(edit) {

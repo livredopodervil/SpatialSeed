@@ -12,6 +12,12 @@ import {
   buildMeshTopology,
   geodesicVertexDistances
 } from "./MeshTopology.js";
+import {
+  buildGeometricVertexIdentity,
+  expandGeometricValues,
+  geometricIndicesForVertices,
+  renderVerticesForGeometricIndices
+} from "../../mesh-geometric-identity/src/index.js";
 
 const EPSILON = 1e-9;
 const METRICS = Object.freeze(["euclidean", "geodesic", "viewer", "axis"]);
@@ -101,7 +107,8 @@ export function createMeshInfluenceField({
   falloffExpression = "1-smoothstep(0,1,q)",
   axis = "x",
   variables = {},
-  elastic = {}
+  elastic = {},
+  geometricIdentity: providedGeometricIdentity = null
 } = {}) {
   if (!descriptor?.positions) {
     throw new TypeError("O campo de influência exige um descritor de malha.");
@@ -128,38 +135,64 @@ export function createMeshInfluenceField({
   const worldPoints = positions.map(point =>
     new THREE.Vector3().fromArray(point).applyMatrix4(worldMatrix)
   );
-  const selectedSet = new Set(selected);
-  const pivotWorld = selected.reduce(
-    (sum, index) => sum.add(worldPoints[index]),
-    new THREE.Vector3()
-  ).multiplyScalar(1 / selected.length);
   const topology = buildMeshTopology({
     positions,
     indices: descriptor.indices ?? []
   });
-  const distances = settings.enabled && settings.radius > EPSILON
+  const geometricIdentity = providedGeometricIdentity ??
+    buildGeometricVertexIdentity({
+      positions,
+      indices: descriptor.indices ?? [],
+      vertexNeighbors: topology.vertexNeighbors
+    });
+  const selectedGeometric = geometricIndicesForVertices(
+    geometricIdentity,
+    selected
+  );
+  const selectedRender = renderVerticesForGeometricIndices(
+    geometricIdentity,
+    selectedGeometric
+  );
+  const selectedSet = new Set(selectedRender);
+  const geometricWorldPoints = geometricIdentity.positions.map(point =>
+    new THREE.Vector3().fromArray(point).applyMatrix4(worldMatrix)
+  );
+  const pivotWorld = selectedGeometric.reduce(
+    (sum, index) => sum.add(geometricWorldPoints[index]),
+    new THREE.Vector3()
+  ).multiplyScalar(1 / selectedGeometric.length);
+  const geometricDistances = settings.enabled && settings.radius > EPSILON
     ? influenceDistances({
         metric: settings.metric,
-        positions,
-        worldPoints,
-        selected,
-        topology,
+        positions: geometricIdentity.positions,
+        worldPoints: geometricWorldPoints,
+        selected: selectedGeometric,
+        topology: { vertexNeighbors: geometricIdentity.vertexNeighbors },
         worldMatrix,
         frameQuaternion,
         pivotWorld: pivotWorld.toArray(),
         radius: settings.radius,
         axis: settings.axis
       })
-    : new Float64Array(positions.length).fill(Infinity);
-  for (const index of selected) distances[index] = 0;
-  const affected = [];
-  for (let index = 0; index < positions.length; index += 1) {
-    if (selectedSet.has(index) || (
+    : new Float64Array(geometricIdentity.geometricVertexCount).fill(Infinity);
+  for (const index of selectedGeometric) geometricDistances[index] = 0;
+  const selectedGeometricSet = new Set(selectedGeometric);
+  const affectedGeometric = [];
+  for (let index = 0; index < geometricIdentity.geometricVertexCount; index += 1) {
+    if (selectedGeometricSet.has(index) || (
       settings.enabled &&
       settings.radius > EPSILON &&
-      distances[index] <= settings.radius
-    )) affected.push(index);
+      geometricDistances[index] <= settings.radius
+    )) affectedGeometric.push(index);
   }
+  const affected = renderVerticesForGeometricIndices(
+    geometricIdentity,
+    affectedGeometric
+  );
+  const distances = expandGeometricValues(
+    geometricIdentity,
+    geometricDistances
+  );
   const compiledFalloff = settings.falloff === "custom"
     ? compileAffineExpression(settings.falloffExpression)
     : null;
@@ -185,7 +218,7 @@ export function createMeshInfluenceField({
     const context = {
       ...settings.variables,
       vi: vertexIndex,
-      gi: vertexIndex,
+      gi: geometricIdentity.geometricIndexByVertex[vertexIndex],
       i: order + 1,
       count: affected.length,
       u: affected.length <= 1 ? 0 : order / (affected.length - 1),
@@ -239,7 +272,8 @@ export function createMeshInfluenceField({
 
   return Object.freeze({
     affectedIndices: Object.freeze(affected),
-    selectedIndices: Object.freeze(selected),
+    selectedIndices: Object.freeze(selectedRender),
+    selectedGeometricIndices: Object.freeze(selectedGeometric),
     weights: Object.freeze(weights),
     distances,
     contexts: Object.freeze(contexts),
@@ -247,7 +281,9 @@ export function createMeshInfluenceField({
     metric: settings.metric,
     falloff: settings.falloff,
     enabled: settings.enabled,
-    radius: settings.radius
+    radius: settings.radius,
+    renderVertexCount: geometricIdentity.renderVertexCount,
+    geometricVertexCount: geometricIdentity.geometricVertexCount
   });
 }
 

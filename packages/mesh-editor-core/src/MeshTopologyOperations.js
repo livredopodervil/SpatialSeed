@@ -97,7 +97,8 @@ export function applyMeshTopologyOperation({
 
   const finalized = finalizeMesh(result.mesh, {
     removeUnused: op === "cleanup" || (options.removeUnused !== false && op !== "create-vertex"),
-    preserveLooseVertices: ["create-vertex", "duplicate", "collapse", "weld"].includes(op) && op !== "cleanup"
+    preserveLooseVertices: ["create-vertex", "duplicate", "collapse", "weld"].includes(op) && op !== "cleanup",
+    preserveNormals: op === "cleanup"
   });
   const afterTopology = topologyOf(finalized);
   validateTopology(afterTopology, {
@@ -891,14 +892,20 @@ function mutableMesh(descriptor = {}) {
   return { type: "buffer", positions, indices, normals, uvs, edges };
 }
 
-function finalizeMesh(mesh, { removeUnused = true, preserveLooseVertices = false } = {}) {
+function finalizeMesh(mesh, {
+  removeUnused = true,
+  preserveLooseVertices = false,
+  preserveNormals = false
+} = {}) {
   let result = mutableMesh(mesh);
   const faces = trianglesOf(result).filter(face =>
     new Set(face).size === 3 && triangleArea(result.positions, face) > EPSILON
   );
   result.indices = faces.flat();
   result.edges = uniqueEdges(result.edges.filter(([a, b]) => a !== b));
-  result.normals = [];
+  if (!preserveNormals || result.normals.length !== result.positions.length) {
+    result.normals = [];
+  }
   if (removeUnused && !preserveLooseVertices) {
     const used = new Set(result.indices);
     result.edges.forEach(([a, b]) => { used.add(a); used.add(b); });
@@ -915,7 +922,9 @@ function compactToVertices(mesh, used) {
     ...mesh,
     positions: ordered.map(index => mesh.positions[index]),
     uvs: mesh.uvs.length ? ordered.map(index => mesh.uvs[index] ?? [0, 0]) : [],
-    normals: [],
+    normals: mesh.normals.length === mesh.positions.length
+      ? ordered.map(index => mesh.normals[index] ?? [0, 0, 0])
+      : [],
     indices: mesh.indices.map(index => remap.get(index)),
     edges: mesh.edges
       .filter(([a, b]) => remap.has(a) && remap.has(b))
@@ -939,7 +948,9 @@ function freezeDescriptor(mesh) {
     type: "buffer",
     positions: Object.freeze(mesh.positions.map(point => Object.freeze([...point]))),
     indices: Object.freeze([...mesh.indices]),
-    normals: Object.freeze([]),
+    normals: Object.freeze((mesh.normals ?? []).map(
+      point => Object.freeze([...point])
+    )),
     uvs: Object.freeze((mesh.uvs ?? []).map(point => Object.freeze([...point]))),
     edges: Object.freeze((mesh.edges ?? []).map(edge => Object.freeze([...edge])))
   });
