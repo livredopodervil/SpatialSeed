@@ -66,13 +66,13 @@ import {
   createMeshInfluenceField,
   normalizeMeshDeformationSettings,
   transformLocalPositionsWithInfluenceInto
-} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260804-0048g1";
+} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260804-0048h1";
 import {
   normalizeMeshComponentMode
-} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260804-0048g1";
+} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260804-0048h1";
 import {
   buildGeometricVertexIdentity
-} from "../../mesh-geometric-identity/src/index.js?build=20260804-0048g1";
+} from "../../mesh-geometric-identity/src/index.js?build=20260804-0048h1";
 import {
   normalizeScreenSelectionGesture,
   ScreenSelectionIndex
@@ -91,7 +91,7 @@ import {
 } from "./VisualCommitHandoff.js?build=20260804-0048d1";
 import {
   MeshEditVisibility
-} from "./MeshEditVisibility.js?build=20260804-0048g1";
+} from "./MeshEditVisibility.js?build=20260804-0048h1";
 import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
@@ -814,7 +814,9 @@ export class ThreeRegionRenderer {
         index < meshComponentCount(edit.topology, edit.componentMode)
       )
     );
-    this.#finalizeMeshEditGeometry();
+    this.#finalizeMeshEditGeometry({
+      recomputeNormals: descriptor.normals.length !== descriptor.positions.length
+    });
     this.#updateMeshEditMarkerGeometry();
     this.#updateMeshEditEdgeGeometry();
     this.#updateMeshEditFaceOverlay();
@@ -5657,9 +5659,9 @@ export class ThreeRegionRenderer {
     if (finalize) this.#finalizeMeshEditGeometry();
   }
 
-  #finalizeMeshEditGeometry() {
+  #finalizeMeshEditGeometry({ recomputeNormals = true } = {}) {
     const edit = this.#requireMeshEdit();
-    edit.mesh.geometry.computeVertexNormals();
+    if (recomputeNormals) edit.mesh.geometry.computeVertexNormals();
     edit.mesh.geometry.computeBoundingBox();
     edit.mesh.geometry.computeBoundingSphere();
   }

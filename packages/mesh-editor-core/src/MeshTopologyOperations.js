@@ -1,3 +1,5 @@
+import { recomputeVertexNormals } from "../../mesh-attributes/src/index.js?build=20260804-0048h1";
+
 const EPSILON = 1e-9;
 
 export const MESH_COMPONENT_MODES = Object.freeze(["vertex", "edge", "face"]);
@@ -85,7 +87,14 @@ export function applyMeshTopologyOperation({
       break;
     case "recalculate-normals":
       result = {
-        mesh: { ...mesh, normals: [] },
+        mesh: {
+          ...mesh,
+          normals: recomputeVertexNormals({
+            positions: mesh.positions,
+            indices: mesh.indices,
+            sourceNormals: mesh.normals
+          })
+        },
         selectionVertices: componentVertices(beforeTopology, mode, selected),
         selectionFaceKeys: mode === "face" ? selected.map(index => faceKey(beforeTopology.triangles[index])) : [],
         label: "Recalcular normais"
@@ -98,7 +107,7 @@ export function applyMeshTopologyOperation({
   const finalized = finalizeMesh(result.mesh, {
     removeUnused: op === "cleanup" || (options.removeUnused !== false && op !== "create-vertex"),
     preserveLooseVertices: ["create-vertex", "duplicate", "collapse", "weld"].includes(op) && op !== "cleanup",
-    preserveNormals: op === "cleanup"
+    preserveNormals: ["cleanup", "recalculate-normals"].includes(op)
   });
   const afterTopology = topologyOf(finalized);
   validateTopology(afterTopology, {

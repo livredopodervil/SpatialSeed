@@ -7,8 +7,8 @@ export const MESH_NORMAL_POLICIES = Object.freeze([
   "recompute-all"
 ]);
 
-export function normalizeMeshNormalPolicy(value = "preserve") {
-  const normalized = String(value ?? "preserve").trim().toLowerCase();
+export function normalizeMeshNormalPolicy(value = "recompute-local") {
+  const normalized = String(value ?? "recompute-local").trim().toLowerCase();
   if (!MESH_NORMAL_POLICIES.includes(normalized)) {
     throw new RangeError(`Política de normais desconhecida: ${value}.`);
   }
@@ -67,7 +67,8 @@ export function prepareMeshCommitDescriptor({
   before,
   after,
   autoNormals = true,
-  normalPolicy = "preserve",
+  normalPolicy = "recompute-local",
+  preferTargetNormals = false,
   epsilon = DEFAULT_EPSILON
 } = {}) {
   const source = normalizeDescriptorShape(before);
@@ -91,7 +92,16 @@ export function prepareMeshCommitDescriptor({
   if (autoNormals) {
     const targetHasNormals = target.normals.length === target.positions.length;
     const sourceFitsTarget = source.normals.length === target.positions.length;
-    if (policy === "preserve") {
+    const normalSource = targetHasNormals
+      ? target.normals
+      : sourceFitsTarget
+        ? source.normals
+        : [];
+    if (preferTargetNormals && targetHasNormals) {
+      // Uma ferramenta explícita de normais já decidiu o atributo final.
+      // A política automática não deve substituir esse resultado no commit.
+      normals = target.normals.map(point => [...point]);
+    } else if (policy === "preserve") {
       if (targetHasNormals) {
         normals = target.normals.map(point => [...point]);
       } else if (!change.topologyChanged && sourceFitsTarget) {
@@ -100,11 +110,10 @@ export function prepareMeshCommitDescriptor({
         normals = [];
       }
     } else if (policy === "recompute-all") {
-      normals = recomputeLocalVertexNormals({
+      normals = recomputeVertexNormals({
         positions: target.positions,
         indices: target.indices,
-        sourceNormals: sourceFitsTarget ? source.normals : target.normals,
-        changedVertexIndices: target.positions.map((_, index) => index)
+        sourceNormals: normalSource
       });
     } else if (change.positionsChanged && !change.topologyChanged &&
         source.normals.length === source.positions.length &&
@@ -112,7 +121,7 @@ export function prepareMeshCommitDescriptor({
       normals = recomputeLocalVertexNormals({
         positions: target.positions,
         indices: target.indices,
-        sourceNormals: source.normals,
+        sourceNormals: normalSource,
         changedVertexIndices: change.changedVertexIndices
       });
     } else if (targetHasNormals) {
@@ -134,6 +143,49 @@ export function prepareMeshCommitDescriptor({
       normalsPreserved: arraysExactlyEqual(normals, source.normals),
       normalsInvalidated: normals.length === 0
     })
+  });
+}
+
+export function recomputeVertexNormals({
+  positions,
+  indices,
+  sourceNormals = [],
+  positionEpsilon = 1e-7,
+  normalEpsilon = 1e-5
+} = {}) {
+  const points = Array.isArray(positions) ? positions : [];
+  const triangles = Array.from(indices ?? [], Number);
+  if (!points.length || triangles.length % 3 !== 0) return [];
+
+  const accumulated = points.map(() => [0, 0, 0]);
+  for (let offset = 0; offset < triangles.length; offset += 3) {
+    const a = triangles[offset];
+    const b = triangles[offset + 1];
+    const c = triangles[offset + 2];
+    if (![a, b, c].every(index =>
+      Number.isInteger(index) && index >= 0 && index < points.length
+    )) continue;
+    const normal = triangleNormal(points[a], points[b], points[c]);
+    for (const index of [a, b, c]) {
+      accumulated[index][0] += normal[0];
+      accumulated[index][1] += normal[1];
+      accumulated[index][2] += normal[2];
+    }
+  }
+
+  synchronizeContinuousNormalGroups({
+    positions: points,
+    sourceNormals,
+    accumulated,
+    positionEpsilon,
+    normalEpsilon
+  });
+
+  return accumulated.map((value, index) => {
+    const normalized = normalize3(value);
+    if (lengthSquared3(normalized) > 0) return normalized;
+    const fallback = sourceNormals[index];
+    return Array.isArray(fallback) ? [...fallback] : [...ZERO_NORMAL];
   });
 }
 
@@ -165,9 +217,17 @@ export function recomputeLocalVertexNormals({
   }
   if (!affected.size) return source.map(point => [...point]);
 
-  const accumulated = new Map(
-    [...affected].map(index => [index, [0, 0, 0]])
-  );
+  const continuityGroups = normalContinuityGroups({
+    positions: points,
+    sourceNormals: source
+  });
+  for (const group of continuityGroups) {
+    if (group.some(index => affected.has(index))) {
+      group.forEach(index => affected.add(index));
+    }
+  }
+
+  const accumulated = points.map(() => [0, 0, 0]);
   for (let offset = 0; offset < triangles.length; offset += 3) {
     const a = triangles[offset];
     const b = triangles[offset + 1];
@@ -175,22 +235,108 @@ export function recomputeLocalVertexNormals({
     if (![a, b, c].some(index => affected.has(index))) continue;
     const normal = triangleNormal(points[a], points[b], points[c]);
     for (const index of [a, b, c]) {
-      const sum = accumulated.get(index);
-      if (!sum) continue;
-      sum[0] += normal[0];
-      sum[1] += normal[1];
-      sum[2] += normal[2];
+      if (!affected.has(index)) continue;
+      accumulated[index][0] += normal[0];
+      accumulated[index][1] += normal[1];
+      accumulated[index][2] += normal[2];
     }
   }
 
+  synchronizeContinuousNormalGroups({
+    positions: points,
+    sourceNormals: source,
+    accumulated,
+    restrictedIndices: affected
+  });
+
   const result = source.map(point => [...point]);
-  for (const [index, value] of accumulated) {
-    const normalized = normalize3(value);
+  for (const index of affected) {
+    const normalized = normalize3(accumulated[index]);
     result[index] = lengthSquared3(normalized) > 0
       ? normalized
       : [...(source[index] ?? ZERO_NORMAL)];
   }
   return result;
+}
+
+function synchronizeContinuousNormalGroups({
+  positions,
+  sourceNormals,
+  accumulated,
+  restrictedIndices = null,
+  positionEpsilon = 1e-7,
+  normalEpsilon = 1e-5
+}) {
+  const groups = normalContinuityGroups({
+    positions,
+    sourceNormals,
+    positionEpsilon,
+    normalEpsilon
+  });
+  for (const group of groups) {
+    const active = restrictedIndices
+      ? group.filter(index => restrictedIndices.has(index))
+      : group;
+    if (active.length < 2) continue;
+    const sum = [0, 0, 0];
+    for (const index of active) {
+      const value = accumulated[index] ?? ZERO_NORMAL;
+      sum[0] += value[0];
+      sum[1] += value[1];
+      sum[2] += value[2];
+    }
+    for (const index of active) accumulated[index] = [...sum];
+  }
+}
+
+function normalContinuityGroups({
+  positions,
+  sourceNormals,
+  positionEpsilon = 1e-7,
+  normalEpsilon = 1e-5
+}) {
+  if (!Array.isArray(sourceNormals) || sourceNormals.length !== positions.length) {
+    return [];
+  }
+  const positionBuckets = new Map();
+  for (let index = 0; index < positions.length; index += 1) {
+    const point = positions[index] ?? [0, 0, 0];
+    const key = [
+      quantize(point[0], positionEpsilon),
+      quantize(point[1], positionEpsilon),
+      quantize(point[2], positionEpsilon)
+    ].join(":");
+    const bucket = positionBuckets.get(key) ?? [];
+    bucket.push(index);
+    positionBuckets.set(key, bucket);
+  }
+
+  const groups = [];
+  for (const bucket of positionBuckets.values()) {
+    if (bucket.length < 2) continue;
+    const partitions = [];
+    for (const index of bucket) {
+      const normal = normalize3(sourceNormals[index] ?? ZERO_NORMAL);
+      if (lengthSquared3(normal) === 0) {
+        partitions.push({ normal, indices: [index] });
+        continue;
+      }
+      const partition = partitions.find(candidate =>
+        lengthSquared3(candidate.normal) > 0 &&
+        dot3(candidate.normal, normal) >= 1 - normalEpsilon
+      );
+      if (partition) partition.indices.push(index);
+      else partitions.push({ normal, indices: [index] });
+    }
+    for (const partition of partitions) {
+      if (partition.indices.length > 1) groups.push(partition.indices);
+    }
+  }
+  return groups;
+}
+
+function quantize(value, epsilon) {
+  return Math.round(Number(value ?? 0) / epsilon);
 }
 
 function normalizeDescriptorShape(value = {}) {
@@ -286,6 +432,12 @@ function normalize3(value) {
   return length > 1e-20
     ? [value[0] / length, value[1] / length, value[2] / length]
     : [0, 0, 0];
+}
+
+function dot3(left, right) {
+  return Number(left?.[0] ?? 0) * Number(right?.[0] ?? 0) +
+    Number(left?.[1] ?? 0) * Number(right?.[1] ?? 0) +
+    Number(left?.[2] ?? 0) * Number(right?.[2] ?? 0);
 }
 
 function lengthSquared3(value) {

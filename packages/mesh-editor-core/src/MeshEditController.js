@@ -6,12 +6,12 @@ import {
   createMeshInfluenceField,
   normalizeMeshDeformationSettings,
   transformLocalPositionsWithInfluenceInto
-} from "./MeshDeformation.js";
+} from "./MeshDeformation.js?build=20260804-0048h1";
 import { buildMeshTopology } from "./MeshTopology.js";
 import {
   prepareMeshCommitDescriptor,
   normalizeMeshNormalPolicy
-} from "../../mesh-attributes/src/index.js";
+} from "../../mesh-attributes/src/index.js?build=20260804-0048h1";
 import {
   createDefaultMeshToolRegistry
 } from "../../mesh-tool-registry/src/index.js";
@@ -23,7 +23,7 @@ import {
   componentVertices,
   meshSelectionOperation,
   normalizeMeshComponentMode
-} from "./MeshTopologyOperations.js";
+} from "./MeshTopologyOperations.js?build=20260804-0048h1";
 import {
   affineDeltaWorld,
   assertInvertibleWorldMatrix,
@@ -188,11 +188,12 @@ export class MeshEditController {
       deformation: normalizeMeshDeformationSettings(
         DEFAULT_MESH_DEFORMATION_SETTINGS
       ),
+      normalState: "clean",
       topologyOptions: {
         manifoldOnly: true,
         removeUnused: true,
         autoNormals: true,
-        normalPolicy: "preserve",
+        normalPolicy: "recompute-local",
         preserveBoundary: true
       },
       display: {
@@ -271,7 +272,8 @@ export class MeshEditController {
         before: session.initialDescriptor,
         after: session.descriptor,
         autoNormals: session.topologyOptions.autoNormals,
-        normalPolicy: session.topologyOptions.normalPolicy
+        normalPolicy: session.topologyOptions.normalPolicy,
+        preferTargetNormals: session.normalState === "explicit"
       });
       if (!prepared.changed) return this.#finishNoopCommit(session);
       geometry = this.geometryRegistry.normalize(prepared.descriptor);
@@ -399,6 +401,7 @@ export class MeshEditController {
     }
 
     const result = execution.result;
+    const previousNormalState = session.normalState;
     this.#recordHistory(`Antes de ${result.label}`);
     session.descriptor = result.descriptor;
     session.topology = result.topology;
@@ -407,7 +410,14 @@ export class MeshEditController {
     session.activeComponents = { vertex: null, edge: null, face: null };
     session.componentSelections[result.selection.mode] = new Set(result.selection.indices);
     session.activeComponents[result.selection.mode] = result.selection.activeIndex;
-    this.#markGeometryChanged(session, { topology: result.topology });
+    this.#markGeometryChanged(session, {
+      topology: result.topology,
+      normalState: execution.tool.operation === "recalculate-normals"
+        ? "explicit"
+        : execution.tool.operation === "cleanup"
+          ? previousNormalState
+          : "dirty"
+    });
     this.renderer.updateMeshEditGeometry(session.descriptor);
     this.#syncSelection({ notify: false });
     this.#recordHistory(result.label);
@@ -580,7 +590,7 @@ export class MeshEditController {
       ...session.descriptor,
       positions: result.positions.map(point => [...point])
     });
-    this.#markGeometryChanged(session);
+    this.#markGeometryChanged(session, { normalState: "dirty" });
     this.renderer.updateMeshEditGeometry(session.descriptor);
     this.renderer.updateMeshEditInfluence?.(
       result.affectedIndices,
@@ -770,7 +780,7 @@ export class MeshEditController {
         targetWorld: position
       })
     });
-    this.#markGeometryChanged(session);
+    this.#markGeometryChanged(session, { normalState: "dirty" });
     this.renderer.updateMeshEditGeometry(session.descriptor);
     this.#recordHistory("Posicionar pivô");
     this.#notify();
@@ -857,6 +867,7 @@ export class MeshEditController {
         elastic: Object.freeze({ ...session.deformation.elastic })
       }),
       topologyOptions: Object.freeze({ ...session.topologyOptions }),
+      normalState: session.normalState,
       display: Object.freeze({ ...session.display }),
       affectedCount: rendererStatus.affectedCount ??
         session.selectedIndices.size,
@@ -980,7 +991,7 @@ export class MeshEditController {
       ...session.descriptor,
       positions
     });
-    this.#markGeometryChanged(session);
+    this.#markGeometryChanged(session, { normalState: "dirty" });
     this.renderer.updateMeshEditGeometry(session.descriptor);
     if (recordHistory) this.#recordHistory(`${type} afim`);
     if (notify) this.#notify();
@@ -1039,7 +1050,7 @@ export class MeshEditController {
       ...session.descriptor,
       positions: positions.map(point => [...point])
     });
-    this.#markGeometryChanged(session);
+    this.#markGeometryChanged(session, { normalState: "dirty" });
     this.#recordHistory("Gizmo");
     this.#notify();
   }
@@ -1139,7 +1150,11 @@ export class MeshEditController {
     if (notify) this.#notify();
   }
 
-  #markGeometryChanged(session, { topology = null } = {}) {
+  #markGeometryChanged(session, {
+    topology = null,
+    normalState = null
+  } = {}) {
+    if (normalState !== null) session.normalState = normalState;
     this.#refreshGroups(session);
     session.topology = topology ?? buildMeshTopology(session.descriptor);
     const counts = {
@@ -1182,6 +1197,7 @@ export class MeshEditController {
       label: String(label ?? "Operação"),
       key: this.geometryRegistry.key(session.descriptor),
       descriptor: structuredClone(session.descriptor),
+      normalState: session.normalState,
       componentMode: session.componentMode,
       componentSelections: Object.fromEntries(
         Object.entries(session.componentSelections).map(([mode, values]) => [mode, [...values]])
@@ -1219,7 +1235,9 @@ export class MeshEditController {
       face: entry.activeComponents.face ?? null
     };
     session.lastOperation = entry.label;
-    this.#markGeometryChanged(session);
+    this.#markGeometryChanged(session, {
+      normalState: entry.normalState ?? "dirty"
+    });
     this.renderer.updateMeshEditGeometry(session.descriptor);
     this.#syncSelection({ notify: false });
     this.#notify();

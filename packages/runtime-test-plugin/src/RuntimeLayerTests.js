@@ -212,7 +212,7 @@ import {
 } from "../../renderer-three/src/VisualCommitHandoff.js?build=20260804-0048d1";
 import {
   MeshEditVisibility
-} from "../../renderer-three/src/MeshEditVisibility.js?build=20260804-0048g1";
+} from "../../renderer-three/src/MeshEditVisibility.js?build=20260804-0048h1";
 import {
   MeshEditController,
   MeshToolRegistry,
@@ -230,6 +230,7 @@ import {
   geodesicVertexDistances,
   prepareMeshCommitDescriptor,
   recomputeLocalVertexNormals,
+  recomputeVertexNormals,
   resolveTransformVertexSelection,
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid,
@@ -237,7 +238,7 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260804-0048g1";
+} from "../../mesh-editor-core/src/index.js?build=20260804-0048h1";
 import {
   EditContextController,
   axesFromConstraint,
@@ -5141,7 +5142,7 @@ export function createRuntimeLayerTests() {
         assertNear(weight.get(5), 0);
       },
 
-      "movimento posicional preserva normais por padrão"() {
+      "movimento posicional recalcula normais derivadas ao aplicar"() {
         const before = {
           type: "buffer",
           positions: [[0,0,0], [1,0,0], [0,1,0]],
@@ -5154,8 +5155,105 @@ export function createRuntimeLayerTests() {
         after.positions[2] = [0,1,0.5];
         const prepared = prepareMeshCommitDescriptor({ before, after });
         assertEqual(prepared.changed, true);
-        assertDeepEqual(prepared.descriptor.normals, before.normals);
+        assertEqual(prepared.change.normalPolicy, "recompute-local");
+        assertEqual(Math.abs(prepared.descriptor.normals[0][1]) > 0, true);
         assertDeepEqual(prepared.descriptor.uvs, before.uvs);
+      },
+
+      "recalcular normais produz atributo persistível após deformação"() {
+        const initial = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1]],
+          uvs: [[0,0], [1,0], [0,1]],
+          edges: []
+        };
+        const deformed = structuredClone(initial);
+        deformed.positions[2] = [0,1,0.5];
+        const result = applyMeshTopologyOperation({
+          descriptor: deformed,
+          topology: topologyOf(deformed),
+          componentMode: "vertex",
+          selectedIndices: [],
+          operation: "recalculate-normals",
+          options: { manifoldOnly: true }
+        });
+        assertEqual(result.descriptor.normals.length, 3);
+        assertEqual(Math.abs(result.descriptor.normals[0][1]) > 0, true);
+        const prepared = prepareMeshCommitDescriptor({
+          before: initial,
+          after: result.descriptor,
+          normalPolicy: "recompute-local",
+          preferTargetNormals: true
+        });
+        assertDeepEqual(
+          prepared.descriptor.normals,
+          result.descriptor.normals
+        );
+      },
+
+
+
+      "movimento posterior invalida normais explicitamente recalculadas"() {
+        const initial = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1]],
+          uvs: [],
+          edges: []
+        };
+        const afterExplicit = structuredClone(initial);
+        afterExplicit.positions[2] = [0,1,0.5];
+        afterExplicit.normals = recomputeVertexNormals({
+          positions: afterExplicit.positions,
+          indices: afterExplicit.indices,
+          sourceNormals: initial.normals
+        });
+        const movedAgain = structuredClone(afterExplicit);
+        movedAgain.positions[2] = [0,1,1];
+        const prepared = prepareMeshCommitDescriptor({
+          before: initial,
+          after: movedAgain,
+          normalPolicy: "recompute-local",
+          preferTargetNormals: false
+        });
+        assertEqual(
+          Math.abs(prepared.descriptor.normals[0][1]) >
+            Math.abs(afterExplicit.normals[0][1]),
+          true
+        );
+      },
+
+      "costura suave compartilha normal sem fundir aresta dura"() {
+        const smooth = recomputeVertexNormals({
+          positions: [
+            [0,0,0], [1,0,0], [0,1,0],
+            [0,0,0], [0,1,0], [-1,0,0.5]
+          ],
+          indices: [0,1,2, 3,4,5],
+          sourceNormals: [
+            [0,0,1], [0,0,1], [0,0,1],
+            [0,0,1], [0,0,1], [0,0,1]
+          ]
+        });
+        assertVectorNear(smooth[0], smooth[3]);
+        assertVectorNear(smooth[2], smooth[4]);
+
+        const hard = recomputeVertexNormals({
+          positions: [
+            [0,0,0], [1,0,0], [0,1,0],
+            [0,0,0], [0,0,1], [1,0,0]
+          ],
+          indices: [0,1,2, 3,4,5],
+          sourceNormals: [
+            [0,0,1], [0,0,1], [0,0,1],
+            [0,1,0], [0,1,0], [0,1,0]
+          ]
+        });
+        assertEqual(Math.abs(hard[0][2]) > 0.9, true);
+        assertEqual(Math.abs(hard[3][1]) > 0.9, true);
       },
 
       "sanitização remapeia e preserva normais e UVs"() {
@@ -5204,13 +5302,13 @@ export function createRuntimeLayerTests() {
         );
         assertEqual(hidden.standardResourceCount, 1);
         assertEqual(hidden.standardWrites, 1);
-        const location = manager.locationOf("owner");
+        const location = manager.locationOf("owner:resource:0");
         const batch = manager.getBatch(location.batchKey);
         const matrix = new THREE.Matrix4();
         batch.mesh.getMatrixAt(location.instanceIndex, matrix);
-        const scale = new THREE.Vector3();
-        matrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
-        assertVectorNear(scale.toArray(), [0,0,0]);
+        assertNear(matrix.elements[0], 0);
+        assertNear(matrix.elements[5], 0);
+        assertNear(matrix.elements[10], 0);
         visibility.setHidden(
           "owner",
           false,

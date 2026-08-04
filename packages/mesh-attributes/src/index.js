@@ -3,5 +3,6 @@ export {
   classifyMeshDescriptorChange,
   normalizeMeshNormalPolicy,
   prepareMeshCommitDescriptor,
-  recomputeLocalVertexNormals
-} from "./MeshAttributePolicy.js";
+  recomputeLocalVertexNormals,
+  recomputeVertexNormals
+} from "./MeshAttributePolicy.js?build=20260804-0048h1";
