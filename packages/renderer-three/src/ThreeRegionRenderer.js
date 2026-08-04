@@ -78,6 +78,12 @@ import {
   ToolGestureNavigation
 } from "./ToolGestureNavigation.js?build=20260731-0043x1";
 import {
+  createLocalBoundsScaleHandleSet,
+  proportionalScaleFactor2D,
+  scaleFactorsForAxes,
+  scaleWorldTrsWithoutShear
+} from "./LocalBoundsScale.js?build=20260804-0048b";
+import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
   familyMemberResourcePath,
@@ -236,6 +242,7 @@ export class ThreeRegionRenderer {
     translationSnap: null,
     rotationSnapDeg: null,
     scaleSnap: null,
+    scaleFromCenter: false,
     gridLock: false,
     showX: true,
     showY: true,
@@ -244,6 +251,8 @@ export class ThreeRegionRenderer {
     vertexSize: 5
   };
   #vertexMarkers = null;
+  #boundsScale = null;
+  #boundsScalePickCycle = null;
   #meshEdit = null;
   #inputDiagnostics = {
     pointerDown: 0,
@@ -478,6 +487,10 @@ export class ThreeRegionRenderer {
         this.#inputDiagnostics.discardedReason = "gesto-multitoque";
         return;
       }
+      if (this.#tryBeginBoundsScale(event)) {
+        this.#tap = null;
+        return;
+      }
       if (
         this.#interactionMode === "select" &&
         this.editorState.areaSelection
@@ -500,14 +513,19 @@ export class ThreeRegionRenderer {
         y: event.clientY,
         type: event.pointerType || "mouse"
       };
+      this.#updateBoundsScale(event);
     }, true);
 
-    canvas.addEventListener("pointercancel", () => {
+    canvas.addEventListener("pointercancel", event => {
       this.#inputDiagnostics.pointerCancel += 1;
       this.#inputDiagnostics.discardedReason = "pointercancel";
       this.#tap = null;
+      this.#finishBoundsScale(event);
     }, true);
-    canvas.addEventListener("pointerup", event => this.#selectAt(event), true);
+    canvas.addEventListener("pointerup", event => {
+      if (this.#finishBoundsScale(event)) return;
+      this.#selectAt(event);
+    }, true);
     addEventListener("resize", () => this.resize());
 
     this.animate();
@@ -845,6 +863,7 @@ export class ThreeRegionRenderer {
     edit.lastSnapCandidate = null;
     this.#refreshMeshEditInfluence();
     this.#configureTransformForEditor();
+    this.#updateVertexMarkers();
     return this.getMeshEditStatus();
   }
 
@@ -1079,6 +1098,7 @@ export class ThreeRegionRenderer {
       z: patch.z === undefined ? this.#objectTransformAxes.z : Boolean(patch.z)
     };
     this.#configureTransformForEditor();
+    this.#updateVertexMarkers();
     return this.getObjectTransformAxes();
   }
 
@@ -3716,6 +3736,13 @@ export class ThreeRegionRenderer {
     this.#interactionMode=mode;
     this.#selectionOperation=this.editorState.selectionOperation??"replace";
 
+    if (this.#boundsScale) {
+      this.transform.enabled = false;
+      this.transform.getHelper().visible = false;
+      this.orbit.enabled = false;
+      return;
+    }
+
     if (this.#meshEdit) {
       const enabled = ["translate", "rotate", "scale"].includes(mode) &&
         this.#meshEdit.selectedIndices.size > 0;
@@ -3776,7 +3803,8 @@ export class ThreeRegionRenderer {
         workingPositions: this.#meshEdit.descriptor.positions.map(
           point => [...point]
         ),
-        influenceField: this.#snapshotMeshInfluenceField()
+        influenceField: this.#snapshotMeshInfluenceField(),
+        scalePivotWorld: this.#boundsScale?.fixedWorld?.toArray() ?? null
       };
       this.#transformLifecycleDiagnostics.sessionsStarted += 1;
       return;
@@ -3801,6 +3829,7 @@ export class ThreeRegionRenderer {
 
     const objects = new Map();
     const previewObjects = new Map();
+    const previewRoots = new Map();
     for (const member of members) {
       const mesh = this.#meshes.get(member.objectId);
       if (!mesh) continue;
@@ -3814,6 +3843,16 @@ export class ThreeRegionRenderer {
       this.#hierarchy,
       selectedIds
     );
+    for (const rootId of selectedIds) {
+      for (const projectedId of projectedSelectionIdsWithFallback(
+        this.#hierarchy,
+        [rootId]
+      )) {
+        if (!previewRoots.has(projectedId)) {
+          previewRoots.set(projectedId, rootId);
+        }
+      }
+    }
     for (const previewId of previewIds) {
       const previewMesh=this.#meshes.get(previewId);
       if (!previewMesh) continue;
@@ -3833,6 +3872,7 @@ export class ThreeRegionRenderer {
         previewObjects.set(objectId, {
           matrixWorld: snapshot.matrixWorld.clone()
         });
+        previewRoots.set(objectId, objectId);
       }
     }
 
@@ -3850,8 +3890,11 @@ export class ThreeRegionRenderer {
       kind:"selection",
       previewId: createPreviewId(),
       initialAnchor,
+      mode: this.transform.getMode(),
+      scaleAxes: this.#boundsScale?.axes ?? this.#activeScaleAxes(),
       objects,
-      previewObjects
+      previewObjects,
+      previewRoots
     };
     const diagnostics=this.#transformLifecycleDiagnostics;
     diagnostics.sessionsStarted += 1;
@@ -3899,7 +3942,9 @@ export class ThreeRegionRenderer {
         objectWorldMatrix: this.#meshEdit.objectWorldMatrix,
         deltaWorldMatrix: constrainedDelta,
         type: this.#session.mode,
-        pivotWorld: influenceField.pivotWorld,
+        pivotWorld: this.#session.mode === "scale"
+          ? this.#session.initialAnchor.position.toArray()
+          : influenceField.pivotWorld,
         frameQuaternion: this.#meshEdit.frameQuaternion
       });
       if (
@@ -3914,6 +3959,7 @@ export class ThreeRegionRenderer {
         finalize: false,
         changedIndices: influenceField.affectedIndices
       });
+      if (this.#boundsScale) this.#updateVertexMarkers();
       this.#meshEdit.onTransformPreview?.();
       const elapsed = performance.now() - startedAt;
       const diagnostics = this.#transformLifecycleDiagnostics;
@@ -3928,24 +3974,28 @@ export class ThreeRegionRenderer {
       return;
     }
 
-    const initial = new THREE.Matrix4().compose(
-      this.#session.initialAnchor.position,
-      this.#session.initialAnchor.quaternion,
-      this.#session.initialAnchor.scale
-    );
-    const current = new THREE.Matrix4().compose(
-      this.transformAnchor.position,
-      this.transformAnchor.quaternion,
-      this.transformAnchor.scale
-    );
-    const delta = current.clone().multiply(initial.clone().invert());
+    if (this.#session.mode === "scale") {
+      this.#previewSelectionScaleWithoutShear();
+    } else {
+      const initial = new THREE.Matrix4().compose(
+        this.#session.initialAnchor.position,
+        this.#session.initialAnchor.quaternion,
+        this.#session.initialAnchor.scale
+      );
+      const current = new THREE.Matrix4().compose(
+        this.transformAnchor.position,
+        this.transformAnchor.quaternion,
+        this.transformAnchor.scale
+      );
+      const delta = current.clone().multiply(initial.clone().invert());
 
-    for (const [objectId, snapshot] of this.#session.previewObjects) {
-      const mesh = this.#meshes.get(objectId);
-      if (!mesh) continue;
-      const result = delta.clone().multiply(snapshot.matrixWorld);
-      applyProjectedWorldMatrix(mesh,result.toArray());
-      this.#updateBatchMatrix(objectId, mesh);
+      for (const [objectId, snapshot] of this.#session.previewObjects) {
+        const mesh = this.#meshes.get(objectId);
+        if (!mesh) continue;
+        const result = delta.clone().multiply(snapshot.matrixWorld);
+        applyProjectedWorldMatrix(mesh,result.toArray());
+        this.#updateBatchMatrix(objectId, mesh);
+      }
     }
     this.#flushBatchBounds();
     this.#updateSelectionAppearance();
@@ -4350,7 +4400,366 @@ export class ThreeRegionRenderer {
     this.transform.attach(this.transformAnchor);
   }
 
+  #activeScaleAxes() {
+    return this.#meshEdit
+      ? meshConstraintAxes(this.#meshEdit.constraint)
+      : {
+          x: Boolean(this.#objectTransformAxes.x),
+          y: Boolean(this.#objectTransformAxes.y),
+          z: Boolean(this.#objectTransformAxes.z)
+        };
+  }
+
+  #localBoundsScaleFrame() {
+    if (this.editorState.tool.mode !== "scale") return null;
+    const members = this.#selectionSnapshot?.members ?? [];
+    if (!this.#meshEdit && !members.length) return null;
+
+    const frameOrigin = this.#boundsScale?.fixedWorld?.clone() ??
+      this.transformAnchor.position.clone();
+    const frameQuaternion = this.#boundsScale?.frameQuaternion?.clone() ??
+      this.transformAnchor.quaternion.clone().normalize();
+    const inverseFrame = frameQuaternion.clone().invert();
+    const bounds = new THREE.Box3().makeEmpty();
+
+    if (this.#meshEdit) {
+      const worldMatrix = new THREE.Matrix4().fromArray(
+        this.#meshEdit.objectWorldMatrix
+      );
+      for (const index of this.#meshEdit.selectedIndices) {
+        const point = this.#meshEdit.descriptor.positions[index];
+        if (!point) continue;
+        bounds.expandByPoint(
+          new THREE.Vector3()
+            .fromArray(point)
+            .applyMatrix4(worldMatrix)
+            .sub(frameOrigin)
+            .applyQuaternion(inverseFrame)
+        );
+      }
+    } else {
+      const selectedIds = members.map(member => String(member.objectId));
+      const proxyIds = projectedSelectionIdsWithFallback(
+        this.#hierarchy,
+        selectedIds
+      );
+      for (const objectId of proxyIds) {
+        const proxy = this.#meshes.get(objectId);
+        if (!proxy) continue;
+        const localBounds = proxy.userData.localBounds ?? (() => {
+          const size = proxy.userData.size ?? [1, 1, 1];
+          return {
+            min: size.map(value => -Number(value) * 0.5),
+            max: size.map(value => Number(value) * 0.5)
+          };
+        })();
+        proxy.updateMatrixWorld(true);
+        for (const z of [localBounds.min[2], localBounds.max[2]]) {
+          for (const y of [localBounds.min[1], localBounds.max[1]]) {
+            for (const x of [localBounds.min[0], localBounds.max[0]]) {
+              bounds.expandByPoint(
+                new THREE.Vector3(x, y, z)
+                  .applyMatrix4(proxy.matrixWorld)
+                  .sub(frameOrigin)
+                  .applyQuaternion(inverseFrame)
+              );
+            }
+          }
+        }
+      }
+    }
+
+    if (bounds.isEmpty()) return null;
+    const handleSet = createLocalBoundsScaleHandleSet({
+      min: bounds.min.toArray(),
+      max: bounds.max.toArray(),
+      axes: this.#boundsScale?.axes ?? this.#activeScaleAxes()
+    });
+    if (!handleSet.handles.length) return null;
+
+    const centerWorld = bounds.getCenter(new THREE.Vector3())
+      .applyQuaternion(frameQuaternion)
+      .add(frameOrigin);
+    const handles = handleSet.handles.map(handle => Object.freeze({
+      ...handle,
+      world: new THREE.Vector3()
+        .fromArray(handle.point)
+        .applyQuaternion(frameQuaternion)
+        .add(frameOrigin)
+    }));
+    return Object.freeze({
+      frameOrigin,
+      frameQuaternion,
+      centerWorld,
+      axes: handleSet.axes,
+      handles: Object.freeze(handles)
+    });
+  }
+
+  #tryBeginBoundsScale(event) {
+    if (
+      this.#session ||
+      this.#boundsScale ||
+      this.editorState.pivot.editing ||
+      this.editorState.tool.mode !== "scale" ||
+      event.isPrimary === false ||
+      (event.pointerType === "mouse" && event.button !== 0)
+    ) {
+      return false;
+    }
+    const frame = this.#localBoundsScaleFrame();
+    if (!frame) return false;
+    const rect = this.canvas.getBoundingClientRect();
+    const radius = event.pointerType === "touch" ? 32 : 16;
+    const centerScreen = projectWorldToScreen(
+      frame.centerWorld,
+      this.camera,
+      rect
+    );
+    const useCenter = Boolean(this.#transformConfig.scaleFromCenter) !==
+      Boolean(event.altKey);
+    const candidates = frame.handles
+      .map(handle => {
+        const opposite = frame.handles[handle.oppositeIndex];
+        const screen = projectWorldToScreen(handle.world, this.camera, rect);
+        const oppositeScreen = opposite
+          ? projectWorldToScreen(opposite.world, this.camera, rect)
+          : null;
+        const pivotWorld = useCenter
+          ? frame.centerWorld
+          : opposite?.world;
+        const pivotScreen = useCenter
+          ? centerScreen
+          : oppositeScreen;
+        const outwardWorld = new THREE.Vector3(...handle.signs)
+          .applyQuaternion(frame.frameQuaternion)
+          .normalize();
+        const outwardScreen = projectWorldToScreen(
+          handle.world.clone().add(outwardWorld),
+          this.camera,
+          rect
+        );
+        return {
+          handle,
+          opposite,
+          screen,
+          pivotWorld,
+          pivotScreen,
+          fallbackDirection: [
+            outwardScreen.x - screen.x,
+            outwardScreen.y - screen.y
+          ],
+          distance: Math.hypot(
+            event.clientX - screen.x,
+            event.clientY - screen.y
+          )
+        };
+      })
+      .filter(candidate =>
+        candidate.opposite &&
+        candidate.pivotWorld &&
+        candidate.screen.visible &&
+        candidate.pivotScreen?.visible &&
+        candidate.distance <= radius
+      )
+      .sort((left, right) =>
+        left.distance - right.distance ||
+        left.screen.z - right.screen.z
+      );
+    if (!candidates.length) return false;
+
+    const nearestDistance = candidates[0].distance;
+    const overlapping = candidates.filter(candidate =>
+      candidate.distance <= nearestDistance + 4
+    );
+    const pickKey = overlapping
+      .map(candidate => candidate.handle.index)
+      .join(",");
+    const now = performance.now();
+    const previousPick = this.#boundsScalePickCycle;
+    const samePickCluster = Boolean(
+      previousPick &&
+      previousPick.key === pickKey &&
+      now - previousPick.time <= 1200 &&
+      Math.hypot(
+        event.clientX - previousPick.x,
+        event.clientY - previousPick.y
+      ) <= 10
+    );
+    const pickIndex = samePickCluster
+      ? (previousPick.index + 1) % overlapping.length
+      : 0;
+    const hit = overlapping[pickIndex];
+    this.#boundsScalePickCycle = {
+      key: pickKey,
+      index: pickIndex,
+      x: event.clientX,
+      y: event.clientY,
+      time: now
+    };
+
+    const projectedSpan = Math.max(
+      32,
+      ...frame.handles.map(handle => {
+        const point = projectWorldToScreen(handle.world, this.camera, rect);
+        return Math.hypot(
+          point.x - centerScreen.x,
+          point.y - centerScreen.y
+        );
+      })
+    );
+    this.#boundsScale = {
+      pointerId: event.pointerId,
+      frameQuaternion: frame.frameQuaternion.clone(),
+      axes: frame.axes,
+      fixedWorld: hit.pivotWorld.clone(),
+      fixedScreen: [hit.pivotScreen.x, hit.pivotScreen.y],
+      initialScreen: [hit.screen.x, hit.screen.y],
+      fallbackDirection: hit.fallbackDirection,
+      fallbackLength: projectedSpan,
+      fromCenter: useCenter
+    };
+    this.transformAnchor.position.copy(hit.pivotWorld);
+    this.transformAnchor.quaternion.copy(frame.frameQuaternion);
+    this.transformAnchor.scale.set(1, 1, 1);
+    this.transformAnchor.updateMatrixWorld(true);
+    this.transform.enabled = false;
+    this.transform.getHelper().visible = false;
+    this.orbit.enabled = false;
+    this.canvas.setPointerCapture?.(event.pointerId);
+    try {
+      this.#beginSession();
+    } catch (error) {
+      if (this.canvas.hasPointerCapture?.(event.pointerId)) {
+        this.canvas.releasePointerCapture(event.pointerId);
+      }
+      this.#boundsScale = null;
+      this.#configureTransformForEditor();
+      this.#rebuildAnchor();
+      this.#updateVertexMarkers();
+      throw error;
+    }
+
+    if (!this.#session) {
+      if (this.canvas.hasPointerCapture?.(event.pointerId)) {
+        this.canvas.releasePointerCapture(event.pointerId);
+      }
+      this.#boundsScale = null;
+      this.#configureTransformForEditor();
+      this.#rebuildAnchor();
+      this.#updateVertexMarkers();
+      return false;
+    }
+    this.#inputDiagnostics.gizmoHits += 1;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return true;
+  }
+
+  #updateBoundsScale(event) {
+    const state = this.#boundsScale;
+    if (!state || state.pointerId !== event.pointerId || !this.#session) {
+      return false;
+    }
+    const factor = proportionalScaleFactor2D({
+      fixed: state.fixedScreen,
+      initial: state.initialScreen,
+      current: [event.clientX, event.clientY],
+      snap: this.#transformConfig.scaleSnap,
+      fallbackDirection: state.fallbackDirection,
+      fallbackLength: state.fallbackLength
+    });
+    this.transformAnchor.scale.fromArray(
+      scaleFactorsForAxes(factor, state.axes)
+    );
+    this.transformAnchor.updateMatrixWorld(true);
+    this.#previewSession();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return true;
+  }
+
+  #finishBoundsScale(event) {
+    const state = this.#boundsScale;
+    if (!state || state.pointerId !== event.pointerId) return false;
+    this.#boundsScale = null;
+    if (this.canvas.hasPointerCapture?.(event.pointerId)) {
+      this.canvas.releasePointerCapture(event.pointerId);
+    }
+    if (this.#session) this.#commitSession();
+    this.#configureTransformForEditor();
+    this.#rebuildAnchor();
+    this.#updateVertexMarkers();
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return true;
+  }
+
+  #previewSelectionScaleWithoutShear() {
+    const session = this.#session;
+    const rawFactors = this.transformAnchor.scale.clone().divide(
+      session.initialAnchor.scale
+    );
+    const axes = session.scaleAxes ?? { x: true, y: true, z: true };
+    const factors = [
+      axes.x ? rawFactors.x : 1,
+      axes.y ? rawFactors.y : 1,
+      axes.z ? rawFactors.z : 1
+    ];
+    const pivotWorld = session.initialAnchor.position.toArray();
+    const frameQuaternion = session.initialAnchor.quaternion.toArray();
+    const rootDeltas = new Map();
+
+    for (const [objectId, snapshot] of session.objects) {
+      const next = new THREE.Matrix4().fromArray(
+        scaleWorldTrsWithoutShear({
+          matrixWorld: snapshot.matrixWorld.toArray(),
+          pivotWorld,
+          frameQuaternion,
+          factors
+        })
+      );
+      rootDeltas.set(
+        objectId,
+        next.clone().multiply(snapshot.matrixWorld.clone().invert())
+      );
+    }
+
+    for (const [objectId, snapshot] of session.previewObjects) {
+      const mesh = this.#meshes.get(objectId);
+      if (!mesh) continue;
+      const rootId = session.previewRoots.get(objectId) ?? objectId;
+      const delta = rootDeltas.get(rootId);
+      if (!delta) continue;
+      const result = delta.clone().multiply(snapshot.matrixWorld);
+      applyProjectedWorldMatrix(mesh, result.toArray());
+      this.#updateBatchMatrix(objectId, mesh);
+    }
+  }
+
   #updateVertexMarkers() {
+    const scaleFrame = this.#localBoundsScaleFrame();
+    if (scaleFrame) {
+      const vertices = scaleFrame.handles.flatMap(handle =>
+        handle.world.toArray()
+      );
+      this.#vertexMarkers.geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(vertices, 3)
+      );
+      const attribute =
+        this.#vertexMarkers.geometry.getAttribute("position");
+      attribute.needsUpdate = true;
+      this.#vertexMarkers.geometry.computeBoundingSphere();
+      this.#vertexMarkers.material.size = Math.max(
+        10,
+        this.#transformConfig.vertexSize
+      );
+      this.#vertexMarkers.material.needsUpdate = true;
+      this.#vertexMarkers.visible = true;
+      return;
+    }
+
     if (this.#meshEdit) {
       this.#vertexMarkers.visible = false;
       return;
@@ -4364,11 +4773,9 @@ export class ThreeRegionRenderer {
     }
 
     const bounds = new THREE.Box3().makeEmpty();
-
     for (const member of this.#selectionSnapshot.members) {
       bounds.union(this.#worldBoundsForObjectId(member.objectId));
     }
-
     if (bounds.isEmpty()) {
       this.#vertexMarkers.visible = false;
       return;
@@ -4376,7 +4783,6 @@ export class ThreeRegionRenderer {
 
     const min = bounds.min;
     const max = bounds.max;
-
     const vertices = [
       min.x, min.y, min.z,
       max.x, min.y, min.z,
@@ -4387,17 +4793,16 @@ export class ThreeRegionRenderer {
       min.x, max.y, max.z,
       max.x, max.y, max.z
     ];
-
     this.#vertexMarkers.geometry.setAttribute(
       "position",
       new THREE.Float32BufferAttribute(vertices, 3)
     );
-
     const attribute =
       this.#vertexMarkers.geometry.getAttribute("position");
-
     attribute.needsUpdate = true;
     this.#vertexMarkers.geometry.computeBoundingSphere();
+    this.#vertexMarkers.material.size = this.#transformConfig.vertexSize;
+    this.#vertexMarkers.material.needsUpdate = true;
     this.#vertexMarkers.visible = true;
   }
 

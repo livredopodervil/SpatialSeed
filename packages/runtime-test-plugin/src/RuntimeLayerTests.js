@@ -201,6 +201,12 @@ import {
   ToolGestureNavigation
 } from "../../renderer-three/src/ToolGestureNavigation.js?build=20260731-0043x1";
 import {
+  createLocalBoundsScaleHandleSet,
+  proportionalScaleFactor2D,
+  scaleFactorsForAxes,
+  scaleWorldTrsWithoutShear
+} from "../../renderer-three/src/LocalBoundsScale.js?build=20260804-0048b";
+import {
   MeshEditController,
   applyMeshTopologyOperation,
   affineDeltaWorld,
@@ -4305,6 +4311,131 @@ export function createRuntimeLayerTests() {
     },
 
     "mesh-edit-math": {
+      "escala livre expõe oito vértices diagonais locais"() {
+        const set = createLocalBoundsScaleHandleSet({
+          min: [-1, -2, -3],
+          max: [1, 2, 3],
+          axes: { x: true, y: true, z: true }
+        });
+        assertEqual(set.dimensions, 3);
+        assertEqual(set.handles.length, 8);
+        for (const handle of set.handles) {
+          const opposite = set.handles[handle.oppositeIndex];
+          assertVectorNear(
+            opposite.signs,
+            handle.signs.map(value => -value)
+          );
+        }
+      },
+
+      "eixo bloqueado reduz a escala proporcional ao plano restante"() {
+        const set = createLocalBoundsScaleHandleSet({
+          min: [-2, -4, -6],
+          max: [2, 4, 6],
+          axes: { x: true, y: true, z: false }
+        });
+        assertEqual(set.dimensions, 2);
+        assertEqual(set.handles.length, 4);
+        assertEqual(set.axes.z, false);
+        for (const handle of set.handles) {
+          assertNear(handle.point[2], 0);
+        }
+        assertVectorNear(
+          scaleFactorsForAxes(1.5, set.axes),
+          [1.5, 1.5, 1]
+        );
+      },
+
+      "arrasto diagonal calcula escala proporcional por projeção"() {
+        assertNear(
+          proportionalScaleFactor2D({
+            fixed: [10, 20],
+            initial: [110, 120],
+            current: [160, 170]
+          }),
+          1.5
+        );
+        assertNear(
+          proportionalScaleFactor2D({
+            fixed: [0, 0],
+            initial: [100, 0],
+            current: [153, 40],
+            snap: 0.1
+          }),
+          1.5
+        );
+      },
+
+      "diagonal projetada curta mantém arrasto selecionável"() {
+        assertNear(
+          proportionalScaleFactor2D({
+            fixed: [50, 50],
+            initial: [50, 50],
+            current: [90, 50],
+            fallbackDirection: [1, 0],
+            fallbackLength: 80
+          }),
+          1.5
+        );
+      },
+
+      "escala local recompõe TRS sem introduzir shear"() {
+        const sourcePosition = new THREE.Vector3(4, 2, -1);
+        const sourceOrientation = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(0.2, 0.7, -0.3)
+        );
+        const sourceMatrix = new THREE.Matrix4()
+          .compose(
+            sourcePosition,
+            sourceOrientation,
+            new THREE.Vector3(2, 3, 4)
+          )
+          .toArray();
+        const result = new THREE.Matrix4().fromArray(
+          scaleWorldTrsWithoutShear({
+            matrixWorld: sourceMatrix,
+            pivotWorld: [0, 0, 0],
+            frameQuaternion: [0, 0, 0, 1],
+            factors: [2, 1, 0.5]
+          })
+        );
+        const position = new THREE.Vector3();
+        const orientation = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        result.decompose(position, orientation, scale);
+        assertVectorNear(position.toArray(), [8, 2, -0.5]);
+        assertVectorNear(scale.toArray(), [4, 3, 2]);
+        assertNear(Math.abs(orientation.dot(sourceOrientation)), 1, 1e-9);
+      },
+
+      "escala com pivô no centro preserva o centro do objeto"() {
+        const center = [4, 2, -1];
+        const source = new THREE.Matrix4()
+          .compose(
+            new THREE.Vector3(...center),
+            new THREE.Quaternion().setFromEuler(
+              new THREE.Euler(0.4, -0.2, 0.6)
+            ),
+            new THREE.Vector3(1, 2, 3)
+          )
+          .toArray();
+        const result = new THREE.Matrix4().fromArray(
+          scaleWorldTrsWithoutShear({
+            matrixWorld: source,
+            pivotWorld: center,
+            frameQuaternion: [0, 0, 0, 1],
+            factors: [1.5, 1.5, 1.5]
+          })
+        );
+        const resultPosition = new THREE.Vector3();
+        result.decompose(
+          resultPosition,
+          new THREE.Quaternion(),
+          new THREE.Vector3()
+        );
+        assertVectorNear(resultPosition.toArray(), center);
+      },
+
       "frame do viewer converte X e Y no plano congelado"() {
         const viewerQuaternion = new THREE.Quaternion()
           .setFromEuler(new THREE.Euler(0, Math.PI / 2, 0))
