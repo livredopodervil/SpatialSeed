@@ -1,6 +1,6 @@
 import {
   WEB_RUNTIME_EXTENSION_API_VERSION
-} from "../../platform-web/src/index.js?build=20260804-0048e1";
+} from "../../platform-web/src/index.js?build=20260804-0048f1";
 import {
   BenchmarkRunner
 } from "../../benchmarks/src/index.js?build=20260802-0047a";
@@ -9,7 +9,7 @@ import {
 } from "../../resource-audit/src/index.js?build=20260714-0020b-a";
 import {
   TestService
-} from "../../tests/src/index.js?build=20260804-0048e1";
+} from "../../tests/src/index.js?build=20260804-0048f1";
 import {
   activateRuntimeTestPlugin
 } from "./RuntimeTestPlugin.js?build=20260802-0047g";

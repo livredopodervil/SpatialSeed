@@ -732,6 +732,18 @@ export function createEditorCommands({
         meshEditor.setComponentMode(mode))
       .register("mesh.selection.apply", ({ operation, options }) =>
         meshEditor.selectComponents(operation, options))
+      .register("mesh.tools.list", ({ kind = null } = {}) =>
+        meshEditor.availableTools({ kind }), {
+          category: "mesh-edit",
+          mutates: false
+        })
+      .register("mesh.tool.execute", ({ toolId, options = {} } = {}) =>
+        meshEditor.executeTool({ toolId, options }), {
+          category: "mesh-edit",
+          mutates: true,
+          repeatable: true,
+          label: "Executar ferramenta de malha"
+        })
       .register("mesh.topology.apply", args => {
         const toolId = {
           extrude: "mesh.extrude",

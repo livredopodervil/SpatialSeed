@@ -9,6 +9,16 @@ import {
 } from "./MeshDeformation.js";
 import { buildMeshTopology } from "./MeshTopology.js";
 import {
+  prepareMeshCommitDescriptor,
+  normalizeMeshNormalPolicy
+} from "../../mesh-attributes/src/index.js";
+import {
+  createDefaultMeshToolRegistry
+} from "../../mesh-tool-registry/src/index.js";
+import {
+  resolveTransformVertexSelection
+} from "./MeshCoincidencePolicy.js";
+import {
   applyMeshTopologyOperation,
   componentVertices,
   meshSelectionOperation,
@@ -33,7 +43,13 @@ export class MeshEditController {
   #listeners = new Set();
   #unsubscribeSandbox = null;
 
-  constructor({ sandbox, editor, renderer, geometryRegistry }) {
+  constructor({
+    sandbox,
+    editor,
+    renderer,
+    geometryRegistry,
+    toolRegistry = null
+  }) {
     if (!sandbox?.dispatch || !sandbox?.getSnapshot) {
       throw new TypeError("MeshEditController exige sandbox compatível.");
     }
@@ -50,6 +66,13 @@ export class MeshEditController {
     this.editor = editor;
     this.renderer = renderer;
     this.geometryRegistry = geometryRegistry;
+    this.toolRegistry = toolRegistry ?? createDefaultMeshToolRegistry({
+      topologyExecutor: applyMeshTopologyOperation,
+      selectionExecutor: meshSelectionOperation
+    });
+    if (!this.toolRegistry?.execute || !this.toolRegistry?.list) {
+      throw new TypeError("MeshEditController exige MeshToolRegistry compatível.");
+    }
     this.#unsubscribeSandbox = sandbox.subscribe((state, changes = []) => {
       const session = this.#session;
       if (!session || this.sandbox.revision === session.baseRevision) return;
@@ -126,6 +149,7 @@ export class MeshEditController {
       pathSource,
       sourceGeometryKey: this.geometryRegistry.key(sourceDescriptor),
       initialBufferKey: this.geometryRegistry.key(descriptor),
+      initialDescriptor: structuredClone(descriptor),
       descriptor,
       objectWorldMatrix: [...objectWorldMatrix],
       componentMode: "vertex",
@@ -147,6 +171,7 @@ export class MeshEditController {
         objectWorldMatrix
       }),
       weldCoincident: true,
+      coincidencePolicy: "transform-together",
       occlusion: true,
       groups,
       topology,
@@ -167,6 +192,7 @@ export class MeshEditController {
         manifoldOnly: true,
         removeUnused: true,
         autoNormals: true,
+        normalPolicy: "recompute-local",
         preserveBoundary: true
       },
       display: {
@@ -229,27 +255,28 @@ export class MeshEditController {
         "O mundo mudou durante a edição. Cancele e reabra a malha para evitar sobrescrever alterações externas."
       );
     }
-    if (this.geometryRegistry.key(session.descriptor) === session.initialBufferKey) {
-      this.renderer.endMeshEdit({ restoreBatch: true });
-      this.#session = null;
-      this.#notify();
-      return Object.freeze({
-        changed: false,
-        objectId: session.objectId,
-        vertexCount: session.descriptor.positions.length
+    let geometry;
+    let attributeChange = null;
+    if (session.pathSource) {
+      if (this.geometryRegistry.key(session.descriptor) === session.initialBufferKey) {
+        return this.#finishNoopCommit(session);
+      }
+      geometry = this.geometryRegistry.normalize({
+        ...session.sourceDescriptor,
+        type: "tube",
+        points: session.descriptor.positions.map(point => [...point])
       });
+    } else {
+      const prepared = prepareMeshCommitDescriptor({
+        before: session.initialDescriptor,
+        after: session.descriptor,
+        autoNormals: session.topologyOptions.autoNormals,
+        normalPolicy: session.topologyOptions.normalPolicy
+      });
+      if (!prepared.changed) return this.#finishNoopCommit(session);
+      geometry = this.geometryRegistry.normalize(prepared.descriptor);
+      attributeChange = prepared.change;
     }
-    const geometry = session.pathSource
-      ? this.geometryRegistry.normalize({
-          ...session.sourceDescriptor,
-          type: "tube",
-          points: session.descriptor.positions.map(point => [...point])
-        })
-      : this.geometryRegistry.normalize({
-          ...session.descriptor,
-          type: "buffer",
-          normals: session.topologyOptions.autoNormals ? [] : session.descriptor.normals
-        });
     const deferred = this.renderer.deferMeshEditCommit?.() === true;
     let changed = false;
     try {
@@ -274,7 +301,19 @@ export class MeshEditController {
     return Object.freeze({
       changed,
       objectId: session.objectId,
-      vertexCount: geometry.points?.length ?? geometry.positions.length
+      vertexCount: geometry.points?.length ?? geometry.positions.length,
+      attributeChange
+    });
+  }
+
+  #finishNoopCommit(session) {
+    this.renderer.endMeshEdit({ restoreBatch: true });
+    this.#session = null;
+    this.#notify();
+    return Object.freeze({
+      changed: false,
+      objectId: session.objectId,
+      vertexCount: session.descriptor.positions.length
     });
   }
 
@@ -307,20 +346,10 @@ export class MeshEditController {
   }
 
   selectComponents(operation, options = {}) {
-    const session = this.#requireSession();
-    const selected = session.componentSelections[session.componentMode];
-    const result = meshSelectionOperation({
-      topology: session.topology,
-      mode: session.componentMode,
-      selectedIndices: selected,
-      activeIndex: session.activeComponents[session.componentMode],
-      operation,
+    return this.executeTool({
+      toolId: this.toolRegistry.idForOperation("selection", operation),
       options
     });
-    session.componentSelections[session.componentMode] = new Set(result.indices);
-    session.activeComponents[session.componentMode] = result.activeIndex;
-    this.#syncSelection();
-    return this.status();
   }
 
   applyComponentSelection({
@@ -338,17 +367,38 @@ export class MeshEditController {
   }
 
   applyTopology({ operation, options = {} } = {}) {
+    return this.executeTool({
+      toolId: this.toolRegistry.idForOperation("topology", operation),
+      options
+    });
+  }
+
+  executeTool({ toolId, options = {} } = {}) {
     const session = this.#requireSession();
     const selected = session.componentSelections[session.componentMode];
-    const result = applyMeshTopologyOperation({
+    const execution = this.toolRegistry.execute(toolId, {
       descriptor: session.descriptor,
       topology: session.topology,
+      mode: session.componentMode,
       componentMode: session.componentMode,
       selectedIndices: selected,
+      selectionCount: selected.size,
       activeIndex: session.activeComponents[session.componentMode],
-      operation,
-      options: { ...session.topologyOptions, ...options }
+      options: executionOptions(
+        this.toolRegistry.describe(toolId).kind,
+        session.topologyOptions,
+        options
+      )
     });
+    if (execution.tool.kind === "selection") {
+      const result = execution.result;
+      session.componentSelections[session.componentMode] = new Set(result.indices);
+      session.activeComponents[session.componentMode] = result.activeIndex;
+      this.#syncSelection();
+      return this.status();
+    }
+
+    const result = execution.result;
     this.#recordHistory(`Antes de ${result.label}`);
     session.descriptor = result.descriptor;
     session.topology = result.topology;
@@ -362,13 +412,31 @@ export class MeshEditController {
     this.#syncSelection({ notify: false });
     this.#recordHistory(result.label);
     this.#notify();
-    return Object.freeze({ ...this.status(), diagnostics: result.diagnostics });
+    return Object.freeze({
+      ...this.status(),
+      tool: execution.tool,
+      diagnostics: result.diagnostics
+    });
+  }
+
+  availableTools({ kind = null } = {}) {
+    const session = this.#requireSession();
+    return this.toolRegistry.list({
+      kind,
+      mode: session.componentMode,
+      selectionCount: session.componentSelections[session.componentMode].size
+    });
   }
 
   setTopologyOptions(patch = {}) {
     const session = this.#requireSession();
     for (const key of ["manifoldOnly", "removeUnused", "autoNormals", "preserveBoundary"]) {
       if (patch[key] !== undefined) session.topologyOptions[key] = Boolean(patch[key]);
+    }
+    if (patch.normalPolicy !== undefined) {
+      session.topologyOptions.normalPolicy = normalizeMeshNormalPolicy(
+        patch.normalPolicy
+      );
     }
     this.#notify();
     return this.status();
@@ -388,15 +456,10 @@ export class MeshEditController {
     const session = this.#requireSession();
     if (weldCoincident !== undefined) {
       session.weldCoincident = Boolean(weldCoincident);
-      if (session.weldCoincident && session.componentMode === "vertex") {
-        this.#refreshGroups(session);
-        const expanded = expandCoincidentSelection(
-          session.componentSelections.vertex,
-          session.groups
-        );
-        session.componentSelections.vertex = new Set(expanded);
-        session.activeComponents.vertex = expanded.at(-1) ?? null;
-      }
+      session.coincidencePolicy = session.weldCoincident
+        ? "transform-together"
+        : "independent";
+      this.#refreshGroups(session);
     }
     if (occlusion !== undefined) session.occlusion = Boolean(occlusion);
     this.renderer.updateMeshEditOptions({ occlusion: session.occlusion });
@@ -1040,13 +1103,14 @@ export class MeshEditController {
   #syncSelection({ notify = true } = {}) {
     const session = this.#requireSession();
     const selectedComponents = session.componentSelections[session.componentMode];
-    let selectedVertices = componentVertices(
-      session.topology,
-      session.componentMode,
-      selectedComponents
-    );
-    if (session.weldCoincident && session.componentMode === "vertex") {
-      selectedVertices = expandCoincidentSelection(selectedVertices, session.groups);
+    const selectedVertices = resolveTransformVertexSelection({
+      topology: session.topology,
+      componentMode: session.componentMode,
+      selectedComponents,
+      coincidentGroups: session.groups,
+      policy: session.coincidencePolicy
+    });
+    if (session.componentMode === "vertex" && session.weldCoincident) {
       session.componentSelections.vertex = new Set(selectedVertices);
     }
     session.selectedIndices = new Set(selectedVertices);
@@ -1088,13 +1152,14 @@ export class MeshEditController {
         session.activeComponents[mode] = [...session.componentSelections[mode]].at(-1) ?? null;
       }
     }
-    let selectedVertices = componentVertices(
-      session.topology,
-      session.componentMode,
-      session.componentSelections[session.componentMode]
-    );
-    if (session.weldCoincident && session.componentMode === "vertex") {
-      selectedVertices = expandCoincidentSelection(selectedVertices, session.groups);
+    const selectedVertices = resolveTransformVertexSelection({
+      topology: session.topology,
+      componentMode: session.componentMode,
+      selectedComponents: session.componentSelections[session.componentMode],
+      coincidentGroups: session.groups,
+      policy: session.coincidencePolicy
+    });
+    if (session.componentMode === "vertex" && session.weldCoincident) {
       session.componentSelections.vertex = new Set(selectedVertices);
     }
     session.selectedIndices = new Set(selectedVertices);
@@ -1175,6 +1240,12 @@ export class MeshEditController {
       catch (error) { console.error("Mesh edit listener failed", error); }
     }
   }
+}
+
+function executionOptions(kind, topologyOptions, options) {
+  return kind === "topology"
+    ? { ...topologyOptions, ...options }
+    : { ...options };
 }
 
 function matricesNear(left, right, epsilon = 1e-8) {

@@ -212,6 +212,7 @@ import {
 } from "../../renderer-three/src/VisualCommitHandoff.js?build=20260804-0048d1";
 import {
   MeshEditController,
+  MeshToolRegistry,
   applyMeshTopologyOperation,
   affineDeltaWorld,
   applyMeshDeformation,
@@ -223,13 +224,16 @@ import {
   composeRotationFrame,
   expandCoincidentSelection,
   geodesicVertexDistances,
+  prepareMeshCommitDescriptor,
+  recomputeLocalVertexNormals,
+  resolveTransformVertexSelection,
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid,
   transformLocalPositions,
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260804-0048d1";
+} from "../../mesh-editor-core/src/index.js?build=20260804-0048f1";
 import {
   EditContextController,
   axesFromConstraint,
@@ -254,7 +258,7 @@ import {
 } from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260802-0047g";
+} from "../../editor-commands/src/EditorCommands.js?build=20260804-0048f1";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -308,7 +312,7 @@ import {
   resolvePwaLocations,
   webApplicationName,
   workerBuild
-} from "../../platform-web/src/index.js?build=20260804-0048e1";
+} from "../../platform-web/src/index.js?build=20260804-0048f1";
 import {
   clampEditorFontSize,
   highlightProcedureSource,
@@ -5027,6 +5031,103 @@ export function createRuntimeLayerTests() {
         assertEqual(status.canEnter, false);
         assert(status.reason.includes("animação"));
         assertThrowsMessage(() => controller.enter(), "animação");
+      }
+    },
+    "mesh-attribute-policy": {
+      "no-op numérico preserva índices UVs e normais importadas"() {
+        const before = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1]],
+          uvs: [[0,0], [1,0], [0,1]],
+          edges: []
+        };
+        const after = structuredClone(before);
+        after.positions[1][0] += 1e-10;
+        const prepared = prepareMeshCommitDescriptor({
+          before,
+          after,
+          autoNormals: true,
+          normalPolicy: "recompute-local"
+        });
+        assertEqual(prepared.changed, false);
+        assertDeepEqual(prepared.descriptor.indices, before.indices);
+        assertDeepEqual(prepared.descriptor.uvs, before.uvs);
+        assertDeepEqual(prepared.descriptor.normals, before.normals);
+      },
+
+      "recalculo local preserva normais fora da vizinhança alterada"() {
+        const positions = [
+          [0,0,0], [1,0,0], [0,1,0],
+          [10,0,0], [11,0,0], [10,1,0]
+        ];
+        const sourceNormals = positions.map(() => [0,0,1]);
+        const moved = positions.map(point => [...point]);
+        moved[2] = [0,1,1];
+        const normals = recomputeLocalVertexNormals({
+          positions: moved,
+          indices: [0,1,2, 3,4,5],
+          sourceNormals,
+          changedVertexIndices: [2]
+        });
+        assertEqual(normals.length, 6);
+        assertEqual(Math.abs(normals[0][1]) > 0, true);
+        assertDeepEqual(normals.slice(3), sourceNormals.slice(3));
+      },
+
+      "seleção de face inclui cópias coincidentes da costura"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [
+            [0,0,0], [1,0,0], [0,1,0],
+            [1,0,0], [1,1,0], [0,1,0]
+          ],
+          indices: [0,1,2, 3,4,5],
+          normals: [],
+          uvs: [[0,0], [0.5,0], [0,1], [0.5,0], [1,1], [0,1]],
+          edges: []
+        };
+        const topology = topologyOf(descriptor);
+        const groups = coincidentVertexGroups(descriptor.positions);
+        const selected = resolveTransformVertexSelection({
+          topology,
+          componentMode: "face",
+          selectedComponents: [0],
+          coincidentGroups: groups,
+          policy: "transform-together"
+        });
+        assertDeepEqual(selected, [0,1,2,3,5]);
+      },
+
+      "registro descreve ferramentas e mantém executor legado substituível"() {
+        const calls = [];
+        const registry = new MeshToolRegistry({
+          tools: [{
+            id: "mesh.topology.example",
+            kind: "topology",
+            operation: "example",
+            label: "Exemplo",
+            modes: ["face"],
+            requiresSelection: true,
+            implementation: "test-double"
+          }],
+          executors: {
+            topology(context) {
+              calls.push(context.operation);
+              return { ok: true };
+            }
+          }
+        });
+        const listed = registry.list({ mode: "face", selectionCount: 1 });
+        assertEqual(listed[0].available.ok, true);
+        const executed = registry.execute("mesh.topology.example", {
+          mode: "face",
+          selectedIndices: [0]
+        });
+        assertDeepEqual(calls, ["example"]);
+        assertEqual(executed.result.ok, true);
+        assertEqual(executed.tool.implementation, "test-double");
       }
     },
     "mesh-topology": {
