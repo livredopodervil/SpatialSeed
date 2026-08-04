@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260802-0047g";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260804-0048h1";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260804-0048i-audit1";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
 import {
   createVirtualResourceTree,
@@ -24,12 +24,12 @@ import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=2
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260802-0047g";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260804-0048h1";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260804-0048i-audit1";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260804-0048h1";
+} from "../../../packages/platform-web/src/index.js?build=20260804-0048i-audit1";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -97,7 +97,10 @@ import {
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260804-0048h1";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260804-0048i-audit1";
+import {
+  MeshGeometryAudit
+} from "../../../packages/mesh-geometry-audit/src/index.js?build=20260804-0048i-audit1";
 import {
   MeshEditPanel
 } from "../../../packages/mesh-edit-panel/src/index.js?build=20260802-0047g";
@@ -501,6 +504,49 @@ export async function createWebRuntime({
     editor,
     renderer,
     geometryRegistry
+  });
+  const meshGeometryAudit = new MeshGeometryAudit({
+    captureSource: ({ objectId = null } = {}) => {
+      const meshStatus = meshEditor.status();
+      const selection = editor.selection.snapshot();
+      const resolvedId = objectId ?? meshStatus.objectId ??
+        selection.members.at(-1)?.objectId ?? null;
+      if (resolvedId === null || resolvedId === undefined) {
+        throw new Error("Selecione um objeto ou mantenha uma edição de malha ativa.");
+      }
+      const id = String(resolvedId);
+      const object = sandbox.getObject?.(id) ??
+        sandbox.getSnapshot().objects.find(candidate =>
+          String(candidate.id) === id
+        ) ?? null;
+      if (!object) throw new Error(`Objeto não encontrado: ${id}.`);
+      let canonicalDescriptor = null;
+      try {
+        canonicalDescriptor = geometryRegistry.normalize(
+          geometryRegistry.describeLegacyObject(object)
+        );
+      } catch {
+        canonicalDescriptor = null;
+      }
+      return {
+        objectId: id,
+        sandboxRevision: sandbox.revision,
+        object: structuredClone(object),
+        canonical: Object.freeze({
+          descriptor: canonicalDescriptor
+            ? structuredClone(canonicalDescriptor)
+            : null,
+          geometryKey: canonicalDescriptor
+            ? geometryRegistry.key(canonicalDescriptor)
+            : null,
+          renderProfile: canonicalDescriptor
+            ? geometryRegistry.renderProfile(canonicalDescriptor)
+            : null
+        }),
+        edit: meshEditor.geometryAuditSnapshot(),
+        renderer: renderer.getMeshGeometryAudit(id)
+      };
+    }
   });
   const editContext = new EditContextController({
     editor,
@@ -1685,6 +1731,21 @@ export async function createWebRuntime({
     )
     .register("mesh.edit.status", () =>
       meshEditor.status()
+    )
+    .register("mesh.audit.clear", () =>
+      meshGeometryAudit.clear()
+    )
+    .register("mesh.audit.capture", args =>
+      meshGeometryAudit.capture(args ?? {})
+    )
+    .register("mesh.audit.list", () =>
+      meshGeometryAudit.list()
+    )
+    .register("mesh.audit.compare", args =>
+      meshGeometryAudit.compare(args ?? {})
+    )
+    .register("mesh.audit.report", args =>
+      meshGeometryAudit.report(args ?? {})
     )
     .register("scene.objects.list", () =>
       sandbox.getSnapshot().objects

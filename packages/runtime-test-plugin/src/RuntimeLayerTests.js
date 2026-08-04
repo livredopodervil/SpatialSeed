@@ -212,7 +212,7 @@ import {
 } from "../../renderer-three/src/VisualCommitHandoff.js?build=20260804-0048d1";
 import {
   MeshEditVisibility
-} from "../../renderer-three/src/MeshEditVisibility.js?build=20260804-0048h1";
+} from "../../renderer-three/src/MeshEditVisibility.js?build=20260804-0048i-audit1";
 import {
   MeshEditController,
   MeshToolRegistry,
@@ -238,7 +238,7 @@ import {
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260804-0048h1";
+} from "../../mesh-editor-core/src/index.js?build=20260804-0048i-audit1";
 import {
   EditContextController,
   axesFromConstraint,

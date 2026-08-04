@@ -896,6 +896,71 @@ export class MeshEditController {
     });
   }
 
+  geometryAuditSnapshot() {
+    const session = this.#session;
+    if (!session) return Object.freeze({ active: false });
+    let commitPreview = null;
+    try {
+      if (session.pathSource) {
+        const descriptor = this.geometryRegistry.normalize({
+          ...session.sourceDescriptor,
+          type: "tube",
+          points: session.descriptor.positions.map(point => [...point])
+        });
+        commitPreview = Object.freeze({
+          changed: this.geometryRegistry.key(session.descriptor) !==
+            session.initialBufferKey,
+          descriptor: structuredClone(descriptor),
+          geometryKey: this.geometryRegistry.key(descriptor),
+          change: null
+        });
+      } else {
+        const prepared = prepareMeshCommitDescriptor({
+          before: session.initialDescriptor,
+          after: session.descriptor,
+          autoNormals: session.topologyOptions.autoNormals,
+          normalPolicy: session.topologyOptions.normalPolicy,
+          preferTargetNormals: session.normalState === "explicit"
+        });
+        const descriptor = this.geometryRegistry.normalize(prepared.descriptor);
+        commitPreview = Object.freeze({
+          changed: prepared.changed,
+          descriptor: structuredClone(descriptor),
+          geometryKey: this.geometryRegistry.key(descriptor),
+          change: structuredClone(prepared.change)
+        });
+      }
+    } catch (error) {
+      commitPreview = Object.freeze({
+        error: String(error?.message ?? error)
+      });
+    }
+    return Object.freeze({
+      active: true,
+      objectId: session.objectId,
+      sourceType: session.sourceType,
+      sourceGeometryKey: session.sourceGeometryKey,
+      initialBufferKey: session.initialBufferKey,
+      descriptorKey: this.geometryRegistry.key(session.descriptor),
+      sourceDescriptor: structuredClone(session.sourceDescriptor),
+      initialDescriptor: structuredClone(session.initialDescriptor),
+      descriptor: structuredClone(session.descriptor),
+      commitPreview,
+      normalState: session.normalState ?? null,
+      topologyOptions: structuredClone(session.topologyOptions),
+      topology: Object.freeze({
+        vertexCount: session.topology.vertexCount,
+        edgeCount: session.topology.edgeCount,
+        faceCount: session.topology.faceCount,
+        boundaryEdgeCount: session.topology.boundaryEdges?.length ?? 0,
+        looseEdgeCount: session.topology.looseEdges?.length ?? 0,
+        nonManifoldEdgeCount: session.topology.nonManifoldEdges?.length ?? 0
+      }),
+      lastOperation: session.lastOperation,
+      dirty: session.dirty
+    });
+  }
+
   selectedPathReference() {
     const session = this.#requireSession();
     const mode = session.componentMode;

@@ -66,13 +66,13 @@ import {
   createMeshInfluenceField,
   normalizeMeshDeformationSettings,
   transformLocalPositionsWithInfluenceInto
-} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260804-0048h1";
+} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260804-0048i-audit1";
 import {
   normalizeMeshComponentMode
-} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260804-0048h1";
+} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260804-0048i-audit1";
 import {
   buildGeometricVertexIdentity
-} from "../../mesh-geometric-identity/src/index.js?build=20260804-0048h1";
+} from "../../mesh-geometric-identity/src/index.js?build=20260804-0048i-audit1";
 import {
   normalizeScreenSelectionGesture,
   ScreenSelectionIndex
@@ -91,7 +91,7 @@ import {
 } from "./VisualCommitHandoff.js?build=20260804-0048d1";
 import {
   MeshEditVisibility
-} from "./MeshEditVisibility.js?build=20260804-0048h1";
+} from "./MeshEditVisibility.js?build=20260804-0048i-audit1";
 import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
@@ -1003,6 +1003,79 @@ export class ThreeRegionRenderer {
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
     return true;
+  }
+
+  getMeshGeometryAudit(objectId = null) {
+    const id = String(
+      objectId ?? this.#meshEdit?.objectId ?? ""
+    ).trim();
+    if (!id) return Object.freeze({ objectId: null });
+    const proxy = this.#meshes.get(id) ?? null;
+    const standardLocation = this.#batchManager.locationOf(id);
+    const standardBatch = standardLocation
+      ? this.#batchManager.getBatch(standardLocation.batchKey)
+      : null;
+    const heterogeneousLocation = this.#heterogeneousBatchManager
+      ?.locationOf?.(id) ?? null;
+    const instanceMatrix = new THREE.Matrix4();
+    if (standardBatch && Number.isInteger(standardLocation?.instanceIndex)) {
+      standardBatch.mesh.getMatrixAt(
+        standardLocation.instanceIndex,
+        instanceMatrix
+      );
+    }
+    const canonical = standardBatch
+      ? Object.freeze({
+          batchKind: "instance",
+          batchKey: standardLocation.batchKey,
+          resourceId: standardLocation.resourceId ?? id,
+          geometryCacheKey:
+            standardBatch.mesh.userData.geometryCacheKey ?? null,
+          materialCacheKey:
+            standardBatch.mesh.userData.materialCacheKey ?? null,
+          matrix: instanceMatrix.toArray(),
+          geometry: geometryAuditSnapshot(standardBatch.geometry),
+          material: materialAuditSnapshot(standardBatch.material)
+        })
+      : heterogeneousLocation
+        ? Object.freeze({
+            batchKind: "heterogeneous",
+            batchKey: heterogeneousLocation.batchKey,
+            resourceId: heterogeneousLocation.resourceId ?? id,
+            geometryCacheKey: proxy?.userData.heterogeneousGeometryKey ?? null,
+            materialCacheKey: proxy?.userData.heterogeneousMaterialKey ?? null,
+            matrix: proxy?.matrix?.toArray?.() ?? null,
+            geometry: null,
+            material: null
+          })
+        : null;
+    const edit = this.#meshEdit?.objectId === id
+      ? Object.freeze({
+          active: true,
+          descriptor: structuredClone(this.#meshEdit.descriptor),
+          geometry: geometryAuditSnapshot(this.#meshEdit.mesh.geometry),
+          material: materialAuditSnapshot(this.#meshEdit.mesh.material),
+          worldMatrix: [...this.#meshEdit.objectWorldMatrix],
+          commitPending: Boolean(this.#meshEdit.commitPending)
+        })
+      : Object.freeze({ active: false });
+    return Object.freeze({
+      objectId: id,
+      proxy: proxy
+        ? Object.freeze({
+            kind: proxy.userData.kind ?? null,
+            batchKey: proxy.userData.batchKey ?? null,
+            heterogeneousBatch: Boolean(proxy.userData.heterogeneousBatch),
+            matrix: proxy.matrix.toArray(),
+            canonicalWorldMatrix:
+              proxy.userData.canonicalWorldMatrix ?? null,
+            localBounds: structuredClone(proxy.userData.localBounds ?? null)
+          })
+        : null,
+      canonical,
+      edit,
+      sourceVisibility: this.#meshEditVisibility.status(id)
+    });
   }
 
   getMeshEditStatus() {
@@ -7108,4 +7181,92 @@ function lightRayGeometry(type) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
   return geometry;
+}
+
+function geometryAuditSnapshot(geometry) {
+  if (!geometry?.getAttribute) return null;
+  const attributes = {};
+  for (const name of Object.keys(geometry.attributes ?? {}).sort()) {
+    const attribute = geometry.getAttribute(name);
+    attributes[name] = attributeAuditSnapshot(attribute);
+  }
+  const index = geometry.getIndex?.() ?? geometry.index ?? null;
+  return Object.freeze({
+    uuid: geometry.uuid ?? null,
+    type: geometry.type ?? geometry.constructor?.name ?? null,
+    index: attributeAuditSnapshot(index),
+    attributes: Object.freeze(attributes),
+    groups: Object.freeze(structuredClone(geometry.groups ?? [])),
+    drawRange: Object.freeze(structuredClone(geometry.drawRange ?? null)),
+    bounds: Object.freeze({
+      box: geometry.boundingBox
+        ? Object.freeze({
+            min: Object.freeze(geometry.boundingBox.min.toArray()),
+            max: Object.freeze(geometry.boundingBox.max.toArray())
+          })
+        : null,
+      sphere: geometry.boundingSphere
+        ? Object.freeze({
+            center: Object.freeze(geometry.boundingSphere.center.toArray()),
+            radius: Number(geometry.boundingSphere.radius)
+          })
+        : null
+    })
+  });
+}
+
+function attributeAuditSnapshot(attribute) {
+  if (!attribute?.array) return null;
+  return Object.freeze({
+    itemSize: Number(attribute.itemSize ?? 1),
+    normalized: Boolean(attribute.normalized),
+    count: Number(attribute.count ?? attribute.array.length),
+    arrayType: attribute.array.constructor?.name ?? null,
+    values: Object.freeze(Array.from(attribute.array, Number))
+  });
+}
+
+function materialAuditSnapshot(material) {
+  if (!material) return null;
+  return Object.freeze({
+    uuid: material.uuid ?? null,
+    type: material.type ?? material.constructor?.name ?? null,
+    side: Number(material.side),
+    shadowSide: material.shadowSide == null
+      ? null
+      : Number(material.shadowSide),
+    flatShading: Boolean(material.flatShading),
+    vertexColors: Boolean(material.vertexColors),
+    transparent: Boolean(material.transparent),
+    opacity: Number(material.opacity ?? 1),
+    roughness: material.roughness == null ? null : Number(material.roughness),
+    metalness: material.metalness == null ? null : Number(material.metalness),
+    depthTest: material.depthTest !== false,
+    depthWrite: material.depthWrite !== false,
+    map: textureAuditSnapshot(material.map),
+    normalMap: textureAuditSnapshot(material.normalMap),
+    roughnessMap: textureAuditSnapshot(material.roughnessMap),
+    metalnessMap: textureAuditSnapshot(material.metalnessMap)
+  });
+}
+
+function textureAuditSnapshot(texture) {
+  if (!texture) return null;
+  return Object.freeze({
+    uuid: texture.uuid ?? null,
+    name: texture.name ?? null,
+    sourceUuid: texture.source?.uuid ?? null,
+    colorSpace: texture.colorSpace ?? null,
+    flipY: Boolean(texture.flipY),
+    wrapS: Number(texture.wrapS),
+    wrapT: Number(texture.wrapT),
+    magFilter: Number(texture.magFilter),
+    minFilter: Number(texture.minFilter),
+    anisotropy: Number(texture.anisotropy ?? 1),
+    offset: Object.freeze(texture.offset?.toArray?.() ?? [0, 0]),
+    repeat: Object.freeze(texture.repeat?.toArray?.() ?? [1, 1]),
+    center: Object.freeze(texture.center?.toArray?.() ?? [0, 0]),
+    rotation: Number(texture.rotation ?? 0),
+    matrixAutoUpdate: texture.matrixAutoUpdate !== false
+  });
 }

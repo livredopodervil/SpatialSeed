@@ -131,6 +131,8 @@
     "packages/mesh-editor-core/src/index.js",
     "packages/mesh-geometric-identity/src/GeometricVertexIdentity.js",
     "packages/mesh-geometric-identity/src/index.js",
+    "packages/mesh-geometry-audit/src/MeshGeometryAudit.js",
+    "packages/mesh-geometry-audit/src/index.js",
     "packages/object-inspector/src/ObjectInspector.js",
     "packages/object-placement/src/ObjectPlacementController.js",
     "packages/object-placement/src/index.js",
