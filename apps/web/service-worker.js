@@ -13,14 +13,16 @@ let activeCacheName = REQUESTED_BUILD
   : null;
 
 self.addEventListener("install", event => {
-  event.waitUntil((async () => {
-    await installApplication();
-    await self.skipWaiting();
-  })());
+  event.waitUntil(installApplication());
 });
 
 self.addEventListener("activate", event => {
   event.waitUntil(activateApplication());
+});
+
+self.addEventListener("message", event => {
+  if (event.data?.type !== "SKIP_WAITING") return;
+  event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("fetch", event => {
@@ -38,7 +40,7 @@ self.addEventListener("fetch", event => {
 });
 
 async function installApplication() {
-  const [buildInfo,precache] = await Promise.all([
+  const [buildInfo, precache] = await Promise.all([
     fetchJson("apps/web/build-info.json"),
     fetchJson("apps/web/pwa/precache-manifest.json")
   ]);

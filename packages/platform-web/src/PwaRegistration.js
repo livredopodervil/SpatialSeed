@@ -1,12 +1,14 @@
-import { formatBuildLabel } from "./BuildInfo.js?build=20260802-0047d";
+import { formatBuildLabel } from "./BuildInfo.js?build=20260804-0048e1";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const UPDATE_TIMEOUT_MS = 15000;
 
 export function registerPwa(buildInfo, {
   onStateChange = null,
-  applicationUrl = globalThis.location?.href
+  applicationUrl = globalThis.location?.href,
+  serviceWorkers = globalThis.navigator?.serviceWorker,
+  locationRef = globalThis.location
 } = {}) {
-  const serviceWorkers = navigator.serviceWorker;
   const state = {
     supported: Boolean(serviceWorkers),
     registered: false,
@@ -20,41 +22,117 @@ export function registerPwa(buildInfo, {
     scope: null,
     error: null
   };
+  let registration = null;
+  let disposed = false;
+  const disposers = [];
   const publish = () => publishState(state, {
     serviceWorkers,
     onStateChange
   });
   publish();
 
-  if (!state.supported || !isTrustedOrigin()) {
-    return Promise.resolve(snapshot(state));
+  const ready = !state.supported || !isTrustedOrigin(locationRef)
+    ? Promise.resolve(null)
+    : startRegistration();
+
+  const controller = Object.freeze({
+    ready,
+    snapshot: () => snapshot(state),
+    checkForUpdate,
+    updateNow,
+    dispose
+  });
+  return controller;
+
+  async function startRegistration() {
+    const locations = resolvePwaLocations(applicationUrl);
+    const workerUrl = new URL(locations.workerUrl);
+    workerUrl.searchParams.set("build", buildInfo.build);
+    const onControllerChange = () => publish();
+    serviceWorkers.addEventListener("controllerchange", onControllerChange);
+    disposers.push(() => serviceWorkers.removeEventListener(
+      "controllerchange",
+      onControllerChange
+    ));
+
+    try {
+      registration = await serviceWorkers.register(workerUrl, {
+        scope: locations.scopeUrl
+      });
+      if (disposed) return registration;
+      state.registered = true;
+      state.scope = registration.scope;
+      disposers.push(observeRegistration(registration, state, publish));
+      retireLegacyRegistration(serviceWorkers, registration, locations)
+        .catch(error => console.warn(
+          "Spatial Seed: registro PWA legado não pôde ser removido.",
+          error
+        ));
+      publish();
+      return registration;
+    } catch (error) {
+      state.error = error?.message || String(error);
+      publish();
+      console.warn("Spatial Seed: modo offline indisponível.", error);
+      return null;
+    }
   }
 
-  const locations = resolvePwaLocations(applicationUrl);
-  const workerUrl = new URL(locations.workerUrl);
-  workerUrl.searchParams.set("build", buildInfo.build);
-
-  serviceWorkers.addEventListener("controllerchange", publish);
-
-  return serviceWorkers.register(workerUrl, {
-    scope: locations.scopeUrl
-  }).then(registration => {
-    state.registered = true;
-    state.scope = registration.scope;
-    observeRegistration(registration, state, publish);
-    retireLegacyRegistration(serviceWorkers, registration, locations)
-      .catch(error => console.warn(
-        "Spatial Seed: registro PWA legado não pôde ser removido.",
-        error
-      ));
-    publish();
+  async function checkForUpdate() {
+    const current = await ready;
+    if (!current || disposed) return snapshot(state);
+    try {
+      await current.update();
+      state.error = null;
+    } catch (error) {
+      state.error = error?.message || String(error);
+      console.warn("Spatial Seed: verificação de atualização falhou.", error);
+    }
+    refreshRegistrationState(current, state, publish);
     return snapshot(state);
-  }).catch(error => {
-    state.error = error?.message || String(error);
-    publish();
-    console.warn("Spatial Seed: modo offline indisponível.", error);
-    return snapshot(state);
-  });
+  }
+
+  async function updateNow() {
+    const current = await ready;
+    if (!current || disposed) return false;
+    await checkForUpdate();
+
+    if (workerBuild(serviceWorkers.controller) === buildInfo.build ||
+        workerBuild(current.active) === buildInfo.build) {
+      locationRef?.reload?.();
+      return true;
+    }
+
+    const candidate = await updateCandidate(current, buildInfo.build);
+    if (!candidate) {
+      state.error = "A nova versão ainda não terminou de baixar.";
+      publish();
+      return false;
+    }
+
+    if (candidate.state === "installed") {
+      candidate.postMessage({ type: "SKIP_WAITING" });
+    }
+
+    const changed = await waitForControllerBuild(
+      serviceWorkers,
+      buildInfo.build,
+      UPDATE_TIMEOUT_MS
+    );
+    if (!changed) {
+      state.error = "Feche e abra novamente para concluir a atualização.";
+      refreshRegistrationState(current, state, publish);
+      return false;
+    }
+    locationRef?.reload?.();
+    return true;
+  }
+
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    while (disposers.length) disposers.pop()?.();
+  }
 }
 
 export function resolvePwaLocations(moduleUrl) {
@@ -88,43 +166,123 @@ export function workerBuild(workerOrUrl) {
   }
 }
 
+export function pwaUpdateAvailable({
+  publishedBuild,
+  controllerBuild = null,
+  waitingBuild = null,
+  installingBuild = null
+} = {}) {
+  if (!publishedBuild) return false;
+  if (waitingBuild === publishedBuild || installingBuild === publishedBuild) {
+    return true;
+  }
+  return Boolean(controllerBuild && controllerBuild !== publishedBuild);
+}
+
 export function formatPwaBuildLabel(buildInfo, pwaState = {}) {
   const base = formatBuildLabel(buildInfo);
-  const controllerBuild = pwaState.controllerBuild ?? null;
-  if (controllerBuild && controllerBuild !== buildInfo.build) {
-    return `${base} · cache ${controllerBuild} · feche para atualizar`;
+  if (pwaState.error) return `${base} · atualização requer atenção`;
+  if (pwaUpdateAvailable({
+    publishedBuild: buildInfo.build,
+    controllerBuild: pwaState.controllerBuild,
+    waitingBuild: pwaState.waitingBuild,
+    installingBuild: pwaState.installingBuild
+  })) {
+    return `${base} · nova versão disponível`;
   }
-  if (pwaState.updatePending) {
-    const pending = pwaState.waitingBuild ?? pwaState.installingBuild;
-    return pending
-      ? `${base} · atualização ${pending} pendente`
-      : `${base} · atualização pendente`;
-  }
+  if (pwaState.updatePending) return `${base} · verificando atualização`;
   return base;
 }
 
 function observeRegistration(registration, state, publish) {
   const observed = new WeakSet();
-  const refresh = () => {
-    state.activeBuild = workerBuild(registration.active);
-    state.waitingBuild = workerBuild(registration.waiting);
-    state.installingBuild = workerBuild(registration.installing);
-    state.updatePending = Boolean(
-      registration.waiting || registration.installing
-    );
-    for (const worker of [
-      registration.active,
-      registration.waiting,
-      registration.installing
-    ]) {
-      if (!worker || observed.has(worker)) continue;
-      observed.add(worker);
-      worker.addEventListener("statechange", refresh);
-    }
-    publish();
-  };
+  const refresh = () => refreshRegistrationState(
+    registration,
+    state,
+    publish,
+    observed
+  );
   registration.addEventListener("updatefound", refresh);
   refresh();
+  return () => registration.removeEventListener("updatefound", refresh);
+}
+
+function refreshRegistrationState(
+  registration,
+  state,
+  publish,
+  observed = new WeakSet()
+) {
+  state.activeBuild = workerBuild(registration.active);
+  state.waitingBuild = workerBuild(registration.waiting);
+  state.installingBuild = workerBuild(registration.installing);
+  state.updatePending = Boolean(
+    registration.waiting || registration.installing
+  );
+  for (const worker of [
+    registration.active,
+    registration.waiting,
+    registration.installing
+  ]) {
+    if (!worker || observed.has(worker)) continue;
+    observed.add(worker);
+    worker.addEventListener("statechange", () => refreshRegistrationState(
+      registration,
+      state,
+      publish,
+      observed
+    ));
+  }
+  publish();
+}
+
+async function updateCandidate(registration, expectedBuild) {
+  const current = matchingWorker(registration, expectedBuild);
+  if (!current) return null;
+  if (current.state === "installed" || current.state === "activated") {
+    return current;
+  }
+  if (current.state === "redundant") return null;
+  return new Promise(resolve => {
+    const onStateChange = () => {
+      if (!["installed", "activated", "redundant"].includes(current.state)) {
+        return;
+      }
+      current.removeEventListener("statechange", onStateChange);
+      resolve(current.state === "redundant" ? null : current);
+    };
+    current.addEventListener("statechange", onStateChange);
+    onStateChange();
+  });
+}
+
+function matchingWorker(registration, expectedBuild) {
+  return [
+    registration.waiting,
+    registration.installing,
+    registration.active
+  ].find(worker => workerBuild(worker) === expectedBuild) ?? null;
+}
+
+function waitForControllerBuild(serviceWorkers, expectedBuild, timeoutMs) {
+  if (workerBuild(serviceWorkers.controller) === expectedBuild) {
+    return Promise.resolve(true);
+  }
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      serviceWorkers.removeEventListener("controllerchange", onChange);
+      resolve(value);
+    };
+    const onChange = () => finish(
+      workerBuild(serviceWorkers.controller) === expectedBuild
+    );
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    serviceWorkers.addEventListener("controllerchange", onChange);
+  });
 }
 
 async function retireLegacyRegistration(
@@ -179,7 +337,7 @@ function workerIdentity(value) {
 function publishState(state, { serviceWorkers, onStateChange }) {
   state.controllerBuild = workerBuild(serviceWorkers?.controller);
   const current = snapshot(state);
-  window.__SPATIAL_SEED_PWA__ = current;
+  globalThis.window && (window.__SPATIAL_SEED_PWA__ = current);
   try {
     onStateChange?.(current);
   } catch (error) {
@@ -192,6 +350,7 @@ function snapshot(state) {
   return Object.freeze({ ...state });
 }
 
-function isTrustedOrigin() {
-  return window.isSecureContext || LOCAL_HOSTS.has(location.hostname);
+function isTrustedOrigin(locationRef) {
+  return globalThis.window?.isSecureContext ||
+    LOCAL_HOSTS.has(locationRef?.hostname);
 }

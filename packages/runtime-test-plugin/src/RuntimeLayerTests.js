@@ -299,6 +299,7 @@ import {
   PwaInstallController,
   formatBuildLabel,
   formatPwaBuildLabel,
+  pwaUpdateAvailable,
   isPlatformBlock,
   loadWebApplicationDefinition,
   loadWebRuntimeExtensions,
@@ -307,7 +308,7 @@ import {
   resolvePwaLocations,
   webApplicationName,
   workerBuild
-} from "../../platform-web/src/index.js?build=20260802-0047d";
+} from "../../platform-web/src/index.js?build=20260804-0048e1";
 import {
   clampEditorFontSize,
   highlightProcedureSource,
@@ -11537,7 +11538,7 @@ assets: {
         });
         assertEqual(
           label,
-          "v0.1.0 · build 0025g · cache 0025d · feche para atualizar"
+          "v0.1.0 · build 0025g · nova versão disponível"
         );
       },
 
@@ -11550,6 +11551,37 @@ assets: {
           controllerBuild:"0025g",
           updatePending:false
         }),"v0.1.0 · build 0025g");
+      },
+
+      "oferece atualização somente quando publicação e controlador divergem"() {
+        assertEqual(pwaUpdateAvailable({
+          publishedBuild:"0025g",
+          controllerBuild:"0025d"
+        }),true);
+        assertEqual(pwaUpdateAvailable({
+          publishedBuild:"0025g",
+          controllerBuild:"0025g"
+        }),false);
+        assertEqual(pwaUpdateAvailable({
+          publishedBuild:"0025g",
+          controllerBuild:null
+        }),false);
+        assertEqual(pwaUpdateAvailable({
+          publishedBuild:"0025g",
+          controllerBuild:"0025g",
+          waitingBuild:"0025g"
+        }),true);
+      },
+
+      "erro de atualização aparece sem exigir reset automático"() {
+        assertEqual(formatPwaBuildLabel({
+          version:"0.1.0",
+          build:"0025g",
+          channel:"test"
+        },{
+          controllerBuild:"0025d",
+          error:"Feche e abra novamente."
+        }),"v0.1.0 · build 0025g · atualização requer atenção");
       }
     },
 

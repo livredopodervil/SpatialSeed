@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Audit the PWA bootstrap path that recovers from a stale controller."""
+"""Audit the non-destructive PWA update and recovery path."""
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -12,7 +13,13 @@ BUILD_INFO = ROOT / "apps/web/build-info.json"
 INDEX = ROOT / "apps/web/index.html"
 BOOT = ROOT / "apps/web/boot.js"
 WORKER = ROOT / "apps/web/service-worker.js"
+PLATFORM_INDEX = ROOT / "packages/platform-web/src/index.js"
+PWA_REGISTRATION = ROOT / "packages/platform-web/src/PwaRegistration.js"
 RESET = ROOT / "apps/reset-spatialseed-cache.html"
+BOOTSTRAP_PLATFORM_IMPORTERS = (
+    ROOT / "apps/web/bootstrap/bindWebInterface.js",
+    ROOT / "apps/web/bootstrap/createWebRuntime.js",
+)
 
 
 def require(source: str, marker: str, message: str) -> None:
@@ -20,64 +27,126 @@ def require(source: str, marker: str, message: str) -> None:
         raise SystemExit(message)
 
 
+def forbid(source: str, marker: str, message: str) -> None:
+    if marker in source:
+        raise SystemExit(message)
+
+
+def require_build_query(path: Path, source: str, build: str) -> None:
+    tokens = set(re.findall(r"[?&]build=([0-9A-Za-z._-]+)", source))
+    stale = sorted(token for token in tokens if token != build)
+    if stale:
+        raise SystemExit(
+            f"{path.relative_to(ROOT)} contém builds antigos: {', '.join(stale)}"
+        )
+
+
 def main() -> int:
     build = json.loads(BUILD_INFO.read_text(encoding="utf-8"))["build"]
     index = INDEX.read_text(encoding="utf-8")
     boot = BOOT.read_text(encoding="utf-8")
     worker = WORKER.read_text(encoding="utf-8")
+    platform_index = PLATFORM_INDEX.read_text(encoding="utf-8")
+    pwa_registration = PWA_REGISTRATION.read_text(encoding="utf-8")
+    reset = RESET.read_text(encoding="utf-8")
 
     require(
         index,
         f'./boot.js?build={build}',
         "A entrada boot.js não está versionada com o build publicado.",
     )
+    require(index, 'id="pwa-update-button"', "Botão Atualizar agora ausente.")
+    require(index, 'id="pwa-repair-button"', "Ação manual de reparo ausente.")
     require(
         boot,
-        "await ensureCurrentServiceWorker(buildInfo);",
-        "O bootstrap não verifica o service worker antes dos módulos da aplicação.",
+        "const pwaRegistration = registerPwa(buildInfo",
+        "O observador PWA não é registrado no início do bootstrap.",
     )
-    if boot.index("await ensureCurrentServiceWorker(buildInfo);") > boot.index(
+    require(
+        boot,
+        "void pwaRegistration.checkForUpdate();",
+        "O bootstrap não verifica atualizações explicitamente.",
+    )
+    if boot.index("const pwaRegistration = registerPwa(buildInfo") > boot.index(
         'import(`./main.js?build=${cacheKey}`)'
     ):
-        raise SystemExit("A verificação do service worker ocorre tarde demais.")
-    require(
+        raise SystemExit("O observador PWA é instalado tarde demais.")
+    forbid(
         boot,
-        "resolvePwaLocations(import.meta.url)",
-        "O bootstrap não usa a fronteira canônica de localização PWA.",
+        "ensureCurrentServiceWorker",
+        "O bootstrap ainda contém o fluxo bloqueante antigo.",
+    )
+    forbid(
+        boot,
+        "location.replace(resetUrl)",
+        "O bootstrap ainda executa reparo automático destrutivo.",
     )
     require(
         boot,
-        "scope:locations.scopeUrl",
-        "O bootstrap não registra o worker com escopo absoluto da mesma origem.",
+        "await pwaRegistration.updateNow();",
+        "O botão de atualização não aciona o handoff controlado.",
     )
     require(
-        boot,
-        '"../reset-spatialseed-cache.html",',
-        "O bootstrap não possui rota de recuperação fora do escopo PWA.",
+        pwa_registration,
+        'candidate.postMessage({ type: "SKIP_WAITING" });',
+        "A atualização explícita não ativa o worker aguardando.",
     )
     require(
         worker,
-        "await self.skipWaiting();",
-        "O novo service worker não assume o controle imediatamente.",
+        'event.data?.type !== "SKIP_WAITING"',
+        "O worker não aceita ativação explícita.",
+    )
+    install_block = worker.split('self.addEventListener("install"', 1)[1].split(
+        'self.addEventListener("activate"', 1
+    )[0]
+    forbid(
+        install_block,
+        "skipWaiting",
+        "O worker ainda força atualização antes da decisão do usuário.",
     )
     require(
         worker,
         "const exact = await cache.match(request);",
-        "O cache ainda ignora o identificador de build na busca principal.",
+        "O cache não respeita primeiro a chave exata do build.",
     )
     require(
         worker,
         "cache.match(request, { ignoreSearch: true })",
         "O fallback offline sem query foi removido.",
     )
+    require(
+        reset,
+        "spatialSeedRegistrations",
+        "O reparo não limita os registros ao SpatialSeed.",
+    )
+    require(
+        reset,
+        'name.startsWith("spatialseed-static-")',
+        "O reparo não limita a limpeza aos caches do SpatialSeed.",
+    )
+    for forbidden in ("indexedDB.deleteDatabase", "localStorage.clear", "sessionStorage.clear"):
+        forbid(reset, forbidden, "O reparo apaga dados do usuário.")
+
+    for path, source in (
+        (INDEX, index),
+        (BOOT, boot),
+        (PLATFORM_INDEX, platform_index),
+        (PWA_REGISTRATION, pwa_registration),
+    ):
+        require_build_query(path, source, build)
+    for path in BOOTSTRAP_PLATFORM_IMPORTERS:
+        source = path.read_text(encoding="utf-8")
+        expected = f'platform-web/src/index.js?build={build}'
+        require(source, expected, f"{path.relative_to(ROOT)} usa platform-web antigo.")
+
     if not RESET.is_file():
-        raise SystemExit("A página externa de redefinição do cache está ausente.")
+        raise SystemExit("A página externa de reparo está ausente.")
     try:
         RESET.relative_to(ROOT / "apps/web")
     except ValueError:
         pass
     else:
-        raise SystemExit("A página de redefinição não pode ficar sob o escopo PWA.")
+        raise SystemExit("A página de reparo não pode ficar sob o escopo PWA.")
 
     print(f"Auditoria da atualização PWA aprovada para o build {build}.")
     return 0
