@@ -2,6 +2,9 @@ import {
   normalizeGeometryDescriptor,
   geometryDescriptorKey
 } from "./GeometryDescriptor.js";
+import {
+  normalizeBufferRenderProfile
+} from "./BufferRenderProfile.js";
 
 export class GeometryRegistry {
   #providers = new Map();
@@ -69,6 +72,8 @@ export class GeometryRegistry {
   renderProfile(input) {
     const descriptor = this.normalize(input);
     const provider = this.provider(descriptor.type);
+    const explicit = normalizeBufferRenderProfile(descriptor.renderProfile);
+    if (explicit) return explicit;
     const topology = provider.topology ?? "closed-solid";
 
     return Object.freeze({

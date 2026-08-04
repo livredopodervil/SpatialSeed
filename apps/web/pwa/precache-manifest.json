@@ -83,6 +83,7 @@
     "packages/experiment-runtime/src/index.js",
     "packages/geometry-creation-panel/src/GeometryCreationPanel.js",
     "packages/geometry-creation-panel/src/index.js",
+    "packages/geometry-registry/src/BufferRenderProfile.js",
     "packages/geometry-registry/src/GeometryDescriptor.js",
     "packages/geometry-registry/src/GeometryRegistry.js",
     "packages/geometry-registry/src/createDefaultGeometryRegistry.js",

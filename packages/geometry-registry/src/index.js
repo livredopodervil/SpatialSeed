@@ -69,3 +69,8 @@ export {
 export {
   createDefaultGeometryRegistry
 } from "./createDefaultGeometryRegistry.js";
+
+export {
+  classifyBufferRenderProfile,
+  normalizeBufferRenderProfile
+} from "./BufferRenderProfile.js";

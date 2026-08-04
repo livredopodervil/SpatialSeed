@@ -29,7 +29,7 @@ import { ProjectService } from "../../../packages/project-files/src/ProjectServi
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260804-0048i-audit3";
+} from "../../../packages/platform-web/src/index.js?build=20260804-0048j1";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -100,7 +100,7 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260804-0048i-audit1";
 import {
   MeshGeometryAudit
-} from "../../../packages/mesh-geometry-audit/src/index.js?build=20260804-0048i-audit3";
+} from "../../../packages/mesh-geometry-audit/src/index.js?build=20260804-0048j1";
 import {
   MeshEditPanel
 } from "../../../packages/mesh-edit-panel/src/index.js?build=20260802-0047g";

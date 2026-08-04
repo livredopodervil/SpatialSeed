@@ -6,6 +6,10 @@ import {
   optionalPoints3,
   points3
 } from "./ProviderTools.js";
+import {
+  classifyBufferRenderProfile,
+  normalizeBufferRenderProfile
+} from "../BufferRenderProfile.js";
 
 const DEFAULT_POSITIONS = Object.freeze([
   [-1, 0, 0],
@@ -39,6 +43,8 @@ export const BufferGeometryProvider = Object.freeze({
     const normals = optionalPoints3(input.normals, "normals");
     const uvs = optionalPoints2(input.uvs, "uvs");
     const edges = normalizeEdges(input.edges, positions.length);
+    const renderProfile = normalizeBufferRenderProfile(input.renderProfile) ??
+      classifyBufferRenderProfile({ positions, indices });
 
     if (normals.length && normals.length !== positions.length) {
       throw new RangeError("normals deve ter a mesma quantidade de positions.");
@@ -60,7 +66,8 @@ export const BufferGeometryProvider = Object.freeze({
       indices,
       normals,
       uvs,
-      edges
+      edges,
+      renderProfile
     });
   },
 

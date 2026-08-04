@@ -1,3 +1,6 @@
+import {
+  classifyBufferRenderProfile
+} from "../../geometry-registry/src/BufferRenderProfile.js?build=20260804-0048j1";
 import { EditorState } from "../../editor-core/src/EditorState.js?build=20260729-0039g2";
 import * as THREE from "three";
 import {
@@ -5038,6 +5041,83 @@ export function createRuntimeLayerTests() {
         assertThrowsMessage(() => controller.enter(), "animação");
       }
     },
+    "mesh-render-profile": {
+      "recalcular normais preserva posições índices e UVs byte a byte"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [
+            [0,0,0], [1,0,0], [0,1,0],
+            [9,9,9]
+          ],
+          indices: [0,1,2],
+          normals: [
+            [0,0,1], [0,0,1], [0,0,1],
+            [1,0,0]
+          ],
+          uvs: [[0,0], [1,0], [0,1], [0.5,0.5]],
+          edges: []
+        };
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology: topologyOf(descriptor),
+          componentMode: "vertex",
+          selectedIndices: [],
+          operation: "recalculate-normals",
+          options: { removeUnused: true, manifoldOnly: true }
+        });
+        assertDeepEqual(result.descriptor.positions, descriptor.positions);
+        assertDeepEqual(result.descriptor.indices, descriptor.indices);
+        assertDeepEqual(result.descriptor.uvs, descriptor.uvs);
+        assertEqual(result.descriptor.normals.length, descriptor.positions.length);
+      },
+
+      "classificação fechada ignora duplicações de costura"() {
+        const geometry = new THREE.SphereGeometry(1, 24, 16);
+        const position = geometry.getAttribute("position");
+        const positions = Array.from({ length: position.count }, (_, index) => [
+          position.getX(index), position.getY(index), position.getZ(index)
+        ]);
+        const indices = Array.from(geometry.index.array);
+        assertDeepEqual(
+          classifyBufferRenderProfile({ positions, indices }),
+          { topology: "closed-solid", side: "front" }
+        );
+        geometry.dispose();
+      },
+
+      "buffer normalizado conserva perfil fechado no renderer"() {
+        const registry = createDefaultGeometryRegistry();
+        const descriptor = registry.normalize({
+          type: "buffer",
+          positions: [
+            [1,1,1], [-1,-1,1], [-1,1,-1], [1,-1,-1]
+          ],
+          indices: [0,2,1, 0,1,3, 0,3,2, 1,2,3],
+          normals: [],
+          uvs: [],
+          edges: []
+        });
+        assertDeepEqual(descriptor.renderProfile, {
+          topology: "closed-solid",
+          side: "front"
+        });
+        assertDeepEqual(registry.renderProfile(descriptor), {
+          topology: "closed-solid",
+          side: "front"
+        });
+      },
+
+      "superfície aberta continua dupla face"() {
+        assertDeepEqual(classifyBufferRenderProfile({
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2]
+        }), {
+          topology: "open-surface",
+          side: "double"
+        });
+      }
+    },
+
     "mesh-attribute-policy": {
       "no-op numérico preserva índices UVs e normais importadas"() {
         const before = {

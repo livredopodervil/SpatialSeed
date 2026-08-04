@@ -104,11 +104,16 @@ export function applyMeshTopologyOperation({
       throw new RangeError(`Operação topológica desconhecida: ${operation}.`);
   }
 
-  const finalized = finalizeMesh(result.mesh, {
-    removeUnused: op === "cleanup" || (options.removeUnused !== false && op !== "create-vertex"),
-    preserveLooseVertices: ["create-vertex", "duplicate", "collapse", "weld"].includes(op) && op !== "cleanup",
-    preserveNormals: ["cleanup", "recalculate-normals"].includes(op)
-  });
+  const finalized = op === "recalculate-normals"
+    ? mutableMesh(result.mesh)
+    : finalizeMesh(result.mesh, {
+        removeUnused: op === "cleanup" ||
+          (options.removeUnused !== false && op !== "create-vertex"),
+        preserveLooseVertices:
+          ["create-vertex", "duplicate", "collapse", "weld"].includes(op) &&
+          op !== "cleanup",
+        preserveNormals: op === "cleanup"
+      });
   const afterTopology = topologyOf(finalized);
   validateTopology(afterTopology, {
     manifoldOnly: options.manifoldOnly !== false,
