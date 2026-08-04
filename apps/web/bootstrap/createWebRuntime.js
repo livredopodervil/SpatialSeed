@@ -20,7 +20,7 @@ import {
   createVirtualResourceTree,
   parseResourcePath
 } from "../../../packages/resource-tree/src/index.js?build=20260801-0045a1";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260802-0047f";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260804-0048i-audit2";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260802-0047g";
@@ -29,7 +29,7 @@ import { ProjectService } from "../../../packages/project-files/src/ProjectServi
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260804-0048i-audit1";
+} from "../../../packages/platform-web/src/index.js?build=20260804-0048i-audit2";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -1990,7 +1990,8 @@ export async function createWebRuntime({
     },
     geometryRegistry,
     queries: {
-      execute: (id, args) => runtime.query(id, args)
+      execute: (id, args) => runtime.query(id, args),
+      describe: () => runtime.capabilities().queries
     },
     programs: programSession,
     procedures: procedureCatalog,

@@ -167,7 +167,7 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260802-0047f";
+} from "../../devtools/src/DevConsole.js?build=20260804-0048i-audit2";
 import {
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
@@ -5635,6 +5635,83 @@ export function createRuntimeLayerTests() {
         assert(result.directMs >= 0);
         assert(result.facadeMs >= 0);
         assert(Number.isFinite(result.overheadPerCallUs));
+      },
+
+      "console executa consulta registrada por identificador canônico"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            execute() {
+              throw new Error("Comando inesperado.");
+            },
+            describe() {
+              return [];
+            }
+          },
+          queries: {
+            execute(id, args) {
+              calls.push({ id, args });
+              return { captured: true, label: args.label };
+            },
+            describe() {
+              return [{ id: "mesh.audit.capture", metadata: {} }];
+            }
+          }
+        });
+
+        const [entry] = console.execute(
+          'mesh.audit.capture {"label":"sphere-before"}'
+        );
+
+        assertEqual(entry.ok, true);
+        assertEqual(entry.result.captured, true);
+        assertDeepEqual(calls, [{
+          id: "mesh.audit.capture",
+          args: { label: "sphere-before" }
+        }]);
+      },
+
+      "console executa comando registrado sem regra dedicada"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            execute(id, args) {
+              calls.push({ id, args });
+              return { changed: true };
+            },
+            describe() {
+              return [{ id: "diagnostic.sample.run", metadata: {} }];
+            }
+          },
+          queries: {
+            execute() {
+              throw new Error("Consulta inesperada.");
+            },
+            describe() {
+              return [];
+            }
+          }
+        });
+
+        const [entry] = console.execute(
+          'diagnostic.sample.run {"count":2}'
+        );
+
+        assertEqual(entry.ok, true);
+        assertDeepEqual(calls, [{
+          id: "diagnostic.sample.run",
+          args: { count: 2 }
+        }]);
       }
     },
 

@@ -485,6 +485,10 @@ export class DevConsole {
         this.#expectMaximum(tokens, 0, "commands");
         return this.commands.describe();
 
+      case "queries":
+        this.#expectMaximum(tokens, 0, "queries");
+        return this.queries?.describe?.() ?? [];
+
       case "inspect":
         this.#expectMaximum(tokens, 2, "inspect");
         return this.#inspect(tokens[0], tokens[1]);
@@ -621,11 +625,48 @@ export class DevConsole {
       case "property":
         return this.#property(tokens);
 
-      default:
+      default: {
+        const registered = this.#executeRegisteredInvocation(line);
+        if (registered.matched) return registered.result;
         throw new Error(
           `Comando desconhecido: ${command || "(vazio)"}. Use help.`
         );
+      }
     }
+  }
+
+  #executeRegisteredInvocation(line) {
+    const { head: id, tail } = takeHead(line, { lowercase: false });
+    if (!id || !id.includes(".")) {
+      return { matched: false, result: undefined };
+    }
+
+    const commandMatch = this.commands.describe?.().some(
+      command => command.id === id
+    ) ?? false;
+    const queryMatch = this.queries?.describe?.().some(
+      query => query.id === id
+    ) ?? false;
+
+    if (!commandMatch && !queryMatch) {
+      return { matched: false, result: undefined };
+    }
+    if (commandMatch && queryMatch) {
+      throw new Error(
+        `Identificador ambíguo no console: ${id}. ` +
+        "Use uma superfície pública com identificador exclusivo."
+      );
+    }
+
+    const args = tail
+      ? parseJson(tail, `Argumentos de ${id}`)
+      : {};
+    return {
+      matched: true,
+      result: commandMatch
+        ? this.commands.execute(id, args)
+        : this.queries.execute(id, args)
+    };
   }
 
   #help(topic = null) {
@@ -695,6 +736,8 @@ export class DevConsole {
       syntax: "Separe comandos por ponto e vírgula ou por quebra de linha.",
       commands: [
         "commands",
+        "queries",
+        "id.registrado [argumento-JSON]",
         ...diagnosticCommands,
         "selection stats",
         "runtime profile",
