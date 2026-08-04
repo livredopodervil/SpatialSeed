@@ -53,6 +53,15 @@ export class MeshGeometryAudit {
     return compareEntries(left, right, epsilon);
   }
 
+  diagnose({ from = null, to = null, epsilon = DEFAULT_EPSILON } = {}) {
+    if (this.#captures.length < 2) {
+      throw new Error("São necessárias ao menos duas capturas.");
+    }
+    const right = this.#resolve(to, this.#captures.at(-1));
+    const left = this.#resolve(from, this.#captures.at(-2));
+    return diagnoseEntries(left, right, epsilon);
+  }
+
   report({ epsilon = DEFAULT_EPSILON } = {}) {
     const comparisons = [];
     for (let index = 1; index < this.#captures.length; index += 1) {
@@ -123,12 +132,16 @@ function summarizeEntry(entry) {
     commitPreview: snapshot.edit?.commitPreview
       ? Object.freeze({
           changed: snapshot.edit.commitPreview.changed ?? null,
-          geometryKey: snapshot.edit.commitPreview.geometryKey ?? null,
+          geometryKey: summarizeKey(
+            snapshot.edit.commitPreview.geometryKey ?? null
+          ),
           error: snapshot.edit.commitPreview.error ?? null,
           descriptor: summarizeDescriptor(
             snapshot.edit.commitPreview.descriptor ?? null
           ),
-          change: clone(snapshot.edit.commitPreview.change ?? null)
+          change: summarizeChange(
+            snapshot.edit.commitPreview.change ?? null
+          )
         })
       : null,
     geometry: summarizeGeometry(snapshot.effective.geometry),
@@ -195,6 +208,304 @@ function compareEntries(leftEntry, rightEntry, epsilon) {
       )
     })
   });
+}
+
+function diagnoseEntries(leftEntry, rightEntry, epsilon) {
+  const left = leftEntry.snapshot;
+  const right = rightEntry.snapshot;
+  const compared = compareEntries(leftEntry, rightEntry, epsilon);
+  const representationBefore = representationSummary(left);
+  const representationAfter = representationSummary(right);
+  const materialBefore = summarizeMaterial(left.effective.material);
+  const materialAfter = summarizeMaterial(right.effective.material);
+  const handoff = Object.freeze({
+    editToPrepared: compactDescriptorComparison(
+      compared.handoff.editToPrepared
+    ),
+    preparedToCanonical: compactDescriptorComparison(
+      compared.handoff.preparedToCanonical
+    ),
+    preparedToRenderedCanonical: compactConsistencyComparison(
+      compared.handoff.preparedToRenderedCanonical
+    )
+  });
+  const representationChangedFields = changedObjectKeys(
+    representationBefore,
+    representationAfter
+  );
+  const materialChangedFields = changedObjectKeys(
+    materialBefore,
+    materialAfter
+  );
+  const descriptor = compactDescriptorComparison(
+    compared.effectiveDescriptor
+  );
+  const geometry = compactGeometryComparison(
+    compared.effectiveGeometry
+  );
+  return Object.freeze({
+    from: compactEntryFingerprint(leftEntry),
+    to: compactEntryFingerprint(rightEntry),
+    likelyStage: inferLikelyStage({
+      handoff,
+      representationChangedFields,
+      materialChangedFields,
+      descriptor,
+      geometry
+    }),
+    changed: Object.freeze({
+      representation: Object.freeze(representationChangedFields),
+      material: Object.freeze(materialChangedFields),
+      descriptor,
+      geometry
+    }),
+    handoff,
+    consistency: Object.freeze({
+      from: compactConsistencyComparison(compared.consistency.from),
+      to: compactConsistencyComparison(compared.consistency.to)
+    })
+  });
+}
+
+function compactEntryFingerprint(entry) {
+  const snapshot = entry.snapshot;
+  return Object.freeze({
+    id: entry.id,
+    label: entry.label,
+    phase: snapshot.effective.phase,
+    objectId: snapshot.objectId,
+    sandboxRevision: snapshot.sandboxRevision,
+    descriptor: descriptorFingerprint(snapshot.effective.descriptor),
+    geometry: geometryFingerprint(snapshot.effective.geometry),
+    material: summarizeMaterial(snapshot.effective.material),
+    representation: representationSummary(snapshot),
+    commitPreview: snapshot.edit?.commitPreview
+      ? Object.freeze({
+          changed: snapshot.edit.commitPreview.changed ?? null,
+          error: snapshot.edit.commitPreview.error ?? null,
+          geometryKey: summarizeKey(
+            snapshot.edit.commitPreview.geometryKey ?? null
+          ),
+          descriptor: descriptorFingerprint(
+            snapshot.edit.commitPreview.descriptor ?? null
+          )
+        })
+      : null
+  });
+}
+
+function descriptorFingerprint(value) {
+  if (!value) return null;
+  return Object.freeze({
+    type: value.type ?? null,
+    positions: numericFingerprint(value.positions),
+    indices: numericFingerprint(value.indices),
+    normals: numericFingerprint(value.normals),
+    uvs: numericFingerprint(value.uvs),
+    tangents: numericFingerprint(value.tangents),
+    colors: numericFingerprint(value.colors),
+    edges: numericFingerprint(value.edges)
+  });
+}
+
+function geometryFingerprint(value) {
+  if (!value) return null;
+  return Object.freeze({
+    type: value.type ?? null,
+    index: attributeFingerprint(value.index),
+    attributes: Object.freeze(Object.fromEntries(
+      Object.entries(value.attributes ?? {}).map(([name, attribute]) => [
+        name,
+        attributeFingerprint(attribute)
+      ])
+    )),
+    groupsHash: hashText(stableJson(value.groups ?? [])),
+    drawRange: clone(value.drawRange ?? null),
+    boundsHash: hashText(stableJson(value.bounds ?? null))
+  });
+}
+
+function attributeFingerprint(value) {
+  if (!value) return null;
+  return Object.freeze({
+    itemSize: value.itemSize ?? null,
+    normalized: Boolean(value.normalized),
+    arrayType: value.arrayType ?? null,
+    values: numericFingerprint(value.values)
+  });
+}
+
+function numericFingerprint(value) {
+  const summary = numericSummary(value);
+  return Object.freeze({
+    length: summary.length,
+    hash: summary.hash
+  });
+}
+
+function compactDescriptorComparison(value) {
+  if (!value) return null;
+  if (!value.present) {
+    return Object.freeze({ present: false, changed: false });
+  }
+  if (!value.fields) {
+    return Object.freeze({
+      present: true,
+      changed: Boolean(value.changed),
+      leftPresent: value.leftPresent ?? null,
+      rightPresent: value.rightPresent ?? null
+    });
+  }
+  const fieldEntries = Object.entries(value.fields);
+  return Object.freeze({
+    present: true,
+    changed: Boolean(value.changed),
+    type: clone(value.type ?? null),
+    changedFields: Object.freeze(Object.fromEntries(
+      fieldEntries
+        .filter(([, field]) => field.changed)
+        .map(([name, field]) => [name, compactNumericComparison(field)])
+    )),
+    unchangedFields: Object.freeze(
+      fieldEntries.filter(([, field]) => !field.changed).map(([name]) => name)
+    )
+  });
+}
+
+function compactGeometryComparison(value) {
+  if (!value) return null;
+  if (!value.present) {
+    return Object.freeze({ present: false, changed: false });
+  }
+  if (!value.attributes) {
+    return Object.freeze({
+      present: true,
+      changed: Boolean(value.changed),
+      leftPresent: value.leftPresent ?? null,
+      rightPresent: value.rightPresent ?? null
+    });
+  }
+  const attributeEntries = Object.entries(value.attributes);
+  const changedAttributes = Object.freeze(Object.fromEntries(
+    attributeEntries
+      .filter(([, attribute]) => attribute.changed)
+      .map(([name, attribute]) => [
+        name,
+        compactAttributeComparison(attribute)
+      ])
+  ));
+  return Object.freeze({
+    present: true,
+    changed: Boolean(value.changed),
+    type: clone(value.type ?? null),
+    index: value.index?.changed
+      ? compactAttributeComparison(value.index)
+      : Object.freeze({ changed: false }),
+    changedAttributes,
+    unchangedAttributes: Object.freeze(
+      attributeEntries
+        .filter(([, attribute]) => !attribute.changed)
+        .map(([name]) => name)
+    ),
+    groupsChanged: Boolean(value.groups?.changed),
+    drawRangeChanged: Boolean(value.drawRange?.changed),
+    boundsChanged: Boolean(value.bounds?.changed)
+  });
+}
+
+function compactAttributeComparison(value) {
+  if (!value) return null;
+  if (!value.present) {
+    return Object.freeze({ present: false, changed: false });
+  }
+  if (!value.values) {
+    return Object.freeze({
+      present: true,
+      changed: Boolean(value.changed),
+      leftPresent: value.leftPresent ?? null,
+      rightPresent: value.rightPresent ?? null
+    });
+  }
+  return Object.freeze({
+    present: true,
+    changed: Boolean(value.changed),
+    itemSize: clone(value.itemSize ?? null),
+    arrayType: clone(value.arrayType ?? null),
+    normalized: clone(value.normalized ?? null),
+    values: compactNumericComparison(value.values)
+  });
+}
+
+function compactNumericComparison(value) {
+  if (!value) return null;
+  return Object.freeze({
+    changed: Boolean(value.changed),
+    leftLength: value.leftLength ?? null,
+    rightLength: value.rightLength ?? null,
+    tupleSize: value.tupleSize ?? null,
+    changedScalars: value.changedScalars ?? 0,
+    changedTuples: value.changedTuples ?? 0,
+    maxAbsDelta: value.maxAbsDelta ?? 0,
+    leftHash: value.leftHash ?? null,
+    rightHash: value.rightHash ?? null
+  });
+}
+
+function compactConsistencyComparison(value) {
+  if (!value || value.available === false) {
+    return Object.freeze({ available: false });
+  }
+  const fields = Object.freeze({
+    positions: compactNumericComparison(value.positions),
+    indices: compactNumericComparison(value.indices),
+    normals: compactNumericComparison(value.normals),
+    uvs: compactNumericComparison(value.uvs)
+  });
+  return Object.freeze({
+    available: true,
+    changedFields: Object.freeze(Object.fromEntries(
+      Object.entries(fields).filter(([, field]) => field?.changed)
+    )),
+    matchingFields: Object.freeze(
+      Object.entries(fields)
+        .filter(([, field]) => !field?.changed)
+        .map(([name]) => name)
+    )
+  });
+}
+
+function changedObjectKeys(left, right) {
+  const keys = new Set([
+    ...Object.keys(left ?? {}),
+    ...Object.keys(right ?? {})
+  ]);
+  return [...keys]
+    .filter(key => stableJson(left?.[key] ?? null) !==
+      stableJson(right?.[key] ?? null))
+    .sort();
+}
+
+function inferLikelyStage({
+  handoff,
+  representationChangedFields,
+  materialChangedFields,
+  descriptor,
+  geometry
+}) {
+  if (handoff.editToPrepared?.changed) return "edit-to-prepared";
+  if (handoff.preparedToCanonical?.changed) return "prepared-to-canonical";
+  if (consistencyChanged(handoff.preparedToRenderedCanonical)) {
+    return "prepared-to-rendered-canonical";
+  }
+  if (materialChangedFields.length) return "material-transition";
+  if (representationChangedFields.length) return "representation-transition";
+  if (descriptor?.changed || geometry?.changed) return "effective-geometry";
+  return "no-structural-difference";
+}
+
+function consistencyChanged(value) {
+  if (!value?.available) return false;
+  return Object.keys(value.changedFields ?? {}).length > 0;
 }
 
 function compareDescriptors(left, right, epsilon) {
@@ -353,15 +664,17 @@ function representationSummary(snapshot) {
     phase: snapshot.effective.phase,
     descriptorType: snapshot.effective.descriptor?.type ?? null,
     canonicalDescriptorType: snapshot.canonical?.descriptor?.type ?? null,
-    canonicalGeometryKey: snapshot.canonical?.geometryKey ?? null,
+    canonicalGeometryKey: summarizeKey(
+      snapshot.canonical?.geometryKey ?? null
+    ),
     canonicalTopology: snapshot.canonical?.renderProfile?.topology ?? null,
     canonicalRenderSide: snapshot.canonical?.renderProfile?.side ?? null,
     sourceType: snapshot.edit?.sourceType ?? null,
     objectKind: snapshot.object?.kind ?? null,
     batchKind: canonical.batchKind ?? null,
-    batchKey: canonical.batchKey ?? null,
-    geometryCacheKey: canonical.geometryCacheKey ?? null,
-    materialCacheKey: canonical.materialCacheKey ?? null,
+    batchKey: summarizeKey(canonical.batchKey ?? null),
+    geometryCacheKey: summarizeKey(canonical.geometryCacheKey ?? null),
+    materialCacheKey: summarizeKey(canonical.materialCacheKey ?? null),
     renderSide: snapshot.effective.material?.side ?? null,
     shadowSide: snapshot.effective.material?.shadowSide ?? null,
     materialType: snapshot.effective.material?.type ?? null,
@@ -396,6 +709,26 @@ function descriptorMetadata(value = {}) {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, item]) => [key, clone(item)])
   ));
+}
+
+function summarizeChange(value) {
+  if (!value) return null;
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (key === "changedVertexIndices") {
+      const indices = flattenNumbers(item);
+      result[key] = Object.freeze({
+        length: indices.length,
+        hash: hashNumbers(indices),
+        first: Object.freeze(indices.slice(0, 16))
+      });
+    } else if (Array.isArray(item) || ArrayBuffer.isView(item)) {
+      result[key] = numericFingerprint(item);
+    } else {
+      result[key] = clone(item);
+    }
+  }
+  return Object.freeze(result);
 }
 
 function summarizeDescriptor(value) {
@@ -524,6 +857,28 @@ function hashNumbers(numbers) {
       hash ^= view.getUint8(offset);
       hash = Math.imul(hash, 0x01000193) >>> 0;
     }
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+function summarizeKey(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value);
+  return Object.freeze({
+    length: text.length,
+    hash: hashText(text),
+    prefix: text.slice(0, 96)
+  });
+}
+
+function hashText(text) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    hash ^= code & 0xff;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+    hash ^= (code >>> 8) & 0xff;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return hash.toString(16).padStart(8, "0");
 }
