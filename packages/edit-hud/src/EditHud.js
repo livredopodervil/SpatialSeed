@@ -329,7 +329,7 @@ export class EditHud {
     this.root.dataset.heuristicContext = this.#heuristic.reason;
     this.#refreshContextActions(state, this.#heuristic);
     this.#refreshGeometryTools();
-    this.#applyAdaptiveLayout(this.#heuristic);
+    /* #applyPreferences já aplica o layout adaptativo. */
     this.#applyPreferences();
     this.#refreshParameterAliases();
     for (const button of this.root.querySelectorAll("[data-planar-tool]")) {

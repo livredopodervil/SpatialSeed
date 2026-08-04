@@ -26,12 +26,23 @@ export class EditorState {
     if (!allowed.has(mode)) throw new RangeError(`Unknown tool mode: ${mode}`);
     const transformMode = ["translate", "rotate", "scale"].includes(mode)
       ? mode : this.tool.transformMode;
-    this.tool = {
+    const nextTool = {
       type: ["navigate", "select"].includes(mode) ? "interaction" : "transform",
       mode,
       transformMode
     };
+    const unchanged =
+      this.tool.type === nextTool.type &&
+      this.tool.mode === nextTool.mode &&
+      this.tool.transformMode === nextTool.transformMode &&
+      this.pivot.editing === false;
+    if (unchanged) return false;
+    this.tool = nextTool;
+    if (this.pivot.editing) {
+      this.pivot = { ...this.pivot, editing: false };
+    }
     this.#emit("tool");
+    return true;
   }
 
   setSelectionOperation(operation) {
@@ -85,8 +96,11 @@ export class EditorState {
   }
 
   setPivotEditing(enabled) {
-    this.pivot = { ...this.pivot, editing: Boolean(enabled) };
+    const editing = Boolean(enabled);
+    if (this.pivot.editing === editing) return false;
+    this.pivot = { ...this.pivot, editing };
     this.#emit("pivot-editing");
+    return true;
   }
 
   setCustomPivot(position) {
