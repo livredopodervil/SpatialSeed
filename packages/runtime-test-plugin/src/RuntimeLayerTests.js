@@ -1,8 +1,14 @@
 import {
   classifyBufferRenderProfile
-} from "../../geometry-registry/src/BufferRenderProfile.js?build=20260804-0048j1";
+} from "../../geometry-registry/src/BufferRenderProfile.js?build=20260804-0048k1";
 import { EditorState } from "../../editor-core/src/EditorState.js?build=20260729-0039g2";
 import * as THREE from "three";
+import {
+  ObjectPickingService,
+  PickingIdAllocator,
+  decodePickingPixel,
+  encodePickingId
+} from "../../object-picking/src/index.js?build=20260804-0048k1";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -388,6 +394,52 @@ export function createRuntimeLayerTests() {
   return {
     "module-v2": createModuleRegistryTests(),
     "tool-capabilities": createToolCapabilityTests(),
+    "object-picking-contract": {
+      "IDs são estáveis e o zero permanece reservado ao fundo"() {
+        const allocator = new PickingIdAllocator();
+        const first = allocator.idFor("object-a");
+        assertEqual(first, allocator.idFor("object-a"));
+        assertEqual(first > 0, true);
+        assertEqual(allocator.objectFor(0), null);
+        assertEqual(allocator.objectFor(first), "object-a");
+      },
+
+      "codificação RGB conserva os 24 bits do identificador"() {
+        const id = 0x12ABEF;
+        const color = encodePickingId(id);
+        const pixel = color.map(value => Math.round(value * 255));
+        assertEqual(decodePickingPixel(pixel), id);
+      },
+
+      "falha do backend solicita o raycast legado sem propagar exceção"() {
+        const service = new ObjectPickingService({
+          backend: {
+            supported: true,
+            pickAt() { throw new Error("context-lost"); }
+          }
+        });
+        const result = service.pickAt({ clientX: 10, clientY: 20 });
+        assertEqual(result.objectId, null);
+        assertEqual(result.fallback, true);
+        assertEqual(service.status().failures, 1);
+      },
+
+      "resultado público contém apenas identidade lógica"() {
+        const service = new ObjectPickingService({
+          backend: {
+            supported: true,
+            pickAt() {
+              return { objectId: "logical-object", source: "gpu-id" };
+            }
+          }
+        });
+        const result = service.pickAt({ clientX: 1, clientY: 2 });
+        assertEqual(result.objectId, "logical-object");
+        assertEqual(result.source, "gpu-id");
+        assertEqual(Object.hasOwn(result, "object3D"), false);
+      }
+    },
+
     "performance-baseline": {
       "benchmark compacto mede estrutura sem tocar a cena ativa"() {
         const runner = new BenchmarkRunner({

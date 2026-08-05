@@ -10,6 +10,12 @@ import {
   HeterogeneousBatchManager
 } from "./HeterogeneousBatchManager.js?build=20260801-0045a1";
 import {
+  ObjectPickingService
+} from "../../object-picking/src/index.js?build=20260804-0048k1";
+import {
+  ThreeGpuObjectPickingBackend
+} from "./ThreeGpuObjectPickingBackend.js?build=20260804-0048k1";
+import {
   normalizeStrokeBundleDescriptor,
   strokeBundleChunkDescriptor,
   strokeChunkRenderResourcePath
@@ -136,6 +142,7 @@ export class ThreeRegionRenderer {
   #lastState = null;
   #batchManager = null;
   #heterogeneousBatchManager = null;
+  #objectPicking = null;
   #selectedVisualIds = new Set();
   #selectionOutlines = null;
   #interactionMode = "select";
@@ -220,6 +227,10 @@ export class ThreeRegionRenderer {
     fullBatchVisits: 0,
     screenObjectsVisited: 0,
     raycastBatchVisits: 0,
+    gpuPickingPasses: 0,
+    gpuPickingFallbacks: 0,
+    gpuPickingLastMs: 0,
+    gpuPickingMaximumMs: 0,
     familyObjects: 0,
     familyInstances: 0,
     familyEstimatedBytes: 0,
@@ -277,7 +288,10 @@ export class ThreeRegionRenderer {
     objectHits: 0,
     lastObjectId: null,
     lastNdc: null,
-    selectionAction: null
+    selectionAction: null,
+    objectPickingSource: null,
+    objectPickingDurationMs: 0,
+    objectPickingFallback: false
   };
 
   constructor(
@@ -453,6 +467,15 @@ export class ThreeRegionRenderer {
 
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
+    this.#objectPicking = new ObjectPickingService({
+      backend: new ThreeGpuObjectPickingBackend({
+        renderer: this.renderer,
+        camera: this.camera,
+        canvas: this.canvas,
+        batchManager: this.#batchManager,
+        heterogeneousBatchManager: this.#heterogeneousBatchManager
+      })
+    });
 
     this.selection.subscribe(snapshot => {
       this.#selectionSnapshot = snapshot;
@@ -2281,7 +2304,8 @@ export class ThreeRegionRenderer {
       ...this.#incrementalDiagnostics,
       meshes: this.#meshes.size,
       familyBuildQueue: this.#familyBuildQueue.length,
-      familyBuildActive: this.#familyBuildHandle !== null
+      familyBuildActive: this.#familyBuildHandle !== null,
+      objectPicking: this.#objectPicking?.status() ?? null
     };
   }
 
@@ -6066,7 +6090,10 @@ export class ThreeRegionRenderer {
   }
 
   getInputDiagnostics() {
-    return structuredClone(this.#inputDiagnostics);
+    return Object.freeze({
+      ...structuredClone(this.#inputDiagnostics),
+      objectPicking: this.#objectPicking?.status() ?? null
+    });
   }
 
   #selectAt(event) {
@@ -6164,22 +6191,41 @@ export class ThreeRegionRenderer {
       return;
     }
 
-    // Atualiza apenas lotes modificados. O Raycaster ordena os
-    // resultados pela distância à câmera, não pelo centro do mundo.
-    this.#flushBatchBounds();
+    const now = performance.now();
+    const repeatedOverlapPick = Boolean(
+      this.#overlapCycle.x !== null &&
+      now - this.#overlapCycle.time < 1400 &&
+      Math.hypot(
+        event.clientX - this.#overlapCycle.x,
+        event.clientY - this.#overlapCycle.y
+      ) < 12
+    );
+    const gpuPick = this.#objectPicking.pickAt({
+      clientX: event.clientX,
+      clientY: event.clientY
+    });
+    this.#incrementalDiagnostics.gpuPickingPasses += 1;
+    this.#incrementalDiagnostics.gpuPickingLastMs = gpuPick.durationMs;
+    this.#incrementalDiagnostics.gpuPickingMaximumMs = Math.max(
+      this.#incrementalDiagnostics.gpuPickingMaximumMs,
+      gpuPick.durationMs
+    );
+    this.#inputDiagnostics.objectPickingSource = gpuPick.source;
+    this.#inputDiagnostics.objectPickingDurationMs = Number(
+      gpuPick.durationMs.toFixed(2)
+    );
+    this.#inputDiagnostics.objectPickingFallback = Boolean(
+      gpuPick.fallback || repeatedOverlapPick
+    );
+    const geometryHitIds = gpuPick.fallback || repeatedOverlapPick
+      ? this.#raycastGeometryHitIds()
+      : gpuPick.objectId
+        ? [gpuPick.objectId]
+        : [];
+    if (gpuPick.fallback || repeatedOverlapPick) {
+      this.#incrementalDiagnostics.gpuPickingFallbacks += 1;
+    }
 
-    const selectionBatches = this.#batchManager.batches();
-    const heterogeneousBatches = this.#heterogeneousBatchManager.batches();
-    this.#incrementalDiagnostics.raycastBatchVisits +=
-      selectionBatches.length + heterogeneousBatches.length;
-    const hits = this.raycaster.intersectObjects(
-      selectionBatches.map(batch => batch.mesh),
-      false
-    );
-    const heterogeneousHits = this.raycaster.intersectObjects(
-      heterogeneousBatches.map(batch => batch.mesh),
-      false
-    );
     const cameraHits = this.raycaster.intersectObjects(
       [...this.#cameraVisuals.values()].flatMap(
         visual => [visual.body, visual.lens, visual.lines]
@@ -6193,10 +6239,7 @@ export class ThreeRegionRenderer {
       false
     );
     const hitIds=[...new Set([
-      ...hits.map(hit => this.#batchManager.objectFromHit(hit)),
-      ...heterogeneousHits.map(hit =>
-        this.#heterogeneousBatchManager.objectFromHit(hit)
-      ),
+      ...geometryHitIds,
       ...cameraHits.map(hit => hit.object.userData.cameraObjectId),
       ...lightHits.map(hit => hit.object.userData.lightObjectId),
       ...this.#cameraScreenHitIds(
@@ -6220,6 +6263,30 @@ export class ThreeRegionRenderer {
     const member={kind:"object",regionId:"region-main",objectId};
     const op=this.editorState.multiSelect?"toggle":this.#selectionOperation;
     this.#inputDiagnostics.selectionAction=op;this.#applySelectionMembers([member],op);this.#inputDiagnostics.discardedReason=null;
+  }
+
+  #raycastGeometryHitIds() {
+    // Fallback preciso e caminho de ciclagem entre objetos sobrepostos.
+    // Não é usado no primeiro toque comum.
+    this.#flushBatchBounds();
+    const selectionBatches = this.#batchManager.batches();
+    const heterogeneousBatches = this.#heterogeneousBatchManager.batches();
+    this.#incrementalDiagnostics.raycastBatchVisits +=
+      selectionBatches.length + heterogeneousBatches.length;
+    const hits = this.raycaster.intersectObjects(
+      selectionBatches.map(batch => batch.mesh),
+      false
+    );
+    const heterogeneousHits = this.raycaster.intersectObjects(
+      heterogeneousBatches.map(batch => batch.mesh),
+      false
+    );
+    return [...new Set([
+      ...hits.map(hit => this.#batchManager.objectFromHit(hit)),
+      ...heterogeneousHits.map(hit =>
+        this.#heterogeneousBatchManager.objectFromHit(hit)
+      )
+    ].filter(Boolean))];
   }
 
   #objectScreenSelectionIndex() {

@@ -277,6 +277,10 @@
     "vendor/mathjs-11.11.0/math.js",
     "vendor/ses/ses.umd.min.js",
     "vendor/three.core.js",
-    "vendor/three.module.js"
+    "vendor/three.module.js",
+    "packages/object-picking/src/PickingIdAllocator.js",
+    "packages/object-picking/src/ObjectPickingService.js",
+    "packages/object-picking/src/index.js",
+    "packages/renderer-three/src/ThreeGpuObjectPickingBackend.js"
   ]
 }
