@@ -11,10 +11,10 @@ import {
 } from "./HeterogeneousBatchManager.js?build=20260801-0045a1";
 import {
   ObjectPickingService
-} from "../../object-picking/src/index.js?build=20260804-0048k1";
+} from "../../object-picking/src/index.js?build=20260804-0048k2";
 import {
   ThreeGpuObjectPickingBackend
-} from "./ThreeGpuObjectPickingBackend.js?build=20260804-0048k1";
+} from "./ThreeGpuObjectPickingBackend.js?build=20260804-0048k2";
 import {
   normalizeStrokeBundleDescriptor,
   strokeBundleChunkDescriptor,
@@ -6217,12 +6217,19 @@ export class ThreeRegionRenderer {
     this.#inputDiagnostics.objectPickingFallback = Boolean(
       gpuPick.fallback || repeatedOverlapPick
     );
-    const geometryHitIds = gpuPick.fallback || repeatedOverlapPick
+    // Um pixel sem ID não é prova suficiente de que não existe objeto.
+    // Color management, precisão do framebuffer ou uma representação ainda
+    // não projetada no passe podem produzir um miss falso. O raycast legado
+    // permanece como fallback de correção até o backend GPU estar validado.
+    const requiresRaycastFallback = Boolean(
+      gpuPick.fallback ||
+      !gpuPick.objectId ||
+      repeatedOverlapPick
+    );
+    const geometryHitIds = requiresRaycastFallback
       ? this.#raycastGeometryHitIds()
-      : gpuPick.objectId
-        ? [gpuPick.objectId]
-        : [];
-    if (gpuPick.fallback || repeatedOverlapPick) {
+      : [gpuPick.objectId];
+    if (requiresRaycastFallback) {
       this.#incrementalDiagnostics.gpuPickingFallbacks += 1;
     }
 

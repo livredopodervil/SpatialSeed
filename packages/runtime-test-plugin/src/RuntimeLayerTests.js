@@ -1,6 +1,6 @@
 import {
   classifyBufferRenderProfile
-} from "../../geometry-registry/src/BufferRenderProfile.js?build=20260804-0048k1";
+} from "../../geometry-registry/src/BufferRenderProfile.js?build=20260804-0048k2";
 import { EditorState } from "../../editor-core/src/EditorState.js?build=20260729-0039g2";
 import * as THREE from "three";
 import {
@@ -8,7 +8,7 @@ import {
   PickingIdAllocator,
   decodePickingPixel,
   encodePickingId
-} from "../../object-picking/src/index.js?build=20260804-0048k1";
+} from "../../object-picking/src/index.js?build=20260804-0048k2";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -437,6 +437,26 @@ export function createRuntimeLayerTests() {
         assertEqual(result.objectId, "logical-object");
         assertEqual(result.source, "gpu-id");
         assertEqual(Object.hasOwn(result, "object3D"), false);
+      },
+
+      "miss de GPU permanece distinguível de falha"() {
+        const service = new ObjectPickingService({
+          backend: {
+            supported: true,
+            pickAt() {
+              return {
+                objectId: null,
+                fallback: false,
+                reason: "background",
+                source: "gpu-id"
+              };
+            }
+          }
+        });
+        const result = service.pickAt({ clientX: 1, clientY: 2 });
+        assertEqual(result.objectId, null);
+        assertEqual(result.fallback, false);
+        assertEqual(result.reason, "background");
       }
     },
 

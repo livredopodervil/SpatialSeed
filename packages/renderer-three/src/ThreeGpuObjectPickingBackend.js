@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import {
   PickingIdAllocator
-} from "../../object-picking/src/index.js?build=20260804-0048k1";
+} from "../../object-picking/src/index.js?build=20260804-0048k2";
 
 const ZERO_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
 
@@ -337,12 +337,32 @@ export class ThreeGpuObjectPickingBackend {
     const key = normalizeSide(side);
     let material = this.#instancedMaterials.get(key);
     if (!material) {
-      material = new THREE.MeshBasicMaterial({
-        color: 0xffffff,
-        vertexColors: true,
+      // RawShaderMaterial evita tone mapping, conversão de espaço de cor e
+      // qualquer modulação implícita do MeshBasicMaterial. Os três canais
+      // chegam ao framebuffer como os bytes lógicos do identificador.
+      material = new THREE.RawShaderMaterial({
+        vertexShader: `
+          precision highp float;
+          uniform mat4 modelViewMatrix;
+          uniform mat4 projectionMatrix;
+          attribute vec3 position;
+          attribute mat4 instanceMatrix;
+          attribute vec3 instanceColor;
+          varying vec3 vPickingColor;
+          void main() {
+            vPickingColor = instanceColor;
+            gl_Position = projectionMatrix * modelViewMatrix *
+              instanceMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          precision highp float;
+          varying vec3 vPickingColor;
+          void main() {
+            gl_FragColor = vec4(vPickingColor, 1.0);
+          }
+        `,
         side: key,
-        fog: false,
-        toneMapped: false,
         depthTest: true,
         depthWrite: true,
         transparent: false,
