@@ -1,6 +1,6 @@
 import {
   classifyBufferRenderProfile
-} from "../../geometry-registry/src/BufferRenderProfile.js?build=20260804-0048k2";
+} from "../../geometry-registry/src/BufferRenderProfile.js?build=20260805-0048l1";
 import { EditorState } from "../../editor-core/src/EditorState.js?build=20260729-0039g2";
 import * as THREE from "three";
 import {
@@ -8,7 +8,7 @@ import {
   PickingIdAllocator,
   decodePickingPixel,
   encodePickingId
-} from "../../object-picking/src/index.js?build=20260804-0048k2";
+} from "../../object-picking/src/index.js?build=20260805-0048l1";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -5065,6 +5065,70 @@ export function createRuntimeLayerTests() {
         const result = controller.commit();
         assertEqual(result.changed, false);
         assertEqual(sandbox.getHistoryDiagnostics().undoDepth, undoDepth);
+      },
+
+      "status de seleção única não normaliza descritor buffer"() {
+        let normalizeCalls = 0;
+        const geometryRegistry = new GeometryRegistry().register({
+          type: "buffer",
+          normalize(input) {
+            normalizeCalls += 1;
+            return Object.freeze({ ...input, type: "buffer" });
+          },
+          create() {
+            return new THREE.BufferGeometry();
+          }
+        });
+        const object = {
+          id: "dense-buffer",
+          kind: "buffer",
+          name: "Malha densa",
+          position: [0, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+          geometry: {
+            type: "buffer",
+            positions: Array.from({ length: 2000 }, (_, index) =>
+              [index, 0, 0]
+            ),
+            indices: [],
+            normals: [],
+            uvs: [],
+            edges: []
+          }
+        };
+        const region = new Region(
+          {
+            id: "mesh-status-region",
+            name: "Mesh",
+            type: "box-region"
+          },
+          { objects: [object] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "mesh-status-region",
+          objectId: object.id
+        });
+        const controller = new MeshEditController({
+          sandbox,
+          editor,
+          renderer: {
+            beginMeshEdit() {},
+            endMeshEdit() {},
+            canBeginMeshEdit() {
+              return { ok: true };
+            }
+          },
+          geometryRegistry
+        });
+
+        assertEqual(geometryRegistry.supportsLegacyObject(object), true);
+        assertEqual(controller.status().canEnter, true);
+        assertEqual(normalizeCalls, 0);
+        controller.dispose?.();
       },
 
       "entrada é recusada enquanto a malha participa de animação"() {

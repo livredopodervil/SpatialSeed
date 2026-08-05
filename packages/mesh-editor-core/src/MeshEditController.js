@@ -1127,9 +1127,18 @@ export class MeshEditController {
         message: "O objeto selecionado não possui malha editável."
       };
     }
-    try {
-      this.geometryRegistry.describeLegacyObject(object);
-    } catch {
+    const supported =
+      typeof this.geometryRegistry.supportsLegacyObject === "function"
+        ? this.geometryRegistry.supportsLegacyObject(object)
+        : (() => {
+            try {
+              this.geometryRegistry.describeLegacyObject(object);
+              return true;
+            } catch {
+              return false;
+            }
+          })();
+    if (!supported) {
       return {
         ok: false,
         message: "A geometria do objeto selecionado não é editável."

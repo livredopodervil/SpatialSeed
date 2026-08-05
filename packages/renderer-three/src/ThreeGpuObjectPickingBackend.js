@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import {
   PickingIdAllocator
-} from "../../object-picking/src/index.js?build=20260804-0048k2";
+} from "../../object-picking/src/index.js?build=20260805-0048l1";
 
 const ZERO_MATRIX = new THREE.Matrix4().makeScale(0, 0, 0);
 

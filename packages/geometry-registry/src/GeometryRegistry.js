@@ -82,6 +82,18 @@ export class GeometryRegistry {
     });
   }
 
+  supportsLegacyObject(object) {
+    if (!object || typeof object !== "object") return false;
+
+    if (object.geometry && typeof object.geometry === "object" &&
+        !Array.isArray(object.geometry)) {
+      const type = String(object.geometry.type ?? "").trim().toLowerCase();
+      return Boolean(type) && this.has(type);
+    }
+
+    return object.kind === "box" && this.has("box");
+  }
+
   describeLegacyObject(object) {
     if (object?.geometry) {
       return this.normalize(object.geometry);

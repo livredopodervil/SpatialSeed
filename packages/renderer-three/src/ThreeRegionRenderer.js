@@ -11,10 +11,10 @@ import {
 } from "./HeterogeneousBatchManager.js?build=20260801-0045a1";
 import {
   ObjectPickingService
-} from "../../object-picking/src/index.js?build=20260804-0048k2";
+} from "../../object-picking/src/index.js?build=20260805-0048l1";
 import {
   ThreeGpuObjectPickingBackend
-} from "./ThreeGpuObjectPickingBackend.js?build=20260804-0048k2";
+} from "./ThreeGpuObjectPickingBackend.js?build=20260805-0048l1";
 import {
   normalizeStrokeBundleDescriptor,
   strokeBundleChunkDescriptor,
