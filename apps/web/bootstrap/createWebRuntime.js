@@ -14,13 +14,13 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260802-0047g";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260806-0050a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260806-0050a1";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
 import {
   createVirtualResourceTree,
   parseResourcePath
 } from "../../../packages/resource-tree/src/index.js?build=20260801-0045a1";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260804-0048i-audit2";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260806-0050a1";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260802-0047g";
@@ -88,13 +88,13 @@ import {
   DependencyVersions,
   TemporalExecutionController,
   TemporalRuntime
-} from "../../../packages/temporal-runtime/src/index.js?build=20260806-0050a";
+} from "../../../packages/temporal-runtime/src/index.js?build=20260806-0050a1";
 import {
   ANIMATION_COMMAND_SERVICE_VERSION,
   ANIMATION_RUNTIME_VERSION,
   AnimationCommandService,
   AnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260806-0050a";
+} from "../../../packages/animation-runtime/src/index.js?build=20260806-0050a1";
 import {
   AnimationPanel
 } from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";

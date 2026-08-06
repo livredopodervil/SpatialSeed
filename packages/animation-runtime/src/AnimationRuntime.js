@@ -4,7 +4,7 @@ import {
 import {
   EvolutionKind,
   EvolutionResult
-} from "../../temporal-runtime/src/EvolutionResult.js?build=20260806-0050a";
+} from "../../temporal-runtime/src/EvolutionResult.js?build=20260806-0050a1";
 
 export const ANIMATION_RUNTIME_VERSION = "animation-runtime-v3-event-driven";
 

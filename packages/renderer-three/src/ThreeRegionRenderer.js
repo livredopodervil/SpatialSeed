@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import {
   RenderDemandScheduler
-} from "./RenderDemandScheduler.js?build=20260806-0050a";
+} from "./RenderDemandScheduler.js?build=20260806-0050a1";
 import {
   InstanceBatch,
   updateAbsoluteInstanceColor

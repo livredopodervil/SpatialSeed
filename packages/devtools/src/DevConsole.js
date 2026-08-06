@@ -3,7 +3,7 @@ import {
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 export class DevConsole {
-  static apiVersion = "dev-console-v12";
+  static apiVersion = "dev-console-v13";
 
   constructor({
     editor,
@@ -742,6 +742,8 @@ export class DevConsole {
         "selection stats",
         "runtime profile",
         "runtime ui-stats",
+        "runtime query <query-id> [argumentos-JSON]",
+        "runtime command <command-id> [argumentos-JSON]",
         "calc expressão JavaScript",
         "program código JavaScript",
         "procedure define|list|show|run|remove|export|import|help",
@@ -2648,6 +2650,31 @@ export class DevConsole {
       return this.queries.execute("runtime.ui-stats");
     }
 
+    if (namespace === "query") {
+      const queryId = tokens.shift();
+      if (!queryId) {
+        throw new Error("Uso: runtime query <query-id> [argumentos-JSON].");
+      }
+      if (!this.queries) {
+        throw new Error("Registro de consultas do runtime indisponível.");
+      }
+      const args = tokens.length
+        ? parseJson(tokens.join(" "), "Argumentos da consulta")
+        : {};
+      return this.queries.execute(queryId, args);
+    }
+
+    if (["command", "execute", "exec"].includes(namespace)) {
+      const commandId = tokens.shift();
+      if (!commandId) {
+        throw new Error("Uso: runtime command <command-id> [argumentos-JSON].");
+      }
+      const args = tokens.length
+        ? parseJson(tokens.join(" "), "Argumentos do comando")
+        : {};
+      return this.commands.execute(commandId, args);
+    }
+
     if (namespace === "benchmark") {
       const target =
         (tokens.shift() ?? "").toLowerCase();
@@ -2733,7 +2760,8 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
+        "Uso: runtime profile|ui-stats|query <id> [JSON]|" +
+        "command <id> [JSON]|benchmark api [iterações]|" +
         "resources|compaction status|run|set|help|" +
         "test help|animation-runtime|animation-commands|" +
         "tool-parameters|selection-ui|instance-batches|performance-baseline|" +

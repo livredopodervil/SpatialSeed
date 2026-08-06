@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260806-0050a",
-  "channel": "main/0050a-event-driven-temporal-runtime"
+  "build": "20260806-0050a1",
+  "channel": "feature/0050a-event-driven-time/0050a1-console-bridge"
 }
