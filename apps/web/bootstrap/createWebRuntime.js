@@ -20,16 +20,16 @@ import {
   createVirtualResourceTree,
   parseResourcePath
 } from "../../../packages/resource-tree/src/index.js?build=20260801-0045a1";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260806-0050a1";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260806-0050b";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260802-0047g";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260804-0048i-audit1";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260802-0047g";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260805-0048l1";
+} from "../../../packages/platform-web/src/index.js?build=20260802-0047d";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
 import {
   AppearanceBindingService
@@ -88,25 +88,23 @@ import {
   DependencyVersions,
   TemporalExecutionController,
   TemporalRuntime
-} from "../../../packages/temporal-runtime/src/index.js?build=20260806-0050a1";
+} from "../../../packages/temporal-runtime/src/index.js?build=20260806-0050b";
 import {
   ANIMATION_COMMAND_SERVICE_VERSION,
-  ANIMATION_RUNTIME_VERSION,
+  TEMPORAL_ANIMATION_RUNTIME_VERSION,
   AnimationCommandService,
-  AnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260806-0050a1";
+  AnimationProcedureService,
+  TemporalAnimationRuntime
+} from "../../../packages/animation-runtime/src/index.js?build=20260806-0050b";
 import {
   AnimationPanel
-} from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
+} from "../../../packages/animation-panel/src/index.js?build=20260806-0050b";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260804-0048i-audit1";
-import {
-  MeshGeometryAudit
-} from "../../../packages/mesh-geometry-audit/src/index.js?build=20260805-0048l1";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260729-0040a";
 import {
   MeshEditPanel
 } from "../../../packages/mesh-edit-panel/src/index.js?build=20260802-0047g";
@@ -300,7 +298,11 @@ export async function createWebRuntime({
     rescheduleTemporalRuntime(changed);
     return Object.freeze({ changed, domain });
   };
-  const animationRuntime = new AnimationRuntime({ surface: renderer });
+  const animationRuntime = new TemporalAnimationRuntime({
+    surface: renderer,
+    temporalRuntime,
+    timeDomains
+  });
   const animationCommands = new AnimationCommandService({
     runtime: animationRuntime,
     selection: () => editor.selection.snapshot()
@@ -530,49 +532,6 @@ export async function createWebRuntime({
     editor,
     renderer,
     geometryRegistry
-  });
-  const meshGeometryAudit = new MeshGeometryAudit({
-    captureSource: ({ objectId = null } = {}) => {
-      const meshStatus = meshEditor.status();
-      const selection = editor.selection.snapshot();
-      const resolvedId = objectId ?? meshStatus.objectId ??
-        selection.members.at(-1)?.objectId ?? null;
-      if (resolvedId === null || resolvedId === undefined) {
-        throw new Error("Selecione um objeto ou mantenha uma edição de malha ativa.");
-      }
-      const id = String(resolvedId);
-      const object = sandbox.getObject?.(id) ??
-        sandbox.getSnapshot().objects.find(candidate =>
-          String(candidate.id) === id
-        ) ?? null;
-      if (!object) throw new Error(`Objeto não encontrado: ${id}.`);
-      let canonicalDescriptor = null;
-      try {
-        canonicalDescriptor = geometryRegistry.normalize(
-          geometryRegistry.describeLegacyObject(object)
-        );
-      } catch {
-        canonicalDescriptor = null;
-      }
-      return {
-        objectId: id,
-        sandboxRevision: sandbox.revision,
-        object: structuredClone(object),
-        canonical: Object.freeze({
-          descriptor: canonicalDescriptor
-            ? structuredClone(canonicalDescriptor)
-            : null,
-          geometryKey: canonicalDescriptor
-            ? geometryRegistry.key(canonicalDescriptor)
-            : null,
-          renderProfile: canonicalDescriptor
-            ? geometryRegistry.renderProfile(canonicalDescriptor)
-            : null
-        }),
-        edit: meshEditor.geometryAuditSnapshot(),
-        renderer: renderer.getMeshGeometryAudit(id)
-      };
-    }
   });
   const editContext = new EditContextController({
     editor,
@@ -1207,13 +1166,15 @@ export async function createWebRuntime({
         id,
         parameters = {},
         targetIds = null,
-        targetMode = "selection"
+        targetMode = "selection",
+        timeDomainId = "world"
       } = {}) =>
         sharedAnimations.play("preset", {
           id,
           parameters,
           targetIds,
-          targetMode
+          targetMode,
+          timeDomainId
         }),
       { category: "animation", mutates: false }
     )
@@ -1401,6 +1362,35 @@ export async function createWebRuntime({
   const procedureCatalog = new ProcedureCatalog({
     storage: new BrowserProcedureCatalogStore()
   });
+  const animationProcedurePrograms = new ProgramSessionController({
+    workerFactory: () => createBrowserProgramSessionWorker(),
+    timeoutMs: 5000,
+    allowedCommands: [],
+    geometryTypes: geometryRegistry.list(),
+    maxCommands: 1
+  });
+  const animationProcedures = new AnimationProcedureService({
+    catalog: procedureCatalog,
+    programs: animationProcedurePrograms,
+    selection: () => editor.selection.snapshot()
+  });
+  commands.register(
+    "animation.procedure",
+    async args => {
+      const descriptor = await animationProcedures.resolve(args);
+      return sharedAnimations.play(descriptor.kind, descriptor.args);
+    },
+    {
+      category: "animation",
+      mutates: false,
+      asynchronous: true
+    }
+  );
+  commands.register(
+    "animation.procedures.describe",
+    () => animationProcedures.describe(),
+    { category: "animation", mutates: false }
+  );
   commands.register(
     "procedure.plan.prepare",
     ({ name, parameters = {}, seed = 0 } = {}) =>
@@ -1622,12 +1612,17 @@ export async function createWebRuntime({
       return Object.freeze({ changed: applied > 0, applied });
     },
     publishEvents: temporalEvents => {
+      const animationOutcome = animationRuntime.consumeTemporalEvents(
+        temporalEvents
+      );
       for (const event of temporalEvents) {
         const type = String(event?.type ?? "time.event");
+        if (type === "animation.overlay.frame") continue;
         runtime.emit(type, event?.payload ?? event);
       }
       return temporalEvents.length;
-    }
+    },
+    onError: error => animationRuntime.fault(error)
   });
   runtime.onDispose(() => temporalExecution.dispose());
   const toolCapabilities = createDefaultToolCapabilityFacade({
@@ -1661,6 +1656,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeToolCapabilities)
     .onDispose(unsubscribeToolWorkspace)
     .onDispose(() => sharedAnimations.dispose())
+    .onDispose(() => animationProcedurePrograms.dispose())
     .onDispose(() => animationRuntime.dispose());
 
   // Painéis e HUDs podem consultar a seleção durante a própria construção.
@@ -1872,6 +1868,9 @@ export async function createWebRuntime({
     .register("animation.presets.describe", () =>
       animationCommands.presets()
     )
+    .register("animation.procedures.describe", () =>
+      animationProcedures.describe()
+    )
     .register("runtime.profile", () => profile)
     .register("viewer.camera.snapshot", () =>
       cameraController.snapshot()
@@ -1898,24 +1897,6 @@ export async function createWebRuntime({
     )
     .register("mesh.edit.status", () =>
       meshEditor.status()
-    )
-    .register("mesh.audit.clear", () =>
-      meshGeometryAudit.clear()
-    )
-    .register("mesh.audit.capture", args =>
-      meshGeometryAudit.capture(args ?? {})
-    )
-    .register("mesh.audit.list", () =>
-      meshGeometryAudit.list()
-    )
-    .register("mesh.audit.compare", args =>
-      meshGeometryAudit.compare(args ?? {})
-    )
-    .register("mesh.audit.diagnose", args =>
-      meshGeometryAudit.diagnose(args ?? {})
-    )
-    .register("mesh.audit.report", args =>
-      meshGeometryAudit.report(args ?? {})
     )
     .register("scene.objects.list", () =>
       sandbox.getSnapshot().objects
@@ -2070,7 +2051,8 @@ export async function createWebRuntime({
   const animationPanel = new AnimationPanel({
     root: animationPanelRoot,
     query: (id, args) => runtime.query(id, args),
-    execute: (id, args) => runtime.execute(id, args)
+    execute: (id, args) => runtime.execute(id, args),
+    subscribe: listener => sharedAnimations.subscribe(listener)
   });
   runtime.onDispose(() => animationPanel.dispose());
   const viewerRenderPanel = new ViewerRenderPanel({
@@ -2160,8 +2142,7 @@ export async function createWebRuntime({
     },
     geometryRegistry,
     queries: {
-      execute: (id, args) => runtime.query(id, args),
-      describe: () => runtime.capabilities().queries
+      execute: (id, args) => runtime.query(id, args)
     },
     programs: programSession,
     procedures: procedureCatalog,
@@ -2305,7 +2286,7 @@ export async function createWebRuntime({
       planarConstraints: true
     }))
     .register("animation", () => ({
-      apiVersion: ANIMATION_RUNTIME_VERSION,
+      apiVersion: TEMPORAL_ANIMATION_RUNTIME_VERSION,
       commandApiVersion: ANIMATION_COMMAND_SERVICE_VERSION,
       coordinatorApiVersion: LocalAnimationCoordinator.apiVersion,
       mode: "shared-ephemeral-render-overlay",

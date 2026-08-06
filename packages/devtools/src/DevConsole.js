@@ -485,10 +485,6 @@ export class DevConsole {
         this.#expectMaximum(tokens, 0, "commands");
         return this.commands.describe();
 
-      case "queries":
-        this.#expectMaximum(tokens, 0, "queries");
-        return this.queries?.describe?.() ?? [];
-
       case "inspect":
         this.#expectMaximum(tokens, 2, "inspect");
         return this.#inspect(tokens[0], tokens[1]);
@@ -625,48 +621,11 @@ export class DevConsole {
       case "property":
         return this.#property(tokens);
 
-      default: {
-        const registered = this.#executeRegisteredInvocation(line);
-        if (registered.matched) return registered.result;
+      default:
         throw new Error(
           `Comando desconhecido: ${command || "(vazio)"}. Use help.`
         );
-      }
     }
-  }
-
-  #executeRegisteredInvocation(line) {
-    const { head: id, tail } = takeHead(line, { lowercase: false });
-    if (!id || !id.includes(".")) {
-      return { matched: false, result: undefined };
-    }
-
-    const commandMatch = this.commands.describe?.().some(
-      command => command.id === id
-    ) ?? false;
-    const queryMatch = this.queries?.describe?.().some(
-      query => query.id === id
-    ) ?? false;
-
-    if (!commandMatch && !queryMatch) {
-      return { matched: false, result: undefined };
-    }
-    if (commandMatch && queryMatch) {
-      throw new Error(
-        `Identificador ambíguo no console: ${id}. ` +
-        "Use uma superfície pública com identificador exclusivo."
-      );
-    }
-
-    const args = tail
-      ? parseJson(tail, `Argumentos de ${id}`)
-      : {};
-    return {
-      matched: true,
-      result: commandMatch
-        ? this.commands.execute(id, args)
-        : this.queries.execute(id, args)
-    };
   }
 
   #help(topic = null) {
@@ -736,8 +695,6 @@ export class DevConsole {
       syntax: "Separe comandos por ponto e vírgula ou por quebra de linha.",
       commands: [
         "commands",
-        "queries",
-        "id.registrado [argumento-JSON]",
         ...diagnosticCommands,
         "selection stats",
         "runtime profile",
@@ -1041,7 +998,8 @@ export class DevConsole {
         "animate rotate expressão-x expressão-y expressão-z",
         "animate scale expressão-x expressão-y expressão-z",
         "animate matrix m00 ... m15",
-        "animate pause|resume|stop|status|list"
+        "animate procedure nome [parâmetros-JSON] [mode=...] [time=domínio]",
+        "animate pause|resume|stop|status|list|procedures"
       ],
       variables: {
         t: "tempo da simulação em segundos",
@@ -1268,6 +1226,28 @@ export class DevConsole {
       this.#expectMaximum(tokens, 0, "animate list");
       return this.commands.execute("animation.presets.describe");
     }
+    if (action === "procedures") {
+      this.#expectMaximum(tokens, 0, "animate procedures");
+      return this.commands.execute("animation.procedures.describe");
+    }
+    if (action === "procedure") {
+      const name = tokens.shift();
+      if (!name) {
+        throw new Error(
+          "Uso: animate procedure nome [parâmetros-JSON] [mode=...] [time=domínio]."
+        );
+      }
+      const options = takeAnimationOptions(tokens);
+      const parameters = options.tokens.length
+        ? parseJson(options.tokens.join(" "), "Parâmetros do procedimento")
+        : {};
+      return this.commands.execute("animation.procedure", {
+        name,
+        parameters,
+        targetMode: options.targetMode,
+        timeDomainId: options.timeDomainId
+      });
+    }
     if (action === "pause") {
       this.#expectMaximum(tokens, 0, "animate pause");
       return this.commands.execute("animation.pause");
@@ -1282,8 +1262,9 @@ export class DevConsole {
     }
 
     if (["move", "rotate", "scale"].includes(action)) {
+      const options = takeAnimationOptions(tokens);
       this.#expectExact(
-        tokens,
+        options.tokens,
         3,
         `animate ${action} expressão-x expressão-y expressão-z`
       );
@@ -1291,8 +1272,10 @@ export class DevConsole {
         id: `custom.${action}`,
         operations: [{
           type: action,
-          value: tokens.map(value => this.#affineValue(value))
-        }]
+          value: options.tokens.map(value => this.#affineValue(value))
+        }],
+        targetMode: options.targetMode,
+        timeDomainId: options.timeDomainId
       });
     }
 
@@ -1308,20 +1291,17 @@ export class DevConsole {
     }
 
     if (action === "color") {
-      let targetMode = "selection";
-      const modeIndex = tokens.findIndex(token => token.startsWith("mode="));
-      if (modeIndex >= 0) {
-        targetMode = tokens.splice(modeIndex, 1)[0].slice("mode=".length);
-      }
-      if (!["selection", "objects"].includes(targetMode) || tokens.length !== 1) {
+      const options = takeAnimationOptions(tokens);
+      if (options.tokens.length !== 1) {
         throw new Error(
-          'Uso: animate color "hsl(...)|rgb(...)|mix(...)" [mode=selection|objects].'
+          'Uso: animate color "hsl(...)|rgb(...)|mix(...)" [mode=selection|objects] [time=domínio].'
         );
       }
       return this.commands.execute("animation.start", {
         id: "custom.color",
-        operations: [{ type: "color", value: tokens[0] }],
-        targetMode
+        operations: [{ type: "color", value: options.tokens[0] }],
+        targetMode: options.targetMode,
+        timeDomainId: options.timeDomainId
       });
     }
 
@@ -1334,14 +1314,18 @@ export class DevConsole {
     }
     const parameters = parseExperimentParameters(tokens.join(" "));
     const targetMode = parameters.mode ?? "selection";
+    const timeDomainId = parameters.time ?? parameters.domain ?? "world";
     delete parameters.mode;
+    delete parameters.time;
+    delete parameters.domain;
     if (!["selection", "objects"].includes(targetMode)) {
       throw new Error("mode deve ser selection ou objects.");
     }
     return this.commands.execute("animation.preset", {
       id: presetId,
       parameters,
-      targetMode
+      targetMode,
+      timeDomainId
     });
   }
 
@@ -3140,6 +3124,30 @@ function splitAsynchronousConsoleInputs(source) {
   if (lines.length > 1 && lines.some(isAsynchronousConsoleInput)) return lines;
   if (isAsynchronousConsoleInput(input)) return [input];
   return null;
+}
+
+function takeAnimationOptions(tokens) {
+  const remaining = [];
+  let targetMode = "selection";
+  let timeDomainId = "world";
+  for (const token of tokens) {
+    if (token.startsWith("mode=")) {
+      targetMode = token.slice("mode=".length);
+      continue;
+    }
+    if (token.startsWith("time=") || token.startsWith("domain=")) {
+      timeDomainId = token.slice(token.indexOf("=") + 1);
+      continue;
+    }
+    remaining.push(token);
+  }
+  if (!["selection", "objects"].includes(targetMode)) {
+    throw new Error("mode deve ser selection ou objects.");
+  }
+  if (!String(timeDomainId).trim()) {
+    throw new Error("time deve indicar um domínio temporal.");
+  }
+  return { tokens: remaining, targetMode, timeDomainId };
 }
 
 function parseExperimentParameters(source) {

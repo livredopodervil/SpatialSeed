@@ -2,7 +2,7 @@ import {
   compileAnimationProgram,
   createAnimationEvaluator,
   describeAnimationProgram
-} from "./AnimationProgram.js?build=20260720-0028d";
+} from "./AnimationProgram.js?build=20260806-0050b";
 import {
   listAnimationPresets,
   resolveAnimationPreset
@@ -11,10 +11,10 @@ import {
   compileAnimationTrackProgram,
   createAnimationTrackEvaluator,
   describeAnimationTrackProgram
-} from "./AnimationTrackProgram.js?build=20260720-0028d";
+} from "./AnimationTrackProgram.js?build=20260806-0050b";
 
 export const ANIMATION_COMMAND_SERVICE_VERSION =
-  "animation-command-service-v2";
+  "animation-command-service-v3-temporal";
 
 export class AnimationCommandService {
   constructor({ runtime, selection }) {
@@ -37,27 +37,31 @@ export class AnimationCommandService {
     id = "custom",
     operations,
     targetIds = null,
-    targetMode = "selection"
+    targetMode = "selection",
+    timeDomainId = "world"
   } = {}) {
     this.sharedSession = null;
     return this.#applyDescriptor(this.prepareShared("program", {
       id,
       operations,
       targetIds,
-      targetMode
+      targetMode,
+      timeDomainId
     }));
   }
 
   preset(id, parameters = {}, {
     targetIds = null,
-    targetMode = "selection"
+    targetMode = "selection",
+    timeDomainId = "world"
   } = {}) {
     this.sharedSession = null;
     return this.#applyDescriptor(this.prepareShared("preset", {
       id,
       parameters,
       targetIds,
-      targetMode
+      targetMode,
+      timeDomainId
     }));
   }
 
@@ -81,7 +85,8 @@ export class AnimationCommandService {
         id: program.id,
         operations: structuredClone(program.operations),
         targetIds: resolvedTargetIds(args.targetIds, this.selection),
-        targetMode: normalizeTargetMode(args.targetMode)
+        targetMode: normalizeTargetMode(args.targetMode),
+        timeDomainId: normalizeTimeDomainId(args.timeDomainId)
       });
     }
     if (kind === "preset") {
@@ -95,6 +100,7 @@ export class AnimationCommandService {
         operations: structuredClone(preset.operations),
         targetIds: resolvedTargetIds(args.targetIds, this.selection),
         targetMode: normalizeTargetMode(args.targetMode),
+        timeDomainId: normalizeTimeDomainId(args.timeDomainId),
         preset: describePreset(preset)
       });
     }
@@ -109,6 +115,7 @@ export class AnimationCommandService {
       const targetIds = track?.targetIds == null
         ? (fallbackTargets ??= selectedTargetIds(this.selection()))
         : normalizeTargetIds(track.targetIds);
+      const timeDomainId = normalizeTimeDomainId(track?.timeDomainId);
       if (track?.presetId) {
         const preset = resolveAnimationPreset(
           track.presetId,
@@ -118,14 +125,21 @@ export class AnimationCommandService {
           id: track.id ?? `track-${index + 1}`,
           targetIds,
           operations: structuredClone(preset.operations),
-          metadata: { preset: describePreset(preset) }
+          metadata: {
+            ...structuredClone(track?.metadata ?? {}),
+            timeDomainId,
+            preset: describePreset(preset)
+          }
         };
       }
       return {
         id: track?.id ?? `track-${index + 1}`,
         targetIds,
         operations: track?.operations,
-        metadata: structuredClone(track?.metadata ?? {})
+        metadata: {
+          ...structuredClone(track?.metadata ?? {}),
+          timeDomainId
+        }
       };
     });
     const composition = compileAnimationTrackProgram(resolvedTracks, {
@@ -167,11 +181,9 @@ export class AnimationCommandService {
 
     if (!samePlayback) {
       this.#applyDescriptor(next.descriptor, {
-        timeSource,
         initialTime: currentTime
       });
     } else {
-      this.runtime.setTimeSource(timeSource);
       this.runtime.seek(currentTime);
     }
 
@@ -203,9 +215,7 @@ export class AnimationCommandService {
 
   status() {
     const runtime = this.runtime.status();
-    if (runtime.state === "idle") {
-      this.#clearCurrent();
-    }
+    if (runtime.state === "idle") this.#clearCurrent();
     return Object.freeze({
       serviceVersion: ANIMATION_COMMAND_SERVICE_VERSION,
       ...runtime,
@@ -240,14 +250,33 @@ export class AnimationCommandService {
         descriptor.tracks,
         { id: descriptor.id }
       );
-      this.runtime.start({
-        id: composition.id,
-        targetIds: composition.targetIds,
-        targetMode: descriptor.targetMode,
-        evaluate: createAnimationTrackEvaluator(composition),
-        timeSource,
-        initialTime
-      });
+      if (typeof this.runtime.startSegments === "function") {
+        this.runtime.startSegments({
+          id: composition.id,
+          targetIds: composition.targetIds,
+          targetMode: descriptor.targetMode,
+          segments: composition.tracks.map(track => ({
+            id: track.id,
+            targetIds: track.targetIds,
+            timeDomainId: normalizeTimeDomainId(
+              track.metadata?.timeDomainId
+            ),
+            evaluate: createAnimationEvaluator(track.program),
+            timeDependent: track.program.timeDependent
+          })),
+          timeSource,
+          initialTime
+        });
+      } else {
+        this.runtime.start({
+          id: composition.id,
+          targetIds: composition.targetIds,
+          targetMode: descriptor.targetMode,
+          evaluate: createAnimationTrackEvaluator(composition),
+          timeSource,
+          initialTime
+        });
+      }
       this.currentComposition = composition;
       return this.status();
     }
@@ -262,7 +291,9 @@ export class AnimationCommandService {
       targetMode: descriptor.targetMode,
       evaluate: createAnimationEvaluator(program),
       timeSource,
-      initialTime
+      initialTime,
+      timeDomainId: normalizeTimeDomainId(descriptor.timeDomainId),
+      timeDependent: program.timeDependent
     });
     this.currentProgram = program;
     this.currentPreset = descriptor.kind === "preset"
@@ -311,6 +342,12 @@ function normalizeTargetMode(value = "selection") {
   return mode;
 }
 
+function normalizeTimeDomainId(value = "world") {
+  const id = String(value ?? "world").trim();
+  if (!id) throw new TypeError("Domínio temporal vazio.");
+  return id;
+}
+
 function describePreset(preset) {
   return Object.freeze({
     version: preset.version,
@@ -330,6 +367,9 @@ function validateDescriptor(value) {
     throw new TypeError("Descritor compartilhado de animação inválido.");
   }
   normalizeTargetMode(value.targetMode);
+  if (value.kind !== "composition") {
+    normalizeTimeDomainId(value.timeDomainId);
+  }
 }
 
 function validateSharedSession(value) {

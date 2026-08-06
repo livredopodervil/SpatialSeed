@@ -24,7 +24,7 @@ export {
 export {
   TEMPORAL_EXECUTION_CONTROLLER_VERSION,
   TemporalExecutionController
-} from "./TemporalExecutionController.js?build=20260806-0050a1";
+} from "./TemporalExecutionController.js?build=20260806-0050b";
 export {
   TEMPORAL_TRANSFORM_GROUP_VERSION,
   createTemporalTransformGroupOperation

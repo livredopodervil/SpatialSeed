@@ -401,9 +401,7 @@
   <div id="selection-content">∅</div>
   <div id="pivot-content">Pivô: mediana</div>
   <div id="active-camera-indicator">Vista: navegação livre</div>
-  <div id="build-content" aria-live="polite">build carregando…</div>
-  <button id="pwa-update-button" type="button" hidden>Atualizar agora</button>
-  <button id="pwa-repair-button" type="button" hidden>Reparar atualização</button>
+  <div id="build-content">build carregando…</div>
 </aside>
 
 <aside id="outline" hidden>
@@ -1274,6 +1272,10 @@
         <option value="selection">Seleção; grupos rígidos</option>
       </select>
     </label>
+    <label>
+      <span>Domínio temporal</span>
+      <select data-animation-time-domain></select>
+    </label>
     <fieldset>
       <legend>Parâmetros</legend>
       <div data-animation-parameters></div>
@@ -1286,6 +1288,24 @@
       <button type="button" data-animation-resume>Continuar</button>
       <button type="button" data-animation-stop>Parar</button>
     </div>
+    <fieldset>
+      <legend>Procedimento de animação</legend>
+      <label>
+        <span>Catálogo</span>
+        <select data-animation-procedure></select>
+      </label>
+      <label>
+        <span>Parâmetros JSON</span>
+        <textarea data-animation-procedure-parameters rows="4">{}</textarea>
+      </label>
+      <button type="button" data-animation-play-procedure>
+        ▶ Executar procedimento na seleção
+      </button>
+      <p>
+        O procedimento deve retornar um preset, uma lista de operações afins
+        ou uma composição de faixas; ele é resolvido uma vez em Worker.
+      </p>
+    </fieldset>
     <fieldset>
       <legend>Animações diferentes</legend>
       <p>Escolha um movimento, selecione seus objetos e adicione uma faixa.</p>
@@ -1318,6 +1338,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260806-0050a1"></script>
+<script type="module" src="./boot.js?build=20260806-0050b"></script>
 </body>
 </html>

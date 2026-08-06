@@ -267,7 +267,12 @@ export class AnimationRuntime {
         targets: this.clip.targets,
         result: EvolutionResult
       }));
-      const evolution = EvolutionResult.normalize(evaluated);
+      // Uma lista bruta representa o quadro completo, mesmo quando contém
+      // apenas uma unidade. Não a converta em uma lista de mudanças, pois o
+      // caso unitário seria desembrulhado como objeto pelo caminho genérico.
+      const evolution = Array.isArray(evaluated)
+        ? EvolutionResult.changed([], { value: evaluated })
+        : EvolutionResult.normalize(evaluated);
       let surfaceResult = null;
       let changed = false;
 

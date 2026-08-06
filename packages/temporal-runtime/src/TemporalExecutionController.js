@@ -1,5 +1,5 @@
 export const TEMPORAL_EXECUTION_CONTROLLER_VERSION =
-  "temporal-execution-controller-v1";
+  "temporal-execution-controller-v2-error-hook";
 
 export class TemporalExecutionController {
   #runtime;
@@ -7,6 +7,7 @@ export class TemporalExecutionController {
   #snapshot;
   #apply;
   #publishEvents;
+  #onError;
   #setTimer;
   #clearTimer;
   #runtimeUnsubscribe;
@@ -37,6 +38,7 @@ export class TemporalExecutionController {
     snapshot = () => null,
     apply = () => Object.freeze({ changed: false, applied: 0 }),
     publishEvents = () => 0,
+    onError = () => {},
     setTimer = (callback, delay) => setTimeout(callback, delay),
     clearTimer = handle => clearTimeout(handle)
   } = {}) {
@@ -49,6 +51,7 @@ export class TemporalExecutionController {
       snapshot,
       apply,
       publishEvents,
+      onError,
       setTimer,
       clearTimer
     })) {
@@ -72,6 +75,7 @@ export class TemporalExecutionController {
     this.#snapshot = snapshot;
     this.#apply = apply;
     this.#publishEvents = publishEvents;
+    this.#onError = onError;
     this.#setTimer = setTimer;
     this.#clearTimer = clearTimer;
 
@@ -193,6 +197,11 @@ export class TemporalExecutionController {
     } catch (error) {
       this.#fault = error instanceof Error ? error : new Error(String(error));
       this.#statistics.evaluationsFailed += 1;
+      try {
+        await this.#onError(this.#fault, frame);
+      } catch (handlerError) {
+        console.error("Temporal error handler failed", handlerError);
+      }
       console.error("Temporal evaluation failed", error);
       return Object.freeze({ changed: false, error: this.#fault, frame });
     }

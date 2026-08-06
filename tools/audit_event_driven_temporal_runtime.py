@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static contract audit for SpatialSeed 0050a event-driven time."""
+"""Static contract audit for SpatialSeed event-driven time."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "20260806-0050a1"
+BUILD = "20260806-0050b"
 
 
 def require_file(relative: str) -> str:
@@ -36,14 +36,14 @@ def main() -> int:
         )
 
     index = require_file("apps/web/index.html")
-    require(index, f'./boot.js?build={BUILD}', "boot.js não usa o build 0050a.")
+    require(index, f'./boot.js?build={BUILD}', "boot.js não usa o build 0050b.")
 
     renderer = require_file(
         "packages/renderer-three/src/ThreeRegionRenderer.js"
     )
     require(
         renderer,
-        f'RenderDemandScheduler.js?build={BUILD}',
+        'RenderDemandScheduler.js?build=',
         "Renderer não importa RenderDemandScheduler."
     )
     require(
@@ -187,17 +187,22 @@ def main() -> int:
     )
 
     animation = require_file(
-        "packages/animation-runtime/src/AnimationRuntime.js"
+        "packages/animation-runtime/src/TemporalAnimationRuntime.js"
     )
     require(
         animation,
-        "EvolutionResult.normalize",
-        "AnimationRuntime não usa resultados de evolução explícitos."
+        "temporalRuntime.register",
+        "Animação não registra operações no runtime temporal."
     )
     require(
         animation,
-        "#releaseFrameDemand",
-        "AnimationRuntime não libera demanda de quadros."
+        "consumeTemporalEvents",
+        "Animação não confirma quadros temporais em lote."
+    )
+    require(
+        animation,
+        "lastAppliedSignature",
+        "Quadros de animação inalterados não são filtrados."
     )
 
     bootstrap = require_file("apps/web/bootstrap/createWebRuntime.js")
@@ -222,7 +227,7 @@ def main() -> int:
     ):
         require(bootstrap, marker, f"Integração web ausente: {marker}")
 
-    print("Auditoria 0050a aprovada: tempo analítico e renderização sob demanda.")
+    print("Auditoria 0050b aprovada: tempo analítico e renderização sob demanda.")
     return 0
 
 

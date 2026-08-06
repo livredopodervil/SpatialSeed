@@ -10,7 +10,7 @@ import {
 } from "../../edit-tools/src/index.js?build=20260802-0047g";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260806-0050a1";
+} from "../../devtools/src/DevConsole.js?build=20260806-0050b";
 
 export function createToolCapabilityTests() {
   return {
