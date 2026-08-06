@@ -1,7 +1,7 @@
 export {
   ANIMATION_RUNTIME_VERSION,
   AnimationRuntime
-} from "./AnimationRuntime.js?build=20260724-0029e1";
+} from "./AnimationRuntime.js?build=20260806-0050a";
 export {
   ANIMATION_PROGRAM_VERSION,
   compileAnimationProgram,
@@ -23,3 +23,7 @@ export {
   createAnimationTrackEvaluator,
   describeAnimationTrackProgram
 } from "./AnimationTrackProgram.js?build=20260720-0028d";
+export {
+  EvolutionKind,
+  EvolutionResult
+} from "../../temporal-runtime/src/EvolutionResult.js?build=20260806-0050a";

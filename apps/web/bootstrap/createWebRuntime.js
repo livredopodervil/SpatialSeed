@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260802-0047g";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260804-0048i-audit1";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260806-0050a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
 import {
   createVirtualResourceTree,
@@ -84,11 +84,17 @@ import {
   ExperimentPanel
 } from "../../../packages/experiment-panel/src/index.js?build=20260718-0027f";
 import {
+  AnalyticTimeDomains,
+  DependencyVersions,
+  TemporalExecutionController,
+  TemporalRuntime
+} from "../../../packages/temporal-runtime/src/index.js?build=20260806-0050a";
+import {
   ANIMATION_COMMAND_SERVICE_VERSION,
   ANIMATION_RUNTIME_VERSION,
   AnimationCommandService,
   AnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260724-0029e1";
+} from "../../../packages/animation-runtime/src/index.js?build=20260806-0050a";
 import {
   AnimationPanel
 } from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
@@ -274,6 +280,26 @@ export async function createWebRuntime({
     viewer,
     surface: renderer
   });
+  const timeDomains = new AnalyticTimeDomains();
+  const temporalDependencies = new DependencyVersions();
+  const temporalRuntime = new TemporalRuntime({
+    domains: timeDomains,
+    dependencies: temporalDependencies
+  });
+  let temporalExecution = null;
+  const rescheduleTemporalRuntime = changed => {
+    if (!changed) return false;
+    temporalRuntime.wakeAll();
+    temporalExecution?.reconcile();
+    return true;
+  };
+  const updateTemporalDomain = (id, update) => {
+    const before = timeDomains.snapshot(id).revision;
+    const domain = update();
+    const changed = domain.revision !== before;
+    rescheduleTemporalRuntime(changed);
+    return Object.freeze({ changed, domain });
+  };
   const animationRuntime = new AnimationRuntime({ surface: renderer });
   const animationCommands = new AnimationCommandService({
     runtime: animationRuntime,
@@ -1434,8 +1460,122 @@ export async function createWebRuntime({
   );
 
   commands.register("runtime.api.noop", ({ value = null } = {}) => value);
+  commands.register(
+    "time.domain.create",
+    args => {
+      const domain = timeDomains.create(args);
+      rescheduleTemporalRuntime(true);
+      return Object.freeze({ changed: true, domain });
+    },
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.delete",
+    ({ id }) => {
+      const changed = timeDomains.delete(id);
+      rescheduleTemporalRuntime(changed);
+      return Object.freeze({ changed });
+    },
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.rate.set",
+    ({ id = "world", rate }) =>
+      updateTemporalDomain(id, () => timeDomains.setRate(id, rate)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.pause",
+    ({ id = "world" } = {}) =>
+      updateTemporalDomain(id, () => timeDomains.pause(id)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.resume",
+    ({ id = "world" } = {}) =>
+      updateTemporalDomain(id, () => timeDomains.resume(id)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.seek",
+    ({ id = "world", localTime }) =>
+      updateTemporalDomain(id, () => timeDomains.seek(id, localTime)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.parent.set",
+    ({ id, parentId = "world" }) =>
+      updateTemporalDomain(id, () => timeDomains.setParent(id, parentId)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.target.assign",
+    ({ targetId, domainId = "world" }) => {
+      const changed = timeDomains.assignTarget(targetId, domainId);
+      rescheduleTemporalRuntime(changed);
+      return Object.freeze({
+        changed,
+        targetId: String(targetId),
+        domainId: timeDomains.domainForTarget(targetId)
+      });
+    },
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.dependency.bump",
+    ({ id }) => Object.freeze({
+      changed: true,
+      dependencyId: String(id),
+      version: temporalRuntime.bumpDependency(id)
+    }),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.operation.wake",
+    ({ id }) => Object.freeze({
+      changed: temporalRuntime.wake(id),
+      operation: temporalRuntime.describe(id)
+    }),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.operation.enable",
+    ({ id, enabled = true }) => Object.freeze({
+      changed: temporalRuntime.enable(id, enabled),
+      operation: temporalRuntime.describe(id)
+    }),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.operation.domain.set",
+    ({ id, domainId = "world" }) => Object.freeze({
+      changed: temporalRuntime.setTimeDomain(id, domainId),
+      operation: temporalRuntime.describe(id)
+    }),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.execution.retry",
+    () => Object.freeze({ changed: temporalExecution?.resetFault() ?? false }),
+    { category: "time", mutates: false }
+  );
 
   const queries = new RuntimeQueryRegistry();
+  queries
+    .register("time.status", () => temporalRuntime.status())
+    .register("time.domains", () => timeDomains.list())
+    .register("time.domain", ({ id = "world" } = {}) =>
+      timeDomains.snapshot(id)
+    )
+    .register("time.target.domain", ({ targetId }) => Object.freeze({
+      targetId: String(targetId),
+      domainId: timeDomains.domainForTarget(targetId)
+    }))
+    .register("time.operation", ({ id }) => temporalRuntime.describe(id))
+    .register("time.execution", () => temporalExecution?.status() ?? null)
+    .register("time.render-demand", () =>
+      renderer.getRenderDemandDiagnostics()
+    );
   const events = new RuntimeEvents();
   const capabilities = new RuntimeCapabilities();
   let uiDiagnosticsProvider = () => Object.freeze({
@@ -1463,6 +1603,33 @@ export async function createWebRuntime({
     events,
     capabilities
   });
+  temporalExecution = new TemporalExecutionController({
+    runtime: temporalRuntime,
+    surface: renderer,
+    snapshot: () => commandSandbox.getSnapshot(),
+    apply: cycle => {
+      let applied = 0;
+      for (const change of cycle.changes) {
+        const command = change?.command ?? change;
+        if (!command || typeof command !== "object" ||
+            typeof command.type !== "string") {
+          throw new TypeError(
+            "Mudança temporal deve ser um comando ou { command }."
+          );
+        }
+        if (dispatchRuntimeCommand(command)) applied += 1;
+      }
+      return Object.freeze({ changed: applied > 0, applied });
+    },
+    publishEvents: temporalEvents => {
+      for (const event of temporalEvents) {
+        const type = String(event?.type ?? "time.event");
+        runtime.emit(type, event?.payload ?? event);
+      }
+      return temporalEvents.length;
+    }
+  });
+  runtime.onDispose(() => temporalExecution.dispose());
   const toolCapabilities = createDefaultToolCapabilityFacade({
     editContext,
     registry: toolRegistry,
@@ -2212,6 +2379,9 @@ export async function createWebRuntime({
   let initialSceneProjected = false;
   const unsubscribeSandbox = sandbox.subscribe(
     (state, changes) => {
+      temporalRuntime.bumpDependencies(
+        temporalDependencyIdsForChanges(changes)
+      );
       const classification = classifyChanges(changes);
       if (!initialSceneProjected &&
           changes.some(change => change?.type === "initial")) {
@@ -2232,7 +2402,10 @@ export async function createWebRuntime({
   runtime.onDispose(() => sceneProjection.dispose());
 
   const unsubscribeSelection = editor.selection.subscribe(
-    snapshot => runtime.emit("selection.changed", snapshot)
+    snapshot => {
+      temporalRuntime.bumpDependency("selection");
+      runtime.emit("selection.changed", snapshot);
+    }
   );
   const unsubscribeMeshEdit = meshEditor.subscribe(
     snapshot => runtime.emit("mesh.edit.changed", snapshot)
@@ -2245,7 +2418,10 @@ export async function createWebRuntime({
   );
 
   const unsubscribeEditor = editor.subscribe(
-    snapshot => runtime.emit("editor.changed", snapshot)
+    snapshot => {
+      temporalRuntime.bumpDependency("editor");
+      runtime.emit("editor.changed", snapshot);
+    }
   );
   const unsubscribeViewer = viewer.subscribe(
     snapshot => runtime.emit("viewer.changed", snapshot)
@@ -2314,7 +2490,11 @@ export async function createWebRuntime({
         editor,
         renderer,
         appearanceRuntime,
-        selectionOperations
+        selectionOperations,
+        timeDomains,
+        temporalDependencies,
+        temporalRuntime,
+        temporalExecution
       }
     );
   } catch (error) {
@@ -2374,6 +2554,10 @@ export async function createWebRuntime({
       experimentProgramSession,
       spatialPlanCommitService,
       cameraPlanCommitService,
+      timeDomains,
+      temporalDependencies,
+      temporalRuntime,
+      temporalExecution,
       animationRuntime,
       animationCommands,
       sharedAnimations,
@@ -2387,6 +2571,46 @@ export async function createWebRuntime({
       connectUiDiagnostics
     })
   });
+}
+
+function temporalDependencyIdsForChanges(changes = []) {
+  const ids = new Set(["world", "world:revision"]);
+  for (const change of changes ?? []) {
+    if (!change || typeof change !== "object") continue;
+    const objectId = String(
+      change.objectId ??
+      change.object?.id ??
+      change.previousObject?.id ??
+      ""
+    ).trim();
+    if (!objectId) continue;
+
+    ids.add(`object:${objectId}`);
+    const type = String(change.type ?? "");
+    if (type === "object-created" || type === "object-deleted") {
+      ids.add(`object:${objectId}:exists`);
+    }
+    if (type === "object-transform") {
+      ids.add(`object:${objectId}:transform`);
+      ids.add(`object:${objectId}:position`);
+      ids.add(`object:${objectId}:rotation`);
+      ids.add(`object:${objectId}:scale`);
+    }
+
+    const before = change.previousObject ?? null;
+    const after = change.object ?? null;
+    if (!before && !after) continue;
+    const keys = new Set([
+      ...Object.keys(before ?? {}),
+      ...Object.keys(after ?? {})
+    ]);
+    for (const key of keys) {
+      if (!Object.is(before?.[key], after?.[key])) {
+        ids.add(`object:${objectId}:${key}`);
+      }
+    }
+  }
+  return Object.freeze([...ids].sort());
 }
 
 function resourceObjectPatch(property, value) {

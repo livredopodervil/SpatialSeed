@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260805-0048l1",
-  "channel": "main-proposal/0048l1-cheap-mesh-availability"
+  "build": "20260806-0050a",
+  "channel": "main/0050a-event-driven-temporal-runtime"
 }

@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import {
+  RenderDemandScheduler
+} from "./RenderDemandScheduler.js?build=20260806-0050a";
+import {
   InstanceBatch,
   updateAbsoluteInstanceColor
 } from "../../instance-batches/src/InstanceBatch.js?build=20260730-0040e";
@@ -182,6 +185,7 @@ export class ThreeRegionRenderer {
     hits: 0
   };
   #frameListeners = new Set();
+  #renderDemand = null;
   #cameraListeners = new Set();
   #transformPreviewListeners = new Set();
   #sharedTransformPreviews = new Map();
@@ -201,6 +205,9 @@ export class ThreeRegionRenderer {
   #lastFrameTimestamp = null;
   #animationTargetIds = new Set();
   #animationPivotOverrides = new Map();
+  #animationAppliedMatrices = new Map();
+  #animationAppliedColors = new Map();
+  #animationPivotSignature = null;
   #animationBatchCulling = new Map();
   #animationSurfaceDiagnostics = {
     captures: 0,
@@ -403,8 +410,16 @@ export class ThreeRegionRenderer {
       () => {
         this.#enforceNavigationLocks();
         this.#notifyNavigationCamera();
+        this.invalidateRender("camera");
       }
     );
+    this.#renderDemand = new RenderDemandScheduler({
+      prepareFrame: () => {
+        const changed = Boolean(this.orbit.update());
+        return Object.freeze({ changed, continue: changed });
+      },
+      render: () => this.renderer.render(this.scene, this.camera)
+    });
 
     this.transformAnchor = new THREE.Group();
     this.transformAnchor.name = "editor-selection-anchor";
@@ -482,12 +497,14 @@ export class ThreeRegionRenderer {
       this.#rebuildAnchor();
       this.#updateSelectionAppearance();
       this.#updateVertexMarkers();
+      this.invalidateRender("selection");
     });
 
     this.editorState.subscribe(() => {
       this.#configureTransformForEditor();
       this.#rebuildAnchor();
       this.#updateVertexMarkers();
+      this.invalidateRender("editor-state");
     });
 
     this.transform.addEventListener("dragging-changed", event => {
@@ -509,6 +526,7 @@ export class ThreeRegionRenderer {
         return;
       }
       this.#previewSession();
+      this.invalidateRender("transform-preview");
     });
     this.transform.addEventListener("mouseUp", () => this.#commitSession());
 
@@ -567,7 +585,8 @@ export class ThreeRegionRenderer {
     }, true);
     addEventListener("resize", () => this.resize());
 
-    this.animate();
+    installRenderInvalidationWrappers(this);
+    this.invalidateRender("initial");
   }
 
   canBeginMeshEdit(objectId) {
@@ -1899,6 +1918,9 @@ export class ThreeRegionRenderer {
   }
 
   applyChanges(state, changes = []) {
+    if (!Array.isArray(changes) || changes.length === 0) {
+      return Object.freeze({ changed: false, reason: "no-changes" });
+    }
     this.#lastState = state;
     if (changes.length) this.#screenSelectionVersion += 1;
     this.#incrementalDiagnostics.incrementalUpdates += 1;
@@ -2017,8 +2039,27 @@ export class ThreeRegionRenderer {
     if (typeof listener !== "function") {
       throw new TypeError("Listener de quadro deve ser função.");
     }
-    this.#frameListeners.add(listener);
-    return () => this.#frameListeners.delete(listener);
+    return this.#renderDemand.subscribeFrame(listener);
+  }
+  invalidateRender(reason = "unspecified") {
+    return this.#renderDemand?.invalidate(reason) ?? false;
+  }
+  acquireFrameDemand(owner = "anonymous") {
+    if (!this.#renderDemand) throw new Error("Scheduler visual indisponível.");
+    return this.#renderDemand.acquireContinuous(owner);
+  }
+  releaseFrameDemand(token) {
+    return this.#renderDemand?.releaseContinuous(token) ?? false;
+  }
+  scheduleFrameWakeAt(timestampMs, owner = "timer") {
+    if (!this.#renderDemand) throw new Error("Scheduler visual indisponível.");
+    return this.#renderDemand.wakeAt(timestampMs, owner);
+  }
+  cancelFrameWake(token) {
+    return this.#renderDemand?.cancelWake(token) ?? false;
+  }
+  getRenderDemandDiagnostics() {
+    return this.#renderDemand?.status() ?? null;
   }
 
   subscribeTransformPreview(listener) {
@@ -2183,6 +2224,22 @@ export class ThreeRegionRenderer {
         batch.mesh.frustumCulled = false;
       }
     }
+    this.#animationAppliedMatrices.clear();
+    for (const unit of snapshot.units) {
+      for (const object of unit.objects) {
+        this.#animationAppliedMatrices.set(
+          object.objectId,
+          Object.freeze([...object.baseMatrix])
+        );
+      }
+    }
+    this.#animationAppliedColors.clear();
+    this.#animationPivotSignature = stableRenderIdentity(
+      snapshot.units.map(unit => ({
+        unitId: unit.unitId,
+        position: unit.pivot
+      }))
+    );
     this.#animationSurfaceDiagnostics.captures += 1;
     return snapshot;
   }
@@ -2199,29 +2256,46 @@ export class ThreeRegionRenderer {
           `Objeto fora da sobreposição ativa: ${transform.objectId}.`
         );
       }
+      const previousMatrix = this.#animationAppliedMatrices.get(
+        transform.objectId
+      );
+      if (numericArrayEqual(previousMatrix, transform.matrix)) continue;
       const proxy = this.#meshes.get(transform.objectId);
       if (!proxy || proxy.userData.logicalOnly) continue;
       applyProjectedWorldMatrix(proxy, transform.matrix);
       if (this.#updateBatchMatrix(transform.objectId, proxy)) {
         matrixWrites += 1;
       }
+      this.#animationAppliedMatrices.set(
+        transform.objectId,
+        Object.freeze([...transform.matrix])
+      );
     }
 
     for (const entry of overlay.colors) {
       if (!this.#animationTargetIds.has(entry.objectId)) {
         throw new Error(`Cor fora da sobreposição ativa: ${entry.objectId}.`);
       }
+      if (this.#animationAppliedColors.get(entry.objectId) === entry.color) {
+        continue;
+      }
       if (this.#setInstanceColor(entry.objectId, entry.color)) {
         colorWrites += 1;
       }
+      this.#animationAppliedColors.set(entry.objectId, entry.color);
     }
 
-    this.#animationPivotOverrides = new Map(
-      overlay.pivots.map(entry => [entry.unitId, [...entry.position]])
-    );
-    this.#rebuildAnchor();
-    this.#updateSelectionAppearance();
-    this.#updateVertexMarkers();
+    const pivotSignature = stableRenderIdentity(overlay.pivots);
+    const pivotWrites = pivotSignature === this.#animationPivotSignature ? 0 : 1;
+    if (pivotWrites) {
+      this.#animationPivotSignature = pivotSignature;
+      this.#animationPivotOverrides = new Map(
+        overlay.pivots.map(entry => [entry.unitId, [...entry.position]])
+      );
+      this.#rebuildAnchor();
+      this.#updateSelectionAppearance();
+      this.#updateVertexMarkers();
+    }
 
     const elapsed = performance.now() - startedAt;
     const diagnostics = this.#animationSurfaceDiagnostics;
@@ -2233,9 +2307,13 @@ export class ThreeRegionRenderer {
       diagnostics.maximumFrameMs,
       elapsed
     );
+    const changed = matrixWrites > 0 || colorWrites > 0 || pivotWrites > 0;
+    if (changed) this.invalidateRender("animation-frame");
     return Object.freeze({
+      changed,
       matrixWrites,
       colorWrites,
+      pivotWrites,
       unitCount: overlay.pivots.length
     });
   }
@@ -2264,6 +2342,9 @@ export class ThreeRegionRenderer {
 
     this.#animationTargetIds.clear();
     this.#animationPivotOverrides.clear();
+    this.#animationAppliedMatrices.clear();
+    this.#animationAppliedColors.clear();
+    this.#animationPivotSignature = null;
     for (const [storageKey, frustumCulled] of this.#animationBatchCulling) {
       const normalizedKey = String(storageKey);
       const separator = normalizedKey.indexOf(":");
@@ -2305,7 +2386,8 @@ export class ThreeRegionRenderer {
       meshes: this.#meshes.size,
       familyBuildQueue: this.#familyBuildQueue.length,
       familyBuildActive: this.#familyBuildHandle !== null,
-      objectPicking: this.#objectPicking?.status() ?? null
+      objectPicking: this.#objectPicking?.status() ?? null,
+      renderDemand: this.getRenderDemandDiagnostics()
     };
   }
 
@@ -2902,6 +2984,7 @@ export class ThreeRegionRenderer {
       this.#markBatchDirty(added.batch.key);
     }
     visual.nextIndex = end;
+    if (end > start) this.invalidateRender("family-build");
     if (start === 0 && end > 0) {
       this.#notifyObjectVisual(visual, {
         ready: true,
@@ -3189,6 +3272,7 @@ export class ThreeRegionRenderer {
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
     this.#visualCommitHandoff.releaseAcknowledged();
+    this.invalidateRender("scene-update");
   }
 
   #finishLocalizedSceneUpdate() {
@@ -3207,6 +3291,7 @@ export class ThreeRegionRenderer {
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
+    this.invalidateRender("scene-update-local");
     this.#visualCommitHandoff.releaseAcknowledged();
   }
 
@@ -6484,6 +6569,7 @@ export class ThreeRegionRenderer {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(innerWidth, innerHeight);
     this.#notifyNavigationCamera();
+    this.invalidateRender("resize");
   }
 
   #notifyNavigationCamera() {
@@ -6566,29 +6652,87 @@ getResourceDiagnostics() {
   });
 }
 
-  animate = timestamp => {
-    requestAnimationFrame(this.animate);
-    const current = Number.isFinite(timestamp)
-      ? timestamp
-      : performance.now();
-    const deltaSeconds = this.#lastFrameTimestamp === null
-      ? 0
-      : Math.max(0, (current - this.#lastFrameTimestamp) / 1000);
-    this.#lastFrameTimestamp = current;
-    const frame = Object.freeze({
-      timestampMs: current,
-      deltaSeconds
-    });
-    for (const listener of [...this.#frameListeners]) {
-      try {
-        listener(frame);
-      } catch (error) {
-        console.error("Animation frame listener failed", error);
-      }
-    }
-    this.orbit.update();
-    this.renderer.render(this.scene, this.camera);
+  animate = () => {
+    this.invalidateRender("legacy-animate");
   };
+}
+
+
+function installRenderInvalidationWrappers(renderer) {
+  const methods = [
+    "beginMeshEdit",
+    "updateMeshEditGeometry",
+    "updateMeshEditSelection",
+    "updateMeshEditComponentSelection",
+    "setMeshEditComponentMode",
+    "updateMeshEditDisplay",
+    "updateMeshEditOptions",
+    "setMeshEditConstraint",
+    "updateMeshEditSnap",
+    "updateMeshEditDeformation",
+    "updateMeshEditInfluence",
+    "setMeshEditFrame",
+    "endMeshEdit",
+    "setViewerRenderSettings",
+    "applyViewerRenderPreset",
+    "resetViewerRenderSettings",
+    "setObjectTransformFrame",
+    "setObjectTransformAxes",
+    "setNavigationPlaneLock",
+    "setNavigationPointLock",
+    "clearNavigationLocks",
+    "setEditPlane",
+    "setDrawingPlane",
+    "applyNavigationCamera",
+    "setCameraProjection",
+    "setTransformMode",
+    "setSelectionOperation",
+    "setPivotEditing",
+    "toggleSpace",
+    "applySharedTransformPreview",
+    "clearSharedTransformPreview",
+    "setCameraVisualState",
+    "restoreAnimationTargets",
+    "setTransformConfig"
+  ];
+  for (const method of methods) {
+    const original = renderer[method];
+    if (typeof original !== "function") continue;
+    renderer[method] = function renderInvalidatingMethod(...args) {
+      const result = original.apply(this, args);
+      if (shouldInvalidateRenderResult(result)) {
+        this.invalidateRender(`method:${method}`);
+      }
+      return result;
+    };
+  }
+}
+
+function shouldInvalidateRenderResult(result) {
+  if (result === false || result?.changed === false) return false;
+  if (
+    result &&
+    typeof result === "object" &&
+    "matrixWrites" in result &&
+    "colorWrites" in result
+  ) {
+    return Number(result.matrixWrites ?? 0) > 0 ||
+      Number(result.colorWrites ?? 0) > 0 ||
+      Number(result.pivotWrites ?? 0) > 0 ||
+      Number(result.restored ?? 0) > 0;
+  }
+  return true;
+}
+
+function numericArrayEqual(a, b, epsilon = 1e-12) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+    return false;
+  }
+  for (let index = 0; index < a.length; index += 1) {
+    if (Math.abs(Number(a[index]) - Number(b[index])) > epsilon) return false;
+  }
+  return true;
 }
 
 function toneMapping(mode) {
