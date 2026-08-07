@@ -16,12 +16,13 @@ const GROUP_LABELS = Object.freeze({
 });
 
 export class ObjectInspector {
-  static apiVersion = "object-inspector-properties-v1";
+  static apiVersion = "object-inspector-properties-v2-occurrence-resolver";
 
   constructor({
     root,
     editor,
     sandbox,
+    occurrenceResolver = null,
     query,
     execute,
     scheduleRefresh = null,
@@ -31,6 +32,7 @@ export class ObjectInspector {
     this.document = root.ownerDocument;
     this.editor = editor;
     this.sandbox = sandbox;
+    this.occurrenceResolver = occurrenceResolver;
     this.query = query;
     this.execute = execute;
     this.controls = new Map();
@@ -195,7 +197,9 @@ export class ObjectInspector {
        * raiz selecionada altera o conjunto exibido. Percorremos somente a
        * cadeia de pais do objeto afetado, nunca state.objects inteiro.
        */
-      let current = change.object ?? this.sandbox.getObject(id);
+      let current = change.object ?? (this.occurrenceResolver
+        ? this.occurrenceResolver.object(id)
+        : this.sandbox.getObject(id));
       const visited = new Set([id]);
       while (current?.parentId != null) {
         const parentId = String(current.parentId);
@@ -204,7 +208,9 @@ export class ObjectInspector {
         }
         if (visited.has(parentId)) break;
         visited.add(parentId);
-        current = this.sandbox.getObject(parentId);
+        current = this.occurrenceResolver
+          ? this.occurrenceResolver.object(parentId)
+          : this.sandbox.getObject(parentId);
       }
 
       const previousParent = change.previousObject?.parentId;

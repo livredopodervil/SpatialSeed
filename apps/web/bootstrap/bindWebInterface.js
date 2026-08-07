@@ -1,7 +1,7 @@
-import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260807-0052c";
+import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260807-0053b";
 import {
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260807-0052c";
+} from "../../../packages/platform-web/src/index.js?build=20260807-0053b";
 
 export function bindWebInterface({
   runtime,

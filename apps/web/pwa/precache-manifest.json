@@ -163,6 +163,8 @@
     "packages/occurrence-contracts/src/OccurrenceRevision.js",
     "packages/occurrence-contracts/src/ResolvedOccurrence.js",
     "packages/occurrence-contracts/src/index.js",
+    "packages/occurrence-runtime/src/OccurrenceResolver.js",
+    "packages/occurrence-runtime/src/index.js",
     "packages/planar-authoring/src/PlanarConstraints.js",
     "packages/planar-authoring/src/PlanarSketchController.js",
     "packages/planar-authoring/src/index.js",

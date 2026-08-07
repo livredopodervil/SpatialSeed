@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260807-0053a",
-  "channel": "feature/0053a-canonical-contracts"
+  "build": "20260807-0053b",
+  "channel": "feature/0053b-occurrence-resolver-migration"
 }

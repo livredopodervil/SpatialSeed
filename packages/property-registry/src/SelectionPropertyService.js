@@ -3,28 +3,51 @@ import {
   describePropertyBatchProgram,
   evaluatePropertyBatchProgram
 } from "./PropertyBatchProgram.js";
+import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260807-0053b";
 
 export class SelectionPropertyService {
-  static apiVersion = "selection-properties-v1";
+  static apiVersion = "selection-properties-v2-occurrence-resolver";
 
-  constructor({ selection, sandbox, appearanceRuntime, registry }) {
+  constructor({
+    selection,
+    sandbox,
+    appearanceRuntime,
+    registry,
+    occurrenceResolver = null,
+    complexityReporter = null
+  }) {
     this.selection = selection;
     this.sandbox = sandbox;
     this.appearanceRuntime = appearanceRuntime;
     this.registry = registry;
+    this.occurrenceResolver = occurrenceResolver;
+    this.complexityReporter = complexityReporter;
   }
 
   inspectSelection({ targetScope = "selection" } = {}) {
-    const targets = this.#selectionTargets(targetScope);
-
-    return Object.freeze({
-      apiVersion: SelectionPropertyService.apiVersion,
-      selectionId: this.selection.id,
-      targetScope,
-      targetIds: Object.freeze(targets.map(object => object.id)),
-      count: targets.length,
-      properties: this.registry.inspect(targets, this.#context())
-    });
+    const scope = this.#complexityScope("inspector.inspect", { targetScope });
+    const inspect = () => {
+      const targets = this.#selectionTargets(targetScope);
+      scope?.count("editTargetsVisited", targets.length);
+      const properties = this.registry.inspect(targets, this.#context());
+      scope?.count(
+        "propertiesResolved",
+        targets.length * Number(this.registry.describe?.().properties?.length ?? 0)
+      );
+      return Object.freeze({
+        apiVersion: SelectionPropertyService.apiVersion,
+        selectionId: this.selection.id,
+        targetScope,
+        targetIds: Object.freeze(targets.map(object => object.id)),
+        count: targets.length,
+        properties
+      });
+    };
+    const result = this.occurrenceResolver && scope
+      ? this.occurrenceResolver.withScope(scope, inspect)
+      : inspect();
+    this.#recordComplexity(scope);
+    return result;
   }
 
   setSelection(patch, { targetScope = "selection" } = {}) {
@@ -275,7 +298,11 @@ export class SelectionPropertyService {
     }
     const selectedIds = uniqueIds(
       this.selection?.members?.map(member => member.objectId) ?? []
-    ).filter(id => Boolean(this.sandbox.getObject(id)));
+    ).filter(id => Boolean(
+      this.occurrenceResolver
+        ? this.occurrenceResolver.exists(id)
+        : this.sandbox.getObject(id)
+    ));
     if (targetScope === "selection" || !selectedIds.length) {
       return Object.freeze(selectedIds);
     }
@@ -287,30 +314,52 @@ export class SelectionPropertyService {
      */
     const selected = new Set(selectedIds);
     const roots = selectedIds.filter(id => {
-      let current = this.sandbox.getObject(id);
+      let current = this.occurrenceResolver
+        ? this.occurrenceResolver.object(id)
+        : this.sandbox.getObject(id);
       const visited = new Set([id]);
       while (current?.parentId != null) {
         const parentId = String(current.parentId);
         if (selected.has(parentId)) return false;
         if (visited.has(parentId)) break;
         visited.add(parentId);
-        current = this.sandbox.getObject(parentId);
+        current = this.occurrenceResolver
+          ? this.occurrenceResolver.object(parentId)
+          : this.sandbox.getObject(parentId);
       }
       return true;
     });
-    const resolved = this.sandbox.getObjectDescendantIds(roots, {
-      includeRoots: true
-    });
+    const resolved = this.occurrenceResolver
+      ? this.occurrenceResolver.descendantIds(roots, { includeRoots: true })
+      : this.sandbox.getObjectDescendantIds(roots, { includeRoots: true });
     return Object.freeze(resolved.filter(id => {
-      const kind = this.sandbox.getObject(id)?.kind;
+      const kind = (this.occurrenceResolver
+        ? this.occurrenceResolver.object(id)
+        : this.sandbox.getObject(id))?.kind;
       return !["group", "camera", "light"].includes(kind);
     }));
   }
 
   #selectionTargets(targetScope = "selection") {
     return this.#selectionTargetIds(targetScope)
-      .map(id => this.sandbox.getObject(id))
+      .map(id => this.occurrenceResolver
+        ? this.occurrenceResolver.object(id)
+        : this.sandbox.getObject(id))
       .filter(Boolean);
+  }
+
+  #complexityScope(operation, metadata = {}) {
+    if (!this.complexityReporter) return null;
+    return new ComplexityScope({
+      id: `${operation}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      operation,
+      metadata
+    });
+  }
+
+  #recordComplexity(scope) {
+    if (!scope || !this.complexityReporter) return null;
+    return this.complexityReporter.record(scope.finish());
   }
 }
 

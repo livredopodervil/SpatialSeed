@@ -30,9 +30,10 @@ import {
 import {
   normalizeSketchDescriptor
 } from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
+import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260807-0053b";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v9";
+  static apiVersion = "selection-operations-v10-occurrence-resolver";
 
   constructor({
     editor,
@@ -40,6 +41,8 @@ export class SelectionOperations {
     regionId,
     geometryRegistry = null,
     appearanceRuntime = null,
+    occurrenceResolver = null,
+    complexityReporter = null,
     onRepeatableChanged = null
   }) {
     if (
@@ -55,6 +58,8 @@ export class SelectionOperations {
     this.regionId = regionId;
     this.geometryRegistry = geometryRegistry;
     this.appearanceRuntime = appearanceRuntime;
+    this.occurrenceResolver = occurrenceResolver;
+    this.complexityReporter = complexityReporter;
     this.onRepeatableChanged = onRepeatableChanged;
     this.pendingDuplicate = null;
     this.pendingPublication = null;
@@ -863,16 +868,31 @@ export class SelectionOperations {
     // occurrence edge; deleting an authoritative root removes only the root.
     // We expand only to clear the local selection, never to materialize/delete
     // every descendant in the authoritative document.
-    const ids = typeof this.sandbox.getObjectDescendantIds === "function"
-      ? [...this.sandbox.getObjectDescendantIds(selectedIds, { includeRoots: true })]
-      : [...selectedIds];
-
-    const changed = this.sandbox.dispatch({
-      type: "selection.delete",
-      source,
-      ids: selectedIds,
-      expandedSubtree: false
+    const scope = this.#complexityScope("selection.delete", {
+      targetCount: selectedIds.length
     });
+    const executeDelete = () => {
+      scope?.count("editTargetsVisited", selectedIds.length);
+      const ids = this.occurrenceResolver
+        ? [...this.occurrenceResolver.descendantIds(selectedIds, { includeRoots: true })]
+        : typeof this.sandbox.getObjectDescendantIds === "function"
+          ? [...this.sandbox.getObjectDescendantIds(selectedIds, { includeRoots: true })]
+          : [...selectedIds];
+
+      const changed = this.sandbox.dispatch({
+        type: "selection.delete",
+        source,
+        ids: selectedIds,
+        expandedSubtree: false
+      });
+      scope?.count("patchOperations", selectedIds.length);
+      scope?.count("committedOperations", changed ? 1 : 0);
+      return { ids, changed };
+    };
+    const { ids, changed } = this.occurrenceResolver && scope
+      ? this.occurrenceResolver.withScope(scope, executeDelete)
+      : executeDelete();
+    this.#recordComplexity(scope);
 
     if (changed) {
       const deleted = new Set(ids);
@@ -1517,18 +1537,32 @@ export class SelectionOperations {
   }
 
   #dispatchTransforms(transforms, source) {
+    const operation = transforms.length === 1
+      ? source === "console-translate" ? "selection.translate.single" : `selection.transform.single`
+      : "selection.transform.many";
+    const scope = this.#complexityScope(operation, {
+      source,
+      targetCount: transforms.length
+    });
+    scope?.count("editTargetsVisited", transforms.length);
+    scope?.count("patchOperations", transforms.length);
     const repeatHistoryBefore = this.repeatHistoryRevision;
     const composingDuplicate = Boolean(
       this.pendingDuplicate ||
       this.pendingPublication?.kind === "plain"
     );
-    const changed = this.sandbox.dispatch({
+    const dispatch = () => this.sandbox.dispatch({
       type: "selection.transform",
       source,
       selection: this.editor.selection.snapshot(),
       pivot: this.editor.snapshot().pivot,
       transforms
     });
+    const changed = this.occurrenceResolver && scope
+      ? this.occurrenceResolver.withScope(scope, dispatch)
+      : dispatch();
+    scope?.count("committedOperations", changed ? 1 : 0);
+    this.#recordComplexity(scope);
     const repeatHistoryChanged =
       this.repeatHistoryRevision !== repeatHistoryBefore;
     if (changed && !repeatHistoryChanged) {
@@ -1671,12 +1705,29 @@ export class SelectionOperations {
   }
 
   #objectById(id) {
+    if (this.occurrenceResolver) {
+      return this.occurrenceResolver.object(id);
+    }
     if (typeof this.sandbox.getObject === "function") {
       return this.sandbox.getObject(id);
     }
     return this.sandbox.getSnapshot().objects.find(
       object => String(object.id) === String(id)
     ) ?? null;
+  }
+
+  #complexityScope(operation, metadata = {}) {
+    if (!this.complexityReporter) return null;
+    return new ComplexityScope({
+      id: `${operation}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      operation,
+      metadata
+    });
+  }
+
+  #recordComplexity(scope) {
+    if (!scope || !this.complexityReporter) return null;
+    return this.complexityReporter.record(scope.finish());
   }
 
   #selectionPivot(objects) {
