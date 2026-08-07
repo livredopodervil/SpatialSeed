@@ -720,6 +720,7 @@ export class PlanarSketchController {
       this.#preview.quaternion.fromArray(plan.rotation);
       this.#preview.material.color.set(active.settings.color);
       this.#preview.visible = true;
+      this.renderer.invalidateRender?.("planar-sketch-preview");
       active.error = null;
     } catch {
       this.#hidePreview();
@@ -746,7 +747,10 @@ export class PlanarSketchController {
   }
 
   #hidePreview() {
-    if (this.#preview) this.#preview.visible = false;
+    if (!this.#preview?.visible) return false;
+    this.#preview.visible = false;
+    this.renderer.invalidateRender?.("planar-sketch-preview-clear");
+    return true;
   }
 
   #deferPreviewClear() {

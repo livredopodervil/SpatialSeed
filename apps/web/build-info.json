@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260806-0050b",
-  "channel": "feature/0050a-event-driven-time/0050b-temporal-animation-procedures"
+  "build": "20260806-0050c",
+  "channel": "feature/0050c-independent-animation-overlays-and-previews"
 }

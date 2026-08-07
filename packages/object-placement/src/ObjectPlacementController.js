@@ -237,6 +237,7 @@ export class ObjectPlacementController {
     active.pointerType = null;
     active.lastPlacement = null;
     if (this.#preview) this.#preview.visible = false;
+    this.renderer.invalidateRender?.("object-placement-preview-clear");
     this.#notify();
     return true;
   }
@@ -277,6 +278,7 @@ export class ObjectPlacementController {
     this.#preview.position.fromArray(placement.position);
     this.#preview.quaternion.fromArray(placement.rotation);
     this.#preview.visible = true;
+    this.renderer.invalidateRender?.("object-placement-preview");
   }
 
   #finish({ restoreTool }) {
@@ -300,6 +302,7 @@ export class ObjectPlacementController {
     this.#preview.geometry.dispose();
     this.#preview.material.dispose();
     this.#preview = null;
+    this.renderer.invalidateRender?.("object-placement-preview-disposed");
   }
 
   #notify() {

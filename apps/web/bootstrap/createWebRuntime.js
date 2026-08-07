@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260802-0047g";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260806-0050a1";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260806-0050c";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
 import {
   createVirtualResourceTree,
@@ -95,10 +95,10 @@ import {
   AnimationCommandService,
   AnimationProcedureService,
   TemporalAnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260806-0050b";
+} from "../../../packages/animation-runtime/src/index.js?build=20260806-0050c";
 import {
   AnimationPanel
-} from "../../../packages/animation-panel/src/index.js?build=20260806-0050b";
+} from "../../../packages/animation-panel/src/index.js?build=20260806-0050c";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
@@ -125,13 +125,13 @@ import {
 } from "../../../packages/edit-tools/src/index.js?build=20260802-0047g";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260730-0040e";
+} from "../../../packages/object-placement/src/index.js?build=20260806-0050c";
 import {
   DrawingTargetController
-} from "../../../packages/drawing-target/src/index.js?build=20260730-0042c";
+} from "../../../packages/drawing-target/src/index.js?build=20260806-0050c";
 import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260802-0047g";
+} from "../../../packages/planar-authoring/src/index.js?build=20260806-0050c";
 import {
   StrokeCompactionScheduler,
   StrokeFusionService,
@@ -139,13 +139,13 @@ import {
 } from "../../../packages/stroke-resources/src/index.js?build=20260802-0047g";
 import {
   MeasurementController
-} from "../../../packages/measurement-tools/src/index.js?build=20260730-0040e";
+} from "../../../packages/measurement-tools/src/index.js?build=20260806-0050c";
 import {
   PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260802-0047g";
+} from "../../../packages/spatial-references/src/index.js?build=20260806-0050c";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -162,7 +162,7 @@ import {
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260730-0040f";
+} from "../../../packages/local-viewers/src/index.js?build=20260806-0050c";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v7";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -436,7 +436,9 @@ export async function createWebRuntime({
         animationCommands.prepareShared(operation, args),
       apply: (session, { now }) =>
         animationCommands.synchronizeShared(session, { now }),
-      status: () => animationCommands.status()
+      status: () => animationCommands.status(),
+      sceneChanged: (changes, session) =>
+        animationCommands.sceneChanged(changes, session)
     }
   });
   sharedAnimations.start();
@@ -1196,6 +1198,28 @@ export async function createWebRuntime({
     .register(
       "animation.stop",
       () => sharedAnimations.stop(),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.instance.pause",
+      ({ instanceId }) => animationCommands.pause({ instanceId }),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.instance.resume",
+      ({ instanceId }) => animationCommands.resume({ instanceId }),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.instance.stop",
+      ({ instanceId, reason = "user-instance" }) =>
+        animationCommands.stop({ instanceId }, reason),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.stop-all",
+      ({ reason = "user-all" } = {}) =>
+        animationCommands.stopAll(reason),
       { category: "animation", mutates: false }
     )
     .register(

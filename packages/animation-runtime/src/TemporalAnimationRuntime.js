@@ -1,15 +1,21 @@
 import {
   EvolutionKind,
   EvolutionResult
-} from "../../temporal-runtime/src/EvolutionResult.js?build=20260806-0050b";
+} from "../../temporal-runtime/src/EvolutionResult.js?build=20260806-0050c";
 import {
   identityMatrix
 } from "../../math-affine/src/index.js?build=20260719-0028b";
 
 export const TEMPORAL_ANIMATION_RUNTIME_VERSION =
-  "temporal-animation-runtime-v1";
+  "temporal-animation-runtime-v2-independent-overlays";
 
 const FRAME_EVENT = "animation.overlay.frame";
+const FULL_SCENE_CHANGE_TYPES = new Set([
+  "sandbox-undo",
+  "sandbox-discard",
+  "sandbox-rebased",
+  "sandbox-state-replaced"
+]);
 
 export class TemporalAnimationRuntime {
   constructor({
@@ -41,13 +47,18 @@ export class TemporalAnimationRuntime {
     this.stepSeconds = step;
     this.now = now;
     this.runtimeId = createRuntimeId();
-    this.state = "idle";
-    this.clip = null;
-    this.timeSource = null;
-    this.timelineTime = 0;
-    this.timelineTick = 0;
+    this.instances = new Map();
+    this.activeInstanceId = null;
     this.disposed = false;
     this.statistics = initialStatistics();
+  }
+
+  get state() {
+    return aggregateState(this.instances.values());
+  }
+
+  get clip() {
+    return this.#activeInstance();
   }
 
   start({
@@ -98,15 +109,21 @@ export class TemporalAnimationRuntime {
     const ids = normalizeTargetIds(targetIds);
     const mode = normalizeTargetMode(targetMode);
     const startTime = finiteTime(initialTime);
-    if (this.state !== "idle") this.stop("replaced");
-
+    const playbackId = createPlaybackId();
+    const overlayId = `animation-overlay:${playbackId}`;
     const targets = this.surface.captureAnimationTargets(ids, {
-      targetMode: mode
+      targetMode: mode,
+      overlayId
     });
-    const objectCount = targetObjectCount(targets);
-    if (!targets?.units?.length || objectCount === 0) {
+    const objectIds = targetObjectIds(targets);
+    if (!targets?.units?.length || objectIds.length === 0) {
+      this.surface.restoreAnimationTargets(targets, { overlayId });
       throw new RangeError("A seleção não contém alvos renderizáveis.");
     }
+
+    // Instâncias podem compartilhar alvos: cada uma mantém uma camada
+    // temporal própria, composta pelo renderer em ordem estável de criação.
+    // Parar ou substituir uma instância nunca remove as demais camadas.
 
     let normalizedSegments;
     try {
@@ -114,37 +131,41 @@ export class TemporalAnimationRuntime {
         segments,
         targets,
         timeDomains: this.timeDomains,
-        playbackId: createPlaybackId(),
+        playbackId,
         initialTime: startTime
       });
     } catch (error) {
-      this.surface.restoreAnimationTargets(targets);
+      this.surface.restoreAnimationTargets(targets, { overlayId });
       throw error;
     }
 
-    const playbackId = normalizedSegments.playbackId;
-    const clip = {
+    const instance = {
       id: String(id),
+      instanceId: playbackId,
       playbackId,
+      overlayId,
       targetIds: Object.freeze(ids),
       targetMode: mode,
       targets,
-      objectCount,
+      objectIds: Object.freeze(objectIds),
+      objectIdSet: new Set(objectIds),
+      objectCount: objectIds.length,
       segments: normalizedSegments.segments,
       operationIds: [],
-      domainIds: []
+      domainIds: [],
+      state: "playing",
+      timeSource,
+      timelineTime: startTime,
+      timelineTick: Math.floor(startTime / this.stepSeconds),
+      createdOrder: this.statistics.starts + 1
     };
 
-    this.clip = clip;
-    this.timeSource = timeSource;
-    this.timelineTime = startTime;
-    this.timelineTick = Math.floor(startTime / this.stepSeconds);
-    this.state = "playing";
-    this.statistics = initialStatistics();
-    this.statistics.starts = 1;
+    this.instances.set(instance.instanceId, instance);
+    this.activeInstanceId = instance.instanceId;
+    this.statistics.starts += 1;
 
     try {
-      for (const [index, segment] of clip.segments.entries()) {
+      for (const [index, segment] of instance.segments.entries()) {
         const domainId = privateDomainId(playbackId, segment.id);
         this.timeDomains.create({
           id: domainId,
@@ -157,247 +178,328 @@ export class TemporalAnimationRuntime {
           paused: false
         });
         segment.privateDomainId = domainId;
-        clip.domainIds.push(domainId);
+        instance.domainIds.push(domainId);
 
         const operationId = `animation:${playbackId}:${segment.id}`;
         segment.operationId = operationId;
-        clip.operationIds.push(operationId);
+        instance.operationIds.push(operationId);
         this.temporalRuntime.register({
           id: operationId,
           phase: "animation",
-          order: index,
+          order: instance.createdOrder * 1000 + index,
           timeDomainId: domainId,
           targetId: segment.id,
-          dependencyIds: [],
+          dependencyIds: segment.targetIds.map(
+            targetId => `object:${targetId}`
+          ),
           idempotent: !segment.timeDependent,
-          evaluate: context => this.#evaluateSegment(segment, context)
+          evaluate: context =>
+            this.#evaluateSegment(instance, segment, context)
         });
       }
     } catch (error) {
-      this.#removeTemporalRegistrations(clip);
-      this.clip = null;
-      this.state = "idle";
-      this.surface.restoreAnimationTargets(targets);
+      this.#removeTemporalRegistrations(instance);
+      this.instances.delete(instance.instanceId);
+      this.#selectNewestActiveInstance();
+      this.surface.restoreAnimationTargets(targets, { overlayId });
       throw error;
     }
 
     return this.status();
   }
 
-  play() {
+  play(selector = null) {
     this.#assertActive();
-    if (this.state === "playing") return this.status();
-    if (this.state !== "paused" || !this.clip) {
+    const instances = this.#selectedInstances(selector);
+    if (!instances.length) {
       throw new Error("Nenhuma animação pausada para continuar.");
     }
-    for (const segment of this.clip.segments) {
-      this.timeDomains.resume(segment.privateDomainId);
-      this.temporalRuntime.enable(segment.operationId, true);
-      this.temporalRuntime.wake(segment.operationId);
+    let resumed = 0;
+    for (const instance of instances) {
+      if (instance.state === "playing") continue;
+      if (instance.state !== "paused") continue;
+      for (const segment of instance.segments) {
+        this.timeDomains.resume(segment.privateDomainId);
+        this.temporalRuntime.enable(segment.operationId, true);
+        this.temporalRuntime.wake(segment.operationId);
+      }
+      instance.state = "playing";
+      resumed += 1;
     }
-    this.state = "playing";
-    this.statistics.resumes += 1;
+    if (!resumed && instances.every(item => item.state !== "playing")) {
+      throw new Error("Nenhuma animação pausada para continuar.");
+    }
+    this.statistics.resumes += resumed;
     return this.status();
   }
 
-  pause() {
+  pause(selector = null) {
     this.#assertActive();
-    if (this.state === "paused") return this.status();
-    if (this.state !== "playing" || !this.clip) {
+    const instances = this.#selectedInstances(selector);
+    if (!instances.length) {
       throw new Error("Nenhuma animação em execução para pausar.");
     }
-    for (const segment of this.clip.segments) {
-      this.timeDomains.pause(segment.privateDomainId);
-      this.temporalRuntime.enable(segment.operationId, false);
+    let paused = 0;
+    for (const instance of instances) {
+      if (instance.state === "paused") continue;
+      if (instance.state !== "playing") continue;
+      for (const segment of instance.segments) {
+        this.timeDomains.pause(segment.privateDomainId);
+        this.temporalRuntime.enable(segment.operationId, false);
+      }
+      instance.state = "paused";
+      paused += 1;
     }
-    this.state = "paused";
-    this.statistics.pauses += 1;
+    if (!paused && instances.every(item => item.state !== "paused")) {
+      throw new Error("Nenhuma animação em execução para pausar.");
+    }
+    this.statistics.pauses += paused;
     return this.status();
   }
 
-  stop(reason = "stopped") {
-    if (this.disposed || this.state === "idle" || !this.clip) {
-      return this.status();
-    }
-    const clip = this.clip;
-    this.#removeTemporalRegistrations(clip);
-    let restoreError = null;
-    try {
-      this.surface.restoreAnimationTargets(clip.targets);
-    } catch (error) {
-      restoreError = error;
-    }
-    this.clip = null;
-    this.timeSource = null;
-    this.timelineTime = 0;
-    this.timelineTick = 0;
-    this.state = "idle";
-    this.statistics.stops += 1;
-    this.statistics.lastStopReason = String(reason);
-    if (restoreError) {
-      this.statistics.lastError = errorRecord(restoreError);
-      throw restoreError;
+  stop(reason = "stopped", selector = null) {
+    if (this.disposed || this.instances.size === 0) return this.status();
+    const instances = this.#selectedInstances(selector);
+    for (const instance of instances) {
+      this.#stopInstance(instance, reason);
     }
     return this.status();
   }
 
-  sceneChanged() {
-    if (this.state === "idle") return false;
-    this.stop("scene-changed");
-    return true;
+  stopAll(reason = "stopped-all") {
+    if (this.disposed || this.instances.size === 0) return this.status();
+    for (const instance of [...this.instances.values()]) {
+      this.#stopInstance(instance, reason);
+    }
+    return this.status();
   }
 
-  fault(error) {
+  sceneChanged(changes = []) {
+    const impact = classifySceneChanges(changes);
+    if (!impact.full && impact.objectIds.size === 0) {
+      return Object.freeze({
+        changed: false,
+        full: false,
+        affectedObjectIds: Object.freeze([]),
+        stoppedInstanceIds: Object.freeze([])
+      });
+    }
+    const stopped = [];
+    for (const instance of [...this.instances.values()]) {
+      if (impact.full || setsIntersect(instance.objectIdSet, impact.objectIds)) {
+        stopped.push(instance.instanceId);
+        this.#stopInstance(instance, impact.full
+          ? "scene-replaced"
+          : "animated-object-changed");
+      }
+    }
+    return Object.freeze({
+      changed: stopped.length > 0,
+      full: impact.full,
+      affectedObjectIds: Object.freeze([...impact.objectIds]),
+      stoppedInstanceIds: Object.freeze(stopped)
+    });
+  }
+
+  affectedByChanges(changes = [], selector = null) {
+    const impact = classifySceneChanges(changes);
+    const instances = selector === null
+      ? [...this.instances.values()]
+      : this.#selectedInstances(selector);
+    const affected = impact.full
+      ? instances
+      : instances.filter(instance =>
+          setsIntersect(instance.objectIdSet, impact.objectIds)
+        );
+    return Object.freeze({
+      affected: affected.length > 0,
+      full: impact.full,
+      affectedObjectIds: Object.freeze([...impact.objectIds]),
+      instanceIds: Object.freeze(affected.map(item => item.instanceId))
+    });
+  }
+
+  fault(error, { operationId = null } = {}) {
     const record = errorRecord(error);
+    let instance = operationId
+      ? this.#instanceForOperation(operationId)
+      : this.#activeInstance();
     try {
-      if (this.state !== "idle") this.stop("runtime-error");
+      if (instance) this.#stopInstance(instance, "runtime-error");
     } finally {
       this.statistics.lastError = record;
     }
     return this.status();
   }
 
-  setTimeSource(timeSource = null) {
+  setTimeSource(timeSource = null, selector = null) {
     this.#assertActive();
     if (timeSource !== null && typeof timeSource !== "function") {
       throw new TypeError("Fonte temporal deve ser função.");
     }
-    this.timeSource = timeSource;
-    if (this.clip) {
-      for (const segment of this.clip.segments) {
+    const instances = this.#selectedInstances(selector);
+    for (const instance of instances) {
+      instance.timeSource = timeSource;
+      for (const segment of instance.segments) {
         this.temporalRuntime.wake(segment.operationId);
       }
     }
     return this.status();
   }
 
-  seek(simulationTime) {
+  seek(simulationTime, selector = null) {
     this.#assertActive();
-    if (!this.clip) {
+    const instances = this.#selectedInstances(selector);
+    if (!instances.length) {
       throw new Error("Nenhuma animação disponível para posicionar.");
     }
     const nextTime = finiteTime(simulationTime);
-    const startedAt = this.now();
-    const frames = [];
-
-    for (const segment of this.clip.segments) {
-      const segmentTime = scaledTimelineTime(
-        nextTime,
-        this.timeDomains.effectiveRate(segment.timeDomainId)
-      );
-      this.timeDomains.seek(segment.privateDomainId, segmentTime);
-      const evaluated = segment.evaluate(Object.freeze({
-        t: segmentTime,
-        dt: segment.lastEvaluationTime === null
-          ? 0
-          : segmentTime - segment.lastEvaluationTime,
-        tick: Math.floor(segmentTime / this.stepSeconds),
-        targets: segment.targets,
-        result: EvolutionResult
-      }));
-      const resolved = resolveAnimationEvaluation(evaluated);
-      segment.lastEvaluationTime = segmentTime;
-      if (resolved.kind === EvolutionKind.CHANGED) {
-        segment.currentFrame = resolved.frame;
-        segment.lastAppliedSignature = frameSignature(resolved.frame);
+    let changed = false;
+    let advanced = 0;
+    for (const instance of instances) {
+      const startedAt = this.now();
+      const frames = [];
+      for (const segment of instance.segments) {
+        const segmentTime = scaledTimelineTime(
+          nextTime,
+          this.timeDomains.effectiveRate(segment.timeDomainId)
+        );
+        this.timeDomains.seek(segment.privateDomainId, segmentTime);
+        const evaluated = segment.evaluate(Object.freeze({
+          t: segmentTime,
+          dt: segment.lastEvaluationTime === null
+            ? 0
+            : segmentTime - segment.lastEvaluationTime,
+          tick: Math.floor(segmentTime / this.stepSeconds),
+          targets: segment.targets,
+          result: EvolutionResult
+        }));
+        const resolved = resolveAnimationEvaluation(evaluated);
+        segment.lastEvaluationTime = segmentTime;
+        if (resolved.kind === EvolutionKind.CHANGED) {
+          segment.currentFrame = resolved.frame;
+          segment.lastAppliedSignature = frameSignature(resolved.frame);
+        }
+        frames.push(...segment.currentFrame);
+        this.temporalRuntime.wake(segment.operationId);
       }
-      frames.push(...segment.currentFrame);
-      this.temporalRuntime.wake(segment.operationId);
+      const result = this.surface.applyAnimationFrame(
+        instance.targets,
+        Object.freeze(frames),
+        { overlayId: instance.overlayId }
+      );
+      this.#recordSurfaceResult(result, startedAt);
+      instance.timelineTime = nextTime;
+      instance.timelineTick = Math.floor(nextTime / this.stepSeconds);
+      changed = changed || surfaceChanged(result);
+      advanced += 1;
     }
-
-    const result = this.surface.applyAnimationFrame(
-      this.clip.targets,
-      Object.freeze(frames)
-    );
-    this.#recordSurfaceResult(result, startedAt);
-    this.timelineTime = nextTime;
-    this.timelineTick = Math.floor(nextTime / this.stepSeconds);
     return Object.freeze({
-      advanced: true,
-      changed: surfaceChanged(result),
-      state: this.state,
-      result
+      advanced: advanced > 0,
+      advancedInstances: advanced,
+      changed,
+      state: this.state
     });
   }
 
   consumeTemporalEvents(events = []) {
-    if (!Array.isArray(events) || !events.length || !this.clip) {
-      return Object.freeze({ handled: 0, changed: false, result: null });
-    }
-    const relevant = events.filter(event =>
-      event?.type === FRAME_EVENT &&
-      event?.payload?.runtimeId === this.runtimeId &&
-      event?.payload?.playbackId === this.clip.playbackId
-    );
-    if (!relevant.length) {
-      return Object.freeze({ handled: 0, changed: false, result: null });
+    if (!Array.isArray(events) || !events.length || !this.instances.size) {
+      return Object.freeze({
+        handled: 0,
+        changed: false,
+        instanceCount: 0,
+        result: null
+      });
     }
 
-    for (const event of relevant) {
-      const segment = this.clip.segments.find(
-        entry => entry.id === event.payload.segmentId
-      );
-      if (!segment) continue;
-      const frame = normalizeUnitFrameList(
-        event.payload.frame,
-        segment.targets
-      );
-      segment.currentFrame = frame;
-      segment.lastAppliedSignature = event.payload.signature ??
-        frameSignature(frame);
-      segment.lastEvaluationTime = Number(event.payload.t);
+    const grouped = new Map();
+    let handled = 0;
+    for (const event of events) {
+      if (event?.type !== FRAME_EVENT ||
+          event?.payload?.runtimeId !== this.runtimeId) {
+        continue;
+      }
+      const instance = this.instances.get(event.payload.playbackId);
+      if (!instance) continue;
+      let list = grouped.get(instance.instanceId);
+      if (!list) grouped.set(instance.instanceId, list = []);
+      list.push(event);
+      handled += 1;
+    }
+    if (!handled) {
+      return Object.freeze({
+        handled: 0,
+        changed: false,
+        instanceCount: 0,
+        result: null
+      });
     }
 
-    const combined = Object.freeze(
-      this.clip.segments.flatMap(segment => segment.currentFrame)
-    );
-    const startedAt = this.now();
-    const result = this.surface.applyAnimationFrame(
-      this.clip.targets,
-      combined
-    );
-    this.#recordSurfaceResult(result, startedAt);
+    let changed = false;
+    const results = [];
+    for (const [instanceId, relevant] of grouped) {
+      const instance = this.instances.get(instanceId);
+      if (!instance) continue;
+      for (const event of relevant) {
+        const segment = instance.segments.find(
+          entry => entry.id === event.payload.segmentId
+        );
+        if (!segment) continue;
+        const frame = normalizeUnitFrameList(
+          event.payload.frame,
+          segment.targets
+        );
+        segment.currentFrame = frame;
+        segment.lastAppliedSignature = event.payload.signature ??
+          frameSignature(frame);
+        segment.lastEvaluationTime = Number(event.payload.t);
+      }
+
+      const combined = Object.freeze(
+        instance.segments.flatMap(segment => segment.currentFrame)
+      );
+      const startedAt = this.now();
+      const result = this.surface.applyAnimationFrame(
+        instance.targets,
+        combined,
+        { overlayId: instance.overlayId }
+      );
+      this.#recordSurfaceResult(result, startedAt);
+      changed = changed || surfaceChanged(result);
+      results.push(Object.freeze({ instanceId, result }));
+    }
+
     return Object.freeze({
-      handled: relevant.length,
-      changed: surfaceChanged(result),
-      result
+      handled,
+      changed,
+      instanceCount: results.length,
+      result: results.length === 1 ? results[0].result : Object.freeze(results)
     });
   }
 
   status() {
-    const clip = this.clip;
-    const currentTime = clip
-      ? currentClipTime(clip, this.timeDomains, this.timeSource)
-      : 0;
-    this.timelineTime = currentTime;
-    this.timelineTick = Math.floor(currentTime / this.stepSeconds);
+    const instances = [...this.instances.values()]
+      .sort((left, right) => left.createdOrder - right.createdOrder)
+      .map(instance => this.#describeInstance(instance));
+    const active = this.#activeInstance();
     return Object.freeze({
       version: TEMPORAL_ANIMATION_RUNTIME_VERSION,
       state: this.state,
-      waiting: clip ? temporalWaiting(clip, this.temporalRuntime) : null,
-      frameDemandActive: clip
-        ? clip.operationIds.some(id =>
-            this.temporalRuntime.describe(id).enabled
-          )
-        : false,
-      clip: clip ? Object.freeze({
-        id: clip.id,
-        playbackId: clip.playbackId,
-        targetCount: clip.targetIds.length,
-        unitCount: clip.targets.units.length,
-        objectCount: clip.objectCount,
-        targetMode: clip.targetMode,
-        segmentCount: clip.segments.length,
-        operationIds: Object.freeze([...clip.operationIds]),
-        domains: Object.freeze(clip.segments.map(segment => Object.freeze({
-          segmentId: segment.id,
-          parentDomainId: segment.timeDomainId,
-          privateDomainId: segment.privateDomainId
-        })))
-      }) : null,
+      activeInstanceId: active?.instanceId ?? null,
+      waiting: active
+        ? temporalWaiting(active, this.temporalRuntime)
+        : null,
+      frameDemandActive: [...this.instances.values()].some(instance =>
+        instance.operationIds.some(id =>
+          this.temporalRuntime.describe(id).enabled
+        )
+      ),
+      clip: active ? this.#describeInstance(active) : null,
+      instanceCount: instances.length,
+      instances: Object.freeze(instances),
       time: Object.freeze({
-        tick: this.timelineTick,
-        simulationTime: round(this.timelineTime),
+        tick: active?.timelineTick ?? 0,
+        simulationTime: round(active?.timelineTime ?? 0),
         stepSeconds: this.stepSeconds
       }),
       statistics: Object.freeze({ ...this.statistics }),
@@ -410,15 +512,16 @@ export class TemporalAnimationRuntime {
   dispose() {
     if (this.disposed) return false;
     try {
-      if (this.state !== "idle") this.stop("disposed");
+      this.stopAll("disposed");
     } finally {
       this.disposed = true;
     }
     return true;
   }
 
-  #evaluateSegment(segment, context) {
-    if (!this.clip || this.state !== "playing") {
+  #evaluateSegment(instance, segment, context) {
+    if (!this.instances.has(instance.instanceId) ||
+        instance.state !== "playing") {
       return EvolutionResult.identity();
     }
     const t = finiteTime(context.t);
@@ -435,8 +538,8 @@ export class TemporalAnimationRuntime {
     }));
     const resolved = resolveAnimationEvaluation(evaluated);
     segment.lastEvaluationTime = t;
-    this.timelineTime = t;
-    this.timelineTick = tick;
+    instance.timelineTime = t;
+    instance.timelineTick = tick;
     this.statistics.steps += 1;
     this.statistics.frames += 1;
 
@@ -462,7 +565,8 @@ export class TemporalAnimationRuntime {
         type: FRAME_EVENT,
         payload: Object.freeze({
           runtimeId: this.runtimeId,
-          playbackId: this.clip.playbackId,
+          playbackId: instance.playbackId,
+          overlayId: instance.overlayId,
           segmentId: segment.id,
           t,
           dt,
@@ -489,15 +593,113 @@ export class TemporalAnimationRuntime {
     this.statistics.lastError = null;
   }
 
-  #removeTemporalRegistrations(clip) {
-    for (const operationId of [...clip.operationIds].reverse()) {
+  #stopInstance(instance, reason) {
+    if (!instance || !this.instances.has(instance.instanceId)) return false;
+    this.#removeTemporalRegistrations(instance);
+    let restoreError = null;
+    try {
+      this.surface.restoreAnimationTargets(instance.targets, {
+        overlayId: instance.overlayId
+      });
+    } catch (error) {
+      restoreError = error;
+    }
+    this.instances.delete(instance.instanceId);
+    this.statistics.stops += 1;
+    this.statistics.lastStopReason = String(reason);
+    if (this.activeInstanceId === instance.instanceId) {
+      this.#selectNewestActiveInstance();
+    }
+    if (restoreError) {
+      this.statistics.lastError = errorRecord(restoreError);
+      throw restoreError;
+    }
+    return true;
+  }
+
+  #removeTemporalRegistrations(instance) {
+    for (const operationId of [...instance.operationIds].reverse()) {
       try { this.temporalRuntime.unregister(operationId); } catch {}
     }
-    for (const domainId of [...clip.domainIds].reverse()) {
+    for (const domainId of [...instance.domainIds].reverse()) {
       try { this.timeDomains.delete(domainId); } catch {}
     }
-    clip.operationIds.length = 0;
-    clip.domainIds.length = 0;
+    instance.operationIds.length = 0;
+    instance.domainIds.length = 0;
+  }
+
+  #describeInstance(instance) {
+    const currentTime = currentInstanceTime(instance, this.timeDomains);
+    instance.timelineTime = currentTime;
+    instance.timelineTick = Math.floor(currentTime / this.stepSeconds);
+    return Object.freeze({
+      id: instance.id,
+      instanceId: instance.instanceId,
+      playbackId: instance.playbackId,
+      overlayId: instance.overlayId,
+      state: instance.state,
+      targetCount: instance.targetIds.length,
+      targetIds: Object.freeze([...instance.targetIds]),
+      objectCount: instance.objectCount,
+      objectIds: Object.freeze([...instance.objectIds]),
+      unitCount: instance.targets.units.length,
+      targetMode: instance.targetMode,
+      segmentCount: instance.segments.length,
+      operationIds: Object.freeze([...instance.operationIds]),
+      domains: Object.freeze(instance.segments.map(segment => Object.freeze({
+        segmentId: segment.id,
+        parentDomainId: segment.timeDomainId,
+        privateDomainId: segment.privateDomainId
+      }))),
+      time: Object.freeze({
+        tick: instance.timelineTick,
+        simulationTime: round(instance.timelineTime)
+      })
+    });
+  }
+
+  #selectedInstances(selector) {
+    if (this.instances.size === 0) return [];
+    if (selector === null || selector === undefined) {
+      const active = this.#activeInstance();
+      return active ? [active] : [];
+    }
+    if (selector === "all" || selector?.all === true) {
+      return [...this.instances.values()];
+    }
+    if (typeof selector === "string") {
+      const instance = this.instances.get(selector);
+      return instance ? [instance] : [];
+    }
+    if (selector?.instanceId) {
+      const instance = this.instances.get(String(selector.instanceId));
+      return instance ? [instance] : [];
+    }
+    if (Array.isArray(selector?.targetIds)) {
+      const targets = new Set(normalizeTargetIds(selector.targetIds));
+      return [...this.instances.values()].filter(instance =>
+        setsIntersect(instance.objectIdSet, targets) ||
+        instance.targetIds.some(id => targets.has(id))
+      );
+    }
+    throw new TypeError("Seletor de animação inválido.");
+  }
+
+  #activeInstance() {
+    return this.instances.get(this.activeInstanceId) ?? null;
+  }
+
+  #selectNewestActiveInstance() {
+    const newest = [...this.instances.values()]
+      .sort((left, right) => right.createdOrder - left.createdOrder)[0] ?? null;
+    this.activeInstanceId = newest?.instanceId ?? null;
+  }
+
+  #instanceForOperation(operationId) {
+    const id = String(operationId ?? "");
+    return [...this.instances.values()].find(instance =>
+      instance.operationIds.includes(id)
+    ) ?? null;
   }
 
   #assertActive() {
@@ -571,7 +773,10 @@ function subsetTargets(targets, targetIds) {
       `Nenhuma unidade renderizável corresponde a ${targetIds.join(", ")}.`
     );
   }
-  return Object.freeze({ units: Object.freeze(units) });
+  return Object.freeze({
+    overlayId: targets.overlayId ?? null,
+    units: Object.freeze(units)
+  });
 }
 
 function identityUnitFrame(targets) {
@@ -652,13 +857,13 @@ function frameSignature(frame) {
   ]));
 }
 
-function currentClipTime(clip, timeDomains, _timeSource) {
-  const first = clip.segments[0];
+function currentInstanceTime(instance, timeDomains) {
+  const first = instance.segments[0];
   return first ? timeDomains.time(first.privateDomainId) : 0;
 }
 
-function temporalWaiting(clip, runtime) {
-  const states = clip.operationIds.map(id => runtime.describe(id));
+function temporalWaiting(instance, runtime) {
+  const states = instance.operationIds.map(id => runtime.describe(id));
   if (states.every(state => state.state === "ready")) return null;
   return Object.freeze(states.map(state => Object.freeze({
     id: state.id,
@@ -698,11 +903,12 @@ function normalizeTargetMode(value) {
   return mode;
 }
 
-function targetObjectCount(targets) {
-  return targets?.units?.reduce(
-    (total, unit) => total + (unit.objects?.length ?? 0),
-    0
-  ) ?? 0;
+function targetObjectIds(targets) {
+  return [...new Set(
+    targets?.units?.flatMap(unit =>
+      unit.objects?.map(object => String(object.objectId)) ?? []
+    ) ?? []
+  )];
 }
 
 function surfaceChanged(result) {
@@ -736,6 +942,37 @@ function initialStatistics() {
     lastWakeReason: null,
     lastError: null
   };
+}
+
+function aggregateState(instances) {
+  const list = [...instances];
+  if (!list.length) return "idle";
+  if (list.some(instance => instance.state === "playing")) return "playing";
+  return "paused";
+}
+
+function classifySceneChanges(changes) {
+  const list = Array.isArray(changes) ? changes : [];
+  const full = list.some(change =>
+    FULL_SCENE_CHANGE_TYPES.has(String(change?.type ?? ""))
+  );
+  const objectIds = new Set();
+  for (const change of list) {
+    const id = String(change?.objectId ?? change?.object?.id ?? "").trim();
+    if (id) objectIds.add(id);
+  }
+  return Object.freeze({ full, objectIds });
+}
+
+function setsIntersect(left, right) {
+  if (!left?.size || !right?.size) return false;
+  const [small, large] = left.size <= right.size
+    ? [left, right]
+    : [right, left];
+  for (const value of small) {
+    if (large.has(value)) return true;
+  }
+  return false;
 }
 
 function scaledTimelineTime(time, effectiveRate) {

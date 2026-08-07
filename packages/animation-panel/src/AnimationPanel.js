@@ -1,5 +1,5 @@
 export class AnimationPanel {
-  static apiVersion = "animation-panel-v2-temporal";
+  static apiVersion = "animation-panel-v3-independent-instances";
 
   constructor({ root, query, execute, subscribe = null }) {
     if (!root) throw new TypeError("AnimationPanel exige root.");
@@ -23,6 +23,7 @@ export class AnimationPanel {
       "[data-animation-procedure-parameters]"
     );
     this.trackList = required(root, "[data-animation-tracks]");
+    this.instanceList = required(root, "[data-animation-instances]");
     this.status = required(root, "[data-animation-status]");
     this.tracks = [];
     this.listeners = [];
@@ -123,12 +124,39 @@ export class AnimationPanel {
     return result;
   }
 
+  pauseInstance(instanceId) {
+    const result = this.execute("animation.instance.pause", { instanceId });
+    this.refreshStatus(result);
+    return result;
+  }
+
+  resumeInstance(instanceId) {
+    const result = this.execute("animation.instance.resume", { instanceId });
+    this.refreshStatus(result);
+    return result;
+  }
+
+  stopInstance(instanceId) {
+    const result = this.execute("animation.instance.stop", { instanceId });
+    this.refreshStatus(result);
+    return result;
+  }
+
+  stopAll() {
+    const result = this.execute("animation.stop-all");
+    this.refreshStatus(result);
+    return result;
+  }
+
   refreshStatus(snapshot = null) {
     const state = snapshot ?? this.query("animation.status");
     if (!state || typeof state !== "object") return null;
     this.root.dataset.state = state.state;
+    this.#renderInstances(state.instances ?? [], state.activeInstanceId);
     this.status.textContent = JSON.stringify({
       state: state.state,
+      activeInstanceId: state.activeInstanceId ?? null,
+      instanceCount: state.instanceCount ?? state.instances?.length ?? 0,
       time: state.time?.simulationTime ?? 0,
       clip: state.clip,
       preset: state.preset?.id ?? null,
@@ -295,6 +323,65 @@ export class AnimationPanel {
       this.tracks.length === 0;
   }
 
+  #renderInstances(instances, activeInstanceId) {
+    const document = this.root.ownerDocument;
+    if (!instances.length) {
+      const empty = document.createElement("p");
+      empty.className = "ss-animation-empty";
+      empty.textContent = "Nenhuma animação ativa.";
+      this.instanceList.replaceChildren(empty);
+      required(this.root, "[data-animation-stop-all]").disabled = true;
+      return;
+    }
+
+    this.instanceList.replaceChildren(...instances.map(instance => {
+      const row = document.createElement("div");
+      row.className = "ss-animation-instance";
+      row.dataset.state = instance.state;
+      row.dataset.active = String(instance.instanceId === activeInstanceId);
+
+      const description = document.createElement("div");
+      description.className = "ss-animation-instance-description";
+      const title = document.createElement("strong");
+      title.textContent = instance.id;
+      const details = document.createElement("span");
+      const domains = (instance.domains ?? [])
+        .map(domain => domain.parentDomainId)
+        .filter((value, index, list) => list.indexOf(value) === index);
+      details.textContent = `${instance.objectCount ?? 0} objeto(s) · ` +
+        `${domains.join(", ") || "world"} · ${instance.state}`;
+      details.title = (instance.objectIds ?? []).join(", ");
+      description.append(title, details);
+
+      const actions = document.createElement("div");
+      actions.className = "ss-animation-instance-actions";
+      const pause = document.createElement("button");
+      pause.type = "button";
+      pause.textContent = "Pausar";
+      pause.disabled = instance.state !== "playing";
+      pause.addEventListener("click", () =>
+        this.#attempt(() => this.pauseInstance(instance.instanceId))
+      );
+      const resume = document.createElement("button");
+      resume.type = "button";
+      resume.textContent = "Continuar";
+      resume.disabled = instance.state !== "paused";
+      resume.addEventListener("click", () =>
+        this.#attempt(() => this.resumeInstance(instance.instanceId))
+      );
+      const stop = document.createElement("button");
+      stop.type = "button";
+      stop.textContent = "Parar";
+      stop.addEventListener("click", () =>
+        this.#attempt(() => this.stopInstance(instance.instanceId))
+      );
+      actions.append(pause, resume, stop);
+      row.append(description, actions);
+      return row;
+    }));
+    required(this.root, "[data-animation-stop-all]").disabled = false;
+  }
+
   #bind() {
     this.#listen(this.preset, "change", () => this.#renderParameters());
     this.#listen(
@@ -328,7 +415,8 @@ export class AnimationPanel {
     for (const [selector, operation] of [
       ["[data-animation-pause]", () => this.pause()],
       ["[data-animation-resume]", () => this.resume()],
-      ["[data-animation-stop]", () => this.stop()]
+      ["[data-animation-stop]", () => this.stop()],
+      ["[data-animation-stop-all]", () => this.stopAll()]
     ]) {
       this.#listen(required(this.root, selector), "click", () =>
         this.#attempt(operation)

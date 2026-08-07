@@ -13,12 +13,6 @@ import {
   HeterogeneousBatchManager
 } from "./HeterogeneousBatchManager.js?build=20260801-0045a1";
 import {
-  ObjectPickingService
-} from "../../object-picking/src/index.js?build=20260805-0048l1";
-import {
-  ThreeGpuObjectPickingBackend
-} from "./ThreeGpuObjectPickingBackend.js?build=20260805-0048l1";
-import {
   normalizeStrokeBundleDescriptor,
   strokeBundleChunkDescriptor,
   strokeChunkRenderResourcePath
@@ -58,9 +52,9 @@ import {
   selectionOutlineInstance
 } from "./SelectionOutlineBatch.js?build=20260718-0027g";
 import {
-  composeAnimationOverlay,
+  composeAnimationLayer,
   createAnimationTargetSnapshot
-} from "./AnimationTransformOverlay.js?build=20260720-0028d";
+} from "./AnimationTransformOverlay.js?build=20260806-0050c";
 import {
   cameraFrameQuaternion,
   constrainWorldDeltaMatrix,
@@ -75,13 +69,10 @@ import {
   createMeshInfluenceField,
   normalizeMeshDeformationSettings,
   transformLocalPositionsWithInfluenceInto
-} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260804-0048i-audit1";
+} from "../../mesh-editor-core/src/MeshDeformation.js?build=20260727-0036d";
 import {
   normalizeMeshComponentMode
-} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260804-0048i-audit1";
-import {
-  buildGeometricVertexIdentity
-} from "../../mesh-geometric-identity/src/index.js?build=20260804-0048i-audit1";
+} from "../../mesh-editor-core/src/MeshTopologyOperations.js?build=20260727-0036d";
 import {
   normalizeScreenSelectionGesture,
   ScreenSelectionIndex
@@ -89,18 +80,6 @@ import {
 import {
   ToolGestureNavigation
 } from "./ToolGestureNavigation.js?build=20260731-0043x1";
-import {
-  createLocalBoundsScaleHandleSet,
-  proportionalScaleFactor2D,
-  scaleFactorsForAxes,
-  scaleWorldTrsWithoutShear
-} from "./LocalBoundsScale.js?build=20260804-0048b";
-import {
-  VisualCommitHandoff
-} from "./VisualCommitHandoff.js?build=20260804-0048d1";
-import {
-  MeshEditVisibility
-} from "./MeshEditVisibility.js?build=20260804-0048i-audit1";
 import {
   explicitFamilyTransformAt,
   explicitInstanceFamilyEstimatedBytes,
@@ -128,7 +107,6 @@ export class ThreeRegionRenderer {
   #objectVisualListeners = new Set();
   #selectionSnapshot = null;
   #session = null;
-  #visualCommitHandoff = new VisualCommitHandoff();
   #tap = null;
   #lastPointer = null;
   #meshTopologyCache = new WeakMap();
@@ -145,7 +123,6 @@ export class ThreeRegionRenderer {
   #lastState = null;
   #batchManager = null;
   #heterogeneousBatchManager = null;
-  #objectPicking = null;
   #selectedVisualIds = new Set();
   #selectionOutlines = null;
   #interactionMode = "select";
@@ -208,6 +185,9 @@ export class ThreeRegionRenderer {
   #animationAppliedMatrices = new Map();
   #animationAppliedColors = new Map();
   #animationPivotSignature = null;
+  #animationOverlays = new Map();
+  #animationObjectOverlayIds = new Map();
+  #animationOverlaySequence = 0;
   #animationBatchCulling = new Map();
   #animationSurfaceDiagnostics = {
     captures: 0,
@@ -234,10 +214,6 @@ export class ThreeRegionRenderer {
     fullBatchVisits: 0,
     screenObjectsVisited: 0,
     raycastBatchVisits: 0,
-    gpuPickingPasses: 0,
-    gpuPickingFallbacks: 0,
-    gpuPickingLastMs: 0,
-    gpuPickingMaximumMs: 0,
     familyObjects: 0,
     familyInstances: 0,
     familyEstimatedBytes: 0,
@@ -270,7 +246,6 @@ export class ThreeRegionRenderer {
     translationSnap: null,
     rotationSnapDeg: null,
     scaleSnap: null,
-    scaleFromCenter: false,
     gridLock: false,
     showX: true,
     showY: true,
@@ -279,10 +254,7 @@ export class ThreeRegionRenderer {
     vertexSize: 5
   };
   #vertexMarkers = null;
-  #boundsScale = null;
-  #boundsScalePickCycle = null;
   #meshEdit = null;
-  #meshEditVisibility = null;
   #inputDiagnostics = {
     pointerDown: 0,
     pointerUp: 0,
@@ -295,10 +267,7 @@ export class ThreeRegionRenderer {
     objectHits: 0,
     lastObjectId: null,
     lastNdc: null,
-    selectionAction: null,
-    objectPickingSource: null,
-    objectPickingDurationMs: 0,
-    objectPickingFallback: false
+    selectionAction: null
   };
 
   constructor(
@@ -374,11 +343,6 @@ export class ThreeRegionRenderer {
         this.scene.remove(batch.mesh);
         if (batch.materialKey) this.#materialCache.release(batch.materialKey);
       }
-    });
-    this.#meshEditVisibility = new MeshEditVisibility({
-      batchManager: this.#batchManager,
-      heterogeneousBatchManager: this.#heterogeneousBatchManager,
-      markBatchDirty: batchKey => this.#markBatchDirty(batchKey)
     });
 
     this.camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
@@ -482,15 +446,6 @@ export class ThreeRegionRenderer {
 
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
-    this.#objectPicking = new ObjectPickingService({
-      backend: new ThreeGpuObjectPickingBackend({
-        renderer: this.renderer,
-        camera: this.camera,
-        canvas: this.canvas,
-        batchManager: this.#batchManager,
-        heterogeneousBatchManager: this.#heterogeneousBatchManager
-      })
-    });
 
     this.selection.subscribe(snapshot => {
       this.#selectionSnapshot = snapshot;
@@ -544,10 +499,6 @@ export class ThreeRegionRenderer {
         this.#inputDiagnostics.discardedReason = "gesto-multitoque";
         return;
       }
-      if (this.#tryBeginBoundsScale(event)) {
-        this.#tap = null;
-        return;
-      }
       if (
         this.#interactionMode === "select" &&
         this.editorState.areaSelection
@@ -570,19 +521,14 @@ export class ThreeRegionRenderer {
         y: event.clientY,
         type: event.pointerType || "mouse"
       };
-      this.#updateBoundsScale(event);
     }, true);
 
-    canvas.addEventListener("pointercancel", event => {
+    canvas.addEventListener("pointercancel", () => {
       this.#inputDiagnostics.pointerCancel += 1;
       this.#inputDiagnostics.discardedReason = "pointercancel";
       this.#tap = null;
-      this.#finishBoundsScale(event);
     }, true);
-    canvas.addEventListener("pointerup", event => {
-      if (this.#finishBoundsScale(event)) return;
-      this.#selectAt(event);
-    }, true);
+    canvas.addEventListener("pointerup", event => this.#selectAt(event), true);
     addEventListener("resize", () => this.resize());
 
     installRenderInvalidationWrappers(this);
@@ -770,6 +716,11 @@ export class ThreeRegionRenderer {
     snapLine.visible = false;
     snapLine.renderOrder = 1299;
 
+    group.add(mesh, wire, faceOverlay, edgeOverlay, markers, snapMarker, snapLine);
+    this.scene.add(group);
+    this.#batchManager.update(id, new THREE.Matrix4().makeScale(0, 0, 0));
+    this.#flushBatchBounds();
+
     this.#meshEdit = {
       objectId: id,
       descriptor,
@@ -791,7 +742,6 @@ export class ThreeRegionRenderer {
       snap,
       deformation,
       topology: buildMeshTopology(descriptor),
-      geometricIdentity: null,
       influenceField: null,
       influence: new Map(),
       snapMarker,
@@ -808,18 +758,8 @@ export class ThreeRegionRenderer {
       onTransformPreview:
         typeof onTransformPreview === "function" ? onTransformPreview : null,
       onTransformCommit:
-        typeof onTransformCommit === "function" ? onTransformCommit : null,
-      commitPending: false
+        typeof onTransformCommit === "function" ? onTransformCommit : null
     };
-    this.#meshEdit.geometricIdentity = buildGeometricVertexIdentity({
-      positions: descriptor.positions,
-      indices: descriptor.indices ?? [],
-      vertexNeighbors: this.#meshEdit.topology.vertexNeighbors
-    });
-    group.add(mesh, wire, faceOverlay, edgeOverlay, markers, snapMarker, snapLine);
-    this.scene.add(group);
-    this.#setMeshEditSourceVisible(false);
-    this.#flushBatchBounds();
     this.#updateMeshEditMarkerGeometry();
     this.#updateMeshEditEdgeGeometry();
     this.#updateMeshEditFaceOverlay();
@@ -842,11 +782,6 @@ export class ThreeRegionRenderer {
     if (previousGeometry !== nextGeometry) previousGeometry.dispose?.();
     edit.descriptor = descriptor;
     edit.topology = buildMeshTopology(descriptor);
-    edit.geometricIdentity = buildGeometricVertexIdentity({
-      positions: descriptor.positions,
-      indices: descriptor.indices ?? [],
-      vertexNeighbors: edit.topology.vertexNeighbors
-    });
     edit.lastSnapCandidate = null;
     edit.selectedIndices = new Set(
       [...edit.selectedIndices].filter(index => index < descriptor.positions.length)
@@ -856,14 +791,11 @@ export class ThreeRegionRenderer {
         index < meshComponentCount(edit.topology, edit.componentMode)
       )
     );
-    this.#finalizeMeshEditGeometry({
-      recomputeNormals: descriptor.normals.length !== descriptor.positions.length
-    });
+    this.#finalizeMeshEditGeometry();
     this.#updateMeshEditMarkerGeometry();
     this.#updateMeshEditEdgeGeometry();
     this.#updateMeshEditFaceOverlay();
     this.#refreshMeshEditInfluence();
-    this.#configureTransformForEditor();
     this.#rebuildAnchor();
     return this.getMeshEditStatus();
   }
@@ -896,7 +828,6 @@ export class ThreeRegionRenderer {
     this.#refreshMeshEditInfluence();
     this.#updateMeshEditEdgeGeometry();
     this.#updateMeshEditFaceOverlay();
-    this.#configureTransformForEditor();
     this.#rebuildAnchor();
     return this.getMeshEditStatus();
   }
@@ -936,7 +867,6 @@ export class ThreeRegionRenderer {
     edit.lastSnapCandidate = null;
     this.#refreshMeshEditInfluence();
     this.#configureTransformForEditor();
-    this.#updateVertexMarkers();
     return this.getMeshEditStatus();
   }
 
@@ -1009,13 +939,26 @@ export class ThreeRegionRenderer {
     if (!edit) return false;
     if (this.#session?.kind === "mesh") this.#session = null;
     this.transform.detach();
+    this.scene.remove(edit.group);
+    edit.mesh.geometry.dispose?.();
+    edit.mesh.material.dispose?.();
+    edit.wire.material.dispose?.();
+    edit.markers.geometry.dispose?.();
+    edit.markers.material.dispose?.();
+    edit.edgeOverlay.geometry.dispose?.();
+    edit.edgeOverlay.material.dispose?.();
+    edit.faceOverlay.geometry.dispose?.();
+    edit.faceOverlay.material.dispose?.();
+    edit.snapMarker.geometry.dispose?.();
+    edit.snapMarker.material.dispose?.();
+    edit.snapLine.geometry.dispose?.();
+    edit.snapLine.material.dispose?.();
     if (restoreBatch) {
-      this.#setMeshEditSourceVisible(true, edit.objectId);
-    } else {
-      this.#meshEditVisibility.remove(edit.objectId);
+      const proxy = this.#meshes.get(edit.objectId);
+      const matrix = proxy?.userData.canonicalWorldMatrix;
+      if (matrix) this.#batchManager.update(edit.objectId, matrix);
     }
     this.#meshEdit = null;
-    this.#disposeMeshEditVisual(edit);
     this.#flushBatchBounds();
     this.#configureTransformForEditor();
     this.#rebuildAnchor();
@@ -1023,109 +966,11 @@ export class ThreeRegionRenderer {
     return true;
   }
 
-  deferMeshEditCommit() {
-    const edit = this.#meshEdit;
-    if (!edit || edit.commitPending) return false;
-    if (this.#session?.kind === "mesh") this.#session = null;
-    edit.commitPending = true;
-    this.#setMeshEditSourceVisible(false, edit.objectId);
-    this.transform.detach();
-    this.transform.enabled = false;
-    this.transform.getHelper().visible = false;
-    this.orbit.enabled = true;
-    return true;
-  }
-
-  cancelDeferredMeshEditCommit() {
-    const edit = this.#meshEdit;
-    if (!edit?.commitPending) return false;
-    edit.commitPending = false;
-    this.#setMeshEditSourceVisible(false, edit.objectId);
-    this.#configureTransformForEditor();
-    this.#rebuildAnchor();
-    this.#updateSelectionAppearance();
-    return true;
-  }
-
-  getMeshGeometryAudit(objectId = null) {
-    const id = String(
-      objectId ?? this.#meshEdit?.objectId ?? ""
-    ).trim();
-    if (!id) return Object.freeze({ objectId: null });
-    const proxy = this.#meshes.get(id) ?? null;
-    const standardLocation = this.#batchManager.locationOf(id);
-    const standardBatch = standardLocation
-      ? this.#batchManager.getBatch(standardLocation.batchKey)
-      : null;
-    const heterogeneousLocation = this.#heterogeneousBatchManager
-      ?.locationOf?.(id) ?? null;
-    const instanceMatrix = new THREE.Matrix4();
-    if (standardBatch && Number.isInteger(standardLocation?.instanceIndex)) {
-      standardBatch.mesh.getMatrixAt(
-        standardLocation.instanceIndex,
-        instanceMatrix
-      );
-    }
-    const canonical = standardBatch
-      ? Object.freeze({
-          batchKind: "instance",
-          batchKey: standardLocation.batchKey,
-          resourceId: standardLocation.resourceId ?? id,
-          geometryCacheKey:
-            standardBatch.mesh.userData.geometryCacheKey ?? null,
-          materialCacheKey:
-            standardBatch.mesh.userData.materialCacheKey ?? null,
-          matrix: instanceMatrix.toArray(),
-          geometry: geometryAuditSnapshot(standardBatch.geometry),
-          material: materialAuditSnapshot(standardBatch.material)
-        })
-      : heterogeneousLocation
-        ? Object.freeze({
-            batchKind: "heterogeneous",
-            batchKey: heterogeneousLocation.batchKey,
-            resourceId: heterogeneousLocation.resourceId ?? id,
-            geometryCacheKey: proxy?.userData.heterogeneousGeometryKey ?? null,
-            materialCacheKey: proxy?.userData.heterogeneousMaterialKey ?? null,
-            matrix: proxy?.matrix?.toArray?.() ?? null,
-            geometry: null,
-            material: null
-          })
-        : null;
-    const edit = this.#meshEdit?.objectId === id
-      ? Object.freeze({
-          active: true,
-          descriptor: structuredClone(this.#meshEdit.descriptor),
-          geometry: geometryAuditSnapshot(this.#meshEdit.mesh.geometry),
-          material: materialAuditSnapshot(this.#meshEdit.mesh.material),
-          worldMatrix: [...this.#meshEdit.objectWorldMatrix],
-          commitPending: Boolean(this.#meshEdit.commitPending)
-        })
-      : Object.freeze({ active: false });
-    return Object.freeze({
-      objectId: id,
-      proxy: proxy
-        ? Object.freeze({
-            kind: proxy.userData.kind ?? null,
-            batchKey: proxy.userData.batchKey ?? null,
-            heterogeneousBatch: Boolean(proxy.userData.heterogeneousBatch),
-            matrix: proxy.matrix.toArray(),
-            canonicalWorldMatrix:
-              proxy.userData.canonicalWorldMatrix ?? null,
-            localBounds: structuredClone(proxy.userData.localBounds ?? null)
-          })
-        : null,
-      canonical,
-      edit,
-      sourceVisibility: this.#meshEditVisibility.status(id)
-    });
-  }
-
   getMeshEditStatus() {
     const edit = this.#meshEdit;
     if (!edit) return Object.freeze({ active: false });
     return Object.freeze({
       active: true,
-      commitPending: Boolean(edit.commitPending),
       objectId: edit.objectId,
       vertexCount: edit.descriptor.positions.length,
       edgeCount: edit.topology.edgeCount,
@@ -1147,10 +992,6 @@ export class ThreeRegionRenderer {
       }),
       affectedCount: edit.influenceField?.affectedIndices.length ??
         edit.selectedIndices.size,
-      geometricVertexCount: edit.influenceField?.geometricVertexCount ??
-        edit.descriptor.positions.length,
-      renderVertexCount: edit.descriptor.positions.length,
-      sourceVisibility: this.#meshEditVisibility.status(edit.objectId),
       snapCandidate: edit.lastSnapCandidate
         ? Object.freeze({
             type: edit.lastSnapCandidate.type,
@@ -1260,7 +1101,6 @@ export class ThreeRegionRenderer {
       z: patch.z === undefined ? this.#objectTransformAxes.z : Boolean(patch.z)
     };
     this.#configureTransformForEditor();
-    this.#updateVertexMarkers();
     return this.getObjectTransformAxes();
   }
 
@@ -1730,13 +1570,12 @@ export class ThreeRegionRenderer {
   }
 
   setTransformMode(mode) {
-    /*
-     * EditorState publica a mudança sincronicamente. O subscriber deste
-     * renderer já configura TransformControls, navegação, âncora e marcadores.
-     * Repetir essas operações aqui reconstruía o gizmo até três vezes por
-     * troca, com custo proporcional ao tamanho da seleção.
-     */
-    return this.editorState.setToolMode(mode);
+    this.editorState.setPivotEditing(false);
+    this.editorState.setToolMode(mode);
+    this.#interactionMode = mode;
+    if (["translate", "rotate", "scale"].includes(mode)) this.transform.setMode(mode);
+    this.#configureTransformForEditor();
+    this.#rebuildAnchor();
   }
 
   acquireToolGestureNavigation(owner = "interactive-tool") {
@@ -2137,10 +1976,19 @@ export class ThreeRegionRenderer {
   }
 
   captureAnimationTargets(targetIds = [], {
-    targetMode = "selection"
+    targetMode = "selection",
+    overlayId = null
   } = {}) {
-    if (this.#animationTargetIds.size) {
-      throw new Error("Já existe uma sobreposição de animação ativa.");
+    const resolvedOverlayId = String(
+      overlayId ?? `animation-overlay:${++this.#animationOverlaySequence}`
+    ).trim();
+    if (!resolvedOverlayId) {
+      throw new TypeError("Identificador da sobreposição de animação vazio.");
+    }
+    if (this.#animationOverlays.has(resolvedOverlayId)) {
+      throw new Error(
+        `Sobreposição de animação já existente: ${resolvedOverlayId}.`
+      );
     }
     const normalizedTargetIds = [...new Set(
       targetIds.map(value => String(value)).filter(Boolean)
@@ -2159,18 +2007,18 @@ export class ThreeRegionRenderer {
       for (const unitId of unitIds) {
         const members = targetMode === "objects" ? [unitId] : objectIds;
         const objects = members
-        .map(objectId => {
-          const proxy = this.#meshes.get(objectId);
-          if (!proxy || proxy.userData.logicalOnly) return null;
-          return {
-            objectId,
-            baseMatrix: [
-              ...(proxy.userData.canonicalWorldMatrix ??
-                proxy.matrix.toArray())
-            ]
-          };
-        })
-        .filter(Boolean);
+          .map(objectId => {
+            const proxy = this.#meshes.get(objectId);
+            if (!proxy || proxy.userData.logicalOnly) return null;
+            return {
+              objectId,
+              baseMatrix: [
+                ...(proxy.userData.canonicalWorldMatrix ??
+                  proxy.matrix.toArray())
+              ]
+            };
+          })
+          .filter(Boolean);
         if (!objects.length) continue;
         units.push({
           unitId,
@@ -2181,117 +2029,82 @@ export class ThreeRegionRenderer {
       }
     }
 
-    const snapshot = createAnimationTargetSnapshot(units);
-    this.#animationTargetIds = new Set(
+    const baseSnapshot = createAnimationTargetSnapshot(units);
+    const snapshot = Object.freeze({
+      overlayId: resolvedOverlayId,
+      units: baseSnapshot.units
+    });
+    const objectIds = new Set(
       snapshot.units.flatMap(unit =>
         unit.objects.map(object => object.objectId)
       )
     );
-    for (const objectId of this.#animationTargetIds) {
-      const family = this.#familyVisuals.get(String(objectId));
-      const normalBatchKeys = family
-        ? [...family.batchKeys]
-        : [this.#meshes.get(objectId)?.userData.batchKey].filter(Boolean);
-      for (const batchKey of normalBatchKeys) {
-        const storageKey = `instance:${batchKey}`;
-        if (this.#animationBatchCulling.has(storageKey)) continue;
-        const batch = this.#batchManager.getBatch(batchKey);
-        if (!batch) continue;
-        this.#animationBatchCulling.set(
-          storageKey,
-          batch.mesh.frustumCulled
-        );
-        batch.mesh.frustumCulled = false;
-      }
-      const heterogeneousBatchKeys = new Set(
-        this.#heterogeneousBatchManager.resourcesForOwner(objectId)
-          .map(resourceId =>
-            this.#heterogeneousBatchManager.locationOf(resourceId)?.batchKey
-          )
-          .filter(Boolean)
-      );
-      for (const batchKey of heterogeneousBatchKeys) {
-        const storageKey = `heterogeneous:${batchKey}`;
-        if (this.#animationBatchCulling.has(storageKey)) continue;
-        const batch = this.#heterogeneousBatchManager.batches().find(
-          item => item.key === batchKey
-        );
-        if (!batch) continue;
-        this.#animationBatchCulling.set(
-          storageKey,
-          batch.mesh.frustumCulled
-        );
-        batch.mesh.frustumCulled = false;
-      }
+    const overlay = {
+      id: resolvedOverlayId,
+      order: ++this.#animationOverlaySequence,
+      targets: snapshot,
+      objectIds,
+      transforms: new Map(),
+      colors: new Map(),
+      pivots: new Map()
+    };
+    this.#animationOverlays.set(resolvedOverlayId, overlay);
+
+    for (const objectId of objectIds) {
+      let ids = this.#animationObjectOverlayIds.get(objectId);
+      if (!ids) this.#animationObjectOverlayIds.set(objectId, ids = new Set());
+      ids.add(resolvedOverlayId);
+      this.#animationTargetIds.add(objectId);
+      this.#acquireAnimationBatchCulling(objectId);
     }
-    this.#animationAppliedMatrices.clear();
-    for (const unit of snapshot.units) {
-      for (const object of unit.objects) {
-        this.#animationAppliedMatrices.set(
-          object.objectId,
-          Object.freeze([...object.baseMatrix])
-        );
-      }
-    }
-    this.#animationAppliedColors.clear();
-    this.#animationPivotSignature = stableRenderIdentity(
-      snapshot.units.map(unit => ({
-        unitId: unit.unitId,
-        position: unit.pivot
-      }))
-    );
+
     this.#animationSurfaceDiagnostics.captures += 1;
     return snapshot;
   }
 
-  applyAnimationFrame(targets, unitFrames) {
+  applyAnimationFrame(targets, unitFrames, {
+    overlayId = targets?.overlayId
+  } = {}) {
     const startedAt = performance.now();
-    const overlay = composeAnimationOverlay(targets, unitFrames);
+    const id = String(overlayId ?? "").trim();
+    const overlay = this.#animationOverlays.get(id);
+    if (!overlay) {
+      throw new Error(`Sobreposição de animação inexistente: ${id}.`);
+    }
+    const layer = composeAnimationLayer(targets, unitFrames);
+    overlay.transforms = new Map(
+      layer.transforms
+        .filter(entry => overlay.objectIds.has(entry.objectId))
+        .map(entry => [entry.objectId, entry.matrix])
+    );
+    overlay.colors = new Map(
+      layer.colors
+        .filter(entry => overlay.objectIds.has(entry.objectId))
+        .map(entry => [entry.objectId, entry.color])
+    );
+    const activeUnitIds = new Set(
+      overlay.targets.units
+        .filter(unit => unit.objects.some(object =>
+          overlay.objectIds.has(object.objectId)
+        ))
+        .map(unit => unit.unitId)
+    );
+    overlay.pivots = new Map(
+      layer.pivots
+        .filter(entry => activeUnitIds.has(entry.unitId))
+        .map(entry => [entry.unitId, entry.position])
+    );
+
     let matrixWrites = 0;
     let colorWrites = 0;
-
-    for (const transform of overlay.transforms) {
-      if (!this.#animationTargetIds.has(transform.objectId)) {
-        throw new Error(
-          `Objeto fora da sobreposição ativa: ${transform.objectId}.`
-        );
-      }
-      const previousMatrix = this.#animationAppliedMatrices.get(
-        transform.objectId
-      );
-      if (numericArrayEqual(previousMatrix, transform.matrix)) continue;
-      const proxy = this.#meshes.get(transform.objectId);
-      if (!proxy || proxy.userData.logicalOnly) continue;
-      applyProjectedWorldMatrix(proxy, transform.matrix);
-      if (this.#updateBatchMatrix(transform.objectId, proxy)) {
-        matrixWrites += 1;
-      }
-      this.#animationAppliedMatrices.set(
-        transform.objectId,
-        Object.freeze([...transform.matrix])
-      );
+    for (const objectId of overlay.objectIds) {
+      const result = this.#applyAnimationObjectLayers(objectId);
+      matrixWrites += result.matrixWrites;
+      colorWrites += result.colorWrites;
     }
 
-    for (const entry of overlay.colors) {
-      if (!this.#animationTargetIds.has(entry.objectId)) {
-        throw new Error(`Cor fora da sobreposição ativa: ${entry.objectId}.`);
-      }
-      if (this.#animationAppliedColors.get(entry.objectId) === entry.color) {
-        continue;
-      }
-      if (this.#setInstanceColor(entry.objectId, entry.color)) {
-        colorWrites += 1;
-      }
-      this.#animationAppliedColors.set(entry.objectId, entry.color);
-    }
-
-    const pivotSignature = stableRenderIdentity(overlay.pivots);
-    const pivotWrites = pivotSignature === this.#animationPivotSignature ? 0 : 1;
+    const pivotWrites = this.#rebuildAnimationPivotOverrides();
     if (pivotWrites) {
-      this.#animationPivotSignature = pivotSignature;
-      this.#animationPivotOverrides = new Map(
-        overlay.pivots.map(entry => [entry.unitId, [...entry.position]])
-      );
       this.#rebuildAnchor();
       this.#updateSelectionAppearance();
       this.#updateVertexMarkers();
@@ -2308,76 +2121,201 @@ export class ThreeRegionRenderer {
       elapsed
     );
     const changed = matrixWrites > 0 || colorWrites > 0 || pivotWrites > 0;
-    if (changed) this.invalidateRender("animation-frame");
+    if (changed) this.invalidateRender(`animation-frame:${id}`);
     return Object.freeze({
       changed,
+      overlayId: id,
       matrixWrites,
       colorWrites,
       pivotWrites,
-      unitCount: overlay.pivots.length
+      unitCount: layer.pivots.length
     });
   }
 
-  restoreAnimationTargets(targets) {
-    const requested = new Set(
-      targets?.units?.flatMap(unit =>
-        unit.objects.map(object => object.objectId)
-      ) ?? []
-    );
-    let matrixWrites = 0;
-    let restoreError = null;
+  restoreAnimationTargets(targets, {
+    overlayId = targets?.overlayId
+  } = {}) {
+    const id = String(overlayId ?? "").trim();
+    const overlay = this.#animationOverlays.get(id);
+    if (!overlay) {
+      return Object.freeze({
+        changed: false,
+        overlayId: id || null,
+        restored: 0,
+        matrixWrites: 0,
+        colorWrites: 0,
+        pivotWrites: 0
+      });
+    }
 
-    try {
-      for (const objectId of requested) {
-        const proxy = this.#meshes.get(objectId);
-        const canonical = proxy?.userData.canonicalWorldMatrix;
-        if (!proxy || !canonical || proxy.userData.logicalOnly) continue;
-        applyProjectedWorldMatrix(proxy, canonical);
-        if (this.#updateBatchMatrix(objectId, proxy)) matrixWrites += 1;
-        this.#applyObjectInstanceColor(objectId);
+    this.#animationOverlays.delete(id);
+    for (const objectId of overlay.objectIds) {
+      const ids = this.#animationObjectOverlayIds.get(objectId);
+      ids?.delete(id);
+      if (!ids?.size) {
+        this.#animationObjectOverlayIds.delete(objectId);
+        this.#animationTargetIds.delete(objectId);
       }
-    } catch (error) {
-      restoreError = error;
+      this.#releaseAnimationBatchCulling(objectId);
     }
 
-    this.#animationTargetIds.clear();
-    this.#animationPivotOverrides.clear();
-    this.#animationAppliedMatrices.clear();
-    this.#animationAppliedColors.clear();
-    this.#animationPivotSignature = null;
-    for (const [storageKey, frustumCulled] of this.#animationBatchCulling) {
-      const normalizedKey = String(storageKey);
-      const separator = normalizedKey.indexOf(":");
-      const kind = separator >= 0
-        ? normalizedKey.slice(0, separator)
-        : "instance";
-      const batchKey = separator >= 0
-        ? normalizedKey.slice(separator + 1)
-        : normalizedKey;
-      const batch = kind === "heterogeneous"
-        ? this.#heterogeneousBatchManager.batches().find(
-            item => item.key === batchKey
-          )
-        : this.#batchManager.getBatch(batchKey);
-      if (batch) batch.mesh.frustumCulled = frustumCulled;
+    let matrixWrites = 0;
+    let colorWrites = 0;
+    for (const objectId of overlay.objectIds) {
+      const result = this.#applyAnimationObjectLayers(objectId);
+      matrixWrites += result.matrixWrites;
+      colorWrites += result.colorWrites;
     }
-    this.#animationBatchCulling.clear();
+    const pivotWrites = this.#rebuildAnimationPivotOverrides();
     this.#flushBatchBounds();
-    this.#rebuildAnchor();
-    this.#updateSelectionAppearance();
-    this.#updateVertexMarkers();
+    if (pivotWrites || matrixWrites || colorWrites) {
+      this.#rebuildAnchor();
+      this.#updateSelectionAppearance();
+      this.#updateVertexMarkers();
+      this.invalidateRender(`animation-restore:${id}`);
+    }
     this.#animationSurfaceDiagnostics.restores += 1;
-    if (restoreError) throw restoreError;
-    return Object.freeze({ restored: matrixWrites, matrixWrites });
+    return Object.freeze({
+      changed: matrixWrites > 0 || colorWrites > 0 || pivotWrites > 0,
+      overlayId: id,
+      restored: overlay.objectIds.size,
+      matrixWrites,
+      colorWrites,
+      pivotWrites
+    });
   }
 
   getAnimationSurfaceDiagnostics() {
     return Object.freeze({
       ...this.#animationSurfaceDiagnostics,
+      activeOverlays: this.#animationOverlays.size,
       activeObjects: this.#animationTargetIds.size,
       pivotOverrides: this.#animationPivotOverrides.size,
       uncullableBatches: this.#animationBatchCulling.size
     });
+  }
+
+  #applyAnimationObjectLayers(objectId) {
+    const id = String(objectId);
+    const proxy = this.#meshes.get(id);
+    if (!proxy || proxy.userData.logicalOnly) {
+      this.#animationAppliedMatrices.delete(id);
+      this.#animationAppliedColors.delete(id);
+      return Object.freeze({ matrixWrites: 0, colorWrites: 0 });
+    }
+    const canonical = proxy.userData.canonicalWorldMatrix;
+    if (!Array.isArray(canonical) || canonical.length !== 16) {
+      return Object.freeze({ matrixWrites: 0, colorWrites: 0 });
+    }
+
+    const overlayIds = [...(this.#animationObjectOverlayIds.get(id) ?? [])]
+      .map(overlayId => this.#animationOverlays.get(overlayId))
+      .filter(Boolean)
+      .sort((left, right) => left.order - right.order);
+    const effective = new THREE.Matrix4().fromArray(canonical);
+    let color = null;
+    for (const overlay of overlayIds) {
+      const delta = overlay.transforms.get(id);
+      if (delta) {
+        effective.premultiply(new THREE.Matrix4().fromArray(delta));
+      }
+      if (overlay.colors.has(id)) color = overlay.colors.get(id);
+    }
+
+    const matrix = effective.toArray();
+    let matrixWrites = 0;
+    if (!numericArrayEqual(this.#animationAppliedMatrices.get(id), matrix)) {
+      applyProjectedWorldMatrix(proxy, matrix);
+      if (this.#updateBatchMatrix(id, proxy)) matrixWrites = 1;
+      if (overlayIds.length) {
+        this.#animationAppliedMatrices.set(id, Object.freeze([...matrix]));
+      } else {
+        this.#animationAppliedMatrices.delete(id);
+      }
+    }
+
+    let colorWrites = 0;
+    const previousColor = this.#animationAppliedColors.get(id);
+    if (color !== null) {
+      if (previousColor !== color && this.#setInstanceColor(id, color)) {
+        colorWrites = 1;
+      }
+      this.#animationAppliedColors.set(id, color);
+    } else if (previousColor !== undefined) {
+      if (this.#applyObjectInstanceColor(id)) colorWrites = 1;
+      this.#animationAppliedColors.delete(id);
+    }
+    return Object.freeze({ matrixWrites, colorWrites });
+  }
+
+  #rebuildAnimationPivotOverrides() {
+    const pivots = new Map();
+    const overlays = [...this.#animationOverlays.values()]
+      .sort((left, right) => left.order - right.order);
+    for (const overlay of overlays) {
+      for (const [unitId, position] of overlay.pivots) {
+        pivots.set(unitId, [...position]);
+      }
+    }
+    const signature = stableRenderIdentity(
+      [...pivots].map(([unitId, position]) => ({ unitId, position }))
+    );
+    if (signature === this.#animationPivotSignature) return 0;
+    this.#animationPivotSignature = signature;
+    this.#animationPivotOverrides = pivots;
+    return 1;
+  }
+
+  #acquireAnimationBatchCulling(objectId) {
+    for (const [storageKey, batch] of this.#animationBatchesForObject(objectId)) {
+      const existing = this.#animationBatchCulling.get(storageKey);
+      if (existing) {
+        existing.references += 1;
+        continue;
+      }
+      this.#animationBatchCulling.set(storageKey, {
+        references: 1,
+        frustumCulled: batch.mesh.frustumCulled
+      });
+      batch.mesh.frustumCulled = false;
+    }
+  }
+
+  #releaseAnimationBatchCulling(objectId) {
+    for (const [storageKey, batch] of this.#animationBatchesForObject(objectId)) {
+      const entry = this.#animationBatchCulling.get(storageKey);
+      if (!entry) continue;
+      entry.references -= 1;
+      if (entry.references > 0) continue;
+      batch.mesh.frustumCulled = entry.frustumCulled;
+      this.#animationBatchCulling.delete(storageKey);
+    }
+  }
+
+  #animationBatchesForObject(objectId) {
+    const result = [];
+    const family = this.#familyVisuals.get(String(objectId));
+    const normalBatchKeys = family
+      ? [...family.batchKeys]
+      : [this.#meshes.get(objectId)?.userData.batchKey].filter(Boolean);
+    for (const batchKey of normalBatchKeys) {
+      const batch = this.#batchManager.getBatch(batchKey);
+      if (batch) result.push([`instance:${batchKey}`, batch]);
+    }
+    const heterogeneousBatchKeys = new Set(
+      this.#heterogeneousBatchManager.resourcesForOwner(objectId)
+        .map(resourceId =>
+          this.#heterogeneousBatchManager.locationOf(resourceId)?.batchKey
+        )
+        .filter(Boolean)
+    );
+    for (const batchKey of heterogeneousBatchKeys) {
+      const batch = this.#heterogeneousBatchManager.batches().find(
+        item => item.key === batchKey
+      );
+      if (batch) result.push([`heterogeneous:${batchKey}`, batch]);
+    }
+    return result;
   }
 
   getIncrementalDiagnostics() {
@@ -2386,7 +2324,6 @@ export class ThreeRegionRenderer {
       meshes: this.#meshes.size,
       familyBuildQueue: this.#familyBuildQueue.length,
       familyBuildActive: this.#familyBuildHandle !== null,
-      objectPicking: this.#objectPicking?.status() ?? null,
       renderDemand: this.getRenderDemandDiagnostics()
     };
   }
@@ -2551,16 +2488,13 @@ export class ThreeRegionRenderer {
     proxy.userData.size = object.size ? [...object.size] : [0,0,0];
     proxy.userData.canonicalWorldMatrix = [...worldMatrix];
     proxy.userData.appearanceBinding = appearanceBindingForObject(object);
-    const visualWorldMatrix = this.#visualCommitHandoff.has(object.id)
-      ? this.#visualCommitHandoff.project(object.id, worldMatrix)
-      : worldMatrix;
 
     if (
       !this.#session &&
       !this.#animationTargetIds.has(object.id) &&
       !this.#sharedTransformObjectIds.has(object.id)
     ) {
-      applyProjectedWorldMatrix(proxy, visualWorldMatrix);
+      applyProjectedWorldMatrix(proxy,worldMatrix);
     }
 
     if (object.kind === "light") {
@@ -2657,27 +2591,22 @@ export class ThreeRegionRenderer {
 
     this.#applyObjectInstanceColor(object.id);
     if (this.#meshEdit?.objectId === object.id) {
-      if (this.#meshEdit.commitPending) {
-        const edit = this.#meshEdit;
-        this.#setMeshEditSourceVisible(true, edit.objectId);
-        this.#meshEdit = null;
-        this.#disposeMeshEditVisual(edit);
-        this.#configureTransformForEditor();
-      } else {
-        const location = this.#batchManager.locationOf(object.id);
-        const batch = location
-          ? this.#batchManager.getBatch(location.batchKey)
-          : null;
-        if (batch) {
-          const previousMaterial = this.#meshEdit.mesh.material;
-          this.#meshEdit.mesh.material = this.#cloneBatchMaterial(
-            batch,
-            object.id
-          );
-          previousMaterial.dispose?.();
-        }
-        this.#setMeshEditSourceVisible(false);
+      const location = this.#batchManager.locationOf(object.id);
+      const batch = location
+        ? this.#batchManager.getBatch(location.batchKey)
+        : null;
+      if (batch) {
+        const previousMaterial = this.#meshEdit.mesh.material;
+        this.#meshEdit.mesh.material = this.#cloneBatchMaterial(
+          batch,
+          object.id
+        );
+        previousMaterial.dispose?.();
       }
+      this.#batchManager.update(
+        object.id,
+        new THREE.Matrix4().makeScale(0, 0, 0)
+      );
     }
   }
 
@@ -2685,13 +2614,26 @@ export class ThreeRegionRenderer {
     const startedAt = performance.now();
     const proxy = this.#meshes.get(id);
     if (!proxy) return false;
-    this.#visualCommitHandoff.remove(id);
-    this.#meshEditVisibility.remove(id);
-    if (this.#meshEdit?.objectId === id) {
-      const edit = this.#meshEdit;
-      this.#meshEdit = null;
-      this.#disposeMeshEditVisual(edit);
+
+    const overlayIds = [
+      ...(this.#animationObjectOverlayIds.get(id) ?? [])
+    ];
+    for (const overlayId of overlayIds) {
+      const overlay = this.#animationOverlays.get(overlayId);
+      if (!overlay) continue;
+      this.#releaseAnimationBatchCulling(id);
+      overlay.objectIds.delete(id);
+      overlay.transforms.delete(id);
+      overlay.colors.delete(id);
+      for (const unit of overlay.targets.units) {
+        if (unit.objects.some(object => object.objectId === id)) {
+          overlay.pivots.delete(unit.unitId);
+        }
+      }
     }
+    this.#animationObjectOverlayIds.delete(id);
+    this.#animationAppliedMatrices.delete(id);
+    this.#animationAppliedColors.delete(id);
 
     const cameraVisual = Boolean(this.#cameraVisuals.has(id));
     const lightVisual = Boolean(this.#lightVisuals.has(id));
@@ -2705,6 +2647,11 @@ export class ThreeRegionRenderer {
     this.#selectedVisualIds.delete(id);
     this.#animationTargetIds.delete(id);
     this.#animationPivotOverrides.delete(id);
+    if (overlayIds.length && this.#rebuildAnimationPivotOverrides()) {
+      this.#rebuildAnchor();
+      this.#updateSelectionAppearance();
+      this.#updateVertexMarkers();
+    }
     this.#incrementalDiagnostics.objectsDeleted += 1;
     if (cameraVisual || lightVisual) {
       const elapsed = performance.now() - startedAt;
@@ -3271,7 +3218,6 @@ export class ThreeRegionRenderer {
     this.#rebuildAnchor();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
-    this.#visualCommitHandoff.releaseAcknowledged();
     this.invalidateRender("scene-update");
   }
 
@@ -3292,7 +3238,6 @@ export class ThreeRegionRenderer {
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
     this.invalidateRender("scene-update-local");
-    this.#visualCommitHandoff.releaseAcknowledged();
   }
 
   #scheduleHierarchyRefresh(state) {
@@ -3749,7 +3694,7 @@ export class ThreeRegionRenderer {
         const added = this.#batchManager.add({
           objectId: object.id,
           batchKey,
-          matrix: this.#effectiveBatchMatrix(object.id, proxy.matrix),
+          matrix: proxy.matrix,
           descriptor: {
             geometry: geometry.value,
             material: material.value.material,
@@ -3769,7 +3714,7 @@ export class ThreeRegionRenderer {
       this.#batchManager.add({
         objectId: object.id,
         batchKey,
-        matrix: this.#effectiveBatchMatrix(object.id, proxy.matrix),
+        matrix: proxy.matrix,
         descriptor: {
           geometry: batch.geometry,
           material: batch.material,
@@ -3908,10 +3853,10 @@ export class ThreeRegionRenderer {
         proxy.matrixWorld
       ) > 0;
     }
-    return this.#meshEditVisibility.writeOwnerMatrix(
-      objectId,
-      proxy.matrix
-    ) > 0;
+    const location = this.#batchManager.locationOf(objectId);
+    const changed = this.#batchManager.update(objectId, proxy.matrix);
+    if (changed) this.#markBatchDirty(location?.batchKey);
+    return changed;
   }
 
   #worldBoundsForProxy(proxy, target = new THREE.Box3()) {
@@ -3983,21 +3928,7 @@ export class ThreeRegionRenderer {
     this.#interactionMode=mode;
     this.#selectionOperation=this.editorState.selectionOperation??"replace";
 
-    if (this.#boundsScale) {
-      this.transform.enabled = false;
-      this.transform.getHelper().visible = false;
-      this.orbit.enabled = false;
-      return;
-    }
-
     if (this.#meshEdit) {
-      if (this.#meshEdit.commitPending) {
-        this.transform.detach();
-        this.transform.enabled = false;
-        this.transform.getHelper().visible = false;
-        this.orbit.enabled = true;
-        return;
-      }
       const enabled = ["translate", "rotate", "scale"].includes(mode) &&
         this.#meshEdit.selectedIndices.size > 0;
       this.transform.enabled = enabled;
@@ -4040,9 +3971,7 @@ export class ThreeRegionRenderer {
     if (this.#session) return;
 
     if (this.#meshEdit) {
-      if (this.#meshEdit.commitPending ||
-          !this.#meshEdit.selectedIndices.size) return;
-      this.#setMeshEditSourceVisible(false);
+      if (!this.#meshEdit.selectedIndices.size) return;
       this.#meshEdit.onTransformStart?.();
       this.transformAnchor.updateMatrixWorld(true);
       this.#session = {
@@ -4059,8 +3988,7 @@ export class ThreeRegionRenderer {
         workingPositions: this.#meshEdit.descriptor.positions.map(
           point => [...point]
         ),
-        influenceField: this.#snapshotMeshInfluenceField(),
-        scalePivotWorld: this.#boundsScale?.fixedWorld?.toArray() ?? null
+        influenceField: this.#snapshotMeshInfluenceField()
       };
       this.#transformLifecycleDiagnostics.sessionsStarted += 1;
       return;
@@ -4085,7 +4013,6 @@ export class ThreeRegionRenderer {
 
     const objects = new Map();
     const previewObjects = new Map();
-    const previewRoots = new Map();
     for (const member of members) {
       const mesh = this.#meshes.get(member.objectId);
       if (!mesh) continue;
@@ -4099,16 +4026,6 @@ export class ThreeRegionRenderer {
       this.#hierarchy,
       selectedIds
     );
-    for (const rootId of selectedIds) {
-      for (const projectedId of projectedSelectionIdsWithFallback(
-        this.#hierarchy,
-        [rootId]
-      )) {
-        if (!previewRoots.has(projectedId)) {
-          previewRoots.set(projectedId, rootId);
-        }
-      }
-    }
     for (const previewId of previewIds) {
       const previewMesh=this.#meshes.get(previewId);
       if (!previewMesh) continue;
@@ -4128,7 +4045,6 @@ export class ThreeRegionRenderer {
         previewObjects.set(objectId, {
           matrixWorld: snapshot.matrixWorld.clone()
         });
-        previewRoots.set(objectId, objectId);
       }
     }
 
@@ -4146,11 +4062,8 @@ export class ThreeRegionRenderer {
       kind:"selection",
       previewId: createPreviewId(),
       initialAnchor,
-      mode: this.transform.getMode(),
-      scaleAxes: this.#boundsScale?.axes ?? this.#activeScaleAxes(),
       objects,
-      previewObjects,
-      previewRoots
+      previewObjects
     };
     const diagnostics=this.#transformLifecycleDiagnostics;
     diagnostics.sessionsStarted += 1;
@@ -4198,9 +4111,7 @@ export class ThreeRegionRenderer {
         objectWorldMatrix: this.#meshEdit.objectWorldMatrix,
         deltaWorldMatrix: constrainedDelta,
         type: this.#session.mode,
-        pivotWorld: this.#session.mode === "scale"
-          ? this.#session.initialAnchor.position.toArray()
-          : influenceField.pivotWorld,
+        pivotWorld: influenceField.pivotWorld,
         frameQuaternion: this.#meshEdit.frameQuaternion
       });
       if (
@@ -4215,7 +4126,6 @@ export class ThreeRegionRenderer {
         finalize: false,
         changedIndices: influenceField.affectedIndices
       });
-      if (this.#boundsScale) this.#updateVertexMarkers();
       this.#meshEdit.onTransformPreview?.();
       const elapsed = performance.now() - startedAt;
       const diagnostics = this.#transformLifecycleDiagnostics;
@@ -4230,28 +4140,24 @@ export class ThreeRegionRenderer {
       return;
     }
 
-    if (this.#session.mode === "scale") {
-      this.#previewSelectionScaleWithoutShear();
-    } else {
-      const initial = new THREE.Matrix4().compose(
-        this.#session.initialAnchor.position,
-        this.#session.initialAnchor.quaternion,
-        this.#session.initialAnchor.scale
-      );
-      const current = new THREE.Matrix4().compose(
-        this.transformAnchor.position,
-        this.transformAnchor.quaternion,
-        this.transformAnchor.scale
-      );
-      const delta = current.clone().multiply(initial.clone().invert());
+    const initial = new THREE.Matrix4().compose(
+      this.#session.initialAnchor.position,
+      this.#session.initialAnchor.quaternion,
+      this.#session.initialAnchor.scale
+    );
+    const current = new THREE.Matrix4().compose(
+      this.transformAnchor.position,
+      this.transformAnchor.quaternion,
+      this.transformAnchor.scale
+    );
+    const delta = current.clone().multiply(initial.clone().invert());
 
-      for (const [objectId, snapshot] of this.#session.previewObjects) {
-        const mesh = this.#meshes.get(objectId);
-        if (!mesh) continue;
-        const result = delta.clone().multiply(snapshot.matrixWorld);
-        applyProjectedWorldMatrix(mesh,result.toArray());
-        this.#updateBatchMatrix(objectId, mesh);
-      }
+    for (const [objectId, snapshot] of this.#session.previewObjects) {
+      const mesh = this.#meshes.get(objectId);
+      if (!mesh) continue;
+      const result = delta.clone().multiply(snapshot.matrixWorld);
+      applyProjectedWorldMatrix(mesh,result.toArray());
+      this.#updateBatchMatrix(objectId, mesh);
     }
     this.#flushBatchBounds();
     this.#updateSelectionAppearance();
@@ -4268,7 +4174,6 @@ export class ThreeRegionRenderer {
     if (!this.#session) return;
     const startedAt=performance.now();
     const session=this.#session;
-    let selectionHandoff = null;
     this.#session=null;
 
     try {
@@ -4357,8 +4262,7 @@ export class ThreeRegionRenderer {
         }
       }
 
-      selectionHandoff = this.#beginSelectionVisualHandoff(session);
-      const changed = transforms.length > 0 && this.dispatch({
+      const changed=!transforms.length || this.dispatch({
         type: "selection.transform-world",
         selection: this.#selectionSnapshot,
         pivot: {
@@ -4368,11 +4272,7 @@ export class ThreeRegionRenderer {
         transforms
       });
 
-      if (!changed) {
-        this.#visualCommitHandoff.rollbackTransaction(selectionHandoff);
-        selectionHandoff = null;
-        this.#restorePreviewSession(session);
-      }
+      if (!changed) this.#restorePreviewSession(session);
       this.#emitTransformPreview(
         changed ? "end" : "cancel",
         session
@@ -4380,9 +4280,6 @@ export class ThreeRegionRenderer {
       this.#transformLifecycleDiagnostics.commits += 1;
       this.#transformLifecycleDiagnostics.lastError=null;
     } catch (error) {
-      if (selectionHandoff) {
-        this.#visualCommitHandoff.rollbackTransaction(selectionHandoff);
-      }
       this.#restorePreviewSession(session);
       this.#emitTransformPreview("cancel", session);
       const diagnostics=this.#transformLifecycleDiagnostics;
@@ -4399,24 +4296,6 @@ export class ThreeRegionRenderer {
       this.#transformLifecycleDiagnostics.lastCommitMs=
         performance.now()-startedAt;
     }
-  }
-
-  #beginSelectionVisualHandoff(session) {
-    if (session?.kind !== "selection") {
-      return this.#visualCommitHandoff.beginTransaction([]);
-    }
-    const entries = [];
-    for (const [objectId, snapshot] of session.previewObjects) {
-      const proxy = this.#meshes.get(objectId);
-      if (!proxy) continue;
-      proxy.updateMatrixWorld(true);
-      entries.push({
-        objectId,
-        previousWorldMatrix: snapshot.matrixWorld.toArray(),
-        expectedWorldMatrix: proxy.matrixWorld.toArray()
-      });
-    }
-    return this.#visualCommitHandoff.beginTransaction(entries);
   }
 
   #restorePreviewSession(session) {
@@ -4497,10 +4376,7 @@ export class ThreeRegionRenderer {
       const proxy = this.#meshes.get(id);
       const canonical = proxy?.userData.canonicalWorldMatrix;
       if (!proxy || !canonical) continue;
-      const visual = this.#visualCommitHandoff.has(id)
-        ? this.#visualCommitHandoff.project(id, canonical)
-        : canonical;
-      nextTransforms.push({ id, worldMatrix: visual });
+      nextTransforms.push({ id, worldMatrix: canonical });
     }
     this.#applySharedPreviewTransforms(nextTransforms);
   }
@@ -4584,10 +4460,6 @@ export class ThreeRegionRenderer {
 
     const object = this.#objectsById.get(id) ?? null;
     const proxy = this.#meshes.get(id) ?? null;
-    if (proxy && this.#visualCommitHandoff.has(id)) {
-      proxy.updateMatrixWorld(true);
-      return proxy.getWorldPosition(new THREE.Vector3());
-    }
     const defaultPolicy = object && (
       object.kind === "instance-family" ||
       object.kind === "stroke-bundle" ||
@@ -4634,10 +4506,6 @@ export class ThreeRegionRenderer {
     if (this.#session) return;
 
     if (this.#meshEdit) {
-      if (this.#meshEdit.commitPending) {
-        this.transform.detach();
-        return;
-      }
       const pivot = selectedVertexPivotWorld({
         positions: this.#meshEdit.descriptor.positions,
         selectedIndices: this.#meshEdit.selectedIndices,
@@ -4694,366 +4562,7 @@ export class ThreeRegionRenderer {
     this.transform.attach(this.transformAnchor);
   }
 
-  #activeScaleAxes() {
-    return this.#meshEdit
-      ? meshConstraintAxes(this.#meshEdit.constraint)
-      : {
-          x: Boolean(this.#objectTransformAxes.x),
-          y: Boolean(this.#objectTransformAxes.y),
-          z: Boolean(this.#objectTransformAxes.z)
-        };
-  }
-
-  #localBoundsScaleFrame() {
-    if (this.editorState.tool.mode !== "scale") return null;
-    const members = this.#selectionSnapshot?.members ?? [];
-    if (!this.#meshEdit && !members.length) return null;
-
-    const frameOrigin = this.#boundsScale?.fixedWorld?.clone() ??
-      this.transformAnchor.position.clone();
-    const frameQuaternion = this.#boundsScale?.frameQuaternion?.clone() ??
-      this.transformAnchor.quaternion.clone().normalize();
-    const inverseFrame = frameQuaternion.clone().invert();
-    const bounds = new THREE.Box3().makeEmpty();
-
-    if (this.#meshEdit) {
-      const worldMatrix = new THREE.Matrix4().fromArray(
-        this.#meshEdit.objectWorldMatrix
-      );
-      for (const index of this.#meshEdit.selectedIndices) {
-        const point = this.#meshEdit.descriptor.positions[index];
-        if (!point) continue;
-        bounds.expandByPoint(
-          new THREE.Vector3()
-            .fromArray(point)
-            .applyMatrix4(worldMatrix)
-            .sub(frameOrigin)
-            .applyQuaternion(inverseFrame)
-        );
-      }
-    } else {
-      const selectedIds = members.map(member => String(member.objectId));
-      const proxyIds = projectedSelectionIdsWithFallback(
-        this.#hierarchy,
-        selectedIds
-      );
-      for (const objectId of proxyIds) {
-        const proxy = this.#meshes.get(objectId);
-        if (!proxy) continue;
-        const localBounds = proxy.userData.localBounds ?? (() => {
-          const size = proxy.userData.size ?? [1, 1, 1];
-          return {
-            min: size.map(value => -Number(value) * 0.5),
-            max: size.map(value => Number(value) * 0.5)
-          };
-        })();
-        proxy.updateMatrixWorld(true);
-        for (const z of [localBounds.min[2], localBounds.max[2]]) {
-          for (const y of [localBounds.min[1], localBounds.max[1]]) {
-            for (const x of [localBounds.min[0], localBounds.max[0]]) {
-              bounds.expandByPoint(
-                new THREE.Vector3(x, y, z)
-                  .applyMatrix4(proxy.matrixWorld)
-                  .sub(frameOrigin)
-                  .applyQuaternion(inverseFrame)
-              );
-            }
-          }
-        }
-      }
-    }
-
-    if (bounds.isEmpty()) return null;
-    const handleSet = createLocalBoundsScaleHandleSet({
-      min: bounds.min.toArray(),
-      max: bounds.max.toArray(),
-      axes: this.#boundsScale?.axes ?? this.#activeScaleAxes()
-    });
-    if (!handleSet.handles.length) return null;
-
-    const centerWorld = bounds.getCenter(new THREE.Vector3())
-      .applyQuaternion(frameQuaternion)
-      .add(frameOrigin);
-    const handles = handleSet.handles.map(handle => Object.freeze({
-      ...handle,
-      world: new THREE.Vector3()
-        .fromArray(handle.point)
-        .applyQuaternion(frameQuaternion)
-        .add(frameOrigin)
-    }));
-    return Object.freeze({
-      frameOrigin,
-      frameQuaternion,
-      centerWorld,
-      axes: handleSet.axes,
-      handles: Object.freeze(handles)
-    });
-  }
-
-  #tryBeginBoundsScale(event) {
-    if (
-      this.#session ||
-      this.#boundsScale ||
-      this.editorState.pivot.editing ||
-      this.editorState.tool.mode !== "scale" ||
-      event.isPrimary === false ||
-      (event.pointerType === "mouse" && event.button !== 0)
-    ) {
-      return false;
-    }
-    const frame = this.#localBoundsScaleFrame();
-    if (!frame) return false;
-    const rect = this.canvas.getBoundingClientRect();
-    const radius = event.pointerType === "touch" ? 32 : 16;
-    const centerScreen = projectWorldToScreen(
-      frame.centerWorld,
-      this.camera,
-      rect
-    );
-    const useCenter = Boolean(this.#transformConfig.scaleFromCenter) !==
-      Boolean(event.altKey);
-    const candidates = frame.handles
-      .map(handle => {
-        const opposite = frame.handles[handle.oppositeIndex];
-        const screen = projectWorldToScreen(handle.world, this.camera, rect);
-        const oppositeScreen = opposite
-          ? projectWorldToScreen(opposite.world, this.camera, rect)
-          : null;
-        const pivotWorld = useCenter
-          ? frame.centerWorld
-          : opposite?.world;
-        const pivotScreen = useCenter
-          ? centerScreen
-          : oppositeScreen;
-        const outwardWorld = new THREE.Vector3(...handle.signs)
-          .applyQuaternion(frame.frameQuaternion)
-          .normalize();
-        const outwardScreen = projectWorldToScreen(
-          handle.world.clone().add(outwardWorld),
-          this.camera,
-          rect
-        );
-        return {
-          handle,
-          opposite,
-          screen,
-          pivotWorld,
-          pivotScreen,
-          fallbackDirection: [
-            outwardScreen.x - screen.x,
-            outwardScreen.y - screen.y
-          ],
-          distance: Math.hypot(
-            event.clientX - screen.x,
-            event.clientY - screen.y
-          )
-        };
-      })
-      .filter(candidate =>
-        candidate.opposite &&
-        candidate.pivotWorld &&
-        candidate.screen.visible &&
-        candidate.pivotScreen?.visible &&
-        candidate.distance <= radius
-      )
-      .sort((left, right) =>
-        left.distance - right.distance ||
-        left.screen.z - right.screen.z
-      );
-    if (!candidates.length) return false;
-
-    const nearestDistance = candidates[0].distance;
-    const overlapping = candidates.filter(candidate =>
-      candidate.distance <= nearestDistance + 4
-    );
-    const pickKey = overlapping
-      .map(candidate => candidate.handle.index)
-      .join(",");
-    const now = performance.now();
-    const previousPick = this.#boundsScalePickCycle;
-    const samePickCluster = Boolean(
-      previousPick &&
-      previousPick.key === pickKey &&
-      now - previousPick.time <= 1200 &&
-      Math.hypot(
-        event.clientX - previousPick.x,
-        event.clientY - previousPick.y
-      ) <= 10
-    );
-    const pickIndex = samePickCluster
-      ? (previousPick.index + 1) % overlapping.length
-      : 0;
-    const hit = overlapping[pickIndex];
-    this.#boundsScalePickCycle = {
-      key: pickKey,
-      index: pickIndex,
-      x: event.clientX,
-      y: event.clientY,
-      time: now
-    };
-
-    const projectedSpan = Math.max(
-      32,
-      ...frame.handles.map(handle => {
-        const point = projectWorldToScreen(handle.world, this.camera, rect);
-        return Math.hypot(
-          point.x - centerScreen.x,
-          point.y - centerScreen.y
-        );
-      })
-    );
-    this.#boundsScale = {
-      pointerId: event.pointerId,
-      frameQuaternion: frame.frameQuaternion.clone(),
-      axes: frame.axes,
-      fixedWorld: hit.pivotWorld.clone(),
-      fixedScreen: [hit.pivotScreen.x, hit.pivotScreen.y],
-      initialScreen: [hit.screen.x, hit.screen.y],
-      fallbackDirection: hit.fallbackDirection,
-      fallbackLength: projectedSpan,
-      fromCenter: useCenter
-    };
-    this.transformAnchor.position.copy(hit.pivotWorld);
-    this.transformAnchor.quaternion.copy(frame.frameQuaternion);
-    this.transformAnchor.scale.set(1, 1, 1);
-    this.transformAnchor.updateMatrixWorld(true);
-    this.transform.enabled = false;
-    this.transform.getHelper().visible = false;
-    this.orbit.enabled = false;
-    this.canvas.setPointerCapture?.(event.pointerId);
-    try {
-      this.#beginSession();
-    } catch (error) {
-      if (this.canvas.hasPointerCapture?.(event.pointerId)) {
-        this.canvas.releasePointerCapture(event.pointerId);
-      }
-      this.#boundsScale = null;
-      this.#configureTransformForEditor();
-      this.#rebuildAnchor();
-      this.#updateVertexMarkers();
-      throw error;
-    }
-
-    if (!this.#session) {
-      if (this.canvas.hasPointerCapture?.(event.pointerId)) {
-        this.canvas.releasePointerCapture(event.pointerId);
-      }
-      this.#boundsScale = null;
-      this.#configureTransformForEditor();
-      this.#rebuildAnchor();
-      this.#updateVertexMarkers();
-      return false;
-    }
-    this.#inputDiagnostics.gizmoHits += 1;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    return true;
-  }
-
-  #updateBoundsScale(event) {
-    const state = this.#boundsScale;
-    if (!state || state.pointerId !== event.pointerId || !this.#session) {
-      return false;
-    }
-    const factor = proportionalScaleFactor2D({
-      fixed: state.fixedScreen,
-      initial: state.initialScreen,
-      current: [event.clientX, event.clientY],
-      snap: this.#transformConfig.scaleSnap,
-      fallbackDirection: state.fallbackDirection,
-      fallbackLength: state.fallbackLength
-    });
-    this.transformAnchor.scale.fromArray(
-      scaleFactorsForAxes(factor, state.axes)
-    );
-    this.transformAnchor.updateMatrixWorld(true);
-    this.#previewSession();
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    return true;
-  }
-
-  #finishBoundsScale(event) {
-    const state = this.#boundsScale;
-    if (!state || state.pointerId !== event.pointerId) return false;
-    this.#boundsScale = null;
-    if (this.canvas.hasPointerCapture?.(event.pointerId)) {
-      this.canvas.releasePointerCapture(event.pointerId);
-    }
-    if (this.#session) this.#commitSession();
-    this.#configureTransformForEditor();
-    this.#rebuildAnchor();
-    this.#updateVertexMarkers();
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    return true;
-  }
-
-  #previewSelectionScaleWithoutShear() {
-    const session = this.#session;
-    const rawFactors = this.transformAnchor.scale.clone().divide(
-      session.initialAnchor.scale
-    );
-    const axes = session.scaleAxes ?? { x: true, y: true, z: true };
-    const factors = [
-      axes.x ? rawFactors.x : 1,
-      axes.y ? rawFactors.y : 1,
-      axes.z ? rawFactors.z : 1
-    ];
-    const pivotWorld = session.initialAnchor.position.toArray();
-    const frameQuaternion = session.initialAnchor.quaternion.toArray();
-    const rootDeltas = new Map();
-
-    for (const [objectId, snapshot] of session.objects) {
-      const next = new THREE.Matrix4().fromArray(
-        scaleWorldTrsWithoutShear({
-          matrixWorld: snapshot.matrixWorld.toArray(),
-          pivotWorld,
-          frameQuaternion,
-          factors
-        })
-      );
-      rootDeltas.set(
-        objectId,
-        next.clone().multiply(snapshot.matrixWorld.clone().invert())
-      );
-    }
-
-    for (const [objectId, snapshot] of session.previewObjects) {
-      const mesh = this.#meshes.get(objectId);
-      if (!mesh) continue;
-      const rootId = session.previewRoots.get(objectId) ?? objectId;
-      const delta = rootDeltas.get(rootId);
-      if (!delta) continue;
-      const result = delta.clone().multiply(snapshot.matrixWorld);
-      applyProjectedWorldMatrix(mesh, result.toArray());
-      this.#updateBatchMatrix(objectId, mesh);
-    }
-  }
-
   #updateVertexMarkers() {
-    const scaleFrame = this.#localBoundsScaleFrame();
-    if (scaleFrame) {
-      const vertices = scaleFrame.handles.flatMap(handle =>
-        handle.world.toArray()
-      );
-      this.#vertexMarkers.geometry.setAttribute(
-        "position",
-        new THREE.Float32BufferAttribute(vertices, 3)
-      );
-      const attribute =
-        this.#vertexMarkers.geometry.getAttribute("position");
-      attribute.needsUpdate = true;
-      this.#vertexMarkers.geometry.computeBoundingSphere();
-      this.#vertexMarkers.material.size = Math.max(
-        10,
-        this.#transformConfig.vertexSize
-      );
-      this.#vertexMarkers.material.needsUpdate = true;
-      this.#vertexMarkers.visible = true;
-      return;
-    }
-
     if (this.#meshEdit) {
       this.#vertexMarkers.visible = false;
       return;
@@ -5067,9 +4576,11 @@ export class ThreeRegionRenderer {
     }
 
     const bounds = new THREE.Box3().makeEmpty();
+
     for (const member of this.#selectionSnapshot.members) {
       bounds.union(this.#worldBoundsForObjectId(member.objectId));
     }
+
     if (bounds.isEmpty()) {
       this.#vertexMarkers.visible = false;
       return;
@@ -5077,6 +4588,7 @@ export class ThreeRegionRenderer {
 
     const min = bounds.min;
     const max = bounds.max;
+
     const vertices = [
       min.x, min.y, min.z,
       max.x, min.y, min.z,
@@ -5087,16 +4599,17 @@ export class ThreeRegionRenderer {
       min.x, max.y, max.z,
       max.x, max.y, max.z
     ];
+
     this.#vertexMarkers.geometry.setAttribute(
       "position",
       new THREE.Float32BufferAttribute(vertices, 3)
     );
+
     const attribute =
       this.#vertexMarkers.geometry.getAttribute("position");
+
     attribute.needsUpdate = true;
     this.#vertexMarkers.geometry.computeBoundingSphere();
-    this.#vertexMarkers.material.size = this.#transformConfig.vertexSize;
-    this.#vertexMarkers.material.needsUpdate = true;
     this.#vertexMarkers.visible = true;
   }
 
@@ -5144,10 +4657,7 @@ export class ThreeRegionRenderer {
       pivotPosition: this.getSelectionPivotPosition(),
       selection: this.#selectionSnapshot,
       selectionAppearance: this.#selectionOutlines.diagnostics(),
-      lifecycle: Object.freeze({
-        ...structuredClone(this.#transformLifecycleDiagnostics),
-        visualHandoff: this.#visualCommitHandoff.status()
-      })
+      lifecycle:structuredClone(this.#transformLifecycleDiagnostics)
     };
   }
 
@@ -5739,7 +5249,6 @@ export class ThreeRegionRenderer {
       selectedIndices: edit.selectedIndices,
       objectWorldMatrix: edit.objectWorldMatrix,
       frameQuaternion: edit.frameQuaternion,
-      geometricIdentity: edit.geometricIdentity,
       ...edit.deformation
     });
     edit.influenceField = field;
@@ -5775,45 +5284,6 @@ export class ThreeRegionRenderer {
     return this.#meshEdit;
   }
 
-  #effectiveBatchMatrix(objectId, matrix) {
-    return this.#meshEditVisibility.effectiveMatrix(objectId, matrix);
-  }
-
-  #setMeshEditSourceVisible(
-    visible,
-    objectId = this.#meshEdit?.objectId
-  ) {
-    const id = String(objectId ?? "").trim();
-    if (!id) return false;
-    const proxy = this.#meshes.get(id);
-    const canonical = proxy?.userData.canonicalWorldMatrix ?? proxy?.matrix;
-    if (!canonical) return false;
-    return this.#meshEditVisibility.setHidden(
-      id,
-      !visible,
-      canonical
-    ).changed;
-  }
-
-  #disposeMeshEditVisual(edit) {
-    if (!edit) return false;
-    this.scene.remove(edit.group);
-    edit.mesh.geometry.dispose?.();
-    edit.mesh.material.dispose?.();
-    edit.wire.material.dispose?.();
-    edit.markers.geometry.dispose?.();
-    edit.markers.material.dispose?.();
-    edit.edgeOverlay.geometry.dispose?.();
-    edit.edgeOverlay.material.dispose?.();
-    edit.faceOverlay.geometry.dispose?.();
-    edit.faceOverlay.material.dispose?.();
-    edit.snapMarker.geometry.dispose?.();
-    edit.snapMarker.material.dispose?.();
-    edit.snapLine.geometry.dispose?.();
-    edit.snapLine.material.dispose?.();
-    return true;
-  }
-
   #setMeshEditPositions(positions, {
     finalize = true,
     changedIndices = null
@@ -5841,9 +5311,9 @@ export class ThreeRegionRenderer {
     if (finalize) this.#finalizeMeshEditGeometry();
   }
 
-  #finalizeMeshEditGeometry({ recomputeNormals = true } = {}) {
+  #finalizeMeshEditGeometry() {
     const edit = this.#requireMeshEdit();
-    if (recomputeNormals) edit.mesh.geometry.computeVertexNormals();
+    edit.mesh.geometry.computeVertexNormals();
     edit.mesh.geometry.computeBoundingBox();
     edit.mesh.geometry.computeBoundingSphere();
   }
@@ -6175,10 +5645,7 @@ export class ThreeRegionRenderer {
   }
 
   getInputDiagnostics() {
-    return Object.freeze({
-      ...structuredClone(this.#inputDiagnostics),
-      objectPicking: this.#objectPicking?.status() ?? null
-    });
+    return structuredClone(this.#inputDiagnostics);
   }
 
   #selectAt(event) {
@@ -6276,48 +5743,22 @@ export class ThreeRegionRenderer {
       return;
     }
 
-    const now = performance.now();
-    const repeatedOverlapPick = Boolean(
-      this.#overlapCycle.x !== null &&
-      now - this.#overlapCycle.time < 1400 &&
-      Math.hypot(
-        event.clientX - this.#overlapCycle.x,
-        event.clientY - this.#overlapCycle.y
-      ) < 12
-    );
-    const gpuPick = this.#objectPicking.pickAt({
-      clientX: event.clientX,
-      clientY: event.clientY
-    });
-    this.#incrementalDiagnostics.gpuPickingPasses += 1;
-    this.#incrementalDiagnostics.gpuPickingLastMs = gpuPick.durationMs;
-    this.#incrementalDiagnostics.gpuPickingMaximumMs = Math.max(
-      this.#incrementalDiagnostics.gpuPickingMaximumMs,
-      gpuPick.durationMs
-    );
-    this.#inputDiagnostics.objectPickingSource = gpuPick.source;
-    this.#inputDiagnostics.objectPickingDurationMs = Number(
-      gpuPick.durationMs.toFixed(2)
-    );
-    this.#inputDiagnostics.objectPickingFallback = Boolean(
-      gpuPick.fallback || repeatedOverlapPick
-    );
-    // Um pixel sem ID não é prova suficiente de que não existe objeto.
-    // Color management, precisão do framebuffer ou uma representação ainda
-    // não projetada no passe podem produzir um miss falso. O raycast legado
-    // permanece como fallback de correção até o backend GPU estar validado.
-    const requiresRaycastFallback = Boolean(
-      gpuPick.fallback ||
-      !gpuPick.objectId ||
-      repeatedOverlapPick
-    );
-    const geometryHitIds = requiresRaycastFallback
-      ? this.#raycastGeometryHitIds()
-      : [gpuPick.objectId];
-    if (requiresRaycastFallback) {
-      this.#incrementalDiagnostics.gpuPickingFallbacks += 1;
-    }
+    // Atualiza apenas lotes modificados. O Raycaster ordena os
+    // resultados pela distância à câmera, não pelo centro do mundo.
+    this.#flushBatchBounds();
 
+    const selectionBatches = this.#batchManager.batches();
+    const heterogeneousBatches = this.#heterogeneousBatchManager.batches();
+    this.#incrementalDiagnostics.raycastBatchVisits +=
+      selectionBatches.length + heterogeneousBatches.length;
+    const hits = this.raycaster.intersectObjects(
+      selectionBatches.map(batch => batch.mesh),
+      false
+    );
+    const heterogeneousHits = this.raycaster.intersectObjects(
+      heterogeneousBatches.map(batch => batch.mesh),
+      false
+    );
     const cameraHits = this.raycaster.intersectObjects(
       [...this.#cameraVisuals.values()].flatMap(
         visual => [visual.body, visual.lens, visual.lines]
@@ -6331,7 +5772,10 @@ export class ThreeRegionRenderer {
       false
     );
     const hitIds=[...new Set([
-      ...geometryHitIds,
+      ...hits.map(hit => this.#batchManager.objectFromHit(hit)),
+      ...heterogeneousHits.map(hit =>
+        this.#heterogeneousBatchManager.objectFromHit(hit)
+      ),
       ...cameraHits.map(hit => hit.object.userData.cameraObjectId),
       ...lightHits.map(hit => hit.object.userData.lightObjectId),
       ...this.#cameraScreenHitIds(
@@ -6355,30 +5799,6 @@ export class ThreeRegionRenderer {
     const member={kind:"object",regionId:"region-main",objectId};
     const op=this.editorState.multiSelect?"toggle":this.#selectionOperation;
     this.#inputDiagnostics.selectionAction=op;this.#applySelectionMembers([member],op);this.#inputDiagnostics.discardedReason=null;
-  }
-
-  #raycastGeometryHitIds() {
-    // Fallback preciso e caminho de ciclagem entre objetos sobrepostos.
-    // Não é usado no primeiro toque comum.
-    this.#flushBatchBounds();
-    const selectionBatches = this.#batchManager.batches();
-    const heterogeneousBatches = this.#heterogeneousBatchManager.batches();
-    this.#incrementalDiagnostics.raycastBatchVisits +=
-      selectionBatches.length + heterogeneousBatches.length;
-    const hits = this.raycaster.intersectObjects(
-      selectionBatches.map(batch => batch.mesh),
-      false
-    );
-    const heterogeneousHits = this.raycaster.intersectObjects(
-      heterogeneousBatches.map(batch => batch.mesh),
-      false
-    );
-    return [...new Set([
-      ...hits.map(hit => this.#batchManager.objectFromHit(hit)),
-      ...heterogeneousHits.map(hit =>
-        this.#heterogeneousBatchManager.objectFromHit(hit)
-      )
-    ].filter(Boolean))];
   }
 
   #objectScreenSelectionIndex() {
@@ -7399,92 +6819,4 @@ function lightRayGeometry(type) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(lines, 3));
   return geometry;
-}
-
-function geometryAuditSnapshot(geometry) {
-  if (!geometry?.getAttribute) return null;
-  const attributes = {};
-  for (const name of Object.keys(geometry.attributes ?? {}).sort()) {
-    const attribute = geometry.getAttribute(name);
-    attributes[name] = attributeAuditSnapshot(attribute);
-  }
-  const index = geometry.getIndex?.() ?? geometry.index ?? null;
-  return Object.freeze({
-    uuid: geometry.uuid ?? null,
-    type: geometry.type ?? geometry.constructor?.name ?? null,
-    index: attributeAuditSnapshot(index),
-    attributes: Object.freeze(attributes),
-    groups: Object.freeze(structuredClone(geometry.groups ?? [])),
-    drawRange: Object.freeze(structuredClone(geometry.drawRange ?? null)),
-    bounds: Object.freeze({
-      box: geometry.boundingBox
-        ? Object.freeze({
-            min: Object.freeze(geometry.boundingBox.min.toArray()),
-            max: Object.freeze(geometry.boundingBox.max.toArray())
-          })
-        : null,
-      sphere: geometry.boundingSphere
-        ? Object.freeze({
-            center: Object.freeze(geometry.boundingSphere.center.toArray()),
-            radius: Number(geometry.boundingSphere.radius)
-          })
-        : null
-    })
-  });
-}
-
-function attributeAuditSnapshot(attribute) {
-  if (!attribute?.array) return null;
-  return Object.freeze({
-    itemSize: Number(attribute.itemSize ?? 1),
-    normalized: Boolean(attribute.normalized),
-    count: Number(attribute.count ?? attribute.array.length),
-    arrayType: attribute.array.constructor?.name ?? null,
-    values: Object.freeze(Array.from(attribute.array, Number))
-  });
-}
-
-function materialAuditSnapshot(material) {
-  if (!material) return null;
-  return Object.freeze({
-    uuid: material.uuid ?? null,
-    type: material.type ?? material.constructor?.name ?? null,
-    side: Number(material.side),
-    shadowSide: material.shadowSide == null
-      ? null
-      : Number(material.shadowSide),
-    flatShading: Boolean(material.flatShading),
-    vertexColors: Boolean(material.vertexColors),
-    transparent: Boolean(material.transparent),
-    opacity: Number(material.opacity ?? 1),
-    roughness: material.roughness == null ? null : Number(material.roughness),
-    metalness: material.metalness == null ? null : Number(material.metalness),
-    depthTest: material.depthTest !== false,
-    depthWrite: material.depthWrite !== false,
-    map: textureAuditSnapshot(material.map),
-    normalMap: textureAuditSnapshot(material.normalMap),
-    roughnessMap: textureAuditSnapshot(material.roughnessMap),
-    metalnessMap: textureAuditSnapshot(material.metalnessMap)
-  });
-}
-
-function textureAuditSnapshot(texture) {
-  if (!texture) return null;
-  return Object.freeze({
-    uuid: texture.uuid ?? null,
-    name: texture.name ?? null,
-    sourceUuid: texture.source?.uuid ?? null,
-    colorSpace: texture.colorSpace ?? null,
-    flipY: Boolean(texture.flipY),
-    wrapS: Number(texture.wrapS),
-    wrapT: Number(texture.wrapT),
-    magFilter: Number(texture.magFilter),
-    minFilter: Number(texture.minFilter),
-    anisotropy: Number(texture.anisotropy ?? 1),
-    offset: Object.freeze(texture.offset?.toArray?.() ?? [0, 0]),
-    repeat: Object.freeze(texture.repeat?.toArray?.() ?? [1, 1]),
-    center: Object.freeze(texture.center?.toArray?.() ?? [0, 0]),
-    rotation: Number(texture.rotation ?? 0),
-    matrixAutoUpdate: texture.matrixAutoUpdate !== false
-  });
 }

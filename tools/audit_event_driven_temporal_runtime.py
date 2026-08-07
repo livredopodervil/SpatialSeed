@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "20260806-0050b"
+BUILD = "20260806-0050c"
 
 
 def require_file(relative: str) -> str:
@@ -36,7 +36,7 @@ def main() -> int:
         )
 
     index = require_file("apps/web/index.html")
-    require(index, f'./boot.js?build={BUILD}', "boot.js não usa o build 0050b.")
+    require(index, f'./boot.js?build={BUILD}', "boot.js não usa o build 0050c.")
 
     renderer = require_file(
         "packages/renderer-three/src/ThreeRegionRenderer.js"
@@ -68,7 +68,7 @@ def main() -> int:
     )
     require(
         renderer,
-        "numericArrayEqual(previousMatrix, transform.matrix)",
+        "numericArrayEqual(this.#animationAppliedMatrices.get(id), matrix)",
         "Matrizes inalteradas não são filtradas."
     )
     forbid(
@@ -207,7 +207,7 @@ def main() -> int:
 
     bootstrap = require_file("apps/web/bootstrap/createWebRuntime.js")
     for marker in (
-        f'temporal-runtime/src/index.js?build={BUILD}',
+        'temporal-runtime/src/index.js?build=',
         "const timeDomains = new AnalyticTimeDomains()",
         "const temporalRuntime = new TemporalRuntime",
         "new TemporalExecutionController",
@@ -227,7 +227,7 @@ def main() -> int:
     ):
         require(bootstrap, marker, f"Integração web ausente: {marker}")
 
-    print("Auditoria 0050b aprovada: tempo analítico e renderização sob demanda.")
+    print("Auditoria 0050c aprovada: tempo analítico e renderização sob demanda.")
     return 0
 
 

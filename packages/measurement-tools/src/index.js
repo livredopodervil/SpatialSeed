@@ -3,4 +3,4 @@ export {
   formatMeasurementResult,
   measureAngle,
   measureDistance
-} from "./MeasurementController.js?build=20260730-0040e";
+} from "./MeasurementController.js?build=20260806-0050c";

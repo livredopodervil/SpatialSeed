@@ -5,21 +5,7 @@ import {
 
 export function composeAnimationOverlay(targets, unitFrames) {
   validateTargets(targets);
-  if (!Array.isArray(unitFrames)) {
-    throw new TypeError("Quadro de animação deve ser uma lista.");
-  }
-
-  const byUnit = new Map();
-  for (const entry of unitFrames) {
-    const unitId = String(entry?.unitId ?? "").trim();
-    if (!unitId) throw new TypeError("Quadro contém unidade sem id.");
-    if (byUnit.has(unitId)) {
-      throw new Error(`Unidade repetida no quadro: ${unitId}.`);
-    }
-    validateMatrix(entry.matrix);
-    const color = entry.color == null ? null : normalizeColor(entry.color);
-    byUnit.set(unitId, Object.freeze({ matrix: entry.matrix, color }));
-  }
+  const byUnit = normalizeUnitFrames(unitFrames);
 
   const transforms = [];
   const pivots = [];
@@ -47,12 +33,47 @@ export function composeAnimationOverlay(targets, unitFrames) {
     }
   }
 
-  if (byUnit.size !== targets.units.length) {
-    const known = new Set(targets.units.map(unit => unit.unitId));
-    const unknown = [...byUnit.keys()].find(id => !known.has(id));
-    throw new Error(`Unidade desconhecida no quadro: ${unknown}.`);
+  assertKnownUnits(targets, byUnit);
+
+  return Object.freeze({
+    transforms: Object.freeze(transforms),
+    pivots: Object.freeze(pivots),
+    colors: Object.freeze(colors)
+  });
+}
+
+
+export function composeAnimationLayer(targets, unitFrames) {
+  validateTargets(targets);
+  const byUnit = normalizeUnitFrames(unitFrames);
+  const transforms = [];
+  const pivots = [];
+  const colors = [];
+
+  for (const unit of targets.units) {
+    const frame = byUnit.get(unit.unitId);
+    if (!frame) {
+      throw new Error(`Quadro sem transformação para ${unit.unitId}.`);
+    }
+    pivots.push(Object.freeze({
+      unitId: unit.unitId,
+      position: Object.freeze(transformPoint(frame.matrix, unit.pivot))
+    }));
+    for (const object of unit.objects) {
+      transforms.push(Object.freeze({
+        objectId: object.objectId,
+        matrix: frame.matrix
+      }));
+      if (frame.color !== null) {
+        colors.push(Object.freeze({
+          objectId: object.objectId,
+          color: frame.color
+        }));
+      }
+    }
   }
 
+  assertKnownUnits(targets, byUnit);
   return Object.freeze({
     transforms: Object.freeze(transforms),
     pivots: Object.freeze(pivots),
@@ -93,6 +114,36 @@ export function createAnimationTargetSnapshot(units) {
     });
   });
   return Object.freeze({ units: Object.freeze(normalized) });
+}
+
+function normalizeUnitFrames(unitFrames) {
+  if (!Array.isArray(unitFrames)) {
+    throw new TypeError("Quadro de animação deve ser uma lista.");
+  }
+  const byUnit = new Map();
+  for (const entry of unitFrames) {
+    const unitId = String(entry?.unitId ?? "").trim();
+    if (!unitId) throw new TypeError("Quadro contém unidade sem id.");
+    if (byUnit.has(unitId)) {
+      throw new Error(`Unidade repetida no quadro: ${unitId}.`);
+    }
+    validateMatrix(entry.matrix);
+    const matrix = Object.freeze([...entry.matrix]);
+    const color = entry.color == null ? null : normalizeColor(entry.color);
+    byUnit.set(unitId, Object.freeze({ matrix, color }));
+  }
+  return byUnit;
+}
+
+function assertKnownUnits(targets, byUnit) {
+  if (byUnit.size === targets.units.length) return;
+  const known = new Set(targets.units.map(unit => unit.unitId));
+  const unknown = [...byUnit.keys()].find(id => !known.has(id));
+  if (unknown) {
+    throw new Error(`Unidade desconhecida no quadro: ${unknown}.`);
+  }
+  const missing = targets.units.find(unit => !byUnit.has(unit.unitId));
+  throw new Error(`Quadro sem transformação para ${missing?.unitId ?? "unidade"}.`);
 }
 
 function validateTargets(targets) {

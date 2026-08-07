@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static audit for the SpatialSeed 0050b temporal animation bridge."""
+"""Static audit for the SpatialSeed 0050c independent temporal animation overlays."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "20260806-0050b"
+BUILD = "20260806-0050c"
 
 
 def read(relative: str) -> str:
@@ -50,6 +50,8 @@ def main() -> int:
         "idempotent: !segment.timeDependent",
         "surface.applyAnimationFrame",
         "surface.restoreAnimationTargets",
+        "this.instances = new Map()",
+        "sceneChanged(changes = [])",
     ):
         require(runtime, marker, f"Contrato temporal de animação ausente: {marker}")
 
@@ -61,6 +63,8 @@ def main() -> int:
         "timeDomainId",
         "createAnimationEvaluator(track.program)",
         "program.timeDependent",
+        "sharedRuntimeInstanceId",
+        "animation-command-service-v4-independent-instances",
     ):
         require(
             command_service,
@@ -97,6 +101,8 @@ def main() -> int:
         "[data-animation-procedure]",
         'this.execute("animation.procedure"',
         "this.subscribe(snapshot",
+        "[data-animation-instances]",
+        'this.execute("animation.instance.stop"',
     ):
         require(panel, marker, f"Painel de animação incompleto: {marker}")
     forbid(
@@ -110,6 +116,7 @@ def main() -> int:
         "data-animation-time-domain",
         "data-animation-procedure",
         "data-animation-play-procedure",
+        "data-animation-instances",
     ):
         require(html, marker, f"Controle de animação ausente: {marker}")
 
@@ -119,6 +126,8 @@ def main() -> int:
         "animationRuntime.consumeTemporalEvents",
         '"animation.procedure"',
         '"animation.procedures.describe"',
+        '"animation.instance.pause"',
+        '"animation.instance.stop"',
         "new AnimationProcedureService",
         "onError: error => animationRuntime.fault(error)",
         "subscribe: listener => sharedAnimations.subscribe(listener)",
@@ -133,7 +142,7 @@ def main() -> int:
     )
 
     print(
-        "Auditoria 0050b aprovada: animações afins e procedimentos usam o runtime temporal."
+        "Auditoria 0050c aprovada: animações afins e procedimentos usam o runtime temporal."
     )
     return 0
 
