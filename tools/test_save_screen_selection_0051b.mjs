@@ -1,6 +1,6 @@
 import {
   AppearanceRuntime
-} from "../packages/appearance-runtime/src/AppearanceRuntime.js?build=20260807-0051b";
+} from "../packages/appearance-runtime/src/AppearanceRuntime.js?build=20260807-0052a";
 import {
   ProjectService
 } from "../packages/project-files/src/ProjectService.js";
@@ -11,7 +11,7 @@ import {
   ScreenSelectionIndex,
   normalizeScreenSelectionGesture,
   screenSelectionGestureContains
-} from "../packages/renderer-three/src/ScreenSelectionGesture.js?build=20260807-0051b";
+} from "../packages/renderer-three/src/ScreenSelectionGesture.js?build=20260807-0052a";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

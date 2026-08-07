@@ -1,5 +1,5 @@
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260807-0051a";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260807-0052a";
 import {
   ModuleRegistry
 } from "../../../packages/plugin-api/src/index.js?build=20260802-0047b";
@@ -13,8 +13,8 @@ import {
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260807-0051a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0051b";
+} from "../../../packages/region-box/src/index.js?build=20260807-0052a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0052a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260807-0051a";
 import {
   createVirtualResourceTree,
@@ -23,14 +23,18 @@ import {
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260807-0051a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260807-0051a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260807-0051a";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260807-0052a";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260802-0047g";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260807-0052a";
+import {
+  InstanceGraphProjectionCache,
+  instanceGraphDiagnostics
+} from "../../../packages/instance-graph/src/index.js?build=20260807-0052a";
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
 } from "../../../packages/platform-web/src/index.js?build=20260802-0047d";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260807-0051b";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260807-0052a";
 import {
   AppearanceBindingService
 } from "../../../packages/appearance-binding/src/index.js?build=20260730-0041b";
@@ -145,7 +149,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260807-0051a";
+} from "../../../packages/spatial-references/src/index.js?build=20260807-0052a";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -1577,6 +1581,9 @@ export async function createWebRuntime({
   const queries = new RuntimeQueryRegistry();
   queries
     .register("time.status", () => temporalRuntime.status())
+    .register("instance.graph.status", () =>
+      instanceGraphDiagnostics(sandbox.getSnapshot())
+    )
     .register("time.domains", () => timeDomains.list())
     .register("time.domain", ({ id = "world" } = {}) =>
       timeDomains.snapshot(id)
@@ -2375,10 +2382,24 @@ export async function createWebRuntime({
       runtime.benchmark({ iterations })
   );
 
+  const instanceGraphProjection = new InstanceGraphProjectionCache();
+  queries.register(
+    "instance.graph.projection",
+    () => instanceGraphProjection.status()
+  );
   const sceneProjection = new SceneProjectionScheduler({
-    applyIncremental: (state, changes) =>
-      renderer.applyChanges(state, changes),
-    applyFull: state => renderer.update(state),
+    applyIncremental: (state, changes) => {
+      const projection = instanceGraphProjection.update(state, changes);
+      if (projection.full) {
+        renderer.update(projection.scene);
+      } else if (projection.changes.length) {
+        renderer.applyChanges(projection.scene, projection.changes);
+      }
+    },
+    applyFull: state => {
+      const projection = instanceGraphProjection.reset(state);
+      renderer.update(projection.scene);
+    },
     interactionActive: () => Boolean(pathSketch.status().drawing)
   });
   let initialSceneProjected = false;

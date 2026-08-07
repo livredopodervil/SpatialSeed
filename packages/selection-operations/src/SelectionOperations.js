@@ -1,10 +1,12 @@
 import * as THREE from "three";
 import { resolvePlacementFrame } from "../../math-affine/src/index.js";
 import {
-  cloneHierarchySubtrees,
-  hierarchySubtreeIds,
   HierarchyIndex
 } from "../../scene-hierarchy/src/index.js?build=20260807-0051a";
+import {
+  assemblyChildrenForInstance,
+  isInstanceNode
+} from "../../instance-graph/src/index.js?build=20260807-0052a";
 import {
   resolveAffineOperations,
   composeAffineStep,
@@ -436,12 +438,11 @@ export class SelectionOperations {
   }
 
   ungroup() {
-    const state=this.sandbox.getSnapshot();
-    const hierarchy=new HierarchyIndex(state.objects);
-    const selectedIds=this.editor.selection.snapshot().members
-      .map(member => member.objectId);
-    const requestedGroups=selectedIds.filter(id =>
-      hierarchy.node(id).kind === "group"
+    const state = this.sandbox.getSnapshot();
+    const selectedIds = this.editor.selection.snapshot().members
+      .map(member => String(member.objectId));
+    const requestedGroups = selectedIds.filter(id =>
+      this.#objectById(id)?.kind === "group"
     );
 
     if (!requestedGroups.length) {
@@ -453,16 +454,40 @@ export class SelectionOperations {
       };
     }
 
-    const groupIds=[...hierarchy.canonicalizeSelection(requestedGroups)];
-    const promotedIds=groupIds.flatMap(id => [...hierarchy.childrenOf(id)]);
-    const passthroughIds=selectedIds.filter(id =>
-      !groupIds.includes(id) &&
-      !groupIds.some(groupId => hierarchy.ancestorsOf(id).includes(groupId))
-    );
+    const selectedSet = new Set(requestedGroups);
+    const groupIds = requestedGroups.filter(id => {
+      let current = this.sandbox.getRawObject?.(id) ?? this.sandbox.getObject(id);
+      const seen = new Set([id]);
+      while (current?.parentId != null) {
+        const parentId = String(current.parentId);
+        if (selectedSet.has(parentId)) return false;
+        if (seen.has(parentId)) break;
+        seen.add(parentId);
+        current = this.sandbox.getRawObject?.(parentId) ?? this.sandbox.getObject(parentId);
+      }
+      return true;
+    });
+
+    const promotedIdsByGroup = {};
+    const promotedIds = [];
+    const hierarchy = new HierarchyIndex(state.objects);
+    for (const groupId of groupIds) {
+      const raw = this.sandbox.getRawObject?.(groupId) ?? null;
+      if (isInstanceNode(raw)) {
+        const children = assemblyChildrenForInstance(state, groupId);
+        const ids = children.map(() => crypto.randomUUID());
+        promotedIdsByGroup[groupId] = ids;
+        promotedIds.push(...ids);
+      } else if (hierarchy.has(groupId)) {
+        promotedIds.push(...hierarchy.childrenOf(groupId));
+      }
+    }
+    const passthroughIds=selectedIds.filter(id => !groupIds.includes(id));
     const nextSelectionIds=[...new Set([...passthroughIds,...promotedIds])];
     const changed=this.sandbox.dispatch({
       type:"selection.ungroup",
-      groupIds
+      groupIds,
+      promotedIdsByGroup
     });
 
     if (changed) {
@@ -489,37 +514,47 @@ export class SelectionOperations {
       throw new RangeError("A quantidade deve ser inteiro entre 1 e 100000.");
     }
 
-    const sourceObjects = this.#selectedObjects();
-    const cloned=cloneHierarchySubtrees(
-      this.sandbox.getSnapshot().objects,
-      {
-        rootIds:sourceObjects.map(object => object.id),
-        copies,
-        createId:() => crypto.randomUUID(),
-        hasNode:id => Boolean(this.sandbox.getObject(id)),
-        rename:({name,copyIndex}) => copyName(name,copyIndex-1)
+    const sourceObjects = this.#canonicalRootObjects(this.#selectedObjects());
+    const sourceIds = sourceObjects.map(object => String(object.id));
+    const copySpecs = [];
+    const duplicateIds = [];
+    const stagedObjects = [];
+
+    for (let copyIndex = 1; copyIndex <= copies; copyIndex += 1) {
+      for (const source of sourceObjects) {
+        const id = crypto.randomUUID();
+        const spec = {
+          sourceId: String(source.id),
+          id,
+          name: copyName(source.name, copyIndex - 1),
+          parentId: source.parentId ?? null,
+          position: [...(source.position ?? [0, 0, 0])],
+          rotation: [...(source.rotation ?? [0, 0, 0, 1])],
+          scale: [...(source.scale ?? [1, 1, 1])]
+        };
+        copySpecs.push(spec);
+        duplicateIds.push(id);
+        stagedObjects.push(lightweightStageObject(source, spec));
       }
-    );
-    const duplicates=[...cloned.objects];
-    const duplicateIds = [...cloned.duplicatedRootIds];
+    }
     this.#beginPendingPublication({
       kind: "plain",
-      createdIds: duplicates.map(object => object.id),
+      createdIds: duplicateIds,
       selectionIds: duplicateIds,
-      sourceIds: [...cloned.sourceRootIds],
+      sourceIds,
       duplicateIds,
       pivotBefore: this.#selectionPivot(sourceObjects),
-      stagedObjects: duplicates
+      stagedObjects
     });
 
     let changed;
     try {
       changed = this.sandbox.dispatch({
-        type: "selection.duplicate",
+        type: "selection.duplicate-reference",
         source: copies === 1 ? "selection-operations" : "selection-duplicate-many",
-        sourceIds: [...cloned.sourceRootIds],
+        sourceIds,
         copyCount: copies,
-        objects: duplicates
+        copies: copySpecs
       });
     } catch (error) {
       this.#cancelPendingPublication();
@@ -535,9 +570,9 @@ export class SelectionOperations {
       changed: true,
       copyCount: copies,
       sourceCount: sourceObjects.length,
-      createdCount: duplicates.length,
+      createdCount: duplicateIds.length,
       duplicateIds,
-      createdIds:duplicates.map(object => object.id),
+      createdIds: [...duplicateIds],
       repeatDeferred: true,
       publicationPending: Boolean(this.pendingPublication)
     };
@@ -552,93 +587,64 @@ export class SelectionOperations {
       return this.duplicateMany(copies);
     }
 
-    const sourceObjects = this.#selectedObjects();
+    const sourceObjects = this.#canonicalRootObjects(this.#selectedObjects());
     const pivotContext = {
       defaultPivot: this.#effectivePivot(sourceObjects),
       medianPivot: this.#selectionPivot(sourceObjects),
       boundsPivot: this.#boundsPivot(sourceObjects),
       activePosition: [...this.#activeObject().position]
     };
-    const resolved = resolveAffineOperations(
-      operations,
-      pivotContext
-    );
-    const parametric = hasAffineExpressions(
-      resolved.operations
-    );
-
+    const resolved = resolveAffineOperations(operations, pivotContext);
+    const parametric = hasAffineExpressions(resolved.operations);
     const step = parametric
       ? null
-      : composeAffineStep(
-          resolved.operations,
-          pivotContext.defaultPivot
-        );
-
+      : composeAffineStep(resolved.operations, pivotContext.defaultPivot);
     const pivot = [...resolved.pivot.effective];
-    const transformsByRootAndCopy=new Map();
+    const copySpecs = [];
+    const duplicateIds = [];
+    const copiesByIndex = [];
 
-    for (const object of sourceObjects) {
-      const transforms = parametric
-        ? affineProgramCopies(
-            object,
-            copies,
-            resolved.operations,
-            {
-              defaultPivot:
-                pivotContext.defaultPivot
-            }
-          )
-        : affineCopies(object, copies, step);
-
-      for (const transform of transforms) {
-        transformsByRootAndCopy.set(
-          `${transform.index}:${object.id}`,
-          transform
-        );
+    for (let copyIndex = 1; copyIndex <= copies; copyIndex += 1) {
+      const rootIds = [];
+      for (const source of sourceObjects) {
+        const transforms = parametric
+          ? affineProgramCopies(source, copies, resolved.operations, {
+              defaultPivot: pivotContext.defaultPivot
+            })
+          : affineCopies(source, copies, step);
+        const transform = transforms[copyIndex - 1];
+        const id = crypto.randomUUID();
+        copySpecs.push({
+          sourceId: String(source.id),
+          id,
+          name: copyName(source.name, copyIndex - 1),
+          parentId: source.parentId ?? null,
+          position: [...transform.position],
+          rotation: [...transform.rotation],
+          scale: [...transform.scale]
+        });
+        duplicateIds.push(id);
+        rootIds.push(id);
       }
+      copiesByIndex.push(rootIds);
     }
 
-    const cloned=cloneHierarchySubtrees(
-      this.sandbox.getSnapshot().objects,
-      {
-        rootIds:sourceObjects.map(object => object.id),
-        copies,
-        createId:() => crypto.randomUUID(),
-        hasNode:id => Boolean(this.sandbox.getObject(id)),
-        rename:({name,copyIndex}) => copyName(name,copyIndex-1),
-        transformRoot:({clone,sourceId,copyIndex}) => {
-          const transform=transformsByRootAndCopy.get(
-            `${copyIndex}:${sourceId}`
-          );
-          return {
-            ...clone,
-            position:transform.position,
-            rotation:transform.rotation,
-            scale:transform.scale
-          };
-        }
-      }
-    );
-    const duplicates=[...cloned.objects];
-    const duplicateIds = [...cloned.duplicatedRootIds];
-    const frontierIds=[...cloned.copies.at(-1).rootIds];
+    const frontierIds = [...(copiesByIndex.at(-1) ?? [])];
     const repeatHistory = step
       ? {
           explicit: true,
-          sourceIds:
-            sourceObjects.map(object => object.id),
+          sourceIds: sourceObjects.map(object => object.id),
           duplicateIds: frontierIds,
           repeatSourceIds: frontierIds,
           deltaMatrix: step.toArray(),
           matrixSpace: "local",
-          pivot:
-            structuredClone(resolved.pivot),
+          pivot: structuredClone(resolved.pivot),
           pivotBefore: pivot
         }
       : null;
     this.#beginPendingPublication({
       kind: "affine",
-      createdIds: duplicates.map(object => object.id),
+      createdIds: duplicateIds,
       selectionIds: frontierIds,
       repeatHistory,
       repeatCount: 1
@@ -647,19 +653,15 @@ export class SelectionOperations {
     let changed;
     try {
       changed = this.sandbox.dispatch({
-        type: "selection.duplicate",
+        type: "selection.duplicate-reference",
         source: "selection-affine-duplicate",
-        sourceIds: [...cloned.sourceRootIds],
+        sourceIds: sourceObjects.map(object => object.id),
         copyCount: copies,
-        affineOperations:
-          structuredClone(resolved.operations),
-        affinePivot:
-          structuredClone(resolved.pivot),
+        affineOperations: structuredClone(resolved.operations),
+        affinePivot: structuredClone(resolved.pivot),
         affineParametric: parametric,
-        ...(step
-          ? { deltaMatrix: step.toArray() }
-          : {}),
-        objects: duplicates
+        ...(step ? { deltaMatrix: step.toArray() } : {}),
+        copies: copySpecs
       });
     } catch (error) {
       this.#cancelPendingPublication();
@@ -671,23 +673,18 @@ export class SelectionOperations {
       return { changed: false, duplicateIds: [] };
     }
     const publicationPending = Boolean(this.pendingPublication);
-
     return {
       changed: true,
       copyCount: copies,
       sourceCount: sourceObjects.length,
-      createdCount: duplicates.length,
+      createdCount: duplicateIds.length,
       duplicateIds,
-      createdIds:duplicates.map(object => object.id),
+      createdIds: [...duplicateIds],
       selectedIds: frontierIds,
       parametric,
-      ...(step
-        ? { deltaMatrix: step.toArray() }
-        : {}),
-      operations:
-        structuredClone(resolved.operations),
-      pivot:
-        structuredClone(resolved.pivot),
+      ...(step ? { deltaMatrix: step.toArray() } : {}),
+      operations: structuredClone(resolved.operations),
+      pivot: structuredClone(resolved.pivot),
       repeatSupported: !parametric,
       ...(step && !publicationPending
         ? { repeatCommand: this.#repeatCommand() }
@@ -698,11 +695,7 @@ export class SelectionOperations {
 
   repeat(count = 1) {
     const repeats = Number(count);
-    if (
-      !Number.isInteger(repeats) ||
-      repeats < 1 ||
-      repeats > 100000
-    ) {
+    if (!Number.isInteger(repeats) || repeats < 1 || repeats > 100000) {
       throw new RangeError(
         "A quantidade de repetições deve ser inteiro entre 1 e 100000."
       );
@@ -722,37 +715,26 @@ export class SelectionOperations {
           reason: "awaiting-repeat-history"
         };
       }
-      return {
-        changed: false,
-        reason: "no-repeat-history"
-      };
+      return { changed: false, reason: "no-repeat-history" };
     }
 
     let sourceObjects;
-
     try {
       const explicitIds = this.lastDuplicate.explicit
         ? this.lastDuplicate.repeatSourceIds
         : [];
       sourceObjects = explicitIds?.length
         ? this.#objectsByIds(explicitIds)
-        : this.#selectedObjects({
-            fallbackIds: this.lastDuplicate.duplicateIds
-          });
+        : this.#selectedObjects({ fallbackIds: this.lastDuplicate.duplicateIds });
+      sourceObjects = this.#canonicalRootObjects(sourceObjects);
     } catch (error) {
       const message = error?.message ?? "";
-
       if (message.includes("Objeto não encontrado")) {
         this.pendingDuplicate = null;
         this.#setLastDuplicate(null);
         this.editor.selection.clear();
-
-        return {
-          changed: false,
-          reason: "stale-repeat-history"
-        };
+        return { changed: false, reason: "stale-repeat-history" };
       }
-
       throw error;
     }
 
@@ -760,7 +742,6 @@ export class SelectionOperations {
     const delta = new THREE.Matrix4().fromArray(previousHistory.deltaMatrix);
     const deltaPowers = [];
     let accumulated = new THREE.Matrix4().identity();
-
     for (let index = 0; index < repeats; index += 1) {
       accumulated = delta.clone().multiply(accumulated);
       deltaPowers.push(accumulated.clone());
@@ -768,42 +749,43 @@ export class SelectionOperations {
 
     const currentState = this.sandbox.getSnapshot();
     const hierarchy = new HierarchyIndex(currentState.objects);
-    const cloned=cloneHierarchySubtrees(
-      currentState.objects,
-      {
-        rootIds:sourceObjects.map(object => object.id),
-        copies:repeats,
-        createId:() => crypto.randomUUID(),
-        hasNode:id => Boolean(this.sandbox.getObject(id)),
-        rename:({name,copyIndex}) =>
-          repeatCopyName(name,copyIndex,repeats),
-        transformRoot:({clone,source,sourceId,copyIndex}) => {
-          const resultLocal =
-            previousHistory.matrixSpace === "world"
-              ? worldResultToLocal({
-                  resultWorld: deltaPowers[copyIndex-1]
-                    .clone()
-                    .multiply(
-                      new THREE.Matrix4().fromArray(
-                        hierarchy.worldMatrixOf(sourceId)
-                      )
-                    ),
-                  sourceId,
-                  hierarchy
-                })
-              : deltaPowers[copyIndex-1]
-                  .clone()
-                  .multiply(matrixFromObject(source));
-          return {...clone,...decomposeMatrix(resultLocal)};
-        }
+    const copySpecs = [];
+    const duplicateIds = [];
+    const copiesByIndex = [];
+    for (let copyIndex = 1; copyIndex <= repeats; copyIndex += 1) {
+      const rootIds = [];
+      for (const source of sourceObjects) {
+        const resultLocal = previousHistory.matrixSpace === "world"
+          ? worldResultToLocal({
+              resultWorld: deltaPowers[copyIndex - 1]
+                .clone()
+                .multiply(new THREE.Matrix4().fromArray(hierarchy.worldMatrixOf(source.id))),
+              sourceId: source.id,
+              hierarchy
+            })
+          : deltaPowers[copyIndex - 1]
+              .clone()
+              .multiply(matrixFromObject(source));
+        const transform = decomposeMatrix(resultLocal);
+        const id = crypto.randomUUID();
+        copySpecs.push({
+          sourceId: String(source.id),
+          id,
+          name: repeatCopyName(source.name, copyIndex, repeats),
+          parentId: source.parentId ?? null,
+          position: [...transform.position],
+          rotation: [...transform.rotation],
+          scale: [...transform.scale]
+        });
+        duplicateIds.push(id);
+        rootIds.push(id);
       }
-    );
-    const duplicates=[...cloned.objects];
-    const duplicateIds = [...cloned.duplicatedRootIds];
-    const frontierIds=[...cloned.copies.at(-1).rootIds];
+      copiesByIndex.push(rootIds);
+    }
+    const frontierIds = [...(copiesByIndex.at(-1) ?? [])];
     this.#beginPendingPublication({
       kind: "repeat",
-      createdIds: duplicates.map(object => object.id),
+      createdIds: duplicateIds,
       selectionIds: frontierIds,
       repeatHistory: {
         ...previousHistory,
@@ -818,32 +800,30 @@ export class SelectionOperations {
     let changed;
     try {
       changed = this.sandbox.dispatch({
-        type: "selection.duplicate",
+        type: "selection.duplicate-reference",
         source: "selection-repeat",
-        sourceIds: [...cloned.sourceRootIds],
+        sourceIds: sourceObjects.map(object => object.id),
         copyCount: repeats,
         repeatCount: repeats,
         deltaMatrix: [...previousHistory.deltaMatrix],
-        objects: duplicates
+        copies: copySpecs
       });
     } catch (error) {
       this.#cancelPendingPublication();
       throw error;
     }
-
     if (!changed) {
       this.#cancelPendingPublication();
       return { changed: false };
     }
     const publicationPending = Boolean(this.pendingPublication);
-
     return {
       changed: true,
       copyCount: repeats,
       repeatCount: repeats,
-      createdCount: duplicates.length,
+      createdCount: duplicateIds.length,
       duplicateIds,
-      createdIds: duplicates.map(object => object.id),
+      createdIds: [...duplicateIds],
       selectedIds: frontierIds,
       deltaMatrix: [...previousHistory.deltaMatrix],
       ...(publicationPending
@@ -1629,6 +1609,22 @@ export class SelectionOperations {
     }
   }
 
+  #canonicalRootObjects(objects = []) {
+    const selected = new Set(objects.map(object => String(object.id)));
+    return objects.filter(object => {
+      let current = object;
+      const seen = new Set([String(object.id)]);
+      while (current?.parentId != null) {
+        const parentId = String(current.parentId);
+        if (selected.has(parentId)) return false;
+        if (seen.has(parentId)) break;
+        seen.add(parentId);
+        current = this.sandbox.getRawObject?.(parentId) ?? this.sandbox.getObject(parentId);
+      }
+      return true;
+    });
+  }
+
   #selectedObjects({ fallbackIds = [] } = {}) {
     const selectedIds = this.editor.selection.snapshot().members
       .map(member => member.objectId);
@@ -1935,4 +1931,17 @@ function aroundPivot(operation, pivot) {
     .multiply(
       new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z)
     );
+}
+
+function lightweightStageObject(source, spec) {
+  return Object.freeze({
+    id: String(spec.id),
+    name: String(spec.name ?? source.name ?? spec.id),
+    parentId: spec.parentId ?? null,
+    position: Object.freeze([...(spec.position ?? source.position ?? [0, 0, 0])]),
+    rotation: Object.freeze([...(spec.rotation ?? source.rotation ?? [0, 0, 0, 1])]),
+    scale: Object.freeze([...(spec.scale ?? source.scale ?? [1, 1, 1])]),
+    ...(Array.isArray(source.size) ? { size: Object.freeze([...source.size]) } : {}),
+    ...(source.pivot ? { pivot: Object.freeze([...source.pivot]) } : {})
+  });
 }

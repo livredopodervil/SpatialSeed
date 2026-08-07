@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "20260807-0051b"
+BUILD = "20260807-0052a"
 
 
 def read(relative: str) -> str:

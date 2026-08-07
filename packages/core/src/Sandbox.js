@@ -4,6 +4,13 @@ import {
   materializePersistentObjectArray,
   persistentObjectArrayDiagnostics
 } from "./PersistentObjectArray.js?build=20260807-0051a";
+import {
+  emptyInstanceGraph,
+  isInstanceNode,
+  normalizeInstanceGraph,
+  resolveInstanceNode,
+  instanceGraphDiagnostics
+} from "../../instance-graph/src/index.js?build=20260807-0052a";
 
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 
@@ -92,8 +99,12 @@ export class Sandbox {
     }
     return Object.freeze(result);
   }
-  getObject(id) {
+  getRawObject(id) {
     return this.#objectsById.get(String(id)) ?? null;
+  }
+  getObject(id) {
+    const raw = this.getRawObject(id);
+    return raw ? resolveInstanceNode(this.#state, raw) : null;
   }
   getObjects(ids = []) {
     return ids.map(id => this.getObject(id));
@@ -422,6 +433,7 @@ export class Sandbox {
       canRedo: this.canRedo,
       subscriberCount: this.#subscribers.size,
       objectStorage: persistentObjectArrayDiagnostics(this.#state.objects),
+      instanceGraph: instanceGraphDiagnostics(this.#state),
       performance: Object.freeze({ ...this.#performance })
     });
   }
@@ -473,6 +485,7 @@ export class Sandbox {
     return Object.freeze({
       hasObject: id => this.#objectsById.has(String(id)),
       getObject: id => this.#objectsById.get(String(id)) ?? null,
+      getRawObject: id => this.#objectsById.get(String(id)) ?? null,
       getObjectPosition: id => this.getObjectPosition(id),
       getObjectDescendantIds: (ids, options) =>
         this.getObjectDescendantIds(ids, options)
@@ -491,10 +504,24 @@ export class Sandbox {
       return list;
     }
 
-    const createdCount = list.filter(
+    const createdChanges = list.filter(
       change => change.type === "object-created"
-    ).length;
+    );
+    const createdCount = createdChanges.length;
     const createdOffset = after.objects.length - createdCount;
+    const appendOnlyCreates = createdCount > 0
+      && createdOffset >= 0
+      && createdChanges.every((change, index) => {
+        const id = String(change.objectId ?? change.object?.id ?? "");
+        return id && String(after.objects[createdOffset + index]?.id ?? "") === id;
+      });
+    let createdPositionById = null;
+    if (createdCount > 0 && !appendOnlyCreates) {
+      createdPositionById = new Map();
+      for (let index = 0; index < after.objects.length; index += 1) {
+        createdPositionById.set(String(after.objects[index]?.id ?? ""), index);
+      }
+    }
     let createdIndex = 0;
     const materialized = [];
 
@@ -506,10 +533,14 @@ export class Sandbox {
 
       let objectPosition = null;
       if (change.type === "object-created") {
-        const position = createdOffset + createdIndex;
+        const position = appendOnlyCreates
+          ? createdOffset + createdIndex
+          : createdPositionById?.get(id);
         createdIndex += 1;
-        objectPosition = position;
-        object ??= after.objects[position] ?? null;
+        if (Number.isInteger(position)) {
+          objectPosition = position;
+          object ??= after.objects[position] ?? null;
+        }
       } else if (change.type !== "object-deleted" && !object) {
         const position = this.#objectPositionsValid
           ? this.#objectPositions.get(id)
@@ -713,8 +744,15 @@ function normalizeSandboxState(value) {
     : createPersistentObjectArray(
         value.objects.map(object => freezeObjectShell(object))
       );
-  if (objects === value.objects && Object.isFrozen(value)) return value;
-  return Object.freeze({ ...value, objects });
+  const instanceGraph = value.instanceGraph
+    ? normalizeInstanceGraph(value.instanceGraph)
+    : emptyInstanceGraph();
+  if (
+    objects === value.objects &&
+    instanceGraph === value.instanceGraph &&
+    Object.isFrozen(value)
+  ) return value;
+  return Object.freeze({ ...value, objects, instanceGraph });
 }
 
 function freezeObjectShell(value) {
@@ -747,6 +785,7 @@ function cloneStateShell(state) {
 function materializeState(state) {
   return {
     ...state,
+    instanceGraph: cloneExportValue(state.instanceGraph ?? emptyInstanceGraph()),
     objects: materializePersistentObjectArray(state.objects).map(
       cloneObjectForExport
     )

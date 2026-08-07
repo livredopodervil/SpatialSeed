@@ -25,7 +25,7 @@ import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260807-0051a";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260807-0052a";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -95,7 +95,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260807-0051a";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260807-0052a";
 import {
   explicitFamilyTransformAt,
   familyMemberResourcePath,
@@ -121,10 +121,10 @@ import {
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
-} from "../../project-files/src/ProjectValidator.js?build=20260727-0037c";
+} from "../../project-files/src/ProjectValidator.js?build=20260807-0052a";
 import {
   ProjectSerializer
-} from "../../project-files/src/ProjectSerializer.js?build=20260724-0029f";
+} from "../../project-files/src/ProjectSerializer.js?build=20260807-0052a";
 import {
   ProjectService
 } from "../../project-files/src/ProjectService.js?build=20260724-0029f";
@@ -196,7 +196,7 @@ import {
   ScreenSelectionIndex,
   normalizeScreenSelectionGesture,
   screenSelectionGestureContains
-} from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260807-0051b";
+} from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260807-0052a";
 import {
   ToolGestureNavigation
 } from "../../renderer-three/src/ToolGestureNavigation.js?build=20260731-0043x1";

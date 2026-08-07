@@ -1,4 +1,4 @@
-export { SpatialReferenceResolver } from "./SpatialReferenceResolver.js?build=20260802-0047g";
+export { SpatialReferenceResolver } from "./SpatialReferenceResolver.js?build=20260807-0052a";
 export { PathToolService } from "./PathToolService.js?build=20260802-0047g";
 export {
   createPathCurve,

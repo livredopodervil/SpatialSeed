@@ -175,10 +175,15 @@ export class AppearanceRuntime {
     // structured-cloneable, so clone only the ordinary scene shell after
     // removing the collection. Explicit serialization remains O(N), but
     // ordinary reads keep the shared persistent representation intact.
-    const { objects: _objects, ...sceneShell } = source;
+    const {
+      objects: _objects,
+      instanceGraph,
+      ...sceneShell
+    } = source;
 
     return Object.freeze({
       ...structuredClone(sceneShell),
+      ...(instanceGraph ? { instanceGraph } : {}),
       objects: Object.freeze(objects)
     });
   }
@@ -253,7 +258,7 @@ export class AppearanceRuntime {
 }
 
 function isLogicalSceneNode(object) {
-  return ["group", "camera", "light"].includes(object?.kind);
+  return ["group", "camera", "light", "instance"].includes(object?.kind);
 }
 
 function toLegacyMaterial(material, texture) {

@@ -37,7 +37,7 @@ import {
 } from "./ViewerEnvironment.js?build=20260726-0032a";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260801-0045a1";
-import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260807-0051a";
+import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260807-0052a";
 import {
   normalizeCameraProjection,
   normalizeNavigationCamera
@@ -83,7 +83,7 @@ import {
 import {
   normalizeScreenSelectionGesture,
   ScreenSelectionIndex
-} from "./ScreenSelectionGesture.js?build=20260807-0051b";
+} from "./ScreenSelectionGesture.js?build=20260807-0052a";
 import {
   ToolGestureNavigation
 } from "./ToolGestureNavigation.js?build=20260731-0043x1";
@@ -218,6 +218,8 @@ export class ThreeRegionRenderer {
     fullUpdates: 0,
     incrementalUpdates: 0,
     localUpdates: 0,
+    localHierarchyUpdates: 0,
+    localHierarchyObjectsVisited: 0,
     deferredHierarchyBuilds: 0,
     deferredBatchBounds: 0,
     objectsCreated: 0,
@@ -1779,6 +1781,11 @@ export class ThreeRegionRenderer {
       return;
     }
 
+    if (this.#canApplyStableHierarchyChanges(changes)) {
+      this.#applyStableHierarchyChanges(state, changes);
+      return;
+    }
+
     this.#incrementalDiagnostics.hierarchyObjectsVisited += state.objects.length;
     const hierarchy = new HierarchyIndex(state.objects);
     this.#hierarchy = hierarchy;
@@ -1811,6 +1818,48 @@ export class ThreeRegionRenderer {
     }
 
     this.#finishSceneUpdate();
+  }
+
+  #canApplyStableHierarchyChanges(changes) {
+    if (!Array.isArray(changes) || !changes.length) return false;
+    return changes.every(change => {
+      if (!["object-transform", "object-updated"].includes(change?.type)) {
+        return false;
+      }
+      const object = change.object;
+      const id = String(change.objectId ?? object?.id ?? "");
+      if (!id || !object || !this.#hierarchy.has(id)) return false;
+      const parentId = object.parentId == null || object.parentId === ""
+        ? null
+        : String(object.parentId);
+      return this.#hierarchy.parentOf(id) === parentId;
+    });
+  }
+
+  #applyStableHierarchyChanges(state, changes) {
+    this.#incrementalDiagnostics.localHierarchyUpdates += 1;
+    const affected = new Set();
+    for (const change of changes) {
+      const id = String(change.objectId ?? change.object?.id ?? "");
+      const object = change.object;
+      this.#objectsById.set(id, object);
+      this.#hierarchy.updateNode(id, object);
+      affected.add(id);
+      for (const descendantId of this.#hierarchy.descendantsOf(id)) {
+        affected.add(descendantId);
+      }
+    }
+    this.#incrementalDiagnostics.localHierarchyObjectsVisited += affected.size;
+    for (const id of affected) {
+      const rawObject = this.#objectsById.get(id);
+      if (!rawObject) continue;
+      this.#upsertObject(
+        this.#projectObject(rawObject),
+        this.#hierarchy.worldMatrixOf(id)
+      );
+    }
+    this.#incrementalDiagnostics.skippedHierarchyBuilds += 1;
+    this.#finishLocalizedSceneUpdate();
   }
 
   #canApplyRootObjectChanges(changes) {
