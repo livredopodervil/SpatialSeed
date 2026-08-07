@@ -1,16 +1,25 @@
 export {
   INSTANCE_GRAPH_VERSION,
   INSTANCE_NODE_KIND,
+  INSTANCE_OCCURRENCE_ID_PREFIX,
   emptyInstanceGraph,
   normalizeInstanceGraph,
   hasInstanceGraph,
   isInstanceNode,
   instanceDefinition,
   resolveInstanceNode,
+  instanceOccurrenceId,
+  isInstanceOccurrenceId,
+  parseInstanceOccurrenceId,
+  resolveInstanceOccurrence,
+  projectInstanceOccurrenceSubtree,
+  updateInstanceOccurrenceRoot,
+  instanceOccurrenceWorldContext,
   compactHierarchyRoots,
   compactSceneToInstanceGraph,
   duplicateReferenceRoots,
   replaceInstanceObjectDefinition,
+  replaceInstanceOccurrenceObjectDefinition,
   assemblyChildrenForInstance,
   ungroupAssemblyInstance,
   projectInstanceGraphObject,
@@ -21,4 +30,4 @@ export {
   instanceGraphDiagnostics
 } from "./InstanceGraph.js";
 
-export { InstanceGraphProjectionCache } from "./InstanceGraphProjectionCache.js?build=20260807-0052a";
+export { InstanceGraphProjectionCache } from "./InstanceGraphProjectionCache.js?build=20260807-0052b";

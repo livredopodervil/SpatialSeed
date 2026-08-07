@@ -1,6 +1,6 @@
 import {
   ProjectSerializer
-} from "./ProjectSerializer.js?build=20260807-0052a";
+} from "./ProjectSerializer.js?build=20260807-0052b";
 import {
   HierarchyIndex
 } from "../../scene-hierarchy/src/index.js";
@@ -8,7 +8,7 @@ import {
   isInstanceNode,
   normalizeInstanceGraph,
   validateInstanceGraph
-} from "../../instance-graph/src/index.js?build=20260807-0052a";
+} from "../../instance-graph/src/index.js?build=20260807-0052b";
 
 export class ProjectValidator {
   parse(text) {

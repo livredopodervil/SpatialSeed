@@ -20,7 +20,7 @@ def require(rel, needles):
     return source
 
 build = json.loads(text("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260807-0052a":
+if build.get("build") != "20260807-0052b":
     errors.append(f"build incorreto: {build.get('build')!r}")
 
 require("packages/core/src/PersistentObjectArray.js", [

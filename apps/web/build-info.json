@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260807-0052a",
-  "channel": "feature/0052a-instance-graph-dag"
+  "build": "20260807-0052b",
+  "channel": "feature/0052b-occurrence-compat-and-bounds-scale"
 }

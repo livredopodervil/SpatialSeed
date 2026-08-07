@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "20260807-0052a"
+BUILD = "20260807-0052b"
 
 
 def require_file(relative: str) -> str:

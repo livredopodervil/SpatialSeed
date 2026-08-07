@@ -1,11 +1,13 @@
 import {
   composeTransform,
   decomposeTransformStrict,
+  invertAffineMatrix,
   multiplyMatrices
 } from "../../math-affine/src/index.js";
 
 export const INSTANCE_GRAPH_VERSION = "instance-graph-v1";
 export const INSTANCE_NODE_KIND = "instance";
+export const INSTANCE_OCCURRENCE_ID_PREFIX = "@ig/";
 
 const IDENTITY_POSITION = Object.freeze([0, 0, 0]);
 const IDENTITY_ROTATION = Object.freeze([0, 0, 0, 1]);
@@ -374,6 +376,70 @@ export function replaceInstanceObjectDefinition(scene, instanceId, objectPayload
   });
 }
 
+
+/**
+ * Copy-on-write replacement for one projected leaf occurrence. Only the root
+ * instance receives a path override; siblings keep referencing the previous
+ * immutable definition. No descendant is materialized in scene.objects.
+ */
+export function replaceInstanceOccurrenceObjectDefinition(
+  scene,
+  occurrenceId,
+  objectPayload,
+  { prototypeId = null, rootInstance = null } = {}
+) {
+  const occurrence = resolveInstanceOccurrence(scene, occurrenceId, { rootInstance });
+  if (!occurrence) {
+    return Object.freeze({ changed: false, rootInstance: null, graph: normalizeInstanceGraph(scene?.instanceGraph), definitionId: null });
+  }
+  if (occurrence.definition?.type !== "object") {
+    throw new Error(`A ocorrência ${occurrenceId} não referencia uma definição de objeto.`);
+  }
+
+  const graph = normalizeInstanceGraph(scene?.instanceGraph);
+  const definitions = { ...graph.definitions };
+  const nextPrototypeId = String(
+    prototypeId ?? `prototype:${occurrence.rootId}:${occurrence.pathKey}:${Date.now()}`
+  );
+  const payload = deepFreezeObjectShell(objectPayload);
+  const signature = objectDefinitionSignature(
+    { id: occurrenceId, prototypeId: nextPrototypeId },
+    payload
+  );
+  const preferredId = `object:${nextPrototypeId}`;
+  const definitionId = reusableDefinitionId(
+    definitions,
+    preferredId,
+    "object",
+    signature
+  );
+  definitions[definitionId] ??= freezeDefinition({
+    id: definitionId,
+    type: "object",
+    signature,
+    prototypeId: nextPrototypeId,
+    object: payload
+  });
+
+  const nextRoot = updateInstanceOccurrenceRoot(
+    occurrence.rootInstance,
+    occurrence.path,
+    { ref: definitionId }
+  );
+  const nextGraph = Object.freeze({
+    version: INSTANCE_GRAPH_VERSION,
+    definitions: Object.freeze(definitions)
+  });
+  validateInstanceGraph(nextGraph);
+  return Object.freeze({
+    changed: true,
+    rootInstance: nextRoot,
+    graph: nextGraph,
+    definitionId,
+    occurrenceId: String(occurrenceId)
+  });
+}
+
 export function assemblyChildrenForInstance(scene, instanceId) {
   const node = (scene?.objects ?? []).find(object => String(object.id) === String(instanceId));
   if (!isInstanceNode(node)) return Object.freeze([]);
@@ -521,6 +587,240 @@ function projectAssemblyRoot(definition, instance, parentId = null) {
     instancePath: Object.freeze([]),
     definitionId: definition.id,
     projectedInstance: true
+  });
+}
+
+
+export function instanceOccurrenceId(rootId, path = []) {
+  const root = encodeURIComponent(String(rootId ?? ""));
+  const slots = (path ?? []).map(value => encodeURIComponent(String(value)));
+  if (!root || !slots.length) {
+    throw new Error("Ocorrência projetada exige raiz e caminho não vazio.");
+  }
+  return `${INSTANCE_OCCURRENCE_ID_PREFIX}${root}/${slots.join("/")}`;
+}
+
+export function isInstanceOccurrenceId(value) {
+  return String(value ?? "").startsWith(INSTANCE_OCCURRENCE_ID_PREFIX);
+}
+
+export function parseInstanceOccurrenceId(value) {
+  const id = String(value ?? "");
+  if (!isInstanceOccurrenceId(id)) return null;
+  const body = id.slice(INSTANCE_OCCURRENCE_ID_PREFIX.length);
+  const parts = body.split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  try {
+    return Object.freeze({
+      id,
+      rootId: decodeURIComponent(parts[0]),
+      path: Object.freeze(parts.slice(1).map(decodeURIComponent)),
+      pathKey: parts.slice(1).map(decodeURIComponent).join("/")
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolves one projected occurrence without expanding unrelated roots. The
+ * caller may pass rootInstance from an O(1) authoritative index.
+ */
+export function resolveInstanceOccurrence(scene, value, { rootInstance = null } = {}) {
+  const parsed = typeof value === "string"
+    ? parseInstanceOccurrenceId(value)
+    : value;
+  if (!parsed?.rootId || !parsed.path?.length) return null;
+  const graph = normalizeInstanceGraph(scene?.instanceGraph);
+  const root = rootInstance ?? (scene?.objects ?? []).find(
+    object => String(object?.id ?? "") === String(parsed.rootId)
+  );
+  if (!isInstanceNode(root)) return null;
+  let definition = graph.definitions[root.definitionId];
+  if (definition?.type !== "assembly") return null;
+  let parentId = String(root.id);
+  let parentPath = [];
+  let child = null;
+  let childDefinition = null;
+  let transform = null;
+  let rootOverride = null;
+
+  for (let index = 0; index < parsed.path.length; index += 1) {
+    const slotId = String(parsed.path[index]);
+    child = definition.children.find(candidate => String(candidate.slotId) === slotId);
+    if (!child) return null;
+    const childPath = [...parentPath, slotId];
+    const pathKey = childPath.join("/");
+    rootOverride = root.overrides?.[pathKey] ?? null;
+    if (rootOverride?.hidden === true) return null;
+    const ref = String(rootOverride?.ref ?? child.ref);
+    childDefinition = graph.definitions[ref];
+    if (!childDefinition) return null;
+    transform = mergeTransform(child.transform, rootOverride?.transform);
+    const id = instanceOccurrenceId(root.id, childPath);
+    const name = rootOverride?.name ?? child.name ?? child.slotId;
+    const isLast = index === parsed.path.length - 1;
+    if (isLast) {
+      const object = childDefinition.type === "assembly"
+        ? deepFreezeObjectShell({
+            id,
+            kind: "group",
+            name,
+            parentId,
+            position: transform.position,
+            rotation: transform.rotation,
+            scale: transform.scale,
+            pivot: freezeVector(
+              rootOverride?.pivot ?? child.pivot ?? childDefinition.pivot,
+              3,
+              IDENTITY_POSITION
+            ),
+            instanceRootId: String(root.id),
+            instancePath: Object.freeze(childPath),
+            definitionId: childDefinition.id,
+            projectedInstance: true
+          })
+        : projectLeaf(childDefinition, root, {
+            id,
+            parentId,
+            name,
+            transform,
+            rootId: String(root.id),
+            path: childPath,
+            childOverride: mergeSmallObjects(child.overrides, rootOverride?.patch)
+          });
+      return Object.freeze({
+        id,
+        rootId: String(root.id),
+        path: Object.freeze(childPath),
+        pathKey,
+        parentId,
+        parentPath: Object.freeze([...parentPath]),
+        rootInstance: root,
+        definition: childDefinition,
+        parentDefinition: definition,
+        childEdge: child,
+        override: rootOverride,
+        transform,
+        object
+      });
+    }
+    if (childDefinition.type !== "assembly") return null;
+    parentId = id;
+    parentPath = childPath;
+    definition = childDefinition;
+  }
+  return null;
+}
+
+export function projectInstanceOccurrenceSubtree(scene, value, { rootInstance = null } = {}) {
+  const occurrence = resolveInstanceOccurrence(scene, value, { rootInstance });
+  if (!occurrence) return Object.freeze([]);
+  if (occurrence.definition.type !== "assembly") {
+    return Object.freeze([occurrence.object]);
+  }
+  const graph = normalizeInstanceGraph(scene?.instanceGraph);
+  const projected = [occurrence.object];
+  const knownIds = new Set((scene?.objects ?? []).map(candidate => String(candidate.id)));
+  projectAssemblyChildren({
+    graph,
+    definition: occurrence.definition,
+    rootInstance: occurrence.rootInstance,
+    rootId: occurrence.rootId,
+    parentId: occurrence.id,
+    path: [...occurrence.path],
+    projected,
+    knownIds
+  });
+  return Object.freeze(projected);
+}
+
+/** Returns a new lightweight root instance with a single occurrence override changed. */
+export function updateInstanceOccurrenceRoot(rootInstance, path, update = {}) {
+  if (!isInstanceNode(rootInstance)) {
+    throw new TypeError("Override de ocorrência exige uma instância raiz.");
+  }
+  const normalizedPath = (path ?? []).map(String);
+  if (!normalizedPath.length) {
+    throw new Error("Override de ocorrência exige caminho não vazio.");
+  }
+  const pathKey = normalizedPath.join("/");
+  const previous = rootInstance.overrides?.[pathKey] ?? {};
+  const next = { ...previous };
+
+  if ("hidden" in update) {
+    if (update.hidden === null || update.hidden === undefined || update.hidden === false) {
+      delete next.hidden;
+    } else {
+      next.hidden = true;
+    }
+  }
+  if (update.transform) next.transform = freezeTransform(update.transform);
+  if (update.patch) {
+    const merged = mergeSmallObjects(previous.patch, update.patch);
+    if (Object.keys(merged).length) next.patch = deepFreezeSmall(merged);
+    else delete next.patch;
+  }
+  if ("name" in update) {
+    if (update.name === null || update.name === undefined) delete next.name;
+    else next.name = String(update.name);
+  }
+  if ("pivot" in update) {
+    if (update.pivot === null || update.pivot === undefined) delete next.pivot;
+    else next.pivot = freezeVector(update.pivot, 3, IDENTITY_POSITION);
+  }
+  if ("ref" in update) {
+    if (update.ref === null || update.ref === undefined) delete next.ref;
+    else next.ref = String(update.ref);
+  }
+
+  const overrides = { ...(rootInstance.overrides ?? {}) };
+  if (Object.keys(next).length) overrides[pathKey] = deepFreezeSmall(next);
+  else delete overrides[pathKey];
+  return freezeInstanceNode({
+    ...rootInstance,
+    overrides: deepFreezeSmall(overrides)
+  });
+}
+
+/**
+ * Computes the current occurrence world context from a supplied world matrix
+ * of the root's parent. This walks only the instance path.
+ */
+export function instanceOccurrenceWorldContext(
+  scene,
+  value,
+  { rootInstance = null, rootParentWorldMatrix = null } = {}
+) {
+  const occurrence = resolveInstanceOccurrence(scene, value, { rootInstance });
+  if (!occurrence) return null;
+  let world = rootParentWorldMatrix
+    ? [...rootParentWorldMatrix]
+    : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  world = multiplyMatrices(world, composeTransform(transformOf(occurrence.rootInstance)));
+  let definition = normalizeInstanceGraph(scene?.instanceGraph)
+    .definitions[occurrence.rootInstance.definitionId];
+  let path = [];
+  let parentWorld = [...world];
+  for (const slotId of occurrence.path) {
+    const child = definition?.children?.find(candidate => String(candidate.slotId) === String(slotId));
+    if (!child) return null;
+    path = [...path, String(slotId)];
+    const rootOverride = occurrence.rootInstance.overrides?.[path.join("/")] ?? null;
+    const ref = String(rootOverride?.ref ?? child.ref);
+    const childDefinition = normalizeInstanceGraph(scene?.instanceGraph).definitions[ref];
+    const transform = mergeTransform(child.transform, rootOverride?.transform);
+    parentWorld = [...world];
+    world = multiplyMatrices(world, composeTransform(transform));
+    definition = childDefinition;
+  }
+  return Object.freeze({
+    occurrence,
+    parentWorldMatrix: Object.freeze(parentWorld),
+    worldMatrix: Object.freeze(world),
+    localTransform: Object.freeze(decomposeTransformStrict(
+      multiplyMatrices(invertAffineMatrix(parentWorld), world)
+    ))
   });
 }
 
@@ -903,10 +1203,10 @@ function assemblySignature(children, pivot) {
 }
 
 function projectedNodeId(rootId, path, knownIds) {
-  const base = `@ig:${rootId}:${path.map(encodeURIComponent).join('/')}`;
-  let id = base;
-  let suffix = 2;
-  while (knownIds.has(id)) id = `${base}:${suffix++}`;
+  const id = instanceOccurrenceId(rootId, path);
+  if (knownIds.has(id)) {
+    throw new Error(`ID reservado de ocorrência já existe na cena: ${id}.`);
+  }
   knownIds.add(id);
   return id;
 }

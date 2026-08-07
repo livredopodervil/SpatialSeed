@@ -181,6 +181,12 @@ export class ObjectInspector {
       if (!change || typeof change !== "object") return true;
       const id = String(change.objectId ?? change.object?.id ?? "");
       if (!id) return true;
+      const affectedOccurrences = new Set(
+        (change.affectedOccurrenceIds ?? []).map(String)
+      );
+      if ([...affectedOccurrences].some(occurrenceId =>
+        this.targetIds.has(occurrenceId) || selectedIds.has(occurrenceId)
+      )) return true;
       if (this.targetIds.has(id) || selectedIds.has(id)) return true;
       if (this.targetScope !== "renderables") continue;
 

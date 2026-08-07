@@ -18,7 +18,7 @@ def require(path, needle, message):
         errors.append(message)
 
 build = json.loads(read("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260807-0052a":
+if build.get("build") != "20260807-0052b":
     errors.append(f"build incorreto: {build.get('build')!r}")
 
 require("packages/instance-graph/src/InstanceGraph.js", "INSTANCE_GRAPH_VERSION = \"instance-graph-v1\"", "versão do InstanceGraph ausente")

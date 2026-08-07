@@ -1,5 +1,5 @@
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260807-0052a";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260807-0052b";
 import {
   ModuleRegistry
 } from "../../../packages/plugin-api/src/index.js?build=20260802-0047b";
@@ -13,8 +13,8 @@ import {
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260807-0052a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0052a";
+} from "../../../packages/region-box/src/index.js?build=20260807-0052b";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0052b";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260807-0051a";
 import {
   createVirtualResourceTree,
@@ -23,18 +23,18 @@ import {
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260807-0051a";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260807-0051a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260807-0052a";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260807-0052b";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260802-0047g";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260807-0052a";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260807-0052b";
 import {
   InstanceGraphProjectionCache,
   instanceGraphDiagnostics
-} from "../../../packages/instance-graph/src/index.js?build=20260807-0052a";
+} from "../../../packages/instance-graph/src/index.js?build=20260807-0052b";
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
 } from "../../../packages/platform-web/src/index.js?build=20260802-0047d";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260807-0052a";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260807-0052b";
 import {
   AppearanceBindingService
 } from "../../../packages/appearance-binding/src/index.js?build=20260730-0041b";
@@ -149,7 +149,7 @@ import {
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260807-0052a";
+} from "../../../packages/spatial-references/src/index.js?build=20260807-0052b";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -1584,6 +1584,19 @@ export async function createWebRuntime({
     .register("instance.graph.status", () =>
       instanceGraphDiagnostics(sandbox.getSnapshot())
     )
+    .register("instance.occurrence", ({ id } = {}) => {
+      const occurrence = sandbox.getInstanceOccurrence(id);
+      if (!occurrence) return null;
+      return Object.freeze({
+        id: occurrence.id,
+        rootId: occurrence.rootId,
+        path: occurrence.path,
+        pathKey: occurrence.pathKey,
+        definitionId: occurrence.definition?.id ?? null,
+        definitionType: occurrence.definition?.type ?? null,
+        object: occurrence.object
+      });
+    })
     .register("time.domains", () => timeDomains.list())
     .register("time.domain", ({ id = "world" } = {}) =>
       timeDomains.snapshot(id)

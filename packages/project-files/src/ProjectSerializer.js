@@ -1,6 +1,6 @@
 import {
   compactSceneToInstanceGraph
-} from "../../instance-graph/src/index.js?build=20260807-0052a";
+} from "../../instance-graph/src/index.js?build=20260807-0052b";
 export class ProjectSerializer {
   static format = "spatial-seed";
   static schemaVersion = 4;

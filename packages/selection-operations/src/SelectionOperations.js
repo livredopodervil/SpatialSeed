@@ -6,7 +6,7 @@ import {
 import {
   assemblyChildrenForInstance,
   isInstanceNode
-} from "../../instance-graph/src/index.js?build=20260807-0052a";
+} from "../../instance-graph/src/index.js?build=20260807-0052b";
 import {
   resolveAffineOperations,
   composeAffineStep,
@@ -859,6 +859,10 @@ export class SelectionOperations {
         reason: "selection-empty"
       };
     }
+    // Preserve structural sharing: deleting a projected occurrence hides that
+    // occurrence edge; deleting an authoritative root removes only the root.
+    // We expand only to clear the local selection, never to materialize/delete
+    // every descendant in the authoritative document.
     const ids = [...this.sandbox.getObjectDescendantIds(selectedIds, {
       includeRoots: true
     })];
@@ -866,8 +870,8 @@ export class SelectionOperations {
     const changed = this.sandbox.dispatch({
       type: "selection.delete",
       source,
-      ids,
-      expandedSubtree: true
+      ids: selectedIds,
+      expandedSubtree: false
     });
 
     if (changed) {

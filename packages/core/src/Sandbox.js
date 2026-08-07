@@ -9,8 +9,15 @@ import {
   isInstanceNode,
   normalizeInstanceGraph,
   resolveInstanceNode,
+  resolveInstanceOccurrence,
+  projectInstanceGraphObject,
+  projectInstanceOccurrenceSubtree,
   instanceGraphDiagnostics
-} from "../../instance-graph/src/index.js?build=20260807-0052a";
+} from "../../instance-graph/src/index.js?build=20260807-0052b";
+import {
+  composeTransform,
+  multiplyMatrices
+} from "../../math-affine/src/index.js";
 
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 
@@ -83,28 +90,99 @@ export class Sandbox {
     return Number.isInteger(value) ? value : -1;
   }
   getObjectDescendantIds(rootIds = [], { includeRoots = false } = {}) {
-    const roots = [...new Set((rootIds ?? []).map(String))];
+    const roots = [...new Set((rootIds ?? []).map(String).filter(Boolean))];
     const rootSet = new Set(roots);
-    const queue = [...roots];
     const seen = new Set();
     const result = [];
-    let cursor = 0;
-    while (cursor < queue.length) {
-      const id = queue[cursor++];
-      if (!id || seen.has(id) || !this.#objectsById.has(id)) continue;
-      seen.add(id);
-      if (includeRoots || !rootSet.has(id)) result.push(id);
-      const children = this.#objectIdsByParent.get(hierarchyParentKey(id)) ?? [];
-      for (const childId of children) queue.push(childId);
+
+    const appendProjected = segment => {
+      for (const object of segment ?? []) {
+        const id = String(object?.id ?? "");
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        if (includeRoots || !rootSet.has(id)) result.push(id);
+      }
+    };
+
+    for (const rootId of roots) {
+      const raw = this.#objectsById.get(rootId) ?? null;
+      if (raw && isInstanceNode(raw)) {
+        const segment = projectInstanceGraphObject(this.#state, raw);
+        if (segment.length > 1) {
+          appendProjected(segment);
+          continue;
+        }
+      }
+      const occurrence = this.getInstanceOccurrence(rootId);
+      if (occurrence) {
+        appendProjected(projectInstanceOccurrenceSubtree(
+          this.#state,
+          rootId,
+          { rootInstance: occurrence.rootInstance }
+        ));
+        continue;
+      }
+
+      const queue = [rootId];
+      let cursor = 0;
+      while (cursor < queue.length) {
+        const id = queue[cursor++];
+        if (!id || seen.has(id) || !this.#objectsById.has(id)) continue;
+        seen.add(id);
+        if (includeRoots || !rootSet.has(id)) result.push(id);
+        const children = this.#objectIdsByParent.get(hierarchyParentKey(id)) ?? [];
+        for (const childId of children) queue.push(childId);
+      }
     }
     return Object.freeze(result);
   }
   getRawObject(id) {
     return this.#objectsById.get(String(id)) ?? null;
   }
+  getInstanceOccurrence(id) {
+    const value = String(id ?? "");
+    if (!value || this.#objectsById.has(value)) return null;
+    const parsedRoot = occurrenceRootId(value);
+    const rootInstance = parsedRoot
+      ? this.#objectsById.get(parsedRoot) ?? null
+      : null;
+    return resolveInstanceOccurrence(this.#state, value, { rootInstance });
+  }
   getObject(id) {
     const raw = this.getRawObject(id);
-    return raw ? resolveInstanceNode(this.#state, raw) : null;
+    if (raw) return resolveInstanceNode(this.#state, raw);
+    return this.getInstanceOccurrence(id)?.object ?? null;
+  }
+  getObjectWorldMatrix(id) {
+    const start = this.getObject(id);
+    if (!start) return null;
+    const chain = [];
+    let current = start;
+    const seen = new Set();
+    while (current) {
+      const currentId = String(current.id ?? "");
+      if (!currentId || seen.has(currentId)) break;
+      seen.add(currentId);
+      chain.push(current);
+      if (current.parentId === null || current.parentId === undefined || current.parentId === "") break;
+      current = this.getObject(String(current.parentId));
+    }
+    let world = identityMatrix();
+    for (let index = chain.length - 1; index >= 0; index -= 1) {
+      world = multiplyMatrices(world, composeTransform({
+        position: chain[index].position ?? [0, 0, 0],
+        rotation: chain[index].rotation ?? [0, 0, 0, 1],
+        scale: chain[index].scale ?? [1, 1, 1]
+      }));
+    }
+    return Object.freeze([...world]);
+  }
+  getObjectParentWorldMatrix(id) {
+    const object = this.getObject(id);
+    if (!object || object.parentId === null || object.parentId === undefined || object.parentId === "") {
+      return Object.freeze(identityMatrix());
+    }
+    return this.getObjectWorldMatrix(String(object.parentId)) ?? Object.freeze(identityMatrix());
   }
   getObjects(ids = []) {
     return ids.map(id => this.getObject(id));
@@ -112,8 +190,14 @@ export class Sandbox {
   listObjectChildren(parentId = null, { offset = 0, limit = 100 } = {}) {
     const start = nonNegativeInteger(offset, "O offset hierárquico");
     const size = nonNegativeInteger(limit, "O limite hierárquico");
-    const key = hierarchyParentKey(parentId);
-    const ids = this.#objectIdsByParent.get(key) ?? [];
+    let ids = this.#objectIdsByParent.get(hierarchyParentKey(parentId)) ?? [];
+    if (parentId !== null && parentId !== undefined) {
+      const parent = this.getObject(String(parentId));
+      if (parent?.kind === "group" && parent?.projectedInstance === true) {
+        const segment = this.getObjectDescendantIds([String(parentId)], { includeRoots: true });
+        ids = segment.filter(id => this.getObject(id)?.parentId === String(parentId));
+      }
+    }
     const end = Math.min(ids.length, start + size);
     return Object.freeze({
       items: Object.freeze(ids.slice(start, end)),
@@ -124,7 +208,7 @@ export class Sandbox {
     });
   }
   getObjectChildCount(parentId = null) {
-    return (this.#objectIdsByParent.get(hierarchyParentKey(parentId)) ?? []).length;
+    return this.listObjectChildren(parentId, { offset: 0, limit: 0 }).total;
   }
 
   dispatch(command) {
@@ -483,10 +567,13 @@ export class Sandbox {
 
   #reducerContext() {
     return Object.freeze({
-      hasObject: id => this.#objectsById.has(String(id)),
-      getObject: id => this.#objectsById.get(String(id)) ?? null,
+      hasObject: id => Boolean(this.getObject(id)),
+      getObject: id => this.getObject(id),
       getRawObject: id => this.#objectsById.get(String(id)) ?? null,
       getObjectPosition: id => this.getObjectPosition(id),
+      getInstanceOccurrence: id => this.getInstanceOccurrence(id),
+      getObjectWorldMatrix: id => this.getObjectWorldMatrix(id),
+      getObjectParentWorldMatrix: id => this.getObjectParentWorldMatrix(id),
       getObjectDescendantIds: (ids, options) =>
         this.getObjectDescendantIds(ids, options)
     });
@@ -699,10 +786,16 @@ function invertObjectChanges(changes) {
       const object = change.previousObject;
       if (!object) return Object.freeze([]);
       inverse.push(Object.freeze({
-        type: "object-updated",
+        type: change.type,
         objectId: id,
         object,
-        previousObject: change.object
+        previousObject: change.object,
+        ...(Array.isArray(change.affectedOccurrenceIds)
+          ? { affectedOccurrenceIds: change.affectedOccurrenceIds }
+          : {}),
+        ...(Array.isArray(change.occurrenceChanges)
+          ? { occurrenceChanges: change.occurrenceChanges }
+          : {})
       }));
       continue;
     }
@@ -713,6 +806,28 @@ function invertObjectChanges(changes) {
 
 function hierarchyParentKey(value) {
   return value === null || value === undefined ? "@root" : `@${String(value)}`;
+}
+
+function occurrenceRootId(value) {
+  const id = String(value ?? "");
+  if (!id.startsWith("@ig/")) return null;
+  const body = id.slice(4);
+  const slash = body.indexOf("/");
+  if (slash <= 0) return null;
+  try {
+    return decodeURIComponent(body.slice(0, slash));
+  } catch {
+    return null;
+  }
+}
+
+function identityMatrix() {
+  return [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1
+  ];
 }
 
 function validateState(value) {

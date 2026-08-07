@@ -3,8 +3,10 @@ import {
   isInstanceNode,
   projectInstanceGraphObject,
   projectInstanceGraphRoot,
-  projectInstanceGraphScene
-} from "./InstanceGraph.js?build=20260807-0052a";
+  projectInstanceGraphScene,
+  projectInstanceOccurrenceSubtree,
+  resolveInstanceOccurrence
+} from "./InstanceGraph.js?build=20260807-0052b";
 
 /**
  * Mutable, derived projection cache. The authoritative scene remains immutable;
@@ -14,6 +16,7 @@ import {
 export class InstanceGraphProjectionCache {
   #objects = [];
   #positions = new Map();
+  #rootMembers = new Map();
   #initialized = false;
   #statistics = {
     fullProjections: 0,
@@ -22,7 +25,10 @@ export class InstanceGraphProjectionCache {
     projectedObjectsVisited: 0,
     rootReplacements: 0,
     rootAppends: 0,
-    rootRemovals: 0
+    rootRemovals: 0,
+    occurrenceUpdates: 0,
+    occurrenceCreates: 0,
+    occurrenceRemovals: 0
   };
 
   reset(scene) {
@@ -97,6 +103,18 @@ export class InstanceGraphProjectionCache {
     const id = String(change.objectId ?? change.object?.id ?? "");
     const object = change.object;
     if (!id || !object) return [];
+    if (Array.isArray(change.occurrenceChanges) && change.occurrenceChanges.length) {
+      const projected = [];
+      for (const occurrenceChange of change.occurrenceChanges) {
+        projected.push(...this.#syncOccurrence(
+          scene,
+          String(occurrenceChange?.occurrenceId ?? ""),
+          object,
+          change
+        ));
+      }
+      return projected;
+    }
     const index = this.#positions.get(id);
     if (!Number.isInteger(index)) {
       // A cache miss means topology/projection no longer matches. Treat this as
@@ -124,8 +142,10 @@ export class InstanceGraphProjectionCache {
     const sameAssembly = definition?.type === "assembly"
       && isInstanceNode(previousRaw)
       && previousRaw.definitionId === object.definitionId;
+    const assemblyOverridesChanged = sameAssembly
+      && previousRaw?.overrides !== object?.overrides;
 
-    if (sameAssembly || definition?.type === "object") {
+    if ((sameAssembly && !assemblyOverridesChanged) || definition?.type === "object") {
       // Only the root envelope changed. A leaf/root projection is O(1), and an
       // assembly transform never re-expands immutable descendant definitions.
       const projectedRoot = projectInstanceGraphRoot(scene, object);
@@ -238,6 +258,131 @@ export class InstanceGraphProjectionCache {
     }));
   }
 
+  #syncOccurrence(scene, occurrenceId, rootInstance, sourceChange) {
+    if (!occurrenceId) return [];
+    const current = resolveInstanceOccurrence(
+      scene,
+      occurrenceId,
+      { rootInstance }
+    );
+    const existingIndex = this.#positions.get(occurrenceId);
+
+    if (!current) {
+      if (!Number.isInteger(existingIndex)) return [];
+      const previous = this.#objects[existingIndex];
+      const prefix = previous?.instancePath ?? [];
+      const rootId = String(previous?.instanceRootId ?? rootInstance?.id ?? "");
+      const memberIds = this.#rootMembers.get(rootId) ?? new Set([occurrenceId]);
+      const removeIds = [];
+      for (const id of memberIds) {
+        const index = this.#positions.get(id);
+        if (!Number.isInteger(index)) continue;
+        const object = this.#objects[index];
+        const path = object?.instancePath ?? [];
+        if (pathStartsWith(path, prefix)) removeIds.push(id);
+      }
+      const removed = removeIds.map(id => {
+        const index = this.#positions.get(id);
+        return Number.isInteger(index) ? this.#objects[index] : null;
+      }).filter(Boolean);
+      this.#removeProjectedIds(removeIds);
+      this.#statistics.occurrenceRemovals += removed.length;
+      return removed.map(previousObject => Object.freeze({
+        type: "object-deleted",
+        objectId: String(previousObject.id),
+        previousObject,
+        source: sourceChange.source ?? "instance-graph.occurrence"
+      }));
+    }
+
+    if (Number.isInteger(existingIndex)) {
+      const previousObject = this.#objects[existingIndex];
+      this.#objects[existingIndex] = current.object;
+      this.#statistics.projectedObjectsVisited += 1;
+      this.#statistics.occurrenceUpdates += 1;
+      return [Object.freeze({
+        type: sourceChange.type === "object-transform" ? "object-transform" : "object-updated",
+        objectId: occurrenceId,
+        object: current.object,
+        previousObject,
+        source: sourceChange.source ?? "instance-graph.occurrence"
+      })];
+    }
+
+    const segment = projectInstanceOccurrenceSubtree(
+      scene,
+      occurrenceId,
+      { rootInstance }
+    );
+    if (!segment.length) return [];
+    for (const object of segment) this.#appendProjectedObject(object);
+    this.#statistics.projectedObjectsVisited += segment.length;
+    this.#statistics.occurrenceCreates += segment.length;
+    return segment.map(object => Object.freeze({
+      type: "object-created",
+      objectId: String(object.id),
+      object,
+      source: sourceChange.source ?? "instance-graph.occurrence"
+    }));
+  }
+
+  #appendProjectedObject(object) {
+    const id = String(object?.id ?? "");
+    if (!id) return false;
+    const existing = this.#positions.get(id);
+    if (Number.isInteger(existing)) {
+      this.#objects[existing] = object;
+      return false;
+    }
+    this.#positions.set(id, this.#objects.length);
+    this.#objects.push(object);
+    this.#registerRootMember(object);
+    return true;
+  }
+
+  #removeProjectedIds(values) {
+    const pending = new Set((values ?? []).map(String));
+    while (pending.size) {
+      const id = pending.values().next().value;
+      pending.delete(id);
+      const index = this.#positions.get(id);
+      if (!Number.isInteger(index)) continue;
+      const lastIndex = this.#objects.length - 1;
+      const removed = this.#objects[index];
+      const last = this.#objects[lastIndex];
+      this.#unregisterRootMember(removed);
+      if (index !== lastIndex) {
+        this.#objects[index] = last;
+        this.#positions.set(String(last?.id ?? ""), index);
+      }
+      this.#objects.pop();
+      this.#positions.delete(id);
+    }
+  }
+
+  #registerRootMember(object) {
+    if (object?.projectedInstance !== true) return;
+    const rootId = String(object.instanceRootId ?? "");
+    const id = String(object.id ?? "");
+    if (!rootId || !id) return;
+    let members = this.#rootMembers.get(rootId);
+    if (!members) {
+      members = new Set();
+      this.#rootMembers.set(rootId, members);
+    }
+    members.add(id);
+  }
+
+  #unregisterRootMember(object) {
+    if (object?.projectedInstance !== true) return;
+    const rootId = String(object.instanceRootId ?? "");
+    const id = String(object.id ?? "");
+    const members = this.#rootMembers.get(rootId);
+    if (!members) return;
+    members.delete(id);
+    if (!members.size) this.#rootMembers.delete(rootId);
+  }
+
   #sceneShell(scene) {
     return Object.freeze({
       ...scene,
@@ -248,10 +393,20 @@ export class InstanceGraphProjectionCache {
 
   #rebuildPositions() {
     this.#positions.clear();
+    this.#rootMembers.clear();
     for (let index = 0; index < this.#objects.length; index += 1) {
-      this.#positions.set(String(this.#objects[index]?.id ?? ""), index);
+      const object = this.#objects[index];
+      this.#positions.set(String(object?.id ?? ""), index);
+      this.#registerRootMember(object);
     }
   }
+}
+
+function pathStartsWith(path, prefix) {
+  if (!Array.isArray(path) || !Array.isArray(prefix) || path.length < prefix.length) {
+    return false;
+  }
+  return prefix.every((value, index) => String(path[index]) === String(value));
 }
 
 function isIncrementalProjectionChange(change) {

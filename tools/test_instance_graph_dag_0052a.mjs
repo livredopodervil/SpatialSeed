@@ -5,10 +5,10 @@ import {
   instanceGraphDiagnostics,
   projectInstanceGraphScene,
   validateInstanceGraph
-} from "../packages/instance-graph/src/index.js?build=20260807-0052a";
-import { boxRegionReducer } from "../packages/region-box/src/reducer.js?build=20260807-0052a";
-import { ProjectSerializer } from "../packages/project-files/src/ProjectSerializer.js?build=20260807-0052a";
-import { HierarchyIndex } from "../packages/scene-hierarchy/src/HierarchyIndex.js?build=20260807-0052a";
+} from "../packages/instance-graph/src/index.js?build=20260807-0052b";
+import { boxRegionReducer } from "../packages/region-box/src/reducer.js?build=20260807-0052b";
+import { ProjectSerializer } from "../packages/project-files/src/ProjectSerializer.js?build=20260807-0052b";
+import { HierarchyIndex } from "../packages/scene-hierarchy/src/HierarchyIndex.js?build=20260807-0052b";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

@@ -13,10 +13,10 @@ def require(source, needle, message):
     if needle not in source: errors.append(message)
 
 build=json.loads(text("apps/web/build-info.json") or "{}")
-if build.get("build")!="20260807-0052a":
+if build.get("build")!="20260807-0052b":
     errors.append(f"build incorreto: {build.get('build')!r}")
 index=text("apps/web/index.html")
-require(index,'boot.js?build=20260807-0052a','index não aponta para 0051b')
+require(index,'boot.js?build=20260807-0052b','index não aponta para 0051b')
 
 appearance=text("packages/appearance-runtime/src/AppearanceRuntime.js")
 require(appearance,'objects: _objects,','AppearanceRuntime ainda tenta clonar a coleção persistente')
@@ -35,7 +35,7 @@ for needle, message in [
 ]: require(selection,needle,message)
 renderer=text("packages/renderer-three/src/ThreeRegionRenderer.js")
 for needle, message in [
-    ('ScreenSelectionGesture.js?build=20260807-0052a','renderer não invalida cache do gesto 0051b'),
+    ('ScreenSelectionGesture.js?build=20260807-0052b','renderer não invalida cache do gesto 0051b'),
     ('local.getCenter(new THREE.Vector3())','centro de seleção não vem dos bounds geométricos'),
     ('const minimumExtent = 6;','estabilização de objetos distantes ausente'),
     ('#spatialObjectIndex','índice espacial 0051a foi perdido'),

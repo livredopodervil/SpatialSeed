@@ -1,7 +1,7 @@
 import {
   ProjectSerializer
-} from "./ProjectSerializer.js?build=20260807-0052a";
-import { ProjectValidator } from "./ProjectValidator.js?build=20260807-0052a";
+} from "./ProjectSerializer.js?build=20260807-0052b";
+import { ProjectValidator } from "./ProjectValidator.js?build=20260807-0052b";
 
 export class ProjectService {
   static apiVersion = "project-service-v7-instance-graph";

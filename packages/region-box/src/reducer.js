@@ -9,8 +9,11 @@ import {
   duplicateReferenceRoots,
   isInstanceNode,
   replaceInstanceObjectDefinition,
+  replaceInstanceOccurrenceObjectDefinition,
+  resolveInstanceOccurrence,
+  updateInstanceOccurrenceRoot,
   ungroupAssemblyInstance
-} from "../../instance-graph/src/index.js?build=20260807-0052a";
+} from "../../instance-graph/src/index.js?build=20260807-0052b";
 import {
   applyWorldTransforms,
   groupNodes,
@@ -19,6 +22,11 @@ import {
   reparentPreservingWorld,
   ungroupNodes
 } from "../../scene-hierarchy/src/index.js?build=20260807-0051a";
+import {
+  decomposeTransformStrict,
+  invertAffineMatrix,
+  multiplyMatrices
+} from "../../math-affine/src/index.js";
 import {
   normalizeExplicitInstanceFamily
 } from "../../procedural-families/src/index.js?build=20260731-0044a";
@@ -166,50 +174,221 @@ function applyObjectPatch(object, patch = {}) {
   return next;
 }
 
-function applyPropertyUpdates(objects, command, context = {}) {
-  const targetIds = [...(command.targetIds ?? [])];
+function applyPropertyUpdates(state, command, context = {}) {
+  const objects = state.objects;
+  const targetIds = [...(command.targetIds ?? [])].map(String);
   const updates = command.updates ?? [];
-
-  if (!targetIds.length || !updates.length) return objects;
-
+  if (!targetIds.length || !updates.length) {
+    return { objects, rootChanges: new Map(), changedTargets: [] };
+  }
   const uniqueTargets = new Set(targetIds);
-  const updateById = new Map(updates.map(update => [update.id, update]));
-
+  const updateByIdMap = new Map(updates.map(update => [String(update.id), update]));
   if (uniqueTargets.size !== targetIds.length) {
     throw new Error("Alvos de propriedades duplicados.");
   }
-
   for (const id of targetIds) {
     const exists = typeof context.hasObject === "function"
       ? context.hasObject(id)
-      : objects.some(object => object.id === id);
+      : objects.some(object => String(object.id) === id);
     if (!exists) throw new Error(`Objeto inexistente: ${id}.`);
-    if (!updateById.has(id)) throw new Error(`Atualização ausente: ${id}.`);
+    if (!updateByIdMap.has(id)) throw new Error(`Atualização ausente: ${id}.`);
   }
-
   if (
     updates.length !== targetIds.length ||
-    updates.some(update => !uniqueTargets.has(update.id))
+    updates.some(update => !uniqueTargets.has(String(update.id)))
   ) {
     throw new Error("Atualizações de propriedades não correspondem aos alvos.");
   }
 
   const indexed = [];
+  const rootChanges = new Map();
+  const changedTargets = [];
   for (const id of targetIds) {
+    const occurrence = typeof context.getInstanceOccurrence === "function"
+      ? context.getInstanceOccurrence(id)
+      : null;
+    const update = updateByIdMap.get(id);
+    if (occurrence) {
+      const rootId = occurrence.rootId;
+      const existing = rootChanges.get(rootId);
+      const rootObject = existing?.value ?? context.getRawObject?.(rootId);
+      if (!rootObject) continue;
+      const currentOccurrence = resolveInstanceOccurrence(
+        state,
+        id,
+        { rootInstance: rootObject }
+      );
+      if (!currentOccurrence) continue;
+      const effective = applyObjectPatch(currentOccurrence.object, update.patch);
+      const occurrenceUpdate = occurrencePatchFromEffective(
+        currentOccurrence.object,
+        effective,
+        update.patch
+      );
+      const value = updateInstanceOccurrenceRoot(
+        rootObject,
+        currentOccurrence.path,
+        occurrenceUpdate
+      );
+      const index = context.getObjectPosition?.(rootId) ?? -1;
+      if (index < 0) continue;
+      rootChanges.set(rootId, {
+        index,
+        value,
+        previousObject: existing?.previousObject ?? rootObject,
+        affectedOccurrenceIds: [
+          ...(existing?.affectedOccurrenceIds ?? []),
+          id
+        ]
+      });
+      changedTargets.push(id);
+      continue;
+    }
+
     const index = typeof context.getObjectPosition === "function"
       ? context.getObjectPosition(id)
-      : objects.findIndex(object => object.id === id);
+      : objects.findIndex(object => String(object.id) === id);
     if (index < 0) continue;
     const object = typeof context.getObject === "function"
       ? context.getObject(id) ?? objects[index]
       : objects[index];
     indexed.push({
       index,
-      value: Object.freeze(applyObjectPatch(object, updateById.get(id).patch))
+      value: Object.freeze(applyObjectPatch(object, update.patch))
     });
+    changedTargets.push(id);
   }
-  return persistentObjectUpdateMany(objects, indexed);
+  for (const entry of rootChanges.values()) {
+    indexed.push({ index: entry.index, value: entry.value });
+  }
+  return {
+    objects: persistentObjectUpdateMany(objects, indexed),
+    rootChanges,
+    changedTargets
+  };
 }
+
+function occurrencePatchFromEffective(before, after, requestedPatch = {}) {
+  const update = {};
+  if (
+    "position" in requestedPatch ||
+    "rotation" in requestedPatch ||
+    "scale" in requestedPatch
+  ) {
+    update.transform = {
+      position: after.position ?? before.position ?? [0, 0, 0],
+      rotation: after.rotation ?? before.rotation ?? [0, 0, 0, 1],
+      scale: after.scale ?? before.scale ?? [1, 1, 1]
+    };
+  }
+  if ("name" in requestedPatch) update.name = after.name;
+  if ("pivot" in requestedPatch) update.pivot = after.pivot;
+  const reserved = new Set(["position", "rotation", "scale", "name", "pivot"]);
+  const patch = {};
+  for (const key of Object.keys(requestedPatch)) {
+    if (!reserved.has(key)) patch[key] = after[key];
+  }
+  if (Object.keys(patch).length) update.patch = patch;
+  return update;
+}
+
+function applyLocalTransforms(state, transforms, context = {}) {
+  const indexed = [];
+  const rootChanges = new Map();
+  const changedTargets = [];
+  for (const transform of transforms ?? []) {
+    const id = String(transform?.id ?? "");
+    if (!id) continue;
+    const occurrence = context.getInstanceOccurrence?.(id) ?? null;
+    if (occurrence) {
+      const rootId = occurrence.rootId;
+      const existing = rootChanges.get(rootId);
+      const rootObject = existing?.value ?? context.getRawObject?.(rootId);
+      if (!rootObject) continue;
+      const currentOccurrence = resolveInstanceOccurrence(state, id, { rootInstance: rootObject });
+      if (!currentOccurrence) continue;
+      const value = updateInstanceOccurrenceRoot(
+        rootObject,
+        currentOccurrence.path,
+        {
+          transform: {
+            position: transform.position,
+            rotation: transform.rotation,
+            scale: transform.scale
+          }
+        }
+      );
+      const index = context.getObjectPosition?.(rootId) ?? -1;
+      if (index < 0) continue;
+      rootChanges.set(rootId, {
+        index,
+        value,
+        previousObject: existing?.previousObject ?? rootObject,
+        affectedOccurrenceIds: [
+          ...(existing?.affectedOccurrenceIds ?? []),
+          id
+        ]
+      });
+      changedTargets.push(id);
+      continue;
+    }
+    const index = context.getObjectPosition?.(id) ?? -1;
+    if (index < 0) continue;
+    const object = context.getRawObject?.(id) ?? state.objects[index];
+    indexed.push({
+      index,
+      value: Object.freeze({
+        ...object,
+        position: Object.freeze([...transform.position]),
+        rotation: Object.freeze([...transform.rotation]),
+        scale: Object.freeze([...transform.scale])
+      })
+    });
+    changedTargets.push(id);
+  }
+  for (const entry of rootChanges.values()) indexed.push({ index: entry.index, value: entry.value });
+  return {
+    objects: persistentObjectUpdateMany(state.objects, indexed),
+    rootChanges,
+    changedTargets
+  };
+}
+
+function localTransformsFromWorld(transforms, context = {}) {
+  return (transforms ?? []).map(transform => {
+    const id = String(transform?.id ?? "");
+    const occurrence = context.getInstanceOccurrence?.(id) ?? null;
+    if (!occurrence) return null;
+    const parentWorld = context.getObjectParentWorldMatrix?.(id);
+    if (!parentWorld) return null;
+    const localMatrix = multiplyMatrices(
+      invertAffineMatrix(parentWorld),
+      transform.worldMatrix
+    );
+    const local = decomposeTransformStrict(localMatrix);
+    return {
+      id,
+      position: local.position,
+      rotation: local.rotation,
+      scale: local.scale
+    };
+  }).filter(Boolean);
+}
+
+function occurrenceRootChanges(rootChanges, source, type = "object-updated") {
+  return [...rootChanges.entries()].map(([rootId, entry]) => ({
+    type,
+    objectId: rootId,
+    object: entry.value,
+    previousObject: entry.previousObject,
+    source,
+    affectedOccurrenceIds: Object.freeze([...new Set(entry.affectedOccurrenceIds ?? [])]),
+    occurrenceChanges: Object.freeze([...new Set(entry.affectedOccurrenceIds ?? [])].map(
+      occurrenceId => Object.freeze({ occurrenceId, type: "sync" })
+    ))
+  }));
+}
+
 
 export function boxRegionReducer(state, command, context = {}) {
   switch (command.type) {
@@ -845,6 +1024,55 @@ export function boxRegionReducer(state, command, context = {}) {
         : state.objects.find(object => String(object.id) === String(command.id));
       if (!current) return { state, changes: [] };
 
+      const occurrence = context.getInstanceOccurrence?.(command.id) ?? null;
+      if (occurrence) {
+        const payload = {
+          ...occurrence.object,
+          kind: geometry.type,
+          geometry,
+          ...(command.sketch
+            ? { sketch: normalizeSketchDescriptor(command.sketch) }
+            : {})
+        };
+        for (const key of [
+          "id", "parentId", "position", "rotation", "scale", "name",
+          "definitionId", "instanceKind", "projectedInstance",
+          "instanceRootId", "instancePath"
+        ]) delete payload[key];
+        const result = replaceInstanceOccurrenceObjectDefinition(
+          state,
+          command.id,
+          payload,
+          {
+            prototypeId: newPrototypeId(command.id),
+            rootInstance: context.getRawObject?.(occurrence.rootId) ?? occurrence.rootInstance
+          }
+        );
+        if (!result.changed) return { state, changes: [] };
+        const index = context.getObjectPosition?.(occurrence.rootId) ?? -1;
+        if (index < 0) return { state, changes: [] };
+        const objects = persistentObjectUpdateAt(state.objects, index, result.rootInstance);
+        return {
+          state: Object.freeze({
+            ...state,
+            objects,
+            instanceGraph: result.graph
+          }),
+          changes: [{
+            type: "object-updated",
+            objectId: occurrence.rootId,
+            object: result.rootInstance,
+            previousObject: occurrence.rootInstance,
+            source: command.source ?? "object.geometry.replace",
+            affectedOccurrenceIds: Object.freeze([String(command.id)]),
+            occurrenceChanges: Object.freeze([{
+              occurrenceId: String(command.id),
+              type: "sync"
+            }])
+          }]
+        };
+      }
+
       if (isInstanceNode(current)) {
         const effective = resolveEffectiveInstanceForReducer(state, current);
         const payload = {
@@ -911,32 +1139,55 @@ export function boxRegionReducer(state, command, context = {}) {
     }
 
     case "object.transform": {
-      const objects = updateById(
-        state.objects,
-        command.id,
-        object => ({
-          ...object,
-          position: Object.freeze([...command.position]),
-          rotation: Object.freeze([...command.rotation]),
-          scale: Object.freeze([...command.scale])
-        }),
-        context
+      const result = applyLocalTransforms(state, [{
+        id: command.id,
+        position: command.position,
+        rotation: command.rotation,
+        scale: command.scale
+      }], context);
+      if (result.objects === state.objects) return { state, changes: [] };
+      const occurrenceChanges = occurrenceRootChanges(
+        result.rootChanges,
+        command.source ?? "object.transform",
+        "object-transform"
       );
-
-      if (objects === state.objects) {
-        return { state, changes: [] };
-      }
-
+      const occurrenceRoots = new Set(result.rootChanges.keys());
       return {
-        state: Object.freeze({ ...state, objects }),
-        changes: [{
-          type: "object-transform",
-          objectId: command.id
-        }]
+        state: Object.freeze({ ...state, objects: result.objects }),
+        changes: [
+          ...result.changedTargets
+            .filter(id => !context.getInstanceOccurrence?.(id))
+            .map(objectId => ({ type: "object-transform", objectId })),
+          ...occurrenceChanges
+        ].filter(change => !occurrenceRoots.has(change.objectId) || change.occurrenceChanges)
       };
     }
 
     case "object.update": {
+      const occurrence = context.getInstanceOccurrence?.(command.id) ?? null;
+      if (occurrence) {
+        const rootObject = context.getRawObject?.(occurrence.rootId);
+        const index = context.getObjectPosition?.(occurrence.rootId) ?? -1;
+        if (!rootObject || index < 0) return { state, changes: [] };
+        const effective = applyObjectPatch(occurrence.object, command.patch);
+        const nextRoot = updateInstanceOccurrenceRoot(
+          rootObject,
+          occurrence.path,
+          occurrencePatchFromEffective(occurrence.object, effective, command.patch)
+        );
+        const objects = persistentObjectUpdateAt(state.objects, index, nextRoot);
+        return {
+          state: Object.freeze({ ...state, objects }),
+          changes: [{
+            type: "object-updated",
+            objectId: occurrence.rootId,
+            object: nextRoot,
+            previousObject: rootObject,
+            affectedOccurrenceIds: Object.freeze([String(command.id)]),
+            occurrenceChanges: Object.freeze([{ occurrenceId: String(command.id), type: "sync" }])
+          }]
+        };
+      }
       const objects = updateById(
         state.objects,
         command.id,
@@ -948,16 +1199,23 @@ export function boxRegionReducer(state, command, context = {}) {
     }
 
     case "selection.properties.set": {
-      const objects = applyPropertyUpdates(state.objects, command, context);
-      if (objects === state.objects) return { state, changes: [] };
-
+      const result = applyPropertyUpdates(state, command, context);
+      if (result.objects === state.objects) return { state, changes: [] };
+      const occurrenceTargets = new Set(
+        [...result.rootChanges.values()].flatMap(entry => entry.affectedOccurrenceIds ?? [])
+      );
       return {
-        state: Object.freeze({ ...state, objects }),
-        changes: command.targetIds.map(objectId => ({
-          type: "object-updated",
-          objectId,
-          source: "selection.properties"
-        }))
+        state: Object.freeze({ ...state, objects: result.objects }),
+        changes: [
+          ...result.changedTargets
+            .filter(id => !occurrenceTargets.has(id))
+            .map(objectId => ({
+              type: "object-updated",
+              objectId,
+              source: "selection.properties"
+            })),
+          ...occurrenceRootChanges(result.rootChanges, "selection.properties")
+        ]
       };
     }
 
@@ -1040,85 +1298,155 @@ export function boxRegionReducer(state, command, context = {}) {
     }
 
     case "selection.delete": {
-      const requestedIds=command.ids ?? [];
+      const requestedIds = [...new Set((command.ids ?? []).map(String).filter(Boolean))];
       if (!requestedIds.length) return { state, changes: [] };
-      const ids = new Set(
-        command.expandedSubtree
-          ? requestedIds.map(String)
-          : typeof context.getObjectDescendantIds === "function"
-            ? context.getObjectDescendantIds(requestedIds, { includeRoots: true })
-            : hierarchySubtreeIds(state.objects, requestedIds)
+      const rawObject = id => typeof context.getRawObject === "function"
+        ? context.getRawObject(id)
+        : state.objects.find(object => String(object.id) === String(id)) ?? null;
+      const objectPosition = id => typeof context.getObjectPosition === "function"
+        ? context.getObjectPosition(id)
+        : state.objects.findIndex(object => String(object.id) === String(id));
+
+      const occurrenceDescriptors = requestedIds
+        .map(id => context.getInstanceOccurrence?.(id) ?? null)
+        .filter(Boolean);
+      const occurrenceByRoot = new Map();
+      for (const occurrence of occurrenceDescriptors) {
+        const list = occurrenceByRoot.get(occurrence.rootId) ?? [];
+        list.push(occurrence);
+        occurrenceByRoot.set(occurrence.rootId, list);
+      }
+      // If an authoritative root itself is deleted, no descendant override is needed.
+      const requestedAuthoritative = new Set(
+        requestedIds.filter(id => Boolean(rawObject(id)))
       );
 
-      const removed = typeof context.getObject === "function"
-        ? [...ids].map(id => context.getObject(id)).filter(Boolean)
-        : state.objects.filter(object => ids.has(String(object.id)));
-      if (!removed.length) return { state, changes: [] };
+      const rootUpdates = new Map();
+      for (const [rootId, descriptors] of occurrenceByRoot) {
+        if (requestedAuthoritative.has(rootId)) continue;
+        const canonical = descriptors.filter(candidate => !descriptors.some(other =>
+          other !== candidate &&
+          candidate.path.length > other.path.length &&
+          other.path.every((slot, index) => candidate.path[index] === slot)
+        ));
+        let rootObject = rawObject(rootId);
+        const index = objectPosition(rootId);
+        if (!rootObject || index < 0) continue;
+        const previousObject = rootObject;
+        const affectedOccurrenceIds = [];
+        for (const occurrence of canonical) {
+          rootObject = updateInstanceOccurrenceRoot(
+            rootObject,
+            occurrence.path,
+            { hidden: true }
+          );
+          affectedOccurrenceIds.push(occurrence.id);
+        }
+        rootUpdates.set(rootId, {
+          index,
+          value: rootObject,
+          previousObject,
+          affectedOccurrenceIds
+        });
+      }
 
-      const nextState = {
-        ...state,
-        objects: persistentObjectRemoveIds(state.objects, ids)
-      };
-      const defaultRemoved = ids.has(state.defaultCameraId);
+      const authoritativeIds = new Set();
+      for (const id of requestedIds) {
+        const raw = rawObject(id);
+        if (!raw) continue;
+        if (isInstanceNode(raw) || command.expandedSubtree === true) {
+          authoritativeIds.add(id);
+          continue;
+        }
+        const subtree = context.getObjectDescendantIds?.([id], { includeRoots: true }) ?? [id];
+        for (const childId of subtree) {
+          if (rawObject(childId)) authoritativeIds.add(String(childId));
+        }
+      }
+
+      let objects = state.objects;
+      if (rootUpdates.size) {
+        objects = persistentObjectUpdateMany(
+          objects,
+          [...rootUpdates.values()].map(entry => ({ index: entry.index, value: entry.value }))
+        );
+      }
+      const removed = [...authoritativeIds]
+        .map(id => rawObject(id))
+        .filter(Boolean);
+      if (authoritativeIds.size) objects = persistentObjectRemoveIds(objects, authoritativeIds);
+      if (objects === state.objects) return { state, changes: [] };
+
+      const nextState = { ...state, objects };
+      const defaultRemoved = authoritativeIds.has(String(state.defaultCameraId ?? ""));
       if (defaultRemoved) delete nextState.defaultCameraId;
       return {
         state: Object.freeze(nextState),
         changes: [
+          ...occurrenceRootChanges(rootUpdates, command.source ?? "selection.delete"),
           ...removed.map(object => ({
-          type: "object-deleted",
-          objectId: object.id,
-          object,
-          previousObject: object,
-          source: command.source ?? "selection.delete"
+            type: "object-deleted",
+            objectId: object.id,
+            object,
+            previousObject: object,
+            source: command.source ?? "selection.delete"
           })),
           ...(defaultRemoved
-            ? [{
-                type: "camera-default-changed",
-                objectId: null,
-                cameraId: null
-              }]
+            ? [{ type: "camera-default-changed", objectId: null, cameraId: null }]
             : [])
         ]
       };
     }
 
     case "selection.transform": {
-      const objects = updateMany(
-        state.objects,
-        command.transforms ?? [],
-        context
+      const result = applyLocalTransforms(state, command.transforms ?? [], context);
+      if (result.objects === state.objects) return { state, changes: [] };
+      const occurrenceTargets = new Set(
+        [...result.rootChanges.values()].flatMap(entry => entry.affectedOccurrenceIds ?? [])
       );
-
-      if (objects === state.objects) {
-        return { state, changes: [] };
-      }
-
       return {
-        state: Object.freeze({ ...state, objects }),
-        changes: command.transforms.map(transform => ({
-          type: "object-transform",
-          objectId: transform.id,
-          source: "selection"
-        }))
+        state: Object.freeze({ ...state, objects: result.objects }),
+        changes: [
+          ...result.changedTargets
+            .filter(id => !occurrenceTargets.has(id))
+            .map(objectId => ({ type: "object-transform", objectId, source: "selection" })),
+          ...occurrenceRootChanges(result.rootChanges, "selection", "object-transform")
+        ]
       };
     }
 
     case "selection.transform-world": {
-      const objects=applyWorldTransforms(
-        state.objects,
-        command.transforms ?? [],
-        context
-      );
-
+      const all = command.transforms ?? [];
+      const occurrenceWorld = all.filter(transform => context.getInstanceOccurrence?.(transform.id));
+      const authoritativeWorld = all.filter(transform => !context.getInstanceOccurrence?.(transform.id));
+      let objects = authoritativeWorld.length
+        ? applyWorldTransforms(state.objects, authoritativeWorld, context)
+        : state.objects;
+      let occurrenceResult = { objects, rootChanges: new Map(), changedTargets: [] };
+      if (occurrenceWorld.length) {
+        const localTransforms = localTransformsFromWorld(occurrenceWorld, context);
+        occurrenceResult = applyLocalTransforms(
+          { ...state, objects },
+          localTransforms,
+          context
+        );
+        objects = occurrenceResult.objects;
+      }
       if (objects === state.objects) return { state, changes: [] };
-
       return {
         state: Object.freeze({ ...state, objects }),
-        changes: command.transforms.map(transform => ({
-          type: "object-transform",
-          objectId: transform.id,
-          source: "selection-world"
-        }))
+        changes: [
+          ...authoritativeWorld.map(transform => ({
+            type: "object-transform",
+            objectId: transform.id,
+            source: "selection-world"
+          })),
+          ...occurrenceRootChanges(
+            occurrenceResult.rootChanges,
+            "selection-world",
+            "object-transform"
+          )
+        ]
       };
     }
 
