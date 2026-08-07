@@ -16964,7 +16964,11 @@ function createExperimentDefinition() {
   };
 }
 
-export async function runRuntimeTests(suites, requested = "all") {
+export async function runRuntimeTests(
+  suites,
+  requested = "all",
+  { failuresOnly = false } = {}
+) {
   const selected =
     requested === "all"
       ? Object.entries(suites)
@@ -17004,16 +17008,22 @@ export async function runRuntimeTests(suites, requested = "all") {
   }
 
   const passed = results.filter(result => result.ok).length;
+  const failed = results.length - passed;
+  const reportedResults = failuresOnly
+    ? results.filter(result => !result.ok)
+    : results;
 
   return {
     scope: "runtime-layers",
     suite: requested,
     passed,
-    failed: results.length - passed,
+    failed,
     total: results.length,
+    reported: reportedResults.length,
+    resultMode: failuresOnly ? "failures-only" : "all",
     durationMs: round(performance.now() - startedAt),
     ok: passed === results.length,
-    results
+    results: reportedResults
   };
 }
 

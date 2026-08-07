@@ -30,7 +30,7 @@ import {
 import {
   normalizeSketchDescriptor
 } from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
-import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260807-0053b";
+import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260807-0053c";
 
 export class SelectionOperations {
   static apiVersion = "selection-operations-v10-occurrence-resolver";
@@ -447,7 +447,7 @@ export class SelectionOperations {
     const selectedIds = this.editor.selection.snapshot().members
       .map(member => String(member.objectId));
     const requestedGroups = selectedIds.filter(id =>
-      this.#objectById(id)?.kind === "group"
+      this.#isGroupId(id)
     );
 
     if (!requestedGroups.length) {
@@ -508,9 +508,7 @@ export class SelectionOperations {
     const selectedIds =
       this.editor.selection.snapshot().members
         .map(member => member.objectId);
-    return selectedIds.some(id =>
-      this.#objectById(id)?.kind === "group"
-    );
+    return selectedIds.some(id => this.#isGroupId(id));
   }
 
   duplicateMany(count = 1) {
@@ -1702,6 +1700,14 @@ export class SelectionOperations {
     const object = this.#objectById(id);
     if (!object) throw new Error(`Objeto ativo não encontrado: ${id}`);
     return object;
+  }
+
+  #isGroupId(id) {
+    const object = this.#objectById(id);
+    return Boolean(
+      object &&
+      (object.kind === "group" || object.instanceKind === "assembly")
+    );
   }
 
   #objectById(id) {

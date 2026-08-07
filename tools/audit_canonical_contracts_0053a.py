@@ -4,7 +4,7 @@ import json
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_BUILD = "20260807-0053b"
+EXPECTED_BUILD = "20260807-0053c"
 
 required = [
     "packages/occurrence-contracts/src/OccurrenceRef.js",

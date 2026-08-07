@@ -1,63 +1,63 @@
-import { Region } from "../../../packages/core/src/Region.js?build=20260807-0053b";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260807-0053b";
+import { Region } from "../../../packages/core/src/Region.js?build=20260807-0053c";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260807-0053c";
 import {
   ModuleRegistry
-} from "../../../packages/plugin-api/src/index.js?build=20260807-0053b";
-import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260807-0053b";
+} from "../../../packages/plugin-api/src/index.js?build=20260807-0053c";
+import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260807-0053c";
 import {
   VIEWER_CAMERA_COMMANDS,
   CameraObjectService,
   ViewerCameraController,
   ViewerState,
-} from "../../../packages/runtime-layers/src/index.js?build=20260807-0053b";
+} from "../../../packages/runtime-layers/src/index.js?build=20260807-0053c";
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260807-0053b";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0053b";
-import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260807-0053b";
+} from "../../../packages/region-box/src/index.js?build=20260807-0053c";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0053c";
+import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260807-0053c";
 import {
   createVirtualResourceTree,
   parseResourcePath
-} from "../../../packages/resource-tree/src/index.js?build=20260807-0053b";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260807-0053b";
-import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260807-0053b";
-import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260807-0053b";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260807-0053b";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260807-0053b";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260807-0053b";
+} from "../../../packages/resource-tree/src/index.js?build=20260807-0053c";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260807-0053c";
+import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260807-0053c";
+import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260807-0053c";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260807-0053c";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260807-0053c";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260807-0053c";
 import {
   InstanceGraphProjectionCache,
   instanceGraphDiagnostics
-} from "../../../packages/instance-graph/src/index.js?build=20260807-0053b";
+} from "../../../packages/instance-graph/src/index.js?build=20260807-0053c";
 import {
   OccurrenceResolver
-} from "../../../packages/occurrence-runtime/src/index.js?build=20260807-0053b";
+} from "../../../packages/occurrence-runtime/src/index.js?build=20260807-0053c";
 import {
   ComplexityReporter
-} from "../../../packages/complexity-audit/src/index.js?build=20260807-0053b";
+} from "../../../packages/complexity-audit/src/index.js?build=20260807-0053c";
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260807-0053b";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260807-0053b";
+} from "../../../packages/platform-web/src/index.js?build=20260807-0053c";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260807-0053c";
 import {
   AppearanceBindingService
-} from "../../../packages/appearance-binding/src/index.js?build=20260807-0053b";
+} from "../../../packages/appearance-binding/src/index.js?build=20260807-0053c";
 import {
   classifyChanges,
   SceneProjectionScheduler
-} from "../../../packages/incremental-runtime/src/index.js?build=20260807-0053b";
+} from "../../../packages/incremental-runtime/src/index.js?build=20260807-0053c";
 import {
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260807-0053b";
+} from "../../../packages/property-registry/src/index.js?build=20260807-0053c";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260807-0053b";
+} from "../../../packages/geometry-registry/src/index.js?build=20260807-0053c";
 import {
   SKETCH_DESCRIPTOR_VERSION
-} from "../../../packages/sketch-descriptor/src/index.js?build=20260807-0053b";
+} from "../../../packages/sketch-descriptor/src/index.js?build=20260807-0053c";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -65,7 +65,7 @@ import {
   RuntimeCapabilities,
   describeRuntimeProfiles,
   resolveRuntimeProfile
-} from "../../../packages/runtime-api/src/index.js?build=20260807-0053b";
+} from "../../../packages/runtime-api/src/index.js?build=20260807-0053c";
 import {
   CAMERA_PLAN_COMMANDS,
   CameraPlanCommitService,
@@ -74,56 +74,56 @@ import {
   SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
-} from "../../../packages/script-runtime/src/index.js?build=20260807-0053b";
+} from "../../../packages/script-runtime/src/index.js?build=20260807-0053c";
 import {
   ProcedureCatalogEditor
-} from "../../../packages/procedure-editor/src/index.js?build=20260807-0053b";
+} from "../../../packages/procedure-editor/src/index.js?build=20260807-0053c";
 import {
   ProcedureCatalogUiPanel
-} from "../../../packages/catalog-ui/src/index.js?build=20260807-0053b";
+} from "../../../packages/catalog-ui/src/index.js?build=20260807-0053c";
 import {
   ExperimentActionService,
   ExperimentRegistry,
   ExperimentService
-} from "../../../packages/experiment-runtime/src/index.js?build=20260807-0053b";
+} from "../../../packages/experiment-runtime/src/index.js?build=20260807-0053c";
 import {
   STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID,
   starterExperimentModule
-} from "../../../packages/experiment-plugin/src/index.js?build=20260807-0053b";
+} from "../../../packages/experiment-plugin/src/index.js?build=20260807-0053c";
 import {
   ExperimentPanel
-} from "../../../packages/experiment-panel/src/index.js?build=20260807-0053b";
+} from "../../../packages/experiment-panel/src/index.js?build=20260807-0053c";
 import {
   AnalyticTimeDomains,
   DependencyVersions,
   TemporalExecutionController,
   TemporalRuntime
-} from "../../../packages/temporal-runtime/src/index.js?build=20260807-0053b";
+} from "../../../packages/temporal-runtime/src/index.js?build=20260807-0053c";
 import {
   ANIMATION_COMMAND_SERVICE_VERSION,
   TEMPORAL_ANIMATION_RUNTIME_VERSION,
   AnimationCommandService,
   AnimationProcedureService,
   TemporalAnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260807-0053b";
+} from "../../../packages/animation-runtime/src/index.js?build=20260807-0053c";
 import {
   AnimationPanel
-} from "../../../packages/animation-panel/src/index.js?build=20260807-0053b";
+} from "../../../packages/animation-panel/src/index.js?build=20260807-0053c";
 import {
   ViewerRenderPanel
-} from "../../../packages/viewer-render-panel/src/index.js?build=20260807-0053b";
+} from "../../../packages/viewer-render-panel/src/index.js?build=20260807-0053c";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260807-0053b";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260807-0053c";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260807-0053b";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260807-0053c";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260807-0053b";
+} from "../../../packages/edit-context/src/index.js?build=20260807-0053c";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260807-0053b";
+} from "../../../packages/edit-hud/src/index.js?build=20260807-0053c";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -132,37 +132,37 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260807-0053b";
+} from "../../../packages/edit-tools/src/index.js?build=20260807-0053c";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260807-0053b";
+} from "../../../packages/object-placement/src/index.js?build=20260807-0053c";
 import {
   DrawingTargetController
-} from "../../../packages/drawing-target/src/index.js?build=20260807-0053b";
+} from "../../../packages/drawing-target/src/index.js?build=20260807-0053c";
 import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260807-0053b";
+} from "../../../packages/planar-authoring/src/index.js?build=20260807-0053c";
 import {
   StrokeCompactionScheduler,
   StrokeFusionService,
   replaceStrokePointInBundle
-} from "../../../packages/stroke-resources/src/index.js?build=20260807-0053b";
+} from "../../../packages/stroke-resources/src/index.js?build=20260807-0053c";
 import {
   MeasurementController
-} from "../../../packages/measurement-tools/src/index.js?build=20260807-0053b";
+} from "../../../packages/measurement-tools/src/index.js?build=20260807-0053c";
 import {
   PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260807-0053b";
+} from "../../../packages/spatial-references/src/index.js?build=20260807-0053c";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
   createRecoveryRecord,
   IndexedDbRecoveryStore,
   SandboxRecoveryController
-} from "../../../packages/project-recovery/src/index.js?build=20260807-0053b";
+} from "../../../packages/project-recovery/src/index.js?build=20260807-0053c";
 import {
   CoordinatedSandbox,
   LocalProjectLaunchReceiver,
@@ -172,7 +172,7 @@ import {
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260807-0053b";
+} from "../../../packages/local-viewers/src/index.js?build=20260807-0053c";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v7";
 const EXPECTED_EDITOR_API = "editor-state-v2";

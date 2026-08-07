@@ -74,7 +74,8 @@ export function activateRuntimeTestPlugin({ commands }) {
         "runtime test path-references",
         "runtime test mesh-edit-math",
         "runtime test mesh-topology",
-        "runtime test all"
+        "runtime test all",
+        "runtime test all failed"
       ],
       suites: Object.fromEntries(
         Object.entries(suites).map(([name, tests]) => [
@@ -85,8 +86,8 @@ export function activateRuntimeTestPlugin({ commands }) {
     }))
     .register(
       "runtime.test.run",
-      ({ suite = "all" } = {}) =>
-        runRuntimeTests(suites, suite)
+      ({ suite = "all", failuresOnly = false } = {}) =>
+        runRuntimeTests(suites, suite, { failuresOnly })
     );
 
   return Object.freeze({ manifest, suites });

@@ -2755,11 +2755,21 @@ export class DevConsole {
     const suite =
       (tokens.shift() ?? "help").toLowerCase();
 
-    this.#expectMaximum(
-      tokens,
-      0,
-      `runtime test ${suite}`
-    );
+    let failuresOnly = false;
+    if (tokens.length) {
+      const filter = String(tokens.shift() ?? "").toLowerCase();
+      if ([
+        "failed", "failures", "fail",
+        "failed-only", "failures-only", "falhos"
+      ].includes(filter)) {
+        failuresOnly = true;
+      } else {
+        throw new Error(
+          `Uso: runtime test ${suite} [failed].`
+        );
+      }
+    }
+    this.#expectMaximum(tokens, 0, `runtime test ${suite} [failed]`);
 
     if (suite === "help") {
       return this.commands.execute(
@@ -2769,7 +2779,7 @@ export class DevConsole {
 
     return this.commands.execute(
       "runtime.test.run",
-      { suite }
+      { suite, failuresOnly }
     );
   }
 

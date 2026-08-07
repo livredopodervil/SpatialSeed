@@ -56,7 +56,10 @@ export function isInstanceNode(value) {
   return Boolean(
     value &&
     typeof value === "object" &&
-    value.kind === INSTANCE_NODE_KIND &&
+    (
+      value.kind === INSTANCE_NODE_KIND ||
+      (value.kind === "group" && value.instanceKind === "assembly")
+    ) &&
     typeof value.definitionId === "string" &&
     value.definitionId.length
   );
@@ -214,9 +217,12 @@ export function compactHierarchyRoots(scene, rootIds = []) {
     const root = byId.get(rootId);
     if (isInstanceNode(root)) continue;
     const interned = internNode(rootId);
+    const rootDefinition = definitions[interned.ref];
     const instance = freezeInstanceNode({
       id: root.id,
       definitionId: interned.ref,
+      semanticKind: rootDefinition?.type === "assembly" ? "group" : null,
+      instanceKind: rootDefinition?.type === "assembly" ? "assembly" : null,
       name: root.name ?? root.id,
       parentId: root.parentId ?? null,
       position: root.position,
@@ -311,6 +317,8 @@ export function duplicateReferenceRoots(scene, copies = []) {
     created.push(freezeInstanceNode({
       id,
       definitionId: source.definitionId,
+      semanticKind: source.kind === "group" ? "group" : null,
+      instanceKind: source.instanceKind ?? null,
       name: spec.name ?? source.name ?? id,
       parentId: spec.parentId !== undefined ? spec.parentId : source.parentId,
       position: spec.position ?? source.position,
@@ -1031,6 +1039,8 @@ function freezeInstanceNode({
   id,
   definitionId,
   name,
+  semanticKind = null,
+  instanceKind = null,
   parentId = null,
   position = IDENTITY_POSITION,
   rotation = IDENTITY_ROTATION,
@@ -1040,7 +1050,7 @@ function freezeInstanceNode({
 }) {
   const result = {
     id: String(id),
-    kind: INSTANCE_NODE_KIND,
+    kind: semanticKind === "group" ? "group" : INSTANCE_NODE_KIND,
     definitionId: String(definitionId),
     name: String(name ?? id),
     parentId: parentId === null || parentId === undefined || parentId === '' ? null : String(parentId),
@@ -1049,6 +1059,7 @@ function freezeInstanceNode({
     scale: freezeVector(scale, 3, IDENTITY_SCALE),
     overrides: deepFreezeSmall(overrides ?? {})
   };
+  if (instanceKind) result.instanceKind = String(instanceKind);
   if (pivot) result.pivot = freezeVector(pivot, 3, IDENTITY_POSITION);
   return Object.freeze(result);
 }
