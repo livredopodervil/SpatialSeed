@@ -863,9 +863,9 @@ export class SelectionOperations {
     // occurrence edge; deleting an authoritative root removes only the root.
     // We expand only to clear the local selection, never to materialize/delete
     // every descendant in the authoritative document.
-    const ids = [...this.sandbox.getObjectDescendantIds(selectedIds, {
-      includeRoots: true
-    })];
+    const ids = typeof this.sandbox.getObjectDescendantIds === "function"
+      ? [...this.sandbox.getObjectDescendantIds(selectedIds, { includeRoots: true })]
+      : [...selectedIds];
 
     const changed = this.sandbox.dispatch({
       type: "selection.delete",

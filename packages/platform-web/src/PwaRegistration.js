@@ -1,4 +1,4 @@
-import { formatBuildLabel } from "./BuildInfo.js?build=20260805-0048l1";
+import { formatBuildLabel } from "./BuildInfo.js?build=20260807-0052c";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const UPDATE_TIMEOUT_MS = 15000;
@@ -57,7 +57,8 @@ export function registerPwa(buildInfo, {
 
     try {
       registration = await serviceWorkers.register(workerUrl, {
-        scope: locations.scopeUrl
+        scope: locations.scopeUrl,
+        updateViaCache: "none"
       });
       if (disposed) return registration;
       state.registered = true;
@@ -97,16 +98,19 @@ export function registerPwa(buildInfo, {
     if (!current || disposed) return false;
     await checkForUpdate();
 
-    if (workerBuild(serviceWorkers.controller) === buildInfo.build ||
-        workerBuild(current.active) === buildInfo.build) {
+    if (workerBuild(serviceWorkers.controller) === buildInfo.build) {
       locationRef?.reload?.();
       return true;
     }
 
-    const candidate = await updateCandidate(current, buildInfo.build);
+    const candidate = await waitForMatchingWorker(
+      current,
+      buildInfo.build,
+      UPDATE_TIMEOUT_MS
+    );
     if (!candidate) {
-      state.error = "A nova versão ainda não terminou de baixar.";
-      publish();
+      state.error = "A versão publicada não pôde ser preparada pelo service worker.";
+      refreshRegistrationState(current, state, publish);
       return false;
     }
 
@@ -236,23 +240,59 @@ function refreshRegistrationState(
   publish();
 }
 
-async function updateCandidate(registration, expectedBuild) {
-  const current = matchingWorker(registration, expectedBuild);
-  if (!current) return null;
-  if (current.state === "installed" || current.state === "activated") {
-    return current;
-  }
-  if (current.state === "redundant") return null;
+async function waitForMatchingWorker(registration, expectedBuild, timeoutMs) {
+  const existing = matchingWorker(registration, expectedBuild);
+  if (existing) return waitForWorkerReady(existing, timeoutMs);
+
   return new Promise(resolve => {
-    const onStateChange = () => {
-      if (!["installed", "activated", "redundant"].includes(current.state)) {
-        return;
-      }
-      current.removeEventListener("statechange", onStateChange);
-      resolve(current.state === "redundant" ? null : current);
+    let settled = false;
+    let workerDisposer = null;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      registration.removeEventListener("updatefound", inspect);
+      workerDisposer?.();
+      resolve(value);
     };
-    current.addEventListener("statechange", onStateChange);
-    onStateChange();
+    const inspect = () => {
+      const worker = matchingWorker(registration, expectedBuild);
+      if (!worker) return;
+      workerDisposer?.();
+      const onState = () => {
+        if (worker.state === "redundant") return finish(null);
+        if (["installed", "activated"].includes(worker.state)) {
+          finish(worker);
+        }
+      };
+      worker.addEventListener("statechange", onState);
+      workerDisposer = () => worker.removeEventListener("statechange", onState);
+      onState();
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    registration.addEventListener("updatefound", inspect);
+    inspect();
+  });
+}
+
+function waitForWorkerReady(worker, timeoutMs) {
+  if (["installed", "activated"].includes(worker.state)) {
+    return Promise.resolve(worker);
+  }
+  if (worker.state === "redundant") return Promise.resolve(null);
+  return new Promise(resolve => {
+    const finish = value => {
+      clearTimeout(timer);
+      worker.removeEventListener("statechange", onState);
+      resolve(value);
+    };
+    const onState = () => {
+      if (worker.state === "redundant") return finish(null);
+      if (["installed", "activated"].includes(worker.state)) finish(worker);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    worker.addEventListener("statechange", onState);
+    onState();
   });
 }
 

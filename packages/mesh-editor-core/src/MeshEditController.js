@@ -38,7 +38,7 @@ import {
 } from "./MeshEditMath.js";
 
 export class MeshEditController {
-  static apiVersion = "mesh-edit-controller-v3";
+  static apiVersion = "mesh-edit-controller-v4-occurrences";
   #session = null;
   #listeners = new Set();
   #unsubscribeSandbox = null;
@@ -107,7 +107,8 @@ export class MeshEditController {
     }
     const objectId = selection.members[0].objectId;
     const state = this.sandbox.getSnapshot();
-    const object = state.objects.find(candidate => candidate.id === objectId);
+    const object = this.sandbox.getObject?.(objectId) ??
+      state.objects.find(candidate => candidate.id === objectId);
     const availability = this.#editAvailability(object);
     if (!availability.ok) {
       throw new Error(availability.message);
@@ -127,14 +128,18 @@ export class MeshEditController {
       );
       geometry.dispose?.();
     }
-    const objectWorldMatrix = hierarchy.worldMatrixOf(objectId);
+    const objectWorldMatrix = this.sandbox.getObjectWorldMatrix?.(objectId) ??
+      hierarchy.worldMatrixOf(objectId);
     assertInvertibleWorldMatrix(objectWorldMatrix);
-    const localFrame = composeRotationFrame([
-      ...[...hierarchy.ancestorsOf(objectId)]
-        .reverse()
-        .map(id => hierarchy.node(id).rotation ?? [0, 0, 0, 1]),
-      object.rotation ?? [0, 0, 0, 1]
-    ]);
+    const occurrence = this.sandbox.getInstanceOccurrence?.(objectId) ?? null;
+    const localFrame = occurrence
+      ? worldRotationQuaternion(objectWorldMatrix)
+      : composeRotationFrame([
+          ...[...hierarchy.ancestorsOf(objectId)]
+            .reverse()
+            .map(id => hierarchy.node(id).rotation ?? [0, 0, 0, 1]),
+          object.rotation ?? [0, 0, 0, 1]
+        ]);
     const groups = coincidentVertexGroups(descriptor.positions);
     const topology = buildMeshTopology(descriptor);
     const selectedIndices = selectAll
@@ -245,6 +250,10 @@ export class MeshEditController {
     // de translação torna a mudança de modo imediatamente visível. O clique
     // nos marcadores continua selecionando vértices mesmo neste modo.
     this.renderer.setTransformMode("translate");
+    // Re-synchronize the component selection after the tool mode is active.
+    // This prevents the first gizmo drag from using the pre-entry selection
+    // snapshot; previously a manual tool switch happened to perform this sync.
+    this.#syncSelection({ notify: false });
     this.#notify();
     return this.status();
   }
@@ -1169,8 +1178,11 @@ export class MeshEditController {
         return false;
       }
       const hierarchy = new HierarchyIndex(state.objects);
+      const currentWorldMatrix = this.sandbox.getObjectWorldMatrix?.(
+        session.objectId
+      ) ?? hierarchy.worldMatrixOf(session.objectId);
       return matricesNear(
-        hierarchy.worldMatrixOf(session.objectId),
+        currentWorldMatrix,
         session.objectWorldMatrix
       );
     } catch {
@@ -1337,6 +1349,15 @@ export class MeshEditController {
       catch (error) { console.error("Mesh edit listener failed", error); }
     }
   }
+}
+
+function worldRotationQuaternion(matrix) {
+  const world = new THREE.Matrix4().fromArray(matrix);
+  const position = new THREE.Vector3();
+  const rotation = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  world.decompose(position, rotation, scale);
+  return rotation.normalize().toArray();
 }
 
 function executionOptions(kind, topologyOptions, options) {
