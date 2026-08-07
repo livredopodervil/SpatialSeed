@@ -1,11 +1,17 @@
 import {
+  persistentObjectAppendMany,
+  persistentObjectRemoveIds,
+  persistentObjectUpdateAt,
+  persistentObjectUpdateMany
+} from "../../core/src/PersistentObjectArray.js?build=20260807-0051a";
+import {
   applyWorldTransforms,
   groupNodes,
   hierarchySubtreeIds,
   HierarchyIndex,
   reparentPreservingWorld,
   ungroupNodes
-} from "../../scene-hierarchy/src/index.js";
+} from "../../scene-hierarchy/src/index.js?build=20260807-0051a";
 import {
   normalizeExplicitInstanceFamily
 } from "../../procedural-families/src/index.js?build=20260731-0044a";
@@ -21,36 +27,39 @@ import {
   normalizeSketchDescriptor
 } from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
 
-function updateById(objects, id, updater) {
-  const index = objects.findIndex(object => object.id === id);
+function updateById(objects, id, updater, context = {}) {
+  const index = typeof context.getObjectPosition === "function"
+    ? context.getObjectPosition(id)
+    : objects.findIndex(object => object.id === id);
   if (index < 0) return objects;
-
-  const next = objects.slice();
-  next[index] = Object.freeze(updater(objects[index]));
-  return Object.freeze(next);
+  const current = typeof context.getObject === "function"
+    ? context.getObject(id) ?? objects[index]
+    : objects[index];
+  const nextObject = Object.freeze(updater(current));
+  return persistentObjectUpdateAt(objects, index, nextObject);
 }
 
-function updateMany(objects, transforms) {
-  const byId = new Map(
-    transforms.map(transform => [transform.id, transform])
-  );
-
-  let changed = false;
-
-  const next = objects.map(object => {
-    const transform = byId.get(object.id);
-    if (!transform) return object;
-
-    changed = true;
-    return Object.freeze({
-      ...object,
-      position: [...transform.position],
-      rotation: [...transform.rotation],
-      scale: [...transform.scale]
+function updateMany(objects, transforms, context = {}) {
+  const updates = [];
+  for (const transform of transforms ?? []) {
+    const index = typeof context.getObjectPosition === "function"
+      ? context.getObjectPosition(transform.id)
+      : objects.findIndex(object => object.id === transform.id);
+    if (index < 0) continue;
+    const object = typeof context.getObject === "function"
+      ? context.getObject(transform.id) ?? objects[index]
+      : objects[index];
+    updates.push({
+      index,
+      value: Object.freeze({
+        ...object,
+        position: Object.freeze([...transform.position]),
+        rotation: Object.freeze([...transform.rotation]),
+        scale: Object.freeze([...transform.scale])
+      })
     });
-  });
-
-  return changed ? Object.freeze(next) : objects;
+  }
+  return persistentObjectUpdateMany(objects, updates);
 }
 
 function applyObjectPatch(object, patch = {}) {
@@ -107,17 +116,21 @@ function applyObjectPatch(object, patch = {}) {
     );
   }
 
+  if (resourcePatchKeys(patch).length) {
+    next.prototypeId = newPrototypeId(object.id);
+    next.derivedFromPrototypeId = object.prototypeId ?? object.id;
+  }
+
   return next;
 }
 
-function applyPropertyUpdates(objects, command) {
+function applyPropertyUpdates(objects, command, context = {}) {
   const targetIds = [...(command.targetIds ?? [])];
   const updates = command.updates ?? [];
 
   if (!targetIds.length || !updates.length) return objects;
 
   const uniqueTargets = new Set(targetIds);
-  const existingIds = new Set(objects.map(object => object.id));
   const updateById = new Map(updates.map(update => [update.id, update]));
 
   if (uniqueTargets.size !== targetIds.length) {
@@ -125,7 +138,10 @@ function applyPropertyUpdates(objects, command) {
   }
 
   for (const id of targetIds) {
-    if (!existingIds.has(id)) throw new Error(`Objeto inexistente: ${id}.`);
+    const exists = typeof context.hasObject === "function"
+      ? context.hasObject(id)
+      : objects.some(object => object.id === id);
+    if (!exists) throw new Error(`Objeto inexistente: ${id}.`);
     if (!updateById.has(id)) throw new Error(`Atualização ausente: ${id}.`);
   }
 
@@ -136,12 +152,21 @@ function applyPropertyUpdates(objects, command) {
     throw new Error("Atualizações de propriedades não correspondem aos alvos.");
   }
 
-  return Object.freeze(objects.map(object => {
-    const update = updateById.get(object.id);
-    return update
-      ? Object.freeze(applyObjectPatch(object, update.patch))
-      : object;
-  }));
+  const indexed = [];
+  for (const id of targetIds) {
+    const index = typeof context.getObjectPosition === "function"
+      ? context.getObjectPosition(id)
+      : objects.findIndex(object => object.id === id);
+    if (index < 0) continue;
+    const object = typeof context.getObject === "function"
+      ? context.getObject(id) ?? objects[index]
+      : objects[index];
+    indexed.push({
+      index,
+      value: Object.freeze(applyObjectPatch(object, updateById.get(id).patch))
+    });
+  }
+  return persistentObjectUpdateMany(objects, indexed);
 }
 
 export function boxRegionReducer(state, command, context = {}) {
@@ -151,12 +176,15 @@ export function boxRegionReducer(state, command, context = {}) {
       if (!id) {
         throw new TypeError("Câmera persistente exige id.");
       }
-      if (state.objects.some(object => object.id === id)) {
+      if (typeof context.hasObject === "function"
+        ? context.hasObject(id)
+        : state.objects.some(object => object.id === id)) {
         throw new Error(`Duplicate object id: ${id}`);
       }
       const camera = freezeCamera(command.camera);
       const object = Object.freeze({
         id,
+        prototypeId: command.prototypeId ?? id,
         kind: "camera",
         name: String(command.name ?? id),
         parentId: command.parentId ?? null,
@@ -173,8 +201,8 @@ export function boxRegionReducer(state, command, context = {}) {
         scale: Object.freeze([1, 1, 1]),
         camera
       });
-      const objects = Object.freeze([...state.objects, object]);
-      new HierarchyIndex(objects);
+      const objects = persistentObjectAppendMany(state.objects, [object]);
+      validateNewParent(object, context);
       const makeDefault = Boolean(command.makeDefault);
       return {
         state: Object.freeze({
@@ -201,7 +229,9 @@ export function boxRegionReducer(state, command, context = {}) {
 
     case "camera.update": {
       const id = String(command.id ?? "").trim();
-      const current = state.objects.find(object => object.id === id);
+      const current = typeof context.getObject === "function"
+        ? context.getObject(id)
+        : state.objects.find(object => object.id === id);
       if (!current || current.kind !== "camera") {
         throw new Error(`Câmera persistente inexistente: ${id}.`);
       }
@@ -237,7 +267,8 @@ export function boxRegionReducer(state, command, context = {}) {
           rotation: nextRotation,
           scale: object.scale ?? [1, 1, 1],
           camera: nextCamera
-        })
+        }),
+        context
       );
       return {
         state: Object.freeze({ ...state, objects }),
@@ -254,9 +285,10 @@ export function boxRegionReducer(state, command, context = {}) {
         ? null
         : String(command.id).trim();
       if (id !== null) {
-        const camera = state.objects.find(object =>
-          object.id === id && object.kind === "camera"
-        );
+        const candidate = typeof context.getObject === "function"
+          ? context.getObject(id)
+          : state.objects.find(object => object.id === id);
+        const camera = candidate?.kind === "camera" ? candidate : null;
         if (!camera) {
           throw new Error(`Câmera persistente inexistente: ${id}.`);
         }
@@ -280,11 +312,14 @@ export function boxRegionReducer(state, command, context = {}) {
     case "light.create": {
       const id = String(command.id ?? "").trim();
       if (!id) throw new TypeError("Luz persistente exige id.");
-      if (state.objects.some(object => object.id === id)) {
+      if (typeof context.hasObject === "function"
+        ? context.hasObject(id)
+        : state.objects.some(object => object.id === id)) {
         throw new Error(`Duplicate object id: ${id}`);
       }
       const object = Object.freeze({
         id,
+        prototypeId: command.prototypeId ?? id,
         kind: "light",
         name: String(command.name ?? id),
         parentId: command.parentId ?? null,
@@ -301,8 +336,8 @@ export function boxRegionReducer(state, command, context = {}) {
         scale: Object.freeze([1, 1, 1]),
         light: freezeLight(command.light)
       });
-      const objects = Object.freeze([...state.objects, object]);
-      new HierarchyIndex(objects);
+      const objects = persistentObjectAppendMany(state.objects, [object]);
+      validateNewParent(object, context);
       return {
         state: Object.freeze({ ...state, objects }),
         changes: [{ type: "object-created", objectId: id, object }]
@@ -331,7 +366,8 @@ export function boxRegionReducer(state, command, context = {}) {
       const objects = updateById(
         state.objects,
         objectId,
-        () => object
+        () => object,
+        context
       );
       return {
         state: Object.freeze({ ...state, objects }),
@@ -346,19 +382,20 @@ export function boxRegionReducer(state, command, context = {}) {
 
     case "stroke-logical-group.create": {
       const target = freezeStrokeBundleObject(command.object, context);
-      const existingIds = new Set(state.objects.map(object => String(object.id)));
-      if (existingIds.has(String(target.id))) {
+      if (typeof context.hasObject === "function"
+        ? context.hasObject(target.id)
+        : state.objects.some(object => String(object.id) === String(target.id))) {
         throw new Error(`Duplicate object id: ${target.id}`);
       }
-      const withTarget = Object.freeze([...state.objects, target]);
+      const withTarget = persistentObjectAppendMany(state.objects, [target]);
       const existingGroupId = command.existingGroupId == null
         ? null
         : String(command.existingGroupId);
 
       if (existingGroupId !== null) {
-        const group = state.objects.find(object =>
-          String(object.id) === existingGroupId
-        );
+        const group = typeof context.getObject === "function"
+          ? context.getObject(existingGroupId)
+          : state.objects.find(object => String(object.id) === existingGroupId);
         if (!group || group.kind !== "group") {
           throw new Error(`Grupo lógico inexistente: ${existingGroupId}.`);
         }
@@ -450,12 +487,14 @@ export function boxRegionReducer(state, command, context = {}) {
           (value, axis) => Number(value) + positionDelta[axis]
         )),
         geometry,
+        prototypeId: newPrototypeId(objectId),
+        derivedFromPrototypeId: existing.prototypeId ?? existing.id,
         selectionAnchorPolicy: geometry.selectionAnchorPolicy,
         ...(geometry.selectionAnchorLocal
           ? { selectionAnchorLocal: geometry.selectionAnchorLocal }
           : {})
       });
-      const objects = updateById(state.objects, objectId, () => object);
+      const objects = updateById(state.objects, objectId, () => object, context);
       return {
         state: Object.freeze({ ...state, objects }),
         changes: [{
@@ -486,12 +525,14 @@ export function boxRegionReducer(state, command, context = {}) {
       const object = Object.freeze({
         ...existing,
         geometry,
+        prototypeId: newPrototypeId(objectId),
+        derivedFromPrototypeId: existing.prototypeId ?? existing.id,
         selectionAnchorPolicy: geometry.selectionAnchorPolicy,
         ...(geometry.selectionAnchorLocal
           ? { selectionAnchorLocal: geometry.selectionAnchorLocal }
           : {})
       });
-      const objects = updateById(state.objects, objectId, () => object);
+      const objects = updateById(state.objects, objectId, () => object, context);
       return {
         state: Object.freeze({ ...state, objects }),
         changes: [{
@@ -640,6 +681,7 @@ export function boxRegionReducer(state, command, context = {}) {
       const family = normalizeExplicitInstanceFamily(command.family);
       const object = Object.freeze({
         id,
+        prototypeId: command.prototypeId ?? id,
         kind: "instance-family",
         name: String(command.name ?? id),
         parentId: command.parentId ?? null,
@@ -690,7 +732,7 @@ export function boxRegionReducer(state, command, context = {}) {
       return {
         state: Object.freeze({
           ...state,
-          objects: Object.freeze([...state.objects, object])
+          objects: persistentObjectAppendMany(state.objects, [object])
         }),
         changes: [{
           type: "object-created",
@@ -707,11 +749,12 @@ export function boxRegionReducer(state, command, context = {}) {
         : null;
       const object = Object.freeze({
         id: command.id,
+        prototypeId: command.prototypeId ?? command.id,
         kind: command.kind ?? geometry?.type ?? "box",
         name: command.name ?? command.id,
-        position: command.position ?? [0, 1, 0],
+        position: Object.freeze([...(command.position ?? [0, 1, 0])]),
         rotation: Object.freeze([...(command.rotation ?? [0, 0, 0, 1])]),
-        scale: [1, 1, 1],
+        scale: Object.freeze([1, 1, 1]),
         ...(geometry
           ? { geometry }
           : { size: command.size ?? [2, 2, 2] }),
@@ -743,7 +786,7 @@ export function boxRegionReducer(state, command, context = {}) {
       return {
         state: Object.freeze({
           ...state,
-          objects: Object.freeze([...state.objects, object])
+          objects: persistentObjectAppendMany(state.objects, [object])
         }),
         changes: [{
           type: "object-created",
@@ -764,8 +807,11 @@ export function boxRegionReducer(state, command, context = {}) {
           geometry,
           ...(command.sketch
             ? { sketch: normalizeSketchDescriptor(command.sketch) }
-            : {})
-        })
+            : {}),
+          prototypeId: newPrototypeId(command.id),
+          derivedFromPrototypeId: object.prototypeId ?? object.id
+        }),
+        context
       );
       if (objects === state.objects) return { state, changes: [] };
       return {
@@ -784,10 +830,11 @@ export function boxRegionReducer(state, command, context = {}) {
         command.id,
         object => ({
           ...object,
-          position: [...command.position],
-          rotation: [...command.rotation],
-          scale: [...command.scale]
-        })
+          position: Object.freeze([...command.position]),
+          rotation: Object.freeze([...command.rotation]),
+          scale: Object.freeze([...command.scale])
+        }),
+        context
       );
 
       if (objects === state.objects) {
@@ -807,14 +854,15 @@ export function boxRegionReducer(state, command, context = {}) {
       const objects = updateById(
         state.objects,
         command.id,
-        object => applyObjectPatch(object, command.patch)
+        object => applyObjectPatch(object, command.patch),
+        context
       );
       if (objects === state.objects) return { state, changes: [] };
       return { state: Object.freeze({ ...state, objects }), changes: [{ type: "object-updated", objectId: command.id }] };
     }
 
     case "selection.properties.set": {
-      const objects = applyPropertyUpdates(state.objects, command);
+      const objects = applyPropertyUpdates(state.objects, command, context);
       if (objects === state.objects) return { state, changes: [] };
 
       return {
@@ -829,7 +877,7 @@ export function boxRegionReducer(state, command, context = {}) {
 
     case "selection.duplicate": {
       const incoming = (command.objects ?? []).map(object =>
-        Object.freeze(structuredClone(object))
+        freezeDuplicateObject(object)
       );
       if (!incoming.length) return { state, changes: [] };
 
@@ -855,7 +903,7 @@ export function boxRegionReducer(state, command, context = {}) {
         hasExisting,
         incomingIds
       });
-      const objects = Object.freeze([...state.objects, ...incoming]);
+      const objects = persistentObjectAppendMany(state.objects, incoming);
 
       return {
         state: Object.freeze({
@@ -874,14 +922,22 @@ export function boxRegionReducer(state, command, context = {}) {
     case "selection.delete": {
       const requestedIds=command.ids ?? [];
       if (!requestedIds.length) return { state, changes: [] };
-      const ids=new Set(hierarchySubtreeIds(state.objects,requestedIds));
+      const ids = new Set(
+        command.expandedSubtree
+          ? requestedIds.map(String)
+          : typeof context.getObjectDescendantIds === "function"
+            ? context.getObjectDescendantIds(requestedIds, { includeRoots: true })
+            : hierarchySubtreeIds(state.objects, requestedIds)
+      );
 
-      const removed = state.objects.filter(object => ids.has(object.id));
+      const removed = typeof context.getObject === "function"
+        ? [...ids].map(id => context.getObject(id)).filter(Boolean)
+        : state.objects.filter(object => ids.has(String(object.id)));
       if (!removed.length) return { state, changes: [] };
 
       const nextState = {
         ...state,
-        objects: Object.freeze(state.objects.filter(object => !ids.has(object.id)))
+        objects: persistentObjectRemoveIds(state.objects, ids)
       };
       const defaultRemoved = ids.has(state.defaultCameraId);
       if (defaultRemoved) delete nextState.defaultCameraId;
@@ -907,7 +963,8 @@ export function boxRegionReducer(state, command, context = {}) {
     case "selection.transform": {
       const objects = updateMany(
         state.objects,
-        command.transforms ?? []
+        command.transforms ?? [],
+        context
       );
 
       if (objects === state.objects) {
@@ -927,7 +984,8 @@ export function boxRegionReducer(state, command, context = {}) {
     case "selection.transform-world": {
       const objects=applyWorldTransforms(
         state.objects,
-        command.transforms ?? []
+        command.transforms ?? [],
+        context
       );
 
       if (objects === state.objects) return { state, changes: [] };
@@ -1051,6 +1109,41 @@ function normalizeSelectionAnchorPolicy(value) {
     throw new RangeError(`Política de âncora desconhecida: ${policy}.`);
   }
   return policy;
+}
+
+
+function validateNewParent(object, context = {}) {
+  if (object?.parentId === null || object?.parentId === undefined) return true;
+  if (typeof context.hasObject === "function" && !context.hasObject(object.parentId)) {
+    throw new Error(`Parent object not found: ${object.parentId}`);
+  }
+  return true;
+}
+
+function freezeDuplicateObject(value) {
+  if (!value || typeof value !== "object") {
+    throw new TypeError("Objeto duplicado inválido.");
+  }
+  if (Object.isFrozen(value)) return value;
+  const object = { ...value };
+  object.prototypeId ??= value.id;
+  for (const key of ["position", "rotation", "scale"]) {
+    if (Array.isArray(object[key])) object[key] = Object.freeze([...object[key]]);
+  }
+  return Object.freeze(object);
+}
+
+function resourcePatchKeys(patch = {}) {
+  const transformOnly = new Set([
+    "position", "rotation", "scale", "name", "parentId", "instanceState"
+  ]);
+  return Object.keys(patch).filter(key => !transformOnly.has(key));
+}
+
+function newPrototypeId(objectId) {
+  const suffix = globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `prototype:${String(objectId)}:${suffix}`;
 }
 
 function freezeGeometry(value) {

@@ -51,7 +51,7 @@ export function createDefaultPropertyRegistry() {
       path: ["scale"],
       valueType: "vector3",
       procedural: true,
-      normalize: value => positiveVector(value, 3),
+      normalize: value => nonZeroVector(value, 3),
       read: object => [...(object.scale ?? [1, 1, 1])]
     }))
     .register(property({
@@ -466,6 +466,16 @@ function positiveVector(value, length) {
   const result = vector(value, length);
   if (result.some(component => component <= 0)) {
     throw new RangeError("Todos os componentes devem ser positivos.");
+  }
+  return result;
+}
+
+function nonZeroVector(value, length) {
+  const result = vector(value, length);
+  if (result.some(component => component === 0)) {
+    throw new RangeError(
+      "Escala zero não é permitida; valores negativos representam espelho."
+    );
   }
   return result;
 }

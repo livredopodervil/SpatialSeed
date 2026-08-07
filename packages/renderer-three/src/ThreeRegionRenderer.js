@@ -3,15 +3,22 @@ import {
   RenderDemandScheduler
 } from "./RenderDemandScheduler.js?build=20260806-0050a1";
 import {
+  SpatialObjectIndex,
+  spatialCellKeyForPoint
+} from "./SpatialObjectIndex.js?build=20260807-0051a";
+import {
+  mirrorGeometryXInPlace
+} from "./MirroredGeometry.js?build=20260807-0051a";
+import {
   InstanceBatch,
   updateAbsoluteInstanceColor
 } from "../../instance-batches/src/InstanceBatch.js?build=20260730-0040e";
 import {
   InstanceBatchManager
-} from "../../instance-batches/src/InstanceBatchManager.js?build=20260801-0045a1";
+} from "../../instance-batches/src/InstanceBatchManager.js?build=20260807-0051a";
 import {
   HeterogeneousBatchManager
-} from "./HeterogeneousBatchManager.js?build=20260801-0045a1";
+} from "./HeterogeneousBatchManager.js?build=20260807-0051a";
 import {
   normalizeStrokeBundleDescriptor,
   strokeBundleChunkDescriptor,
@@ -30,11 +37,11 @@ import {
 } from "./ViewerEnvironment.js?build=20260726-0032a";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260801-0045a1";
-import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260715-0023d";
+import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260807-0051a";
 import {
   normalizeCameraProjection,
   normalizeNavigationCamera
-} from "../../runtime-layers/src/index.js?build=20260725-0029f1";
+} from "../../runtime-layers/src/index.js?build=20260807-0051a";
 import {
   affectedHierarchyIds,
   applyProjectedWorldMatrix,
@@ -54,7 +61,7 @@ import {
 import {
   composeAnimationLayer,
   createAnimationTargetSnapshot
-} from "./AnimationTransformOverlay.js?build=20260806-0050c";
+} from "./AnimationTransformOverlay.js?build=20260807-0051a";
 import {
   cameraFrameQuaternion,
   constrainWorldDeltaMatrix,
@@ -139,6 +146,14 @@ export class ThreeRegionRenderer {
   #editPlane = null;
   #drawingPlane = null;
   #surfaceRaycastProbe = new THREE.Mesh();
+  #pickingRaycastProbe = new THREE.Mesh();
+  #spatialObjectIndex = new SpatialObjectIndex({
+    cellSize: 32,
+    maxCellsPerObject: 512
+  });
+  #spatialShardSize = 32;
+  #spatialShardCapacity = 256;
+  #mirrorXMatrix = new THREE.Matrix4().makeScale(-1, 1, 1);
   #navigationDefaults = {
     enableRotate: true,
     enablePan: true,
@@ -214,6 +229,10 @@ export class ThreeRegionRenderer {
     fullBatchVisits: 0,
     screenObjectsVisited: 0,
     raycastBatchVisits: 0,
+    spatialRayQueries: 0,
+    spatialRayCandidates: 0,
+    spatialExactRaycasts: 0,
+    spatialShardMigrations: 0,
     familyObjects: 0,
     familyInstances: 0,
     familyEstimatedBytes: 0,
@@ -1403,7 +1422,7 @@ export class ThreeRegionRenderer {
       proxy.updateWorldMatrix?.(true, false);
       probe.geometry = batch.mesh.geometry;
       probe.material = batch.mesh.material;
-      probe.matrixWorld.copy(proxy.matrixWorld);
+      probe.matrixWorld.copy(this.#batchMatrixForProxy(proxy));
       probe.userData.surfaceObjectId = objectId;
       for (const hit of this.raycaster.intersectObject(probe, false)) {
         candidates.push(surfacePlacementFromHit({
@@ -1450,24 +1469,15 @@ export class ThreeRegionRenderer {
     );
     this.raycaster.setFromCamera(this.pointer, this.camera);
     if (surface) {
-      const batches = this.#batchManager.batches();
-      const heterogeneousBatches = this.#heterogeneousBatchManager.batches();
-      this.#incrementalDiagnostics.raycastBatchVisits +=
-        batches.length + heterogeneousBatches.length;
-      const targets = [
-        ...batches.map(batch => batch.mesh),
-        ...heterogeneousBatches.map(batch => batch.mesh)
-      ].filter(Boolean);
-      const hit = this.raycaster.intersectObjects(targets, false)[0];
+      this.#flushBatchBounds();
+      const hit = this.#raycastSpatialObjects({ firstOnly: true })[0] ?? null;
       if (hit?.point) {
-        const normal = hit.face?.normal
-          ? transformHitNormalToWorld(hit)
-          : null;
         return Object.freeze({
           point: Object.freeze(hit.point.toArray()),
-          normal: normal
-            ? Object.freeze(normal.normalize().toArray())
+          normal: hit.normal
+            ? Object.freeze(hit.normal.toArray())
             : null,
+          objectId: hit.objectId,
           source: "surface"
         });
       }
@@ -1843,7 +1853,11 @@ export class ThreeRegionRenderer {
      * Operações de grupo/reparent continuam pelo caminho completo acima.
      */
     this.#incrementalDiagnostics.skippedHierarchyBuilds += 1;
-    this.#scheduleHierarchyRefresh(state);
+    if (changes.some(change =>
+      ["object-created", "object-deleted"].includes(change.type)
+    )) {
+      this.#scheduleHierarchyRefresh(state);
+    }
     this.#finishLocalizedSceneUpdate();
   }
 
@@ -2310,9 +2324,7 @@ export class ThreeRegionRenderer {
         .filter(Boolean)
     );
     for (const batchKey of heterogeneousBatchKeys) {
-      const batch = this.#heterogeneousBatchManager.batches().find(
-        item => item.key === batchKey
-      );
+      const batch = this.#heterogeneousBatchManager.getBatch(batchKey);
       if (batch) result.push([`heterogeneous:${batchKey}`, batch]);
     }
     return result;
@@ -2324,6 +2336,8 @@ export class ThreeRegionRenderer {
       meshes: this.#meshes.size,
       familyBuildQueue: this.#familyBuildQueue.length,
       familyBuildActive: this.#familyBuildHandle !== null,
+      spatialIndex: this.#spatialObjectIndex.diagnostics(),
+      spatialShards: this.#batchManager.stats(),
       renderDemand: this.getRenderDemandDiagnostics()
     };
   }
@@ -2472,6 +2486,8 @@ export class ThreeRegionRenderer {
       proxy.userData.objectId = object.id;
       proxy.userData.kind = object.kind;
       proxy.userData.batchKey = null;
+      proxy.userData.batchBaseKey = null;
+      proxy.userData.spatialShardBaseKey = null;
       proxy.userData.size = object.size ? [...object.size] : [0,0,0];
       proxy.userData.localBounds = null;
       proxy.userData.appearanceId = object.appearanceId;
@@ -2501,9 +2517,12 @@ export class ThreeRegionRenderer {
       if (proxy.userData.batchKey) {
         this.#removeFromBatch(object.id, proxy.userData.batchKey);
         proxy.userData.batchKey = null;
+        proxy.userData.batchBaseKey = null;
+        proxy.userData.spatialShardBaseKey = null;
       }
       proxy.userData.logicalOnly = true;
       proxy.userData.lightVisual = true;
+      this.#spatialObjectIndex.remove(object.id);
       this.#upsertLightVisual(object, proxy);
       return;
     }
@@ -2516,9 +2535,12 @@ export class ThreeRegionRenderer {
       if (proxy.userData.batchKey) {
         this.#removeFromBatch(object.id, proxy.userData.batchKey);
         proxy.userData.batchKey = null;
+        proxy.userData.batchBaseKey = null;
+        proxy.userData.spatialShardBaseKey = null;
       }
       proxy.userData.logicalOnly = true;
       proxy.userData.cameraVisual = true;
+      this.#spatialObjectIndex.remove(object.id);
       this.#upsertCameraVisual(object, proxy);
       return;
     }
@@ -2531,6 +2553,8 @@ export class ThreeRegionRenderer {
       if (proxy.userData.batchKey) {
         this.#removeFromBatch(object.id, proxy.userData.batchKey);
         proxy.userData.batchKey = null;
+        proxy.userData.batchBaseKey = null;
+        proxy.userData.spatialShardBaseKey = null;
       }
       proxy.userData.logicalOnly = false;
       this.#upsertFamilyVisual(object, proxy);
@@ -2546,6 +2570,8 @@ export class ThreeRegionRenderer {
       if (proxy.userData.batchKey) {
         this.#removeFromBatch(object.id, proxy.userData.batchKey);
         proxy.userData.batchKey = null;
+        proxy.userData.batchBaseKey = null;
+        proxy.userData.spatialShardBaseKey = null;
       }
       proxy.userData.logicalOnly = false;
       if (this.#upsertStrokeBundleVisual(object, proxy)) return;
@@ -2557,6 +2583,8 @@ export class ThreeRegionRenderer {
       if (proxy.userData.batchKey) {
         this.#removeFromBatch(object.id, proxy.userData.batchKey);
         proxy.userData.batchKey = null;
+        proxy.userData.batchBaseKey = null;
+        proxy.userData.spatialShardBaseKey = null;
       }
       proxy.userData.logicalOnly = false;
       if (this.#upsertHeterogeneousVisual(object, proxy)) return;
@@ -2570,16 +2598,20 @@ export class ThreeRegionRenderer {
         proxy.userData.batchKey=null;
       }
       proxy.userData.logicalOnly=true;
+      this.#spatialObjectIndex.remove(object.id);
       return;
     }
     proxy.userData.logicalOnly=false;
 
-    const nextBatchKey = this.#batchKeyFor(object);
+    const nextBatchKey = this.#batchKeyFor(object, proxy);
 
-    if (proxy.userData.batchKey !== nextBatchKey) {
+    if (proxy.userData.batchBaseKey !== nextBatchKey) {
       if (proxy.userData.batchKey) {
         this.#removeFromBatch(object.id, proxy.userData.batchKey);
       }
+      proxy.userData.batchKey = null;
+      proxy.userData.batchBaseKey = null;
+      proxy.userData.spatialShardBaseKey = null;
       this.#addToBatch(object, proxy, nextBatchKey);
     } else {
       this.#updateBatchMatrix(object.id, proxy);
@@ -2643,6 +2675,7 @@ export class ThreeRegionRenderer {
     this.#removeStrokeBundleVisual(id, proxy);
     this.#removeHeterogeneousObject(id, proxy);
     this.#removeFromBatch(id, proxy.userData.batchKey);
+    this.#spatialObjectIndex.remove(id);
     this.#meshes.delete(id);
     this.#selectedVisualIds.delete(id);
     this.#animationTargetIds.delete(id);
@@ -2696,6 +2729,7 @@ export class ThreeRegionRenderer {
       if (proxy.parent !== this.scene) this.scene.add(proxy);
       this.#updateSharedFamilyMatrices(current);
       this.#applyFamilyAppearance(current, binding);
+      this.#updateSpatialObjectIndex(object.id, proxy);
       return current;
     }
     if (current) this.#removeFamilyVisual(object.id, proxy);
@@ -2723,6 +2757,7 @@ export class ThreeRegionRenderer {
       proxy.userData.familyVisual = true;
       proxy.userData.appearanceBinding = binding;
       if (proxy.parent !== this.scene) this.scene.add(proxy);
+      this.#updateSpatialObjectIndex(object.id, proxy);
 
       const visual = {
         objectId: String(object.id),
@@ -2898,7 +2933,10 @@ export class ThreeRegionRenderer {
         visual.objectId,
         memberId
       );
-      const cell = familyBatchSpatialCell(visual.worldMatrix, 64);
+      const cell = familyBatchSpatialCell(
+        visual.worldMatrix,
+        this.#spatialShardSize
+      );
       const baseKey = JSON.stringify([
         "shared-family",
         visual.signature,
@@ -2917,7 +2955,7 @@ export class ThreeRegionRenderer {
         descriptor: {
           geometry: visual.geometry,
           material: visual.material,
-          capacity: Math.min(this.#batchCapacity, 8192)
+          capacity: this.#spatialShardCapacity
         },
         metadata: Object.freeze({
           kind: "family-member",
@@ -2976,6 +3014,7 @@ export class ThreeRegionRenderer {
         this.#markBatchDirty(location?.batchKey);
       }
     }
+    this.#updateSpatialObjectIndex(visual.objectId, visual.proxy);
     return changed;
   }
 
@@ -3339,7 +3378,10 @@ export class ThreeRegionRenderer {
   }
 
   #markBatchDirty(batchKey) {
-    if (batchKey) this.#dirtyBatchKeys.add(batchKey);
+    if (!batchKey) return;
+    this.#dirtyBatchKeys.add(batchKey);
+    const batch = this.#batchManager.getBatch(batchKey);
+    if (batch) batch.mesh.frustumCulled = false;
   }
 
   #isStrokeBundleObject(object) {
@@ -3515,6 +3557,7 @@ export class ThreeRegionRenderer {
     );
     if (proxy.parent !== this.scene) this.scene.add(proxy);
     this.#heterogeneousBatchManager.updateOwner(object.id, proxy.matrixWorld);
+    this.#updateSpatialObjectIndex(object.id, proxy);
     this.#applyObjectInstanceColor(object.id);
     return true;
   }
@@ -3568,6 +3611,7 @@ export class ThreeRegionRenderer {
         proxy.userData.heterogeneousGeometryKey === geometryKey &&
         proxy.userData.heterogeneousSignature === signature) {
       this.#heterogeneousBatchManager.update(object.id, proxy.matrixWorld);
+      this.#updateSpatialObjectIndex(object.id, proxy);
       this.#applyObjectInstanceColor(object.id);
       return true;
     }
@@ -3610,6 +3654,7 @@ export class ThreeRegionRenderer {
       proxy.userData.instanceColor = object.instanceState?.color ?? null;
       proxy.userData.materialColor = object.material?.color ?? "#ffffff";
       if (proxy.parent !== this.scene) this.scene.add(proxy);
+      this.#updateSpatialObjectIndex(object.id, proxy);
       const desired = effectiveAppearanceColor(binding, {
         baseColor: object.material?.color ?? "#ffffff",
         instanceColor: object.instanceState?.color ?? null
@@ -3636,9 +3681,7 @@ export class ThreeRegionRenderer {
   #setHeterogeneousResourceColor(resourceId, value) {
     const location = this.#heterogeneousBatchManager.locationOf(resourceId);
     if (!location) return false;
-    const batch = this.#heterogeneousBatchManager.batches().find(
-      item => item.key === location.batchKey
-    );
+    const batch = this.#heterogeneousBatchManager.getBatch(location.batchKey);
     if (!batch) return false;
     return this.#heterogeneousBatchManager.updateColor(
       resourceId,
@@ -3657,13 +3700,14 @@ export class ThreeRegionRenderer {
     return changed;
   }
 
-  #batchKeyFor(object) {
+  #batchKeyFor(object, proxy = null) {
     const descriptor = this.#geometryRegistry.describeLegacyObject(object);
     const renderProfile = this.#geometryRegistry.renderProfile(descriptor);
     const binding = appearanceBindingForObject(object);
     const materialRequest = renderMaterialRequest(object, binding);
     return JSON.stringify([
       this.#geometryRegistry.key(descriptor),
+      proxy && this.#proxyUsesMirrorX(proxy) ? "mirror-x" : "normal",
       object.kind === "stroke-bundle" ? String(object.id) : null,
       materialRequest.appearanceId ?? null,
       materialRequest.material ?? null,
@@ -3673,16 +3717,45 @@ export class ThreeRegionRenderer {
     ]);
   }
 
-  #addToBatch(object, proxy, batchKey) {
-    let batch = this.#batchManager.getBatch(batchKey);
+  #proxyUsesMirrorX(proxy) {
+    proxy.updateMatrixWorld(true);
+    return proxy.matrixWorld.determinant() < 0;
+  }
+
+  #batchMatrixForProxy(proxy) {
+    proxy.updateMatrixWorld(true);
+    const matrix = proxy.matrixWorld.clone();
+    return this.#proxyUsesMirrorX(proxy)
+      ? matrix.multiply(this.#mirrorXMatrix)
+      : matrix;
+  }
+
+  #addToBatch(object, proxy, batchBaseKey) {
+    proxy.updateMatrixWorld(true);
+    const mirroredX = this.#proxyUsesMirrorX(proxy);
+    const batchMatrix = this.#batchMatrixForProxy(proxy);
+    const spatialShardBaseKey = this.#spatialShardBaseKey(
+      batchBaseKey,
+      proxy
+    );
+    let batch = this.#batchManager.writableBatchForBaseKey(
+      spatialShardBaseKey
+    );
+    let added = null;
 
     if (!batch) {
-      const descriptor=this.#geometryRegistry.describeLegacyObject(object);
-      const renderProfile=this.#geometryRegistry.renderProfile(descriptor);
-      const geometryKey=this.#geometryRegistry.key(descriptor);
+      const descriptor = this.#geometryRegistry.describeLegacyObject(object);
+      const renderProfile = this.#geometryRegistry.renderProfile(descriptor);
+      const baseGeometryKey = this.#geometryRegistry.key(descriptor);
+      const geometryKey = mirroredX
+        ? `${baseGeometryKey}|mirror:x`
+        : baseGeometryKey;
       const geometry = this.#resourceCache.acquireGeometry(
         geometryKey,
-        () => this.#geometryRegistry.create(descriptor)
+        () => {
+          const created = this.#geometryRegistry.create(descriptor);
+          return mirroredX ? mirrorGeometryXInPlace(created) : created;
+        }
       );
       const binding = appearanceBindingForObject(object);
       const material = this.#materialCache.acquire({
@@ -3691,53 +3764,90 @@ export class ThreeRegionRenderer {
       });
 
       try {
-        const added = this.#batchManager.add({
+        added = this.#batchManager.addSegmented({
           objectId: object.id,
-          batchKey,
-          matrix: proxy.matrix,
+          batchBaseKey: spatialShardBaseKey,
+          matrix: batchMatrix,
           descriptor: {
             geometry: geometry.value,
             material: material.value.material,
-            capacity: this.#batchCapacity
+            capacity: this.#spatialShardCapacity
           }
         });
         batch = added.batch;
         batch.mesh.userData.geometryCacheKey = geometry.key;
         batch.mesh.userData.appearanceId = object.appearanceId;
         batch.mesh.userData.materialCacheKey = material.key;
+        batch.mesh.userData.spatialShardBaseKey = spatialShardBaseKey;
       } catch (error) {
         this.#resourceCache.releaseGeometry(geometry.key);
         this.#materialCache.release(material.key);
         throw error;
       }
     } else {
-      this.#batchManager.add({
+      added = this.#batchManager.addSegmented({
         objectId: object.id,
-        batchKey,
-        matrix: proxy.matrix,
+        batchBaseKey: spatialShardBaseKey,
+        matrix: batchMatrix,
         descriptor: {
           geometry: batch.geometry,
           material: batch.material,
-          capacity: batch.capacity
+          capacity: this.#spatialShardCapacity
         }
       });
+      batch = added.batch;
     }
 
-    proxy.userData.batchKey = batchKey;
-    this.#markBatchDirty(batchKey);
-    this.#storeGeometryBounds(proxy,batch.geometry);
+    proxy.userData.batchBaseKey = batchBaseKey;
+    proxy.userData.spatialShardBaseKey = spatialShardBaseKey;
+    proxy.userData.batchKey = batch.key;
+    this.#markBatchDirty(batch.key);
+    this.#storeGeometryBounds(proxy, batch.geometry, { mirroredX });
+    this.#updateSpatialObjectIndex(object.id, proxy);
     this.#applyObjectInstanceColor(object.id);
   }
 
-  #storeGeometryBounds(proxy,geometry) {
+  #spatialShardBaseKey(batchBaseKey, proxy) {
+    proxy.updateMatrixWorld(true);
+    const elements = proxy.matrixWorld.elements;
+    const cellKey = spatialCellKeyForPoint(
+      [elements[12], elements[13], elements[14]],
+      this.#spatialShardSize
+    );
+    return `${batchBaseKey}|spatial:${cellKey}`;
+  }
+
+  #updateSpatialObjectIndex(objectId, proxy) {
+    if (!proxy || proxy.userData.logicalOnly) {
+      this.#spatialObjectIndex.remove(objectId);
+      return false;
+    }
+    const bounds = this.#worldBoundsForProxy(proxy, new THREE.Box3());
+    if (bounds.isEmpty()) {
+      this.#spatialObjectIndex.remove(objectId);
+      return false;
+    }
+    return this.#spatialObjectIndex.update(objectId, {
+      min: bounds.min.toArray(),
+      max: bounds.max.toArray()
+    });
+  }
+
+  #storeGeometryBounds(proxy, geometry, { mirroredX = false } = {}) {
     if (!geometry.boundingBox) geometry.computeBoundingBox();
-    const bounds=geometry.boundingBox;
-    proxy.userData.localBounds=bounds
+    const bounds = geometry.boundingBox;
+    if (!bounds) {
+      proxy.userData.localBounds = null;
+      return;
+    }
+    const min = bounds.min.toArray();
+    const max = bounds.max.toArray();
+    proxy.userData.localBounds = mirroredX
       ? {
-          min:bounds.min.toArray(),
-          max:bounds.max.toArray()
+          min: [-max[0], min[1], min[2]],
+          max: [-min[0], max[1], max[2]]
         }
-      : null;
+      : { min, max };
   }
 
   #removeFromBatch(objectId, batchKey) {
@@ -3848,15 +3958,170 @@ export class ThreeRegionRenderer {
     if (proxy.matrixAutoUpdate) proxy.updateMatrix();
     proxy.updateMatrixWorld(true);
     if (this.#heterogeneousBatchManager.resourcesForOwner(objectId).length) {
-      return this.#heterogeneousBatchManager.updateOwner(
+      const changed = this.#heterogeneousBatchManager.updateOwner(
         objectId,
         proxy.matrixWorld
       ) > 0;
+      this.#updateSpatialObjectIndex(objectId, proxy);
+      return changed;
     }
+
     const location = this.#batchManager.locationOf(objectId);
-    const changed = this.#batchManager.update(objectId, proxy.matrix);
+    const baseKey = proxy.userData.batchBaseKey;
+    const rawObject = this.#objectsById.get(String(objectId));
+    const projectedObject = rawObject ? this.#projectObject(rawObject) : null;
+    const desiredBaseKey = projectedObject
+      ? this.#batchKeyFor(projectedObject, proxy)
+      : baseKey;
+
+    /*
+     * InstancedMesh não suporta matriz de instância com determinante negativo.
+     * Quando a transformação cruza a paridade, migramos somente este objeto
+     * para um batch cuja geometria é espelhada em X e cuja matriz volta a ter
+     * determinante positivo. O produto visual continua exatamente o mesmo.
+     */
+    if (location && baseKey && desiredBaseKey !== baseKey && projectedObject) {
+      const overlayReferences =
+        this.#animationObjectOverlayIds.get(String(objectId))?.size ?? 0;
+      for (let index = 0; index < overlayReferences; index += 1) {
+        this.#releaseAnimationBatchCulling(objectId);
+      }
+      this.#removeFromBatch(objectId, location.batchKey);
+      proxy.userData.batchKey = null;
+      proxy.userData.batchBaseKey = null;
+      proxy.userData.spatialShardBaseKey = null;
+      this.#addToBatch(projectedObject, proxy, desiredBaseKey);
+      this.#animationAppliedColors.delete(String(objectId));
+      for (let index = 0; index < overlayReferences; index += 1) {
+        this.#acquireAnimationBatchCulling(objectId);
+      }
+      this.#incrementalDiagnostics.spatialShardMigrations += 1;
+      return true;
+    }
+
+    const canMigrateShard = Boolean(
+      location && baseKey &&
+      !this.#session &&
+      !this.#animationTargetIds.has(String(objectId)) &&
+      !this.#sharedTransformObjectIds.has(String(objectId))
+    );
+
+    if (canMigrateShard) {
+      const desiredShardBaseKey = this.#spatialShardBaseKey(baseKey, proxy);
+      if (desiredShardBaseKey !== proxy.userData.spatialShardBaseKey) {
+        if (projectedObject) {
+          const previousBatchKey = location.batchKey;
+          this.#removeFromBatch(objectId, previousBatchKey);
+          proxy.userData.batchKey = null;
+          proxy.userData.spatialShardBaseKey = null;
+          this.#addToBatch(projectedObject, proxy, baseKey);
+          this.#incrementalDiagnostics.spatialShardMigrations += 1;
+          return true;
+        }
+      }
+    }
+
+    const changed = this.#batchManager.update(
+      objectId,
+      this.#batchMatrixForProxy(proxy)
+    );
     if (changed) this.#markBatchDirty(location?.batchKey);
+    this.#updateSpatialObjectIndex(objectId, proxy);
     return changed;
+  }
+
+  #raycastSpatialObjects({ firstOnly = false } = {}) {
+    this.#incrementalDiagnostics.spatialRayQueries += 1;
+    const candidates = this.#spatialObjectIndex.queryRay(
+      this.raycaster.ray,
+      { maxDistance: this.camera.far }
+    );
+    this.#incrementalDiagnostics.spatialRayCandidates += candidates.length;
+    const results = [];
+    let bestDistance = Infinity;
+    const pushHit = (objectId, hit) => {
+      if (!hit) return;
+      const normal = hit.face?.normal
+        ? transformHitNormalToWorld(hit).normalize()
+        : null;
+      const result = Object.freeze({
+        objectId: String(objectId),
+        distance: Number(hit.distance),
+        point: hit.point?.clone?.() ?? null,
+        normal: normal?.clone?.() ?? null
+      });
+      results.push(result);
+      bestDistance = Math.min(bestDistance, result.distance);
+      this.#incrementalDiagnostics.spatialExactRaycasts += 1;
+    };
+
+    const probe = this.#pickingRaycastProbe;
+    probe.matrixAutoUpdate = false;
+    probe.visible = true;
+
+    for (const candidate of candidates) {
+      if (firstOnly && candidate.distance > bestDistance) break;
+      const objectId = String(candidate.id);
+      const family = this.#familyVisuals.get(objectId);
+      if (family) {
+        let familyHit = null;
+        for (const batchKey of family.batchKeys) {
+          const batch = this.#batchManager.getBatch(batchKey);
+          if (!batch) continue;
+          this.#incrementalDiagnostics.raycastBatchVisits += 1;
+          for (const hit of this.raycaster.intersectObject(batch.mesh, false)) {
+            if (this.#batchManager.objectFromHit(hit) !== objectId) continue;
+            if (!familyHit || hit.distance < familyHit.distance) familyHit = hit;
+            break;
+          }
+        }
+        if (familyHit) pushHit(objectId, familyHit);
+        continue;
+      }
+
+      const heterogeneousResources =
+        this.#heterogeneousBatchManager.resourcesForOwner(objectId);
+      if (heterogeneousResources.length) {
+        const batchKeys = new Set(heterogeneousResources
+          .map(resourceId =>
+            this.#heterogeneousBatchManager.locationOf(resourceId)?.batchKey
+          )
+          .filter(Boolean));
+        let heterogeneousHit = null;
+        for (const batchKey of batchKeys) {
+          const batch = this.#heterogeneousBatchManager.getBatch(batchKey);
+          if (!batch) continue;
+          this.#incrementalDiagnostics.raycastBatchVisits += 1;
+          for (const hit of this.raycaster.intersectObject(batch.mesh, false)) {
+            if (this.#heterogeneousBatchManager.objectFromHit(hit) !== objectId) {
+              continue;
+            }
+            if (!heterogeneousHit || hit.distance < heterogeneousHit.distance) {
+              heterogeneousHit = hit;
+            }
+            break;
+          }
+        }
+        if (heterogeneousHit) pushHit(objectId, heterogeneousHit);
+        continue;
+      }
+
+      const location = this.#batchManager.locationOf(objectId);
+      const batch = location
+        ? this.#batchManager.getBatch(location.batchKey)
+        : null;
+      const proxy = this.#meshes.get(objectId);
+      if (!batch?.geometry || !proxy) continue;
+      proxy.updateMatrixWorld(true);
+      probe.geometry = batch.geometry;
+      probe.material = batch.material;
+      probe.matrixWorld.copy(this.#batchMatrixForProxy(proxy));
+      const hit = this.raycaster.intersectObject(probe, false)[0] ?? null;
+      if (hit) pushHit(objectId, hit);
+    }
+
+    results.sort((left, right) => left.distance - right.distance);
+    return results;
   }
 
   #worldBoundsForProxy(proxy, target = new THREE.Box3()) {
@@ -5743,22 +6008,10 @@ export class ThreeRegionRenderer {
       return;
     }
 
-    // Atualiza apenas lotes modificados. O Raycaster ordena os
-    // resultados pela distância à câmera, não pelo centro do mundo.
+    // Bounds sujos agora pertencem a shards pequenos. O picking consulta o
+    // índice espacial e só faz raycast exato nos objetos candidatos.
     this.#flushBatchBounds();
-
-    const selectionBatches = this.#batchManager.batches();
-    const heterogeneousBatches = this.#heterogeneousBatchManager.batches();
-    this.#incrementalDiagnostics.raycastBatchVisits +=
-      selectionBatches.length + heterogeneousBatches.length;
-    const hits = this.raycaster.intersectObjects(
-      selectionBatches.map(batch => batch.mesh),
-      false
-    );
-    const heterogeneousHits = this.raycaster.intersectObjects(
-      heterogeneousBatches.map(batch => batch.mesh),
-      false
-    );
+    const spatialHits = this.#raycastSpatialObjects();
     const cameraHits = this.raycaster.intersectObjects(
       [...this.#cameraVisuals.values()].flatMap(
         visual => [visual.body, visual.lens, visual.lines]
@@ -5772,10 +6025,7 @@ export class ThreeRegionRenderer {
       false
     );
     const hitIds=[...new Set([
-      ...hits.map(hit => this.#batchManager.objectFromHit(hit)),
-      ...heterogeneousHits.map(hit =>
-        this.#heterogeneousBatchManager.objectFromHit(hit)
-      ),
+      ...spatialHits.map(hit => hit.objectId),
       ...cameraHits.map(hit => hit.object.userData.cameraObjectId),
       ...lightHits.map(hit => hit.object.userData.lightObjectId),
       ...this.#cameraScreenHitIds(

@@ -1,7 +1,7 @@
 import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260730-0040e";
 import {
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260805-0048l1";
+} from "../../../packages/platform-web/src/index.js?build=20260802-0047d";
 
 export function bindWebInterface({
   runtime,
@@ -462,9 +462,16 @@ export function bindWebInterface({
 
   const unsubscribeWorld = runtime.subscribe(
     "world.changed",
-    () => {
+    payload => {
       uiRefresh.request("world.changed");
+      const cameraAffected = (payload?.changes ?? []).some(change =>
+        change?.object?.kind === "camera" ||
+        change?.previousObject?.kind === "camera" ||
+        ["sandbox-discard", "sandbox-rebased", "sandbox-replaced"]
+          .includes(change?.type)
+      );
       if (
+        cameraAffected &&
         !$("camera-panel").hidden &&
         !$("camera-panel").contains(documentRoot.activeElement)
       ) {

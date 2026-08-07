@@ -1,5 +1,5 @@
 import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260801-0045a1";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260807-0051a";
 import {
   ModuleRegistry
 } from "../../../packages/plugin-api/src/index.js?build=20260802-0047b";
@@ -9,21 +9,21 @@ import {
   CameraObjectService,
   ViewerCameraController,
   ViewerState,
-} from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
+} from "../../../packages/runtime-layers/src/index.js?build=20260807-0051a";
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260802-0047g";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260806-0050c";
-import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
+} from "../../../packages/region-box/src/index.js?build=20260807-0051a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0051a";
+import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260807-0051a";
 import {
   createVirtualResourceTree,
   parseResourcePath
 } from "../../../packages/resource-tree/src/index.js?build=20260801-0045a1";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260806-0050b";
-import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260807-0051a";
+import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260807-0051a";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260802-0047g";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260807-0051a";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260802-0047g";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
 import {
@@ -41,7 +41,7 @@ import {
 import {
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260727-0037c";
+} from "../../../packages/property-registry/src/index.js?build=20260807-0051a";
 import {
   createDefaultGeometryRegistry
 } from "../../../packages/geometry-registry/src/index.js?build=20260802-0047g";
@@ -95,10 +95,10 @@ import {
   AnimationCommandService,
   AnimationProcedureService,
   TemporalAnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260806-0050c";
+} from "../../../packages/animation-runtime/src/index.js?build=20260807-0051a";
 import {
   AnimationPanel
-} from "../../../packages/animation-panel/src/index.js?build=20260806-0050c";
+} from "../../../packages/animation-panel/src/index.js?build=20260807-0051a";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
@@ -125,13 +125,13 @@ import {
 } from "../../../packages/edit-tools/src/index.js?build=20260802-0047g";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260806-0050c";
+} from "../../../packages/object-placement/src/index.js?build=20260807-0051a";
 import {
   DrawingTargetController
-} from "../../../packages/drawing-target/src/index.js?build=20260806-0050c";
+} from "../../../packages/drawing-target/src/index.js?build=20260807-0051a";
 import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260806-0050c";
+} from "../../../packages/planar-authoring/src/index.js?build=20260807-0051a";
 import {
   StrokeCompactionScheduler,
   StrokeFusionService,
@@ -139,13 +139,13 @@ import {
 } from "../../../packages/stroke-resources/src/index.js?build=20260802-0047g";
 import {
   MeasurementController
-} from "../../../packages/measurement-tools/src/index.js?build=20260806-0050c";
+} from "../../../packages/measurement-tools/src/index.js?build=20260807-0051a";
 import {
   PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260806-0050c";
+} from "../../../packages/spatial-references/src/index.js?build=20260807-0051a";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
@@ -162,7 +162,7 @@ import {
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260806-0050c";
+} from "../../../packages/local-viewers/src/index.js?build=20260807-0051a";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v7";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -2042,7 +2042,7 @@ export async function createWebRuntime({
           gestureEnd: "O pointerup sela o capsule; preparação e despacho são fases separadas e continuam com orçamento durante gestos subsequentes.",
           undoRedo: "Deltas inversos são compactados antes da projeção; create+delete pendentes são eliminados sem construir recursos visuais.",
           toolChange: "Captura de fonte selecionada ainda constrói HierarchyIndex uma vez por revisão; previews posteriores usam cápsula S, não a cena N.",
-          selection: "Clique percorre lotes e famílias renderizadas; seleção em área reconstrói o índice de tela quando câmera ou cena invalidam o cache."
+          selection: "Clique consulta o índice espacial e faz raycast exato apenas nos candidatos; seleção em área reconstrói o índice de tela somente quando câmera ou cena invalidam o cache."
         })
       });
     })

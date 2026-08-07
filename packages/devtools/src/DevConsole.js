@@ -536,13 +536,8 @@ export class DevConsole {
 
       case "scale": {
         this.#expectExact(tokens, 3, "scale sx sy sz");
-        const meshActive = Boolean(
-          this.queries?.execute("mesh.edit.status")?.active
-        );
         return this.commands.execute("selection.scale", {
-          factors: tokens.map(value => meshActive
-            ? this.#nonZero(value)
-            : this.#positive(value))
+          factors: tokens.map(value => this.#nonZero(value))
         });
       }
 
@@ -725,7 +720,7 @@ export class DevConsole {
         "position x y z",
         "move dx dy dz",
         "rotate xDeg yDeg zDeg",
-        "scale sx sy sz",
+        "scale sx sy sz  (valor negativo = espelho no eixo)",
         "duplicate",
         "group [nome]",
         "ungroup",

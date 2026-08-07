@@ -305,9 +305,7 @@ export class CameraObjectService {
       String(entry?.id ?? entry?.objectId ?? "") === activeId
     );
     if (!transform?.worldMatrix) return false;
-    const node = this.sandbox.getSnapshot().objects.find(
-      object => object.id === activeId && object.kind === CAMERA_KIND
-    );
+    const node = this.sandbox.getObject?.(activeId) ?? null;
     if (!node) return false;
     const decomposed = decomposeTransform(transform.worldMatrix);
     const camera = normalizeNavigationCamera({
@@ -347,9 +345,7 @@ export class CameraObjectService {
 
   #cameraNode(id) {
     const normalized = requiredText(id, "Identificador de câmera");
-    const node = this.sandbox.getSnapshot().objects.find(
-      object => object.id === normalized
-    );
+    const node = this.sandbox.getObject?.(normalized) ?? null;
     if (!node || node.kind !== CAMERA_KIND) {
       throw new Error(`Câmera persistente inexistente: ${normalized}.`);
     }
@@ -360,7 +356,19 @@ export class CameraObjectService {
     const startedAt = performanceNow();
     const previousState = this.#lastState;
     this.#lastState = state;
+
+    const globalChange = changes.some(change =>
+      [
+        "initial",
+        "sandbox-undo",
+        "sandbox-redo",
+        "sandbox-recovered",
+        "sandbox-state-replaced"
+      ].includes(change?.type)
+    );
     if (changes.some(change => change?.type === "object-deleted")) {
+      /* Deleção é estrutural e rara; só nesse caso consultamos o snapshot
+         anterior para descobrir se o nó removido era uma câmera. */
       this.#diagnostics.cameraRemovalEvents += changes.filter(change =>
         change?.type === "object-deleted" &&
         previousState?.objects?.some(object =>
@@ -368,6 +376,7 @@ export class CameraObjectService {
         )
       ).length;
     }
+
     this.#resolvePendingActivation();
     if (changes.some(change =>
       [
@@ -378,14 +387,13 @@ export class CameraObjectService {
     )) {
       this.#allowDefaultAdoption = true;
     }
+
     const activeId = this.viewer.snapshot().activeCameraId ?? null;
     const active = activeId
-      ? state.objects.find(node =>
-          node.id === activeId && node.kind === CAMERA_KIND
-        )
+      ? this.sandbox.getObject?.(activeId) ?? null
       : null;
 
-    if (!active) {
+    if (!active || active.kind !== CAMERA_KIND) {
       if (activeId) {
         this.#allowDefaultAdoption = true;
         this.#applyingObjectCamera = true;
@@ -396,30 +404,58 @@ export class CameraObjectService {
         }
       }
       this.#adoptDefaultIfInactive();
-      this.#notify();
+      if (globalChange || changes.some(change =>
+        change?.type === "camera-default-changed" ||
+        this.#changeTouchesCamera(change, previousState)
+      )) {
+        this.#notify();
+      }
       this.#recordSandboxChangeDuration(startedAt);
       return;
     }
 
-    const hierarchy = new HierarchyIndex(state.objects);
-    const activeLineage = new Set([
-      activeId,
-      ...hierarchy.ancestorsOf(activeId)
-    ]);
-    const affectsActive = changes.some(change =>
-      [
-        "initial",
-        "sandbox-undo",
-        "sandbox-redo",
-        "sandbox-recovered",
-        "sandbox-state-replaced"
-      ].includes(change?.type) ||
-      activeLineage.has(change?.objectId) ||
+    const activeLineage = this.#cameraLineageIds(activeId);
+    const affectsActive = globalChange || changes.some(change =>
+      activeLineage.has(String(change?.objectId ?? "")) ||
       change?.type === "camera-default-changed"
     );
+    const affectsCameraList = affectsActive || changes.some(change =>
+      this.#changeTouchesCamera(change, previousState)
+    );
+
     if (affectsActive) this.activate(activeId);
-    else this.#notify();
+    else if (affectsCameraList) this.#notify();
+    /* Mudanças em objetos não relacionados não provocam list()/HierarchyIndex
+       nem atualização do painel de câmera. */
     this.#recordSandboxChangeDuration(startedAt);
+  }
+
+  #cameraLineageIds(objectId) {
+    const ids = new Set();
+    let current = this.sandbox.getObject?.(objectId) ?? null;
+    const guard = new Set();
+    while (current?.id && !guard.has(String(current.id))) {
+      const id = String(current.id);
+      guard.add(id);
+      ids.add(id);
+      const parentId = current.parentId ?? null;
+      if (parentId === null) break;
+      current = this.sandbox.getObject?.(parentId) ?? null;
+    }
+    return ids;
+  }
+
+  #changeTouchesCamera(change, previousState = null) {
+    if (!change) return false;
+    if (change.type === "camera-default-changed") return true;
+    const id = String(change.objectId ?? "");
+    if (!id) return false;
+    const current = this.sandbox.getObject?.(id) ?? null;
+    if (current?.kind === CAMERA_KIND) return true;
+    if (change.type !== "object-deleted") return false;
+    return Boolean(previousState?.objects?.some(object =>
+      object.id === id && object.kind === CAMERA_KIND
+    ));
   }
 
   #coordinationChanged(snapshot = {}) {
@@ -478,9 +514,7 @@ export class CameraObjectService {
     const state = this.#lastState ?? this.sandbox.getSnapshot();
     const id = state.defaultCameraId ?? null;
     if (!id) return false;
-    const camera = state.objects.find(
-      node => node.id === id && node.kind === CAMERA_KIND
-    );
+    const camera = this.sandbox.getObject?.(id) ?? null;
     if (!camera) return false;
     this.activate(id);
     return true;

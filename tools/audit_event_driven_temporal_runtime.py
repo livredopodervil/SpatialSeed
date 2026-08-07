@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "20260806-0050c"
+BUILD = "20260807-0051a"
 
 
 def require_file(relative: str) -> str:
@@ -36,7 +36,7 @@ def main() -> int:
         )
 
     index = require_file("apps/web/index.html")
-    require(index, f'./boot.js?build={BUILD}', "boot.js não usa o build 0050c.")
+    require(index, f'./boot.js?build={BUILD}', "boot.js não usa o build 0051a.")
 
     renderer = require_file(
         "packages/renderer-three/src/ThreeRegionRenderer.js"
@@ -227,7 +227,7 @@ def main() -> int:
     ):
         require(bootstrap, marker, f"Integração web ausente: {marker}")
 
-    print("Auditoria 0050c aprovada: tempo analítico e renderização sob demanda.")
+    print("Auditoria 0051a aprovada: tempo analítico e renderização sob demanda.")
     return 0
 
 

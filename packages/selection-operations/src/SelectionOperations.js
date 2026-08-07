@@ -4,7 +4,7 @@ import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
   HierarchyIndex
-} from "../../scene-hierarchy/src/index.js";
+} from "../../scene-hierarchy/src/index.js?build=20260807-0051a";
 import {
   resolveAffineOperations,
   composeAffineStep,
@@ -496,6 +496,7 @@ export class SelectionOperations {
         rootIds:sourceObjects.map(object => object.id),
         copies,
         createId:() => crypto.randomUUID(),
+        hasNode:id => Boolean(this.sandbox.getObject(id)),
         rename:({name,copyIndex}) => copyName(name,copyIndex-1)
       }
     );
@@ -603,6 +604,7 @@ export class SelectionOperations {
         rootIds:sourceObjects.map(object => object.id),
         copies,
         createId:() => crypto.randomUUID(),
+        hasNode:id => Boolean(this.sandbox.getObject(id)),
         rename:({name,copyIndex}) => copyName(name,copyIndex-1),
         transformRoot:({clone,sourceId,copyIndex}) => {
           const transform=transformsByRootAndCopy.get(
@@ -772,6 +774,7 @@ export class SelectionOperations {
         rootIds:sourceObjects.map(object => object.id),
         copies:repeats,
         createId:() => crypto.randomUUID(),
+        hasNode:id => Boolean(this.sandbox.getObject(id)),
         rename:({name,copyIndex}) =>
           repeatCopyName(name,copyIndex,repeats),
         transformRoot:({clone,source,sourceId,copyIndex}) => {
@@ -876,15 +879,15 @@ export class SelectionOperations {
         reason: "selection-empty"
       };
     }
-    const ids=[...hierarchySubtreeIds(
-      this.sandbox.getSnapshot().objects,
-      selectedIds
-    )];
+    const ids = [...this.sandbox.getObjectDescendantIds(selectedIds, {
+      includeRoots: true
+    })];
 
     const changed = this.sandbox.dispatch({
       type: "selection.delete",
       source,
-      ids
+      ids,
+      expandedSubtree: true
     });
 
     if (changed) {
@@ -941,13 +944,39 @@ export class SelectionOperations {
   }
 
   scaleBy(factors) {
+    const normalized = (factors ?? []).map(Number);
+    if (normalized.length !== 3 || !normalized.every(Number.isFinite)) {
+      throw new TypeError("Escala exige três valores finitos.");
+    }
+    if (normalized.some(value => value === 0)) {
+      throw new RangeError("Escala zero não é permitida.");
+    }
+    const mirrorAxes = ["x", "y", "z"].filter(
+      (_, index) => normalized[index] < 0
+    );
     const objects = this.#transformTargetObjects();
     const pivot = new THREE.Vector3().fromArray(this.#effectivePivot(objects));
     const delta = aroundPivot(
-      new THREE.Matrix4().makeScale(factors[0], factors[1], factors[2]),
+      new THREE.Matrix4().makeScale(
+        normalized[0],
+        normalized[1],
+        normalized[2]
+      ),
       pivot
     );
-    return this.#applyMatrixToSelection(objects, delta, "console-scale");
+    const result = this.#applyMatrixToSelection(
+      objects,
+      delta,
+      mirrorAxes.length ? "console-mirror" : "console-scale"
+    );
+    return mirrorAxes.length
+      ? {
+          ...result,
+          operation: "mirror",
+          mirrorAxes: Object.freeze(mirrorAxes),
+          scaleMagnitude: Object.freeze(normalized.map(Math.abs))
+        }
+      : result;
   }
 
   setPivotAbsolute(position) {

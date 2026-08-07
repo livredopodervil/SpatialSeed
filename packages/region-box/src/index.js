@@ -1,4 +1,4 @@
-export { boxRegionReducer } from "./reducer.js?build=20260802-0047g";
+export { boxRegionReducer } from "./reducer.js?build=20260807-0051a";
 export {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
