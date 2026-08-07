@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static audit for the SpatialSeed 0051a independent temporal animation overlays."""
+"""Static audit for the SpatialSeed 0051b independent temporal animation overlays."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "20260807-0051a"
+BUILD = "20260807-0051b"
 
 
 def read(relative: str) -> str:
@@ -142,7 +142,7 @@ def main() -> int:
     )
 
     print(
-        "Auditoria 0051a aprovada: animações afins e procedimentos usam o runtime temporal."
+        "Auditoria 0051b aprovada: animações afins e procedimentos usam o runtime temporal."
     )
     return 0
 

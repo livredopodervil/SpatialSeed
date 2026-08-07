@@ -167,12 +167,18 @@ export class AppearanceRuntime {
   }
 
   normalizeScene(scene, options = {}) {
-    const objects = (scene.objects ?? []).map(object =>
+    const source = scene && typeof scene === "object" ? scene : {};
+    const objects = (source.objects ?? []).map(object =>
       this.attachLegacyObject(object, options)
     );
+    // `objects` may be a PersistentObjectArray Proxy. Proxies are not
+    // structured-cloneable, so clone only the ordinary scene shell after
+    // removing the collection. Explicit serialization remains O(N), but
+    // ordinary reads keep the shared persistent representation intact.
+    const { objects: _objects, ...sceneShell } = source;
 
     return Object.freeze({
-      ...structuredClone(scene),
+      ...structuredClone(sceneShell),
       objects: Object.freeze(objects)
     });
   }

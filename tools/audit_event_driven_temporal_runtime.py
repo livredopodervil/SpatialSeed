@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = "20260807-0051a"
+BUILD = "20260807-0051b"
 
 
 def require_file(relative: str) -> str:
@@ -227,7 +227,7 @@ def main() -> int:
     ):
         require(bootstrap, marker, f"Integração web ausente: {marker}")
 
-    print("Auditoria 0051a aprovada: tempo analítico e renderização sob demanda.")
+    print("Auditoria 0051b aprovada: tempo analítico e renderização sob demanda.")
     return 0
 
 

@@ -28,9 +28,10 @@ export class ProjectAppearanceAdapter {
       );
     });
 
+    const { objects: _objects, ...sceneShell } = scene ?? {};
     return {
       scene: {
-        ...structuredClone(scene),
+        ...structuredClone(sceneShell),
         objects
       },
       assets: graph.export()
@@ -65,8 +66,9 @@ export class ProjectAppearanceAdapter {
       };
     });
 
+    const { objects: _objects, ...sceneShell } = scene ?? {};
     return {
-      ...structuredClone(scene),
+      ...structuredClone(sceneShell),
       objects
     };
   }

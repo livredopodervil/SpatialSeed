@@ -20,12 +20,12 @@ import {
   EditorSession,
   SimulationClock,
   SimulationBridge
-} from "../../runtime-layers/src/index.js?build=20260730-0040e";
+} from "../../runtime-layers/src/index.js?build=20260807-0051a";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260801-0045a1";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260807-0051a";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -50,10 +50,10 @@ import {
 } from "../../instance-batches/src/InstanceBatch.js?build=20260729-0039g2";
 import {
   InstanceBatchManager
-} from "../../instance-batches/src/InstanceBatchManager.js?build=20260801-0045a1";
+} from "../../instance-batches/src/InstanceBatchManager.js?build=20260807-0051a";
 import {
   HeterogeneousBatchManager
-} from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260801-0045a1";
+} from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260807-0051a";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -95,7 +95,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260802-0047g";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260807-0051a";
 import {
   explicitFamilyTransformAt,
   familyMemberResourcePath,
@@ -170,7 +170,7 @@ import {
 } from "../../devtools/src/DevConsole.js?build=20260806-0050b";
 import {
   ObjectInspector
-} from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
+} from "../../object-inspector/src/ObjectInspector.js?build=20260807-0051a";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -196,7 +196,7 @@ import {
   ScreenSelectionIndex,
   normalizeScreenSelectionGesture,
   screenSelectionGestureContains
-} from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260729-0039g2";
+} from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260807-0051b";
 import {
   ToolGestureNavigation
 } from "../../renderer-three/src/ToolGestureNavigation.js?build=20260731-0043x1";

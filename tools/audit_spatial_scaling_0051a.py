@@ -20,7 +20,7 @@ def require(rel, needles):
     return source
 
 build = json.loads(text("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260807-0051a":
+if build.get("build") != "20260807-0051b":
     errors.append(f"build incorreto: {build.get('build')!r}")
 
 require("packages/core/src/PersistentObjectArray.js", [
@@ -138,9 +138,9 @@ for obsolete in [
         errors.append(f"renderer ainda contém picking global: {obsolete}")
 
 if errors:
-    print("Auditoria 0051a FALHOU:")
+    print("Auditoria 0051b FALHOU:")
     for error in errors:
         print(f"- {error}")
     raise SystemExit(1)
 
-print("Auditoria 0051a aprovada: armazenamento persistente, recursos compartilhados, shards espaciais, culling local, picking indexado e espelho por escala negativa.")
+print("Auditoria 0051b aprovada: armazenamento persistente, recursos compartilhados, shards espaciais, culling local, picking indexado e espelho por escala negativa.")

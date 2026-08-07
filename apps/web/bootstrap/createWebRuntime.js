@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260807-0051a";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0051a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0051b";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260807-0051a";
 import {
   createVirtualResourceTree,
@@ -30,7 +30,7 @@ import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
 } from "../../../packages/platform-web/src/index.js?build=20260802-0047d";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260807-0051b";
 import {
   AppearanceBindingService
 } from "../../../packages/appearance-binding/src/index.js?build=20260730-0041b";

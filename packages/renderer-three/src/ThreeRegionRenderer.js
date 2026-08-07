@@ -83,7 +83,7 @@ import {
 import {
   normalizeScreenSelectionGesture,
   ScreenSelectionIndex
-} from "./ScreenSelectionGesture.js?build=20260729-0039g2";
+} from "./ScreenSelectionGesture.js?build=20260807-0051b";
 import {
   ToolGestureNavigation
 } from "./ToolGestureNavigation.js?build=20260731-0043x1";
@@ -6096,13 +6096,30 @@ export class ThreeRegionRenderer {
   }
 
   #screenBoundsForProxy(proxy, viewport) {
-    const world = this.#worldBoundsForProxy(proxy, new THREE.Box3());
+    const local = new THREE.Box3();
+    const localBounds = proxy.userData.localBounds;
+    if (localBounds) {
+      local.min.fromArray(localBounds.min);
+      local.max.fromArray(localBounds.max);
+    } else {
+      const size = proxy.userData.size ?? [1, 1, 1];
+      const half = new THREE.Vector3(
+        Number(size[0]) / 2,
+        Number(size[1]) / 2,
+        Number(size[2]) / 2
+      );
+      local.min.copy(half).multiplyScalar(-1);
+      local.max.copy(half);
+    }
+    proxy.updateMatrixWorld(true);
     const points = [];
-    if (!world.isEmpty()) {
-      for (const x of [world.min.x, world.max.x]) {
-        for (const y of [world.min.y, world.max.y]) {
-          for (const z of [world.min.z, world.max.z]) {
-            const projected = new THREE.Vector3(x, y, z).project(this.camera);
+    if (!local.isEmpty()) {
+      for (const x of [local.min.x, local.max.x]) {
+        for (const y of [local.min.y, local.max.y]) {
+          for (const z of [local.min.z, local.max.z]) {
+            const projected = new THREE.Vector3(x, y, z)
+              .applyMatrix4(proxy.matrixWorld)
+              .project(this.camera);
             if (projected.z < -1 || projected.z > 1) continue;
             points.push({
               x: (projected.x + 1) * 0.5 * viewport.width,
@@ -6112,8 +6129,8 @@ export class ThreeRegionRenderer {
         }
       }
     }
-    const center = proxy
-      .getWorldPosition(new THREE.Vector3())
+    const center = local.getCenter(new THREE.Vector3())
+      .applyMatrix4(proxy.matrixWorld)
       .project(this.camera);
     const centerVisible = center.z >= -1 && center.z <= 1;
     if (centerVisible) {
@@ -6137,17 +6154,22 @@ export class ThreeRegionRenderer {
     ) {
       return null;
     }
-    const left = Math.max(0, Math.min(viewport.width, rawLeft));
-    const top = Math.max(0, Math.min(viewport.height, rawTop));
-    const right = Math.max(0, Math.min(viewport.width, rawRight));
-    const bottom = Math.max(0, Math.min(viewport.height, rawBottom));
+    const centerX = centerVisible
+      ? (center.x + 1) * 0.5 * viewport.width
+      : (rawLeft + rawRight) * 0.5;
+    const centerY = centerVisible
+      ? (1 - center.y) * 0.5 * viewport.height
+      : (rawTop + rawBottom) * 0.5;
+    const minimumExtent = 6;
+    const halfWidth = Math.max((rawRight - rawLeft) * 0.5, minimumExtent * 0.5);
+    const halfHeight = Math.max((rawBottom - rawTop) * 0.5, minimumExtent * 0.5);
+    const left = Math.max(0, Math.min(viewport.width, centerX - halfWidth));
+    const top = Math.max(0, Math.min(viewport.height, centerY - halfHeight));
+    const right = Math.max(0, Math.min(viewport.width, centerX + halfWidth));
+    const bottom = Math.max(0, Math.min(viewport.height, centerY + halfHeight));
     return Object.freeze({
-      x: centerVisible
-        ? (center.x + 1) * 0.5 * viewport.width
-        : (left + right) * 0.5,
-      y: centerVisible
-        ? (1 - center.y) * 0.5 * viewport.height
-        : (top + bottom) * 0.5,
+      x: centerX,
+      y: centerY,
       bounds: Object.freeze({ left, top, right, bottom })
     });
   }
