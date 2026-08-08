@@ -5,8 +5,9 @@ import {
   projectInstanceGraphRoot,
   projectInstanceGraphScene,
   projectInstanceOccurrenceSubtree,
-  resolveInstanceOccurrence
-} from "./InstanceGraph.js?build=20260807-0052b";
+  resolveInstanceOccurrence,
+  instanceGraphCompiledProjectionDiagnostics
+} from "./InstanceGraph.js?build=20260808-0053f";
 
 /**
  * Mutable, derived projection cache. The authoritative scene remains immutable;
@@ -95,7 +96,8 @@ export class InstanceGraphProjectionCache {
       version: "instance-graph-projection-cache-v1",
       initialized: this.#initialized,
       projectedObjectCount: this.#objects.length,
-      statistics: Object.freeze({ ...this.#statistics })
+      statistics: Object.freeze({ ...this.#statistics }),
+      compiledDefinitions: instanceGraphCompiledProjectionDiagnostics()
     });
   }
 

@@ -62,7 +62,7 @@ import {
   composeAnimationLayer,
   createAnimationTargetSnapshot
 } from "./AnimationTransformOverlay.js?build=20260807-0051a";
-import { FastTransformOverlay } from "./FastTransformOverlay.js?build=20260808-0053e";
+import { FastTransformOverlay } from "./FastTransformOverlay.js?build=20260808-0053f";
 
 import {
   cameraFrameQuaternion,
@@ -89,6 +89,7 @@ import {
 import {
   ToolGestureNavigation
 } from "./ToolGestureNavigation.js?build=20260731-0043x1";
+import { ReplicaRenderIndex } from "./ReplicaRenderIndex.js?build=20260808-0053f";
 import {
   createLocalBoundsScaleHandleSet,
   proportionalScaleFactor2D,
@@ -159,6 +160,7 @@ export class ThreeRegionRenderer {
     cellSize: 32,
     maxCellsPerObject: 512
   });
+  #replicaRenderIndex = new ReplicaRenderIndex();
   #spatialShardSize = 32;
   #spatialShardCapacity = 256;
   #mirrorXMatrix = new THREE.Matrix4().makeScale(-1, 1, 1);
@@ -2574,6 +2576,29 @@ export class ThreeRegionRenderer {
     proxy.userData.size = object.size ? [...object.size] : [0,0,0];
     proxy.userData.canonicalWorldMatrix = [...worldMatrix];
     proxy.userData.appearanceBinding = appearanceBindingForObject(object);
+    proxy.userData.instanceRootId = object.instanceRootId ?? null;
+    proxy.userData.instancePath = object.instancePath ?? null;
+    const replicaRegistration = this.#replicaRenderIndex.register(
+      object,
+      worldMatrix
+    );
+    if (replicaRegistration.rootChanged && String(object.id) === String(replicaRegistration.rootId)) {
+      const descendantChanges = this.#replicaRenderIndex.rebaseRoot(
+        replicaRegistration.rootId,
+        worldMatrix
+      );
+      for (const change of descendantChanges) {
+        const descendant = this.#meshes.get(change.id);
+        if (!descendant) continue;
+        descendant.userData.canonicalWorldMatrix = [...change.worldMatrix];
+        if (!this.#session && !this.#animationTargetIds.has(change.id)) {
+          applyProjectedWorldMatrix(descendant, change.worldMatrix);
+          if (!descendant.userData.logicalOnly) {
+            this.#updateBatchMatrix(change.id, descendant);
+          }
+        }
+      }
+    }
 
     if (
       !this.#session &&
@@ -2746,6 +2771,7 @@ export class ThreeRegionRenderer {
     this.#removeHeterogeneousObject(id, proxy);
     this.#removeFromBatch(id, proxy.userData.batchKey);
     this.#spatialObjectIndex.remove(id);
+    this.#replicaRenderIndex.unregister(id);
     this.#meshes.delete(id);
     this.#selectedVisualIds.delete(id);
     this.#animationTargetIds.delete(id);
@@ -4365,15 +4391,20 @@ export class ThreeRegionRenderer {
     }
 
     const selectedIds = members.map(member => String(member.objectId));
-    const previewIds = projectedSelectionIdsWithFallback(
+    const hierarchyPreviewIds = projectedSelectionIdsWithFallback(
       this.#hierarchy,
       selectedIds
     );
+    const previewIds = [...new Set([
+      ...hierarchyPreviewIds,
+      ...selectedIds.flatMap(id => this.#replicaRenderIndex.members(id))
+    ])];
     for (const rootId of selectedIds) {
-      for (const projectedId of projectedSelectionIdsWithFallback(
-        this.#hierarchy,
-        [rootId]
-      )) {
+      const memberIds = [...new Set([
+        ...projectedSelectionIdsWithFallback(this.#hierarchy, [rootId]),
+        ...this.#replicaRenderIndex.members(rootId)
+      ])];
+      for (const projectedId of memberIds) {
         if (!previewRoots.has(projectedId)) previewRoots.set(projectedId, rootId);
       }
     }
@@ -5368,6 +5399,10 @@ export class ThreeRegionRenderer {
     return structuredClone(this.#transformConfig);
   }
 
+  getReplicaDiagnostics() {
+    return this.#replicaRenderIndex.status();
+  }
+
   getTransformDiagnostics() {
     return {
       config: this.getTransformConfig(),
@@ -5377,6 +5412,7 @@ export class ThreeRegionRenderer {
       dragging: this.transform.dragging,
       pivotPolicy: this.editorState.pivot.policy,
       transformOverlay: this.#fastTransformOverlay.status(),
+      replicaRenderIndex: this.#replicaRenderIndex.status(),
       pivotPosition: this.getSelectionPivotPosition(),
       selection: this.#selectionSnapshot,
       selectionAppearance: this.#selectionOutlines.diagnostics(),

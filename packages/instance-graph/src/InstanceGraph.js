@@ -13,6 +13,15 @@ const IDENTITY_POSITION = Object.freeze([0, 0, 0]);
 const IDENTITY_ROTATION = Object.freeze([0, 0, 0, 1]);
 const IDENTITY_SCALE = Object.freeze([1, 1, 1]);
 
+const COMPILED_DEFINITION_PROJECTIONS = new WeakMap();
+const COMPILED_PROJECTION_DIAGNOSTICS = {
+  definitionCompilations: 0,
+  definitionCacheHits: 0,
+  definitionNodesVisited: 0,
+  replicaInstantiations: 0,
+  replicaNodesMaterialized: 0
+};
+
 export function emptyInstanceGraph() {
   return Object.freeze({
     version: INSTANCE_GRAPH_VERSION,
@@ -550,6 +559,10 @@ function projectInstanceGraphObjectKnown(scene, object, knownIds) {
     return Object.freeze(projected);
   }
 
+  if (!object.overrides || Object.keys(object.overrides).length === 0) {
+    return projectCompiledAssemblyRoot(graph, definition, object, knownIds);
+  }
+
   projected.push(projectAssemblyRoot(definition, object, object.parentId ?? null));
   projectAssemblyChildren({
     graph,
@@ -562,6 +575,115 @@ function projectInstanceGraphObjectKnown(scene, object, knownIds) {
     knownIds
   });
   return Object.freeze(projected);
+}
+
+export function instanceGraphCompiledProjectionDiagnostics() {
+  return Object.freeze({ ...COMPILED_PROJECTION_DIAGNOSTICS });
+}
+
+function projectCompiledAssemblyRoot(graph, definition, rootInstance, knownIds) {
+  const templates = compiledDefinitionTemplates(graph, definition.id);
+  const rootId = String(rootInstance.id);
+  const projected = [
+    projectAssemblyRoot(definition, rootInstance, rootInstance.parentId ?? null)
+  ];
+  const idByPath = new Map([["", rootId]]);
+  for (const template of templates) {
+    const pathKey = template.path.join("/");
+    const parentKey = template.parentPath.join("/");
+    const id = projectedNodeId(rootId, template.path, knownIds);
+    idByPath.set(pathKey, id);
+    const parentId = idByPath.get(parentKey) ?? rootId;
+    if (template.kind === "group") {
+      projected.push(deepFreezeObjectShell({
+        id,
+        kind: "group",
+        name: template.name ?? template.slotId,
+        parentId,
+        position: template.transform.position,
+        rotation: template.transform.rotation,
+        scale: template.transform.scale,
+        pivot: template.pivot,
+        instanceRootId: rootId,
+        instancePath: Object.freeze([...template.path]),
+        definitionId: template.definitionId,
+        projectedInstance: true
+      }));
+    } else {
+      projected.push(projectLeaf(template.definition, rootInstance, {
+        id,
+        parentId,
+        name: template.name,
+        transform: template.transform,
+        rootId,
+        path: template.path,
+        childOverride: template.childOverride
+      }));
+    }
+  }
+  COMPILED_PROJECTION_DIAGNOSTICS.replicaInstantiations += 1;
+  COMPILED_PROJECTION_DIAGNOSTICS.replicaNodesMaterialized += projected.length;
+  return Object.freeze(projected);
+}
+
+function compiledDefinitionTemplates(graph, definitionId) {
+  let byDefinition = COMPILED_DEFINITION_PROJECTIONS.get(graph.definitions);
+  if (!byDefinition) {
+    byDefinition = new Map();
+    COMPILED_DEFINITION_PROJECTIONS.set(graph.definitions, byDefinition);
+  }
+  const id = String(definitionId);
+  const cached = byDefinition.get(id);
+  if (cached) {
+    COMPILED_PROJECTION_DIAGNOSTICS.definitionCacheHits += 1;
+    return cached;
+  }
+  const root = graph.definitions[id];
+  if (!root || root.type !== "assembly") return Object.freeze([]);
+  const templates = [];
+  const visit = (definition, path = []) => {
+    for (const child of definition.children ?? []) {
+      COMPILED_PROJECTION_DIAGNOSTICS.definitionNodesVisited += 1;
+      const childPath = [...path, String(child.slotId)];
+      const childDefinition = graph.definitions[String(child.ref)];
+      if (!childDefinition) throw new Error(`Definição inexistente: ${child.ref}.`);
+      const transform = freezeTransform(child.transform);
+      if (childDefinition.type === "assembly") {
+        templates.push(Object.freeze({
+          kind: "group",
+          slotId: String(child.slotId),
+          name: child.name ?? child.slotId,
+          path: Object.freeze(childPath),
+          parentPath: Object.freeze([...path]),
+          definitionId: childDefinition.id,
+          transform,
+          pivot: freezeVector(
+            child.pivot ?? childDefinition.pivot,
+            3,
+            IDENTITY_POSITION
+          )
+        }));
+        visit(childDefinition, childPath);
+      } else {
+        templates.push(Object.freeze({
+          kind: "object",
+          slotId: String(child.slotId),
+          name: child.name ?? child.slotId,
+          path: Object.freeze(childPath),
+          parentPath: Object.freeze([...path]),
+          definitionId: childDefinition.id,
+          definition: childDefinition,
+          transform,
+          childOverride: child.overrides ?? null
+        }));
+      }
+    }
+  };
+  visit(root, []);
+  const compiled = Object.freeze(templates);
+  byDefinition.set(id, compiled);
+  COMPILED_PROJECTION_DIAGNOSTICS.definitionCompilations += 1;
+  return compiled;
 }
 
 export function projectInstanceGraphScene(scene) {

@@ -1,4 +1,4 @@
-import { OccurrenceTransformHierarchy } from "../packages/transform-hierarchy/src/OccurrenceTransformHierarchy.js?build=20260808-0053e";
+import { OccurrenceTransformHierarchy } from "../packages/transform-hierarchy/src/OccurrenceTransformHierarchy.js?build=20260808-0053f";
 
 const objects = new Map([
   ["root", { id:"root", position:[10,0,0], rotation:[0,0,0,1], scale:[1,1,1] }],

@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 root=Path(__file__).resolve().parents[1]
 build=json.loads((root/'apps/web/build-info.json').read_text())
-assert build['build']=='20260808-0053e', build
+assert build['build']=='20260808-0053f', build
 h=(root/'packages/transform-hierarchy/src/OccurrenceTransformHierarchy.js').read_text()
 assert 'sceneScans: 0' in h and 'worldToLocalTransform' in h and 'normalizeAnchorRef' in h
 o=(root/'packages/renderer-three/src/FastTransformOverlay.js').read_text()

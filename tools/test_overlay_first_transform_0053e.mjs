@@ -1,5 +1,5 @@
-import { FastTransformOverlay } from "../packages/renderer-three/src/FastTransformOverlay.js?build=20260808-0053e";
-import { ToolPivotResolver } from "../packages/transform-hierarchy/src/ToolPivot.js?build=20260808-0053e";
+import { FastTransformOverlay } from "../packages/renderer-three/src/FastTransformOverlay.js?build=20260808-0053f";
+import { ToolPivotResolver } from "../packages/transform-hierarchy/src/ToolPivot.js?build=20260808-0053f";
 let passed=0; const ok=(v,m)=>{if(!v)throw new Error(m);passed+=1};
 const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
 const moved=[1,0,0,0,0,1,0,0,0,1,0,0,3,4,5,1];

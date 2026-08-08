@@ -27,7 +27,8 @@ export {
   projectInstanceGraphScene,
   projectInstanceGraphChanges,
   validateInstanceGraph,
-  instanceGraphDiagnostics
+  instanceGraphDiagnostics,
+  instanceGraphCompiledProjectionDiagnostics
 } from "./InstanceGraph.js";
 
-export { InstanceGraphProjectionCache } from "./InstanceGraphProjectionCache.js?build=20260807-0052b";
+export { InstanceGraphProjectionCache } from "./InstanceGraphProjectionCache.js?build=20260808-0053f";

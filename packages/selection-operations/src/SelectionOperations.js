@@ -30,7 +30,7 @@ import {
 import {
   normalizeSketchDescriptor
 } from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
-import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260808-0053e";
+import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260808-0053f";
 import { resolvePivotLocal, transformPoint } from "../../transform-hierarchy/src/index.js";
 
 export class SelectionOperations {

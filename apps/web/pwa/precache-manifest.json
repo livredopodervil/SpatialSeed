@@ -219,6 +219,7 @@
     "packages/renderer-three/src/MeshEditVisibility.js",
     "packages/renderer-three/src/MirroredGeometry.js",
     "packages/renderer-three/src/RenderDemandScheduler.js",
+    "packages/renderer-three/src/ReplicaRenderIndex.js",
     "packages/renderer-three/src/ScreenSelectionGesture.js",
     "packages/renderer-three/src/SelectionOutlineBatch.js",
     "packages/renderer-three/src/SpatialObjectIndex.js",

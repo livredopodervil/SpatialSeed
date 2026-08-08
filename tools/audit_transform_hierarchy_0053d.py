@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 root=Path(__file__).resolve().parents[1]
 build=json.loads((root/'apps/web/build-info.json').read_text())
-assert build['build']=='20260808-0053e', build
+assert build['build']=='20260808-0053f', build
 kernel=(root/'packages/transform-hierarchy/src/TransformHierarchyKernel.js').read_text()
 assert 'world(n)' not in kernel  # implementation, not prose
 for marker in ['class TransformHierarchyKernel','reparentLocalTransform','worldPivotOf','groupWithTransformKernel','ungroupWithTransformKernel']:
