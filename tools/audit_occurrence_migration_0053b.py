@@ -14,7 +14,7 @@ def require(path, text, label):
         errors.append(f"{label} ausente em {path}")
 
 build = json.loads((ROOT / "apps/web/build-info.json").read_text(encoding="utf-8"))
-if build.get("build") != "20260807-0053c":
+if build.get("build") != "20260807-0053d":
     errors.append(f"build incorreto: {build.get('build')!r}")
 
 require("packages/occurrence-runtime/src/OccurrenceResolver.js", "class OccurrenceResolver", "OccurrenceResolver")

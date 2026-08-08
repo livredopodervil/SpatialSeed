@@ -30,10 +30,11 @@ import {
 import {
   normalizeSketchDescriptor
 } from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
-import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260807-0053c";
+import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260807-0053d";
+import { resolvePivotLocal, transformPoint } from "../../transform-hierarchy/src/index.js";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v10-occurrence-resolver";
+  static apiVersion = "selection-operations-v11-transform-hierarchy";
 
   constructor({
     editor,
@@ -988,7 +989,7 @@ export class SelectionOperations {
   }
 
   setPivotRelative(offset) {
-    const center = [...this.#activeObject().position];
+    const center = [...this.#worldPivotForObject(this.#activeObject())];
     const position = center.map(
       (value, index) => value + offset[index]
     );
@@ -1739,11 +1740,24 @@ export class SelectionOperations {
   #selectionPivot(objects) {
     const sum = [0, 0, 0];
     for (const object of objects) {
-      for (let index = 0; index < 3; index += 1) {
-        sum[index] += Number(object.position?.[index] ?? 0);
-      }
+      const pivot = this.#worldPivotForObject(object);
+      for (let index = 0; index < 3; index += 1) sum[index] += pivot[index];
     }
     return sum.map(value => value / objects.length);
+  }
+
+  #worldMatrixForObject(object) {
+    const id = String(object?.id ?? "");
+    const resolved = id && this.occurrenceResolver?.resolve?.(id);
+    if (Array.isArray(resolved?.transform?.world)) return [...resolved.transform.world];
+    const world = id && this.sandbox.getObjectWorldMatrix?.(id);
+    if (Array.isArray(world) && world.length === 16) return [...world];
+    return matrixFromObject(object).toArray();
+  }
+
+  #worldPivotForObject(object) {
+    const matrix = this.#worldMatrixForObject(object);
+    return transformPoint(matrix, resolvePivotLocal(object));
   }
 
   #boundsPivot(objects) {
@@ -1752,17 +1766,10 @@ export class SelectionOperations {
 
     for (const object of objects) {
       const size = object.size ?? [1, 1, 1];
-      const half = size.map(
-        (value, index) =>
-          Math.abs(
-            Number(value ?? 1) *
-            Number(object.scale?.[index] ?? 1)
-          ) / 2
+      const half = size.map(value => Math.abs(Number(value ?? 1)) / 2);
+      const matrix = new THREE.Matrix4().fromArray(
+        this.#worldMatrixForObject(object)
       );
-      const matrix = matrixFromObject({
-        ...object,
-        scale: [1, 1, 1]
-      });
 
       for (const x of [-half[0], half[0]]) {
         for (const y of [-half[1], half[1]]) {
@@ -1790,7 +1797,7 @@ export class SelectionOperations {
         "active-relative"
       ) {
         const center =
-          this.#activeObject().position;
+          this.#worldPivotForObject(this.#activeObject());
 
         return center.map(
           (value, index) =>
@@ -1806,7 +1813,7 @@ export class SelectionOperations {
 
     if (this.editor.pivot.policy === "active") {
       return [
-        ...this.#activeObject().position
+        ...this.#worldPivotForObject(this.#activeObject())
       ];
     }
 

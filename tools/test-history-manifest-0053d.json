@@ -1,0 +1,265 @@
+{
+  "version": "historical-test-continuity-v1",
+  "baselineBuild": "20260807-0053d",
+  "entries": [
+    {
+      "name": "IDs são estáveis e o zero permanece reservado ao fundo",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "arrasto diagonal calcula escala proporcional por projeção",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "buffer normalizado conserva perfil fechado no renderer",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "classificação fechada ignora duplicações de costura",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "codificação RGB conserva os 24 bits do identificador",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "commits encadeados preservam somente o preview mais recente",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "console executa comando registrado sem regra dedicada",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "console executa consulta registrada por identificador canônico",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "costura suave compartilha normal sem fundir aresta dura",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "diagonal projetada curta mantém arrasto selecionável",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "eixo bloqueado reduz a escala proporcional ao plano restante",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "erro de atualização aparece sem exigir reset automático",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "escala com pivô no centro preserva o centro do objeto",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "escala livre expõe oito vértices diagonais locais",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "escala local recompõe TRS sem introduzir shear",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "estado canônico anterior não substitui o preview confirmado",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "estado posterior conflitante prevalece sem bloquear sincronização",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "falha do backend solicita o raycast legado sem propagar exceção",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "falloff geodésico usa identidade geométrica nas costuras",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "miss de GPU permanece distinguível de falha",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "movimento posicional recalcula normais derivadas ao aplicar",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "movimento posterior invalida normais explicitamente recalculadas",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "no-op numérico preserva índices UVs e normais importadas",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "oferece atualização somente quando publicação e controlador divergem",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "recalcular normais preserva posições índices e UVs byte a byte",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "recalcular normais produz atributo persistível após deformação",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "recalculo local preserva normais fora da vizinhança alterada",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "reconhecimento compara uma matriz por objeto sem percorrer vértices",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "registro descreve ferramentas e mantém executor legado substituível",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "resultado público contém apenas identidade lógica",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "rollback pré-dispatch preserva um handoff anterior encadeado",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "sanitização remapeia e preserva normais e UVs",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "seleção de face inclui cópias coincidentes da costura",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "status de seleção única não normaliza descritor buffer",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "superfície aberta continua dupla face",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "troca de ferramenta é atômica e idempotente",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    },
+    {
+      "name": "visibilidade de edição oculta o recurso real do proprietário",
+      "observedAt": "6804685d",
+      "status": "missing",
+      "replacement": null,
+      "reason": "Preservado no manifesto histórico; precisa ser reativado ou explicitamente substituído."
+    }
+  ]
+}

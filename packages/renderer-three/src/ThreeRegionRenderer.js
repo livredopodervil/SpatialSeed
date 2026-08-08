@@ -4507,7 +4507,16 @@ export class ThreeRegionRenderer {
       );
       const delta = current.clone().multiply(initial.clone().invert());
 
+      for (const [objectId, snapshot] of this.#session.objects) {
+        const mesh = this.#meshes.get(objectId);
+        if (!mesh) continue;
+        const result = delta.clone().multiply(snapshot.matrixWorld);
+        applyProjectedWorldMatrix(mesh, result.toArray());
+        if (!mesh.userData.logicalOnly) this.#updateBatchMatrix(objectId, mesh);
+      }
+
       for (const [objectId, snapshot] of this.#session.previewObjects) {
+        if (this.#session.objects.has(objectId)) continue;
         const mesh = this.#meshes.get(objectId);
         if (!mesh) continue;
         const result = delta.clone().multiply(snapshot.matrixWorld);
@@ -4656,7 +4665,14 @@ export class ThreeRegionRenderer {
 
   #restorePreviewSession(session) {
     if (session?.kind !== "selection") return;
+    for (const [objectId,snapshot] of session.objects ?? []) {
+      const mesh=this.#meshes.get(objectId);
+      if (!mesh) continue;
+      applyProjectedWorldMatrix(mesh,snapshot.matrixWorld.toArray());
+      if (!mesh.userData.logicalOnly) this.#updateBatchMatrix(objectId,mesh);
+    }
     for (const [objectId,snapshot] of session.previewObjects) {
+      if (session.objects?.has(objectId)) continue;
       const mesh=this.#meshes.get(objectId);
       if (!mesh) continue;
       applyProjectedWorldMatrix(mesh,snapshot.matrixWorld.toArray());
@@ -5209,8 +5225,14 @@ export class ThreeRegionRenderer {
         objectId,
         next.clone().multiply(snapshot.matrixWorld.clone().invert())
       );
+      const rootMesh = this.#meshes.get(objectId);
+      if (rootMesh) {
+        applyProjectedWorldMatrix(rootMesh, next.toArray());
+        if (!rootMesh.userData.logicalOnly) this.#updateBatchMatrix(objectId, rootMesh);
+      }
     }
     for (const [objectId, snapshot] of session.previewObjects) {
+      if (session.objects.has(objectId)) continue;
       const mesh = this.#meshes.get(objectId);
       if (!mesh) continue;
       const rootId = session.previewRoots.get(objectId) ?? objectId;

@@ -4,12 +4,12 @@ import {
   isOccurrenceRef,
   occurrenceRefKey,
   parentOccurrenceRef
-} from "../../occurrence-contracts/src/index.js?build=20260807-0053c";
+} from "../../occurrence-contracts/src/index.js?build=20260807-0053d";
 import {
   instanceOccurrenceId,
   isInstanceNode,
   parseInstanceOccurrenceId
-} from "../../instance-graph/src/index.js?build=20260807-0053c";
+} from "../../instance-graph/src/index.js?build=20260807-0053d";
 
 export const OCCURRENCE_RESOLVER_VERSION = "occurrence-resolver-v1";
 

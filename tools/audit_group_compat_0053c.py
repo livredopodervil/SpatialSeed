@@ -3,7 +3,7 @@ from pathlib import Path
 import json
 root = Path(__file__).resolve().parents[1]
 build = json.loads((root / 'apps/web/build-info.json').read_text(encoding='utf-8'))
-assert build['build'] == '20260807-0053c', build
+assert build['build'] == '20260807-0053d', build
 ig = (root / 'packages/instance-graph/src/InstanceGraph.js').read_text(encoding='utf-8')
 assert 'value.kind === "group" && value.instanceKind === "assembly"' in ig
 assert 'semanticKind: rootDefinition?.type === "assembly" ? "group" : null' in ig
