@@ -2810,6 +2810,18 @@ export class DevConsole {
         position: tokens.map(value => this.#number(value))
       });
     }
+    if (["reference", "referencia", "referência"].includes(action)) {
+      const targetId = tokens.shift();
+      if (!targetId) throw new Error("Uso: anchor reference <object-id> [x y z].");
+      if (![0, 3].includes(tokens.length)) {
+        throw new Error("Uso: anchor reference <object-id> [x y z].");
+      }
+      return this.commands.execute("selection.anchor.set", {
+        policy: "reference",
+        referenceTargetId: targetId,
+        referencePoint: tokens.length ? tokens.map(value => this.#number(value)) : [0, 0, 0]
+      });
+    }
     if (action === "help" || action === "ajuda") {
       this.#expectMaximum(tokens, 0, "anchor help");
       return Object.freeze({
@@ -2818,13 +2830,14 @@ export class DevConsole {
           "anchor bounds-center",
           "anchor origin",
           "anchor pivot",
-          "anchor custom x y z"
+          "anchor custom x y z",
+          "anchor reference <object-id> [x y z]"
         ]),
         note: "A política altera somente a referência de seleção; não move a geometria."
       });
     }
     throw new Error(
-      "Uso: anchor status|bounds-center|origin|pivot|custom x y z."
+      "Uso: anchor status|bounds-center|origin|pivot|custom x y z|reference <object-id> [x y z]."
     );
   }
 

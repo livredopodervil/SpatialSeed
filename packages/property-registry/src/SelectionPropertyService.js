@@ -3,7 +3,7 @@ import {
   describePropertyBatchProgram,
   evaluatePropertyBatchProgram
 } from "./PropertyBatchProgram.js";
-import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260807-0053d";
+import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260808-0053e";
 
 export class SelectionPropertyService {
   static apiVersion = "selection-properties-v2-occurrence-resolver";

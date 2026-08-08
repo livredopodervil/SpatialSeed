@@ -62,6 +62,8 @@ import {
   composeAnimationLayer,
   createAnimationTargetSnapshot
 } from "./AnimationTransformOverlay.js?build=20260807-0051a";
+import { FastTransformOverlay } from "./FastTransformOverlay.js?build=20260808-0053e";
+
 import {
   cameraFrameQuaternion,
   constrainWorldDeltaMatrix,
@@ -255,6 +257,7 @@ export class ThreeRegionRenderer {
     surfaceMisses: 0,
     surfaceJumpRejections: 0
   };
+  #fastTransformOverlay = new FastTransformOverlay();
   #transformLifecycleDiagnostics = {
     sessionsStarted:0,
     previews:0,
@@ -4417,6 +4420,13 @@ export class ThreeRegionRenderer {
       previewObjects,
       previewRoots
     };
+    this.#fastTransformOverlay.begin(
+      this.#session.previewId,
+      [...previewObjects].map(([id, snapshot]) => ({
+        id,
+        worldMatrix: snapshot.matrixWorld.toArray()
+      }))
+    );
     const diagnostics=this.#transformLifecycleDiagnostics;
     diagnostics.sessionsStarted += 1;
     diagnostics.selectionRootCount=objects.size;
@@ -4511,6 +4521,9 @@ export class ThreeRegionRenderer {
         const mesh = this.#meshes.get(objectId);
         if (!mesh) continue;
         const result = delta.clone().multiply(snapshot.matrixWorld);
+        this.#fastTransformOverlay.setWorldMatrix(
+          this.#session.previewId, objectId, result.toArray()
+        );
         applyProjectedWorldMatrix(mesh, result.toArray());
         if (!mesh.userData.logicalOnly) this.#updateBatchMatrix(objectId, mesh);
       }
@@ -4607,9 +4620,10 @@ export class ThreeRegionRenderer {
       for (const [objectId] of session.objects) {
         const mesh = this.#meshes.get(objectId);
         if (!mesh) continue;
+        const overlayMatrix = this.#fastTransformOverlay.worldMatrix(objectId);
         transforms.push({
           id: objectId,
-          worldMatrix: mesh.matrix.toArray()
+          worldMatrix: overlayMatrix ? [...overlayMatrix] : mesh.matrix.toArray()
         });
       }
 
@@ -4642,6 +4656,7 @@ export class ThreeRegionRenderer {
         changed ? "end" : "cancel",
         session
       );
+      this.#fastTransformOverlay.clearOwner(session.previewId);
       this.#transformLifecycleDiagnostics.commits += 1;
       this.#transformLifecycleDiagnostics.lastError=null;
     } catch (error) {
@@ -4681,6 +4696,7 @@ export class ThreeRegionRenderer {
     this.#flushBatchBounds();
     this.#updateSelectionAppearance();
     this.#updateVertexMarkers();
+    if (session?.previewId) this.#fastTransformOverlay.clearOwner(session.previewId);
   }
 
   #emitTransformPreview(phase, session) {
@@ -4793,6 +4809,12 @@ export class ThreeRegionRenderer {
       return new THREE.Vector3().fromArray(
         this.editorState.pivot.customPosition
       );
+    }
+
+    if (policy === "anchor") {
+      const activeId = this.#selectionSnapshot?.activeMember?.objectId;
+      const activePosition = this.#selectionReferencePosition(activeId) ?? references.at(-1);
+      return activePosition.clone();
     }
 
     if (policy === "active") {
@@ -4914,6 +4936,7 @@ export class ThreeRegionRenderer {
       this.#objectTransformFrame.mode
     );
     const alignToActive = this.#objectTransformFrame.mode === "local" ||
+      this.editorState.pivot.policy === "anchor" ||
       this.editorState.tool.mode === "scale";
 
     if (!this.editorState.pivot.editing && customFrame) {
@@ -5353,6 +5376,7 @@ export class ThreeRegionRenderer {
       axis: this.transform.axis,
       dragging: this.transform.dragging,
       pivotPolicy: this.editorState.pivot.policy,
+      transformOverlay: this.#fastTransformOverlay.status(),
       pivotPosition: this.getSelectionPivotPosition(),
       selection: this.#selectionSnapshot,
       selectionAppearance: this.#selectionOutlines.diagnostics(),

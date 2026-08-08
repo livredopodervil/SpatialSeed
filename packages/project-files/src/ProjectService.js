@@ -84,7 +84,7 @@ export class ProjectService {
       tool: { type: "transform", mode: "translate" },
       multiSelect: false,
       pivot: {
-        policy: "median",
+        policy: "anchor",
         editing: false,
         reference: "absolute",
         customPosition: [0, 0, 0],

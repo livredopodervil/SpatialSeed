@@ -1,63 +1,64 @@
-import { Region } from "../../../packages/core/src/Region.js?build=20260807-0053d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260807-0053d";
+import { Region } from "../../../packages/core/src/Region.js?build=20260808-0053e";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260808-0053e";
 import {
   ModuleRegistry
-} from "../../../packages/plugin-api/src/index.js?build=20260807-0053d";
-import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260807-0053d";
+} from "../../../packages/plugin-api/src/index.js?build=20260808-0053e";
+import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260808-0053e";
 import {
   VIEWER_CAMERA_COMMANDS,
   CameraObjectService,
   ViewerCameraController,
   ViewerState,
-} from "../../../packages/runtime-layers/src/index.js?build=20260807-0053d";
+} from "../../../packages/runtime-layers/src/index.js?build=20260808-0053e";
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260807-0053d";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260807-0053d";
-import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260807-0053d";
+} from "../../../packages/region-box/src/index.js?build=20260808-0053e";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260808-0053e";
+import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053e";
 import {
   createVirtualResourceTree,
   parseResourcePath
-} from "../../../packages/resource-tree/src/index.js?build=20260807-0053d";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260807-0053d";
-import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260807-0053d";
-import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260807-0053d";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260807-0053d";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260807-0053d";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260807-0053d";
+} from "../../../packages/resource-tree/src/index.js?build=20260808-0053e";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260808-0053e";
+import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260808-0053e";
+import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260808-0053e";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260808-0053e";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260808-0053e";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260808-0053e";
 import {
   InstanceGraphProjectionCache,
   instanceGraphDiagnostics
-} from "../../../packages/instance-graph/src/index.js?build=20260807-0053d";
+} from "../../../packages/instance-graph/src/index.js?build=20260808-0053e";
 import {
   OccurrenceResolver
-} from "../../../packages/occurrence-runtime/src/index.js?build=20260807-0053d";
+} from "../../../packages/occurrence-runtime/src/index.js?build=20260808-0053e";
+import { OccurrenceTransformHierarchy } from "../../../packages/transform-hierarchy/src/index.js?build=20260808-0053e";
 import {
   ComplexityReporter
-} from "../../../packages/complexity-audit/src/index.js?build=20260807-0053d";
+} from "../../../packages/complexity-audit/src/index.js?build=20260808-0053e";
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260807-0053d";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260807-0053d";
+} from "../../../packages/platform-web/src/index.js?build=20260808-0053e";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053e";
 import {
   AppearanceBindingService
-} from "../../../packages/appearance-binding/src/index.js?build=20260807-0053d";
+} from "../../../packages/appearance-binding/src/index.js?build=20260808-0053e";
 import {
   classifyChanges,
   SceneProjectionScheduler
-} from "../../../packages/incremental-runtime/src/index.js?build=20260807-0053d";
+} from "../../../packages/incremental-runtime/src/index.js?build=20260808-0053e";
 import {
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260807-0053d";
+} from "../../../packages/property-registry/src/index.js?build=20260808-0053e";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260807-0053d";
+} from "../../../packages/geometry-registry/src/index.js?build=20260808-0053e";
 import {
   SKETCH_DESCRIPTOR_VERSION
-} from "../../../packages/sketch-descriptor/src/index.js?build=20260807-0053d";
+} from "../../../packages/sketch-descriptor/src/index.js?build=20260808-0053e";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -65,7 +66,7 @@ import {
   RuntimeCapabilities,
   describeRuntimeProfiles,
   resolveRuntimeProfile
-} from "../../../packages/runtime-api/src/index.js?build=20260807-0053d";
+} from "../../../packages/runtime-api/src/index.js?build=20260808-0053e";
 import {
   CAMERA_PLAN_COMMANDS,
   CameraPlanCommitService,
@@ -74,56 +75,56 @@ import {
   SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
-} from "../../../packages/script-runtime/src/index.js?build=20260807-0053d";
+} from "../../../packages/script-runtime/src/index.js?build=20260808-0053e";
 import {
   ProcedureCatalogEditor
-} from "../../../packages/procedure-editor/src/index.js?build=20260807-0053d";
+} from "../../../packages/procedure-editor/src/index.js?build=20260808-0053e";
 import {
   ProcedureCatalogUiPanel
-} from "../../../packages/catalog-ui/src/index.js?build=20260807-0053d";
+} from "../../../packages/catalog-ui/src/index.js?build=20260808-0053e";
 import {
   ExperimentActionService,
   ExperimentRegistry,
   ExperimentService
-} from "../../../packages/experiment-runtime/src/index.js?build=20260807-0053d";
+} from "../../../packages/experiment-runtime/src/index.js?build=20260808-0053e";
 import {
   STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID,
   starterExperimentModule
-} from "../../../packages/experiment-plugin/src/index.js?build=20260807-0053d";
+} from "../../../packages/experiment-plugin/src/index.js?build=20260808-0053e";
 import {
   ExperimentPanel
-} from "../../../packages/experiment-panel/src/index.js?build=20260807-0053d";
+} from "../../../packages/experiment-panel/src/index.js?build=20260808-0053e";
 import {
   AnalyticTimeDomains,
   DependencyVersions,
   TemporalExecutionController,
   TemporalRuntime
-} from "../../../packages/temporal-runtime/src/index.js?build=20260807-0053d";
+} from "../../../packages/temporal-runtime/src/index.js?build=20260808-0053e";
 import {
   ANIMATION_COMMAND_SERVICE_VERSION,
   TEMPORAL_ANIMATION_RUNTIME_VERSION,
   AnimationCommandService,
   AnimationProcedureService,
   TemporalAnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260807-0053d";
+} from "../../../packages/animation-runtime/src/index.js?build=20260808-0053e";
 import {
   AnimationPanel
-} from "../../../packages/animation-panel/src/index.js?build=20260807-0053d";
+} from "../../../packages/animation-panel/src/index.js?build=20260808-0053e";
 import {
   ViewerRenderPanel
-} from "../../../packages/viewer-render-panel/src/index.js?build=20260807-0053d";
+} from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053e";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260807-0053d";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260808-0053e";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260807-0053d";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260808-0053e";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260807-0053d";
+} from "../../../packages/edit-context/src/index.js?build=20260808-0053e";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260807-0053d";
+} from "../../../packages/edit-hud/src/index.js?build=20260808-0053e";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -132,37 +133,37 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260807-0053d";
+} from "../../../packages/edit-tools/src/index.js?build=20260808-0053e";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260807-0053d";
+} from "../../../packages/object-placement/src/index.js?build=20260808-0053e";
 import {
   DrawingTargetController
-} from "../../../packages/drawing-target/src/index.js?build=20260807-0053d";
+} from "../../../packages/drawing-target/src/index.js?build=20260808-0053e";
 import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260807-0053d";
+} from "../../../packages/planar-authoring/src/index.js?build=20260808-0053e";
 import {
   StrokeCompactionScheduler,
   StrokeFusionService,
   replaceStrokePointInBundle
-} from "../../../packages/stroke-resources/src/index.js?build=20260807-0053d";
+} from "../../../packages/stroke-resources/src/index.js?build=20260808-0053e";
 import {
   MeasurementController
-} from "../../../packages/measurement-tools/src/index.js?build=20260807-0053d";
+} from "../../../packages/measurement-tools/src/index.js?build=20260808-0053e";
 import {
   PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260807-0053d";
+} from "../../../packages/spatial-references/src/index.js?build=20260808-0053e";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
   createRecoveryRecord,
   IndexedDbRecoveryStore,
   SandboxRecoveryController
-} from "../../../packages/project-recovery/src/index.js?build=20260807-0053d";
+} from "../../../packages/project-recovery/src/index.js?build=20260808-0053e";
 import {
   CoordinatedSandbox,
   LocalProjectLaunchReceiver,
@@ -172,7 +173,7 @@ import {
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260807-0053d";
+} from "../../../packages/local-viewers/src/index.js?build=20260808-0053e";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v7";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -518,9 +519,13 @@ export async function createWebRuntime({
   );
   const complexityReporter = new ComplexityReporter({ limit: 512 });
   const occurrenceResolver = new OccurrenceResolver({ sandbox });
-  const unsubscribeOccurrenceResolver = sandbox.subscribe((_state, changes) =>
-    occurrenceResolver.invalidate(changes)
-  );
+  const transformHierarchy = new OccurrenceTransformHierarchy({
+    occurrenceResolver
+  });
+  const unsubscribeOccurrenceResolver = sandbox.subscribe((_state, changes) => {
+    occurrenceResolver.invalidate(changes);
+    transformHierarchy.invalidate(changes);
+  });
   const selectionOperations = new SelectionOperations({
     editor,
     sandbox,
@@ -528,6 +533,7 @@ export async function createWebRuntime({
     geometryRegistry,
     appearanceRuntime,
     occurrenceResolver,
+    transformHierarchy,
     complexityReporter,
     onRepeatableChanged: repeatable => {
       if (repeatable) toolLifecycle.remember(repeatable);
@@ -1009,7 +1015,8 @@ export async function createWebRuntime({
   );
   commands.register(
     "selection.anchor.set",
-    ({ policy = "bounds-center", position = null, targetIds = null } = {}) => {
+    ({ policy = "bounds-center", position = null, targetIds = null,
+       referenceTargetId = null, referencePoint = [0, 0, 0], offset = [0, 0, 0] } = {}) => {
       viewerCoordinator.requireAuthority("alterar a política de âncora");
       const ids = Array.isArray(targetIds) && targetIds.length
         ? [...new Set(targetIds.map(String))]
@@ -1017,13 +1024,21 @@ export async function createWebRuntime({
             .map(member => String(member.objectId)))];
       if (!ids.length) return Object.freeze({ changed: false, reason: "selection-empty" });
       const normalizedPolicy = String(policy).trim().toLowerCase();
-      if (!["bounds-center", "origin", "custom", "pivot"].includes(normalizedPolicy)) {
+      if (!["bounds-center", "origin", "custom", "pivot", "reference"].includes(normalizedPolicy)) {
         throw new RangeError(`Política de âncora desconhecida: ${normalizedPolicy}.`);
       }
       if (normalizedPolicy === "custom" &&
           (!Array.isArray(position) || position.length !== 3 ||
             !position.every(Number.isFinite))) {
         throw new TypeError("Âncora personalizada exige position [x,y,z].");
+      }
+      if (normalizedPolicy === "reference") {
+        if (!referenceTargetId) throw new TypeError("Âncora de referência exige referenceTargetId.");
+        for (const vector of [referencePoint, offset]) {
+          if (!Array.isArray(vector) || vector.length !== 3 || !vector.every(Number.isFinite)) {
+            throw new TypeError("Âncora de referência exige vetores 3D finitos.");
+          }
+        }
       }
       const changed = sandbox.dispatch({
         type: "selection.properties.set",
@@ -1033,8 +1048,18 @@ export async function createWebRuntime({
           patch: {
             selectionAnchorPolicy: normalizedPolicy,
             ...(normalizedPolicy === "custom"
-              ? { selectionAnchorLocal: [...position] }
-              : { selectionAnchorLocal: null })
+              ? { selectionAnchorLocal: [...position], anchorRef: null }
+              : normalizedPolicy === "reference"
+                ? {
+                    selectionAnchorLocal: null,
+                    anchorRef: {
+                      mode: "reference",
+                      target: String(referenceTargetId),
+                      point: [...referencePoint],
+                      offset: [...offset]
+                    }
+                  }
+                : { selectionAnchorLocal: null, anchorRef: null })
           }
         }))
       });
@@ -1608,6 +1633,7 @@ export async function createWebRuntime({
       });
     })
     .register("occurrence.runtime.status", () => occurrenceResolver.status())
+    .register("transform.hierarchy.status", () => transformHierarchy.status())
     .register("complexity.status", () => complexityReporter.status())
     .register("time.domains", () => timeDomains.list())
     .register("time.domain", ({ id = "world" } = {}) =>

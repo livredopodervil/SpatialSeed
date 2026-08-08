@@ -6,7 +6,7 @@ export class Selection {
 
   constructor({
     id = "selection-local",
-    pivotPolicy = "median",
+    pivotPolicy = "anchor",
     orientationPolicy = "world",
     transformPolicy = "group"
   } = {}) {

@@ -30,11 +30,11 @@ import {
 import {
   normalizeSketchDescriptor
 } from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
-import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260807-0053d";
+import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260808-0053e";
 import { resolvePivotLocal, transformPoint } from "../../transform-hierarchy/src/index.js";
 
 export class SelectionOperations {
-  static apiVersion = "selection-operations-v11-transform-hierarchy";
+  static apiVersion = "selection-operations-v12-overlay-first";
 
   constructor({
     editor,
@@ -43,6 +43,7 @@ export class SelectionOperations {
     geometryRegistry = null,
     appearanceRuntime = null,
     occurrenceResolver = null,
+    transformHierarchy = null,
     complexityReporter = null,
     onRepeatableChanged = null
   }) {
@@ -60,6 +61,7 @@ export class SelectionOperations {
     this.geometryRegistry = geometryRegistry;
     this.appearanceRuntime = appearanceRuntime;
     this.occurrenceResolver = occurrenceResolver;
+    this.transformHierarchy = transformHierarchy;
     this.complexityReporter = complexityReporter;
     this.onRepeatableChanged = onRepeatableChanged;
     this.pendingDuplicate = null;
@@ -422,12 +424,18 @@ export class SelectionOperations {
       };
     }
 
+    const effectiveAnchorWorldPosition = anchorWorldPosition ?? (() => {
+      const activeId = this.editor.selection.snapshot().activeMember?.objectId;
+      const active = activeId ? this.#objectById(activeId) : null;
+      return active ? this.#worldPivotForObject(active) : undefined;
+    })();
+
     const changed=this.sandbox.dispatch({
       type:"selection.group",
       groupId,
       targetIds,
       name,
-      anchorWorldPosition,
+      anchorWorldPosition: effectiveAnchorWorldPosition,
       pivot
     });
 
@@ -527,14 +535,16 @@ export class SelectionOperations {
     for (let copyIndex = 1; copyIndex <= copies; copyIndex += 1) {
       for (const source of sourceObjects) {
         const id = crypto.randomUUID();
+        const local = this.#localTransformForObject(source);
+        const parentRef = this.transformHierarchy?.parent?.(String(source.id));
         const spec = {
           sourceId: String(source.id),
           id,
           name: copyName(source.name, copyIndex - 1),
-          parentId: source.parentId ?? null,
-          position: [...(source.position ?? [0, 0, 0])],
-          rotation: [...(source.rotation ?? [0, 0, 0, 1])],
-          scale: [...(source.scale ?? [1, 1, 1])]
+          parentId: parentRef ? this.transformHierarchy.id(parentRef) : (source.parentId ?? null),
+          position: [...local.position],
+          rotation: [...local.rotation],
+          scale: [...local.scale]
         };
         copySpecs.push(spec);
         duplicateIds.push(id);
@@ -611,18 +621,26 @@ export class SelectionOperations {
     for (let copyIndex = 1; copyIndex <= copies; copyIndex += 1) {
       const rootIds = [];
       for (const source of sourceObjects) {
-        const transforms = parametric
-          ? affineProgramCopies(source, copies, resolved.operations, {
+        const sourceWorldTransform = decomposeMatrix(
+          new THREE.Matrix4().fromArray(this.#worldMatrixForObject(source))
+        );
+        const worldTransforms = parametric
+          ? affineProgramCopies(sourceWorldTransform, copies, resolved.operations, {
               defaultPivot: pivotContext.defaultPivot
             })
-          : affineCopies(source, copies, step);
-        const transform = transforms[copyIndex - 1];
+          : affineCopies(sourceWorldTransform, copies, step);
+        const worldTransform = worldTransforms[copyIndex - 1];
+        const desiredWorldMatrix = matrixFromObject(worldTransform).toArray();
+        const transform = this.transformHierarchy?.worldToLocalTransform?.(
+          String(source.id), desiredWorldMatrix
+        ) ?? worldTransform;
+        const parentRef = this.transformHierarchy?.parent?.(String(source.id));
         const id = crypto.randomUUID();
         copySpecs.push({
           sourceId: String(source.id),
           id,
           name: copyName(source.name, copyIndex - 1),
-          parentId: source.parentId ?? null,
+          parentId: parentRef ? this.transformHierarchy.id(parentRef) : (source.parentId ?? null),
           position: [...transform.position],
           rotation: [...transform.rotation],
           scale: [...transform.scale]
@@ -1746,8 +1764,20 @@ export class SelectionOperations {
     return sum.map(value => value / objects.length);
   }
 
+  #localTransformForObject(object) {
+    const id = String(object?.id ?? "");
+    const local = id && this.transformHierarchy?.localTransform?.(id);
+    return local ?? {
+      position: [...(object?.position ?? [0, 0, 0])],
+      rotation: [...(object?.rotation ?? [0, 0, 0, 1])],
+      scale: [...(object?.scale ?? [1, 1, 1])]
+    };
+  }
+
   #worldMatrixForObject(object) {
     const id = String(object?.id ?? "");
+    const hierarchyWorld = id && this.transformHierarchy?.worldMatrix?.(id);
+    if (Array.isArray(hierarchyWorld) && hierarchyWorld.length === 16) return [...hierarchyWorld];
     const resolved = id && this.occurrenceResolver?.resolve?.(id);
     if (Array.isArray(resolved?.transform?.world)) return [...resolved.transform.world];
     const world = id && this.sandbox.getObjectWorldMatrix?.(id);
@@ -1756,6 +1786,9 @@ export class SelectionOperations {
   }
 
   #worldPivotForObject(object) {
+    const id = String(object?.id ?? "");
+    const anchor = id && this.transformHierarchy?.anchor?.(id);
+    if (Array.isArray(anchor?.world)) return [...anchor.world];
     const matrix = this.#worldMatrixForObject(object);
     return transformPoint(matrix, resolvePivotLocal(object));
   }
@@ -1791,7 +1824,11 @@ export class SelectionOperations {
   }
 
   #effectivePivot(objects) {
-    if (this.editor.pivot.policy === "custom") {
+    const policy = this.editor.pivot.policy;
+    if (policy === "anchor" || (objects.length === 1 && policy === "median")) {
+      return [...this.#worldPivotForObject(this.#activeObject())];
+    }
+    if (policy === "custom") {
       if (
         this.editor.pivot.reference ===
         "active-relative"

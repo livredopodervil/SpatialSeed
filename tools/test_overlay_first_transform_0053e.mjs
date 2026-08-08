@@ -1,0 +1,16 @@
+import { FastTransformOverlay } from "../packages/renderer-three/src/FastTransformOverlay.js?build=20260808-0053e";
+import { ToolPivotResolver } from "../packages/transform-hierarchy/src/ToolPivot.js?build=20260808-0053e";
+let passed=0; const ok=(v,m)=>{if(!v)throw new Error(m);passed+=1};
+const identity=[1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1];
+const moved=[1,0,0,0,0,1,0,0,0,1,0,0,3,4,5,1];
+const overlay=new FastTransformOverlay();
+overlay.begin('tool:1',[{id:'g',worldMatrix:identity}]);
+ok(overlay.status().entryCount===1,'begin');
+ok(overlay.setWorldMatrix('tool:1','g',moved),'write');
+ok(overlay.status().statistics.logicalWrites===0,'logical writes');
+ok(overlay.clearOwner('tool:1')===1,'clear');
+const fake={canonicalize:x=>x,id:x=>x,anchor:x=>({world:x==='b'?[10,0,0]:[1,2,3]}),worldMatrix:()=>identity};
+const pivots=new ToolPivotResolver({transformHierarchy:fake});
+ok(JSON.stringify(pivots.resolve({targets:['a'],active:'a'}).position)==='[1,2,3]','anchor pivot');
+ok(JSON.stringify(pivots.resolve({targets:['a'],mode:'other-anchor',reference:'b'}).position)==='[10,0,0]','other anchor');
+console.log(`Overlay-first transform 0053e: ${passed}/6`);
