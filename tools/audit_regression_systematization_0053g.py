@@ -8,7 +8,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_BUILDS = {"20260808-0053g", "20260808-0053h"}
+EXPECTED_BUILDS = {
+    "20260808-0053g",
+    "20260808-0053h",
+    "20260808-0053i",
+}
 
 
 def require(relative: str, marker: str) -> None:

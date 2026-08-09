@@ -3,7 +3,7 @@ import {
   persistentObjectRemoveIds,
   persistentObjectUpdateAt,
   persistentObjectUpdateMany
-} from "../../core/src/index.js?build=20260808-0053h";
+} from "../../core/src/index.js?build=20260808-0053i";
 import {
   compactHierarchyRoots,
   duplicateReferenceRoots,
