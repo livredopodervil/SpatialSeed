@@ -13,7 +13,7 @@ export {
 } from "./LocalAnimationCoordinator.js?build=20260806-0050c";
 export {
   LocalTransformPreviewCoordinator
-} from "./LocalTransformPreviewCoordinator.js";
+} from "./LocalTransformPreviewCoordinator.js?build=20260809-0053k";
 export {
   LocalProjectLaunchReceiver,
   LocalProjectLaunchSender,

@@ -151,17 +151,38 @@ export function compactHierarchyRoots(scene, rootIds = []) {
         ref: definition.id,
         name: node.name ?? null,
         pivot: node.pivot ?? null,
-        overrides: edgeOverrideFromInstance(node)
+        overrides: edgeOverrideFromInstance(node),
+        pathOverrides: descendantOverridesFromInstance(node)
       });
     }
 
     const childIds = children.get(String(id)) ?? [];
     if (node.kind === "group" || childIds.length) {
+      const pathOverrides = {};
       const childEdges = childIds.map((childId, childIndex) => {
         const child = byId.get(childId);
         const interned = internNode(childId);
+        const slotId = stableSlotId(child, childIndex);
+        for (const [pathKey, override] of Object.entries(
+          interned.pathOverrides ?? {}
+        )) {
+          pathOverrides[`${slotId}/${pathKey}`] = override;
+        }
+        if (
+          definitions[interned.ref]?.type === "assembly" &&
+          interned.overrides &&
+          Object.keys(interned.overrides).length
+        ) {
+          pathOverrides[slotId] = deepFreezeSmall({
+            ...(pathOverrides[slotId] ?? {}),
+            patch: mergeSmallObjects(
+              pathOverrides[slotId]?.patch,
+              interned.overrides
+            )
+          });
+        }
         return freezeChildEdge({
-          slotId: stableSlotId(child, childIndex),
+          slotId,
           ref: interned.ref,
           name: child.name ?? null,
           transform: transformOf(child),
@@ -192,7 +213,8 @@ export function compactHierarchyRoots(scene, rootIds = []) {
         ref: definitionId,
         name: node.name ?? null,
         pivot: node.pivot ?? null,
-        overrides: Object.freeze({})
+        overrides: Object.freeze({}),
+        pathOverrides: deepFreezeSmall(pathOverrides)
       });
     }
 
@@ -218,7 +240,8 @@ export function compactHierarchyRoots(scene, rootIds = []) {
     return Object.freeze({
       ref: definitionId,
       name: node.name ?? null,
-      overrides: edgeOverrideFromLegacyNode(node)
+      overrides: edgeOverrideFromLegacyNode(node),
+      pathOverrides: Object.freeze({})
     });
   };
 
@@ -238,9 +261,12 @@ export function compactHierarchyRoots(scene, rootIds = []) {
       rotation: root.rotation,
       scale: root.scale,
       pivot: root.pivot,
-      overrides: interned.overrides && Object.keys(interned.overrides).length
-        ? Object.freeze({ $self: interned.overrides })
-        : Object.freeze({})
+      overrides: deepFreezeSmall({
+        ...(interned.pathOverrides ?? {}),
+        ...(interned.overrides && Object.keys(interned.overrides).length
+          ? { $self: interned.overrides }
+          : {})
+      })
     });
     replacements.set(rootId, instance);
     for (const descendantId of descendantsOf(rootId, children)) {
@@ -1155,6 +1181,15 @@ function edgeOverrideFromLegacyNode(node) {
 
 function edgeOverrideFromInstance(node) {
   return deepFreezeSmall({ ...(node?.overrides?.$self ?? {}) });
+}
+
+function descendantOverridesFromInstance(node) {
+  const result = {};
+  for (const [pathKey, override] of Object.entries(node?.overrides ?? {})) {
+    if (pathKey === "$self") continue;
+    result[String(pathKey)] = override;
+  }
+  return deepFreezeSmall(result);
 }
 
 function freezeInstanceNode({

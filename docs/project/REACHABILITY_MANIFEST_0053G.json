@@ -16,12 +16,12 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 331,
-    "productionFiles": 288,
-    "productionFirstPartyFiles": 287,
+    "firstPartyJavaScriptFiles": 332,
+    "productionFiles": 290,
+    "productionFirstPartyFiles": 289,
     "productionExternalFiles": 1,
     "diagnosticFiles": 19,
-    "unreferencedFiles": 25,
+    "unreferencedFiles": 24,
     "productionComponents": 64,
     "diagnosticComponents": 8,
     "unreferencedComponents": 3
@@ -536,9 +536,9 @@
       "target": "renderer-three",
       "role": "production",
       "sourceFiles": 20,
-      "productionFiles": 17,
+      "productionFiles": 18,
       "diagnosticFiles": 0,
-      "unreferencedFiles": 3
+      "unreferencedFiles": 2
     },
     "packages/resource-audit": {
       "status": "diagnostics",
@@ -661,8 +661,8 @@
       "status": "production",
       "target": "document",
       "role": "production",
-      "sourceFiles": 5,
-      "productionFiles": 5,
+      "sourceFiles": 6,
+      "productionFiles": 6,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -891,6 +891,7 @@
     "packages/renderer-three/src/FastTransformOverlay.js",
     "packages/renderer-three/src/HeterogeneousBatchManager.js",
     "packages/renderer-three/src/LocalBoundsScale.js",
+    "packages/renderer-three/src/MeshEditVisibility.js",
     "packages/renderer-three/src/MirroredGeometry.js",
     "packages/renderer-three/src/RenderDemandScheduler.js",
     "packages/renderer-three/src/ReplicaRenderIndex.js",
@@ -974,6 +975,7 @@
     "packages/temporal-runtime/src/TemporalRuntime.js",
     "packages/temporal-runtime/src/TemporalTransformGroup.js",
     "packages/temporal-runtime/src/index.js",
+    "packages/transform-hierarchy/src/LocallyResolvedObjectHierarchy.js",
     "packages/transform-hierarchy/src/OccurrenceTransformHierarchy.js",
     "packages/transform-hierarchy/src/ToolPivot.js",
     "packages/transform-hierarchy/src/TransformHierarchyKernel.js",
@@ -1030,7 +1032,6 @@
     "packages/render-contracts/src/RenderDelta.js",
     "packages/render-contracts/src/RenderNode.js",
     "packages/render-contracts/src/index.js",
-    "packages/renderer-three/src/MeshEditVisibility.js",
     "packages/renderer-three/src/ThreeGpuObjectPickingBackend.js",
     "packages/renderer-three/src/VisualCommitHandoff.js",
     "packages/world-model/src/CommitEnvelope.js",

@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_BUILD = "20260808-0053i"
+EXPECTED_BUILDS = {"20260808-0053i", "20260809-0053k"}
 
 
 def source(relative: str) -> str:
@@ -16,9 +16,9 @@ def source(relative: str) -> str:
 
 
 build = json.loads(source("apps/web/build-info.json"))
-if build.get("build") != EXPECTED_BUILD:
+if build.get("build") not in EXPECTED_BUILDS:
     raise SystemExit(
-        f"build incorreto: {build.get('build')!r}; esperado {EXPECTED_BUILD}."
+        f"build incorreto: {build.get('build')!r}; esperado {sorted(EXPECTED_BUILDS)}."
     )
 
 policy = source("packages/renderer-three/src/EditorOrbitPolicy.js")

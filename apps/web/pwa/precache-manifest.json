@@ -304,6 +304,7 @@
     "packages/temporal-runtime/src/TemporalRuntime.js",
     "packages/temporal-runtime/src/TemporalTransformGroup.js",
     "packages/temporal-runtime/src/index.js",
+    "packages/transform-hierarchy/src/LocallyResolvedObjectHierarchy.js",
     "packages/transform-hierarchy/src/OccurrenceTransformHierarchy.js",
     "packages/transform-hierarchy/src/ToolPivot.js",
     "packages/transform-hierarchy/src/TransformHierarchyKernel.js",

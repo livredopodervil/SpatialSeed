@@ -24,7 +24,8 @@ export class SceneProjectionScheduler {
     maximumApplyMs: 0,
     maximumQueueDepth: 0,
     maximumQueueAgeMs: 0,
-    changesApplied: 0
+    changesApplied: 0,
+    lastAppliedRevision: 0
   };
 
   constructor({ applyIncremental, applyFull, interactionActive = () => false }) {
@@ -42,11 +43,12 @@ export class SceneProjectionScheduler {
     const changes = Array.isArray(classification?.changes)
       ? classification.changes
       : [];
+    const revision = nonNegativeRevision(classification?.revision);
     const enqueuedAt = nowMs();
     this.#diagnostics.enqueued += 1;
 
     if (mode === "full") {
-      this.#queue = [{ mode, state, changes, enqueuedAt, deferredSince: null }];
+      this.#queue = [{ mode, state, changes, revision, enqueuedAt, deferredSince: null }];
       this.#diagnostics.fullReplacements += 1;
     } else {
       const tail = this.#queue.at(-1);
@@ -57,6 +59,7 @@ export class SceneProjectionScheduler {
         this.#diagnostics.cancelledChanges += compacted.cancelled;
         tail.state = state;
         tail.changes = compacted.changes;
+        tail.revision = Math.max(tail.revision, revision);
         tail.enqueuedAt = Math.min(tail.enqueuedAt, enqueuedAt);
         this.#diagnostics.merged += 1;
         if (!tail.changes.length) this.#queue.pop();
@@ -69,6 +72,7 @@ export class SceneProjectionScheduler {
             mode,
             state,
             changes: compacted.changes,
+            revision,
             enqueuedAt,
             deferredSince: null
           });
@@ -83,11 +87,12 @@ export class SceneProjectionScheduler {
     return true;
   }
 
-  applyInitial(state) {
+  applyInitial(state, { revision = 0 } = {}) {
     if (this.#disposed) return false;
     const startedAt = nowMs();
-    this.#applyFull(state);
-    this.#recordApply(nowMs() - startedAt, "full", 0);
+    const normalizedRevision = nonNegativeRevision(revision);
+    this.#applyFull(state, { revision: normalizedRevision });
+    this.#recordApply(nowMs() - startedAt, "full", 0, normalizedRevision);
     return true;
   }
 
@@ -144,14 +149,17 @@ export class SceneProjectionScheduler {
       this.#queue.shift();
       const startedAt = nowMs();
       if (entry.mode === "incremental") {
-        this.#applyIncremental(entry.state, entry.changes);
+        this.#applyIncremental(entry.state, entry.changes, {
+          revision: entry.revision
+        });
       } else {
-        this.#applyFull(entry.state);
+        this.#applyFull(entry.state, { revision: entry.revision });
       }
       this.#recordApply(
         nowMs() - startedAt,
         entry.mode,
-        entry.changes.length
+        entry.changes.length,
+        entry.revision
       );
       if (this.#queue.length) this.#schedule();
     };
@@ -180,16 +188,28 @@ export class SceneProjectionScheduler {
     this.#handle = null;
   }
 
-  #recordApply(elapsed, mode, changeCount) {
+  #recordApply(elapsed, mode, changeCount, revision = 0) {
     this.#diagnostics.lastApplyMs = elapsed;
     this.#diagnostics.maximumApplyMs = Math.max(
       this.#diagnostics.maximumApplyMs,
       elapsed
     );
     this.#diagnostics.changesApplied += changeCount;
+    this.#diagnostics.lastAppliedRevision = Math.max(
+      this.#diagnostics.lastAppliedRevision,
+      nonNegativeRevision(revision)
+    );
     if (mode === "incremental") this.#diagnostics.appliedIncremental += 1;
     else this.#diagnostics.appliedFull += 1;
   }
+}
+
+function nonNegativeRevision(value) {
+  const revision = Number(value ?? 0);
+  if (!Number.isInteger(revision) || revision < 0) {
+    throw new TypeError("Revisão de projeção inválida.");
+  }
+  return revision;
 }
 
 function compactObjectChanges(changes = []) {

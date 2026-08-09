@@ -126,7 +126,8 @@ export function proportionalScaleFactor2D({
     factor = Math.round(factor / step) * step;
   }
   const floor = Math.max(Number(minimum) || MINIMUM_SCALE, MINIMUM_SCALE);
-  return Math.max(floor, factor);
+  if (Math.abs(factor) >= floor) return factor;
+  return factor < 0 ? -floor : floor;
 }
 
 export function scaleFactorsForAxes(factor, axes = {}) {
@@ -160,8 +161,8 @@ export function scaleWorldTrsWithoutShear({
     vector3(factors, "Fatores de escala")
   );
   for (const component of scaleFactors.toArray()) {
-    if (component < MINIMUM_SCALE) {
-      throw new RangeError("A escala deve permanecer positiva.");
+    if (Math.abs(component) < MINIMUM_SCALE) {
+      throw new RangeError("A escala não pode ser singular.");
     }
   }
 

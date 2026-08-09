@@ -7,7 +7,7 @@ import {
   projectInstanceOccurrenceSubtree,
   resolveInstanceOccurrence,
   instanceGraphCompiledProjectionDiagnostics
-} from "./InstanceGraph.js?build=20260808-0053f";
+} from "./InstanceGraph.js?build=20260809-0053k";
 
 /**
  * Mutable, derived projection cache. The authoritative scene remains immutable;

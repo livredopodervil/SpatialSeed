@@ -188,6 +188,35 @@ export class LocalTransformPreviewCoordinator {
     return this.status();
   }
 
+  projectionApplied(revision) {
+    this.#assertActive();
+    const appliedRevision = Number(revision);
+    if (!Number.isInteger(appliedRevision) || appliedRevision < 0) {
+      throw new TypeError("Revisão projetada inválida.");
+    }
+    if (
+      this.#localSession?.phase === "committing" &&
+      appliedRevision > this.#localSession.baseRevision
+    ) {
+      this.adapter.clear(this.#localSession);
+      this.#clearReleaseTimer(this.viewerId);
+      this.#localSession = null;
+      this.#diagnostics.sessionsReleased += 1;
+    }
+    for (const [source, session] of [...this.#remoteSessions]) {
+      if (
+        session.phase !== "committing" ||
+        appliedRevision <= session.baseRevision
+      ) continue;
+      this.adapter.clear(session);
+      this.#remoteSessions.delete(source);
+      this.#clearReleaseTimer(source);
+      this.#diagnostics.sessionsReleased += 1;
+    }
+    this.#notify();
+    return this.status();
+  }
+
   status() {
     return Object.freeze({
       apiVersion: LocalTransformPreviewCoordinator.apiVersion,
@@ -266,7 +295,27 @@ export class LocalTransformPreviewCoordinator {
     ) {
       return;
     }
-    this.#releaseAll("sandbox-changed");
+    /*
+     * Um commit altera o Sandbox de forma síncrona, mas a projeção visual só
+     * instala essa revisão no quadro seguinte. A camada em fase `committing`
+     * é a barreira entre essas duas épocas e não pode ser retirada pelo mesmo
+     * evento que aceitou o comando. Sessões ainda `active` são obsoletas e
+     * continuam sendo canceladas quando outra mutação modifica sua base.
+     */
+    if (this.#localSession?.phase !== "committing") {
+      if (this.#localSession) {
+        this.adapter.clear(this.#localSession);
+        this.#localSession = null;
+        this.#diagnostics.sessionsReleased += 1;
+      }
+    }
+    for (const [source, session] of [...this.#remoteSessions]) {
+      if (session.phase === "committing") continue;
+      this.adapter.clear(session);
+      this.#remoteSessions.delete(source);
+      this.#clearReleaseTimer(source);
+      this.#diagnostics.sessionsReleased += 1;
+    }
     this.#notify();
   }
 

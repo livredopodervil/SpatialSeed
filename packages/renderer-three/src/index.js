@@ -1,4 +1,4 @@
-export { ThreeRegionRenderer } from "./ThreeRegionRenderer.js?build=20260808-0053i";
+export { ThreeRegionRenderer } from "./ThreeRegionRenderer.js?build=20260809-0053k";
 export {
   EDITOR_ORBIT_POLICY_VERSION,
   resolveEditorOrbitEnabled
@@ -14,3 +14,10 @@ export {
   RENDER_DEMAND_SCHEDULER_VERSION,
   RenderDemandScheduler
 } from "./RenderDemandScheduler.js?build=20260808-0053i";
+export {
+  createLocalBoundsScaleHandleSet,
+  normalizeScaleAxes,
+  proportionalScaleFactor2D,
+  scaleFactorsForAxes,
+  scaleWorldTrsWithoutShear
+} from "./LocalBoundsScale.js?build=20260809-0053k";

@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260808-0053i";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260808-0053i";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260809-0053k";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -29,18 +29,18 @@ import { ProjectService } from "../../../packages/project-files/src/ProjectServi
 import {
   InstanceGraphProjectionCache,
   instanceGraphDiagnostics
-} from "../../../packages/instance-graph/src/index.js?build=20260808-0053f";
+} from "../../../packages/instance-graph/src/index.js?build=20260809-0053k";
 import {
   OccurrenceResolver
 } from "../../../packages/occurrence-runtime/src/index.js?build=20260808-0053f";
-import { OccurrenceTransformHierarchy } from "../../../packages/transform-hierarchy/src/index.js?build=20260808-0053f";
+import { OccurrenceTransformHierarchy } from "../../../packages/transform-hierarchy/src/index.js?build=20260809-0053k";
 import {
   ComplexityReporter
 } from "../../../packages/complexity-audit/src/index.js?build=20260808-0053f";
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260808-0053i";
+} from "../../../packages/platform-web/src/index.js?build=20260809-0053k";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -173,7 +173,7 @@ import {
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260808-0053f";
+} from "../../../packages/local-viewers/src/index.js?build=20260809-0053k";
 
 const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v8";
 const EXPECTED_EDITOR_API = "editor-state-v2";
@@ -489,10 +489,15 @@ export async function createWebRuntime({
         transformPreviews.begin(preview);
       } else if (preview.phase === "update") {
         transformPreviews.update(preview);
+      } else if (preview.phase === "commit") {
+        transformPreviews.end({
+          ...preview,
+          committed: true
+        });
       } else {
         transformPreviews.end({
           ...preview,
-          committed: preview.phase === "end"
+          committed: false
         });
       }
     });
@@ -2443,17 +2448,19 @@ export async function createWebRuntime({
     () => instanceGraphProjection.status()
   );
   const sceneProjection = new SceneProjectionScheduler({
-    applyIncremental: (state, changes) => {
+    applyIncremental: (state, changes, { revision = 0 } = {}) => {
       const projection = instanceGraphProjection.update(state, changes);
       if (projection.full) {
         renderer.update(projection.scene);
       } else if (projection.changes.length) {
         renderer.applyChanges(projection.scene, projection.changes);
       }
+      transformPreviews.projectionApplied(revision);
     },
-    applyFull: state => {
+    applyFull: (state, { revision = 0 } = {}) => {
       const projection = instanceGraphProjection.reset(state);
       renderer.update(projection.scene);
+      transformPreviews.projectionApplied(revision);
     },
     interactionActive: () => Boolean(pathSketch.status().drawing)
   });
@@ -2467,9 +2474,14 @@ export async function createWebRuntime({
       if (!initialSceneProjected &&
           changes.some(change => change?.type === "initial")) {
         initialSceneProjected = true;
-        sceneProjection.applyInitial(state);
+        sceneProjection.applyInitial(state, {
+          revision: baseSandbox.revision
+        });
       } else {
-        sceneProjection.enqueue(state, classification);
+        sceneProjection.enqueue(state, {
+          ...classification,
+          revision: baseSandbox.revision
+        });
       }
 
       runtime.emit("world.changed", {

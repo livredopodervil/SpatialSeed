@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,9 +21,12 @@ GATES = [
     ("0053g-contract", [PYTHON, "tools/audit_regression_systematization_0053g.py"]),
     ("0053h-gizmo-orbit", [PYTHON, "tools/audit_mouse_gizmo_orbit_0053h.py"]),
     ("0053i-scale-render-preset", [PYTHON, "tools/audit_scale_render_preset_0053i.py"]),
+    ("0053k-canonical-regressions", [PYTHON, "tools/audit_canonical_regressions_0053k.py"]),
     ("event-previews", [PYTHON, "tools/audit_event_driven_previews.py"]),
     ("animation-overlays", [PYTHON, "tools/audit_independent_animation_overlays.py"]),
     ("mesh-ui", [PYTHON, "tools/audit_mesh_edit_ui.py"]),
+]
+NODE_GATES = [
     ("runtime", ["node", "tools/run_runtime_regressions.mjs"]),
     ("standalone", [PYTHON, "tools/run_standalone_regressions.py"]),
 ]
@@ -30,7 +34,11 @@ GATES = [
 
 def main() -> int:
     results = []
-    for name, command in GATES:
+    gates = list(GATES)
+    node_available = shutil.which("node") is not None
+    if node_available:
+        gates.extend(NODE_GATES)
+    for name, command in gates:
         completed = subprocess.run(
             command,
             cwd=ROOT,
@@ -45,10 +53,23 @@ def main() -> int:
             "stdout": completed.stdout.strip(),
             "stderr": completed.stderr.strip(),
         })
+    if not node_available:
+        for name, _command in NODE_GATES:
+            results.append({
+                "gate": name,
+                "ok": True,
+                "skipped": True,
+                "reason": (
+                    "Node.js ausente; execute runtime test all no perfil "
+                    "diagnóstico do navegador."
+                ),
+            })
     failed = [result for result in results if not result["ok"]]
+    skipped = [result for result in results if result.get("skipped")]
     report = {
         "scope": "current-gates",
-        "passed": len(results) - len(failed),
+        "passed": len(results) - len(failed) - len(skipped),
+        "skipped": len(skipped),
         "failed": len(failed),
         "total": len(results),
         "ok": not failed,

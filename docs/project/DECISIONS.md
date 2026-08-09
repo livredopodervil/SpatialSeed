@@ -1039,6 +1039,28 @@ validação no navegador, preserva schemas/migrações e repete os gates na clos
 derivada. O manifest é regenerado e verificado, mas remoções continuam sendo
 decisões explícitas.
 
+## D-055 — Objetos resolvidos localmente compõem caches por precedência recursiva
+
+**Estado:** implementada no incremento 0053k.
+
+Documento, definições e instâncias permanecem canônicos. Projeção, animação e
+preview são camadas derivadas ordenadas de uma única hierarquia local. Uma
+camada armazena apenas suas substituições; ausências recuperam a matriz local e
+os descritores da camada imediatamente inferior e os recompõem sob o pai
+efetivo. Camadas em fase de commit sobrevivem à notificação síncrona do Sandbox
+até a projeção canônica avançar, impedindo o quadro intermediário antigo.
+
+**Motivação:** caches independentes no `HierarchyIndex`,
+`ReplicaRenderIndex`, overlays e proxies podiam representar épocas diferentes.
+Grupos aninhados também perdiam overrides por caminho durante nova compactação.
+
+**Consequências:** overrides internos são prefixados ao reagrupar; a edição de
+malha transfere posse visual de todos os recursos do objeto antes do primeiro
+quadro. Novas camadas efêmeras devem declarar prioridade,
+revisão-base e fase e não podem escrever diretamente no estado persistente.
+
+Consulte [`CANONICAL_REGRESSIONS_0053K.md`](../CANONICAL_REGRESSIONS_0053K.md).
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

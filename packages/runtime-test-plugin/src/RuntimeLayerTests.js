@@ -56,8 +56,10 @@ import {
 } from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260807-0051a";
 import {
   ReplicaRenderIndex,
-  resolveEditorOrbitEnabled
-} from "../../renderer-three/src/index.js?build=20260808-0053i";
+  proportionalScaleFactor2D,
+  resolveEditorOrbitEnabled,
+  scaleWorldTrsWithoutShear
+} from "../../renderer-three/src/index.js?build=20260809-0053k";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -160,8 +162,11 @@ import {
   boxRegionReducer
 } from "../../region-box/src/index.js?build=20260808-0053i";
 import {
-  projectInstanceGraphScene
-} from "../../instance-graph/src/index.js?build=20260808-0053i";
+  compactHierarchyRoots,
+  instanceOccurrenceId,
+  projectInstanceGraphScene,
+  updateInstanceOccurrenceRoot
+} from "../../instance-graph/src/index.js?build=20260809-0053k";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -213,6 +218,9 @@ import {
 import {
   ToolGestureNavigation
 } from "../../renderer-three/src/ToolGestureNavigation.js?build=20260731-0043x1";
+import {
+  LocallyResolvedObjectHierarchy
+} from "../../transform-hierarchy/src/index.js?build=20260809-0053k";
 import {
   MeshEditController,
   applyMeshTopologyOperation,
@@ -4336,6 +4344,29 @@ export function createRuntimeLayerTests() {
     },
 
     "mesh-edit-math": {
+      "escala livre cruza o pivô e produz fator negativo"() {
+        const factor = proportionalScaleFactor2D({
+          fixed: [0, 0],
+          initial: [100, 0],
+          current: [-50, 0]
+        });
+        assertNear(factor, -0.5, 1e-12);
+      },
+
+      "escala negativa preserva TRS e representa espelho"() {
+        const result = scaleWorldTrsWithoutShear({
+          matrixWorld: new THREE.Matrix4()
+            .makeTranslation(2, 0, 0)
+            .toArray(),
+          pivotWorld: [0, 0, 0],
+          frameQuaternion: [0, 0, 0, 1],
+          factors: [-1, 1, 1]
+        });
+        const matrix = new THREE.Matrix4().fromArray(result);
+        assertNear(matrix.elements[12], -2, 1e-12);
+        assert(matrix.determinant() < 0);
+      },
+
       "frame do viewer converte X e Y no plano congelado"() {
         const viewerQuaternion = new THREE.Quaternion()
           .setFromEuler(new THREE.Euler(0, Math.PI / 2, 0))
@@ -7415,6 +7446,11 @@ export function createRuntimeLayerTests() {
         const network = createLocalViewerNetwork();
         const pair = await createLocalViewerPair({ network });
         let now = 0;
+        const releaseTimers = [];
+        const scheduleRelease = callback => {
+          releaseTimers.push(callback);
+          return releaseTimers.length;
+        };
         const authorityAdapter = createTransformPreviewAdapter();
         const replicaAdapter = createTransformPreviewAdapter();
         const authority = new LocalTransformPreviewCoordinator({
@@ -7424,7 +7460,8 @@ export function createRuntimeLayerTests() {
           adapter: authorityAdapter,
           channelFactory: network.channelFactory,
           now: () => now,
-          setTimeoutFn: null,
+          setTimeoutFn: scheduleRelease,
+          clearTimeoutFn: () => {},
           maximumHz: 30
         });
         const replica = new LocalTransformPreviewCoordinator({
@@ -7434,7 +7471,8 @@ export function createRuntimeLayerTests() {
           adapter: replicaAdapter,
           channelFactory: network.channelFactory,
           now: () => now,
-          setTimeoutFn: null
+          setTimeoutFn: scheduleRelease,
+          clearTimeoutFn: () => {}
         });
         authority.start();
         replica.start();
@@ -7476,6 +7514,9 @@ export function createRuntimeLayerTests() {
           size: [1, 1, 1]
         });
         await settleLocalViewers(20);
+        assertEqual(replica.status().remotePreviewCount, 1);
+        assertEqual(replicaAdapter.cleared.length, 0);
+        for (const release of [...releaseTimers]) release();
         assertEqual(replica.status().remotePreviewCount, 0);
         assert(replicaAdapter.cleared.length >= 1);
         replica.dispose();
@@ -9902,6 +9943,87 @@ assets: {
     },
 
     "hierarchy-group": {
+      "camada de raiz recompõe descendentes sob o pai efetivo"() {
+        const resolved = new LocallyResolvedObjectHierarchy();
+        const matrixX = x => new THREE.Matrix4()
+          .makeTranslation(x, 0, 0)
+          .toArray();
+        resolved.replaceBase([
+          {
+            object: { id: "root", kind: "group", parentId: null },
+            worldMatrix: matrixX(10)
+          },
+          {
+            object: { id: "inner", kind: "group", parentId: "root" },
+            worldMatrix: matrixX(12)
+          },
+          {
+            object: { id: "leaf", kind: "box", parentId: "inner" },
+            worldMatrix: matrixX(15)
+          }
+        ], { revision: 1 });
+        resolved.setLayer("preview", [
+          { id: "root", worldMatrix: matrixX(20) }
+        ], { priority: 200, baseRevision: 1 });
+
+        assertNear(resolved.worldMatrix("leaf")[12], 25, 1e-12);
+      },
+
+      "compactação de grupo de grupos preserva override descendente"() {
+        const group = (id, parentId, x) => ({
+          id,
+          kind: "group",
+          parentId,
+          position: [x, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+          pivot: [0, 0, 0]
+        });
+        const leaf = (id, parentId, x) => ({
+          id,
+          kind: "box",
+          parentId,
+          position: [x, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+          size: [1, 1, 1],
+          geometry: { type: "box", size: [1, 1, 1] }
+        });
+        const inner = compactHierarchyRoots({
+          objects: [group("inner", null, 1), leaf("leaf", "inner", 2)]
+        }, ["inner"]).scene;
+        const innerRoot = updateInstanceOccurrenceRoot(
+          inner.objects[0],
+          ["slot:0"],
+          {
+            transform: {
+              position: [9, 0, 0],
+              rotation: [0, 0, 0, 1],
+              scale: [1, 1, 1]
+            }
+          }
+        );
+        const outer = compactHierarchyRoots({
+          objects: [
+            group("outer", null, 5),
+            { ...innerRoot, parentId: "outer" }
+          ],
+          instanceGraph: inner.instanceGraph
+        }, ["outer"]).scene;
+        const nestedLeafId = instanceOccurrenceId(
+          "outer",
+          ["slot:0", "slot:0"]
+        );
+        const projected = projectInstanceGraphScene(outer);
+        const nestedLeaf = projected.objects.find(
+          object => object.id === nestedLeafId
+        );
+
+        assert(Boolean(nestedLeaf));
+        assertNear(nestedLeaf.position[0], 9, 1e-12);
+        assert(Boolean(outer.objects[0].overrides["slot:0/slot:0"]));
+      },
+
       "cria grupo com âncora e pivô independentes"() {
         const sandbox=createHierarchySandbox();
         sandbox.dispatch({

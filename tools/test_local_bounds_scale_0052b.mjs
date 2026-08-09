@@ -3,7 +3,7 @@ import {
   proportionalScaleFactor2D,
   scaleFactorsForAxes,
   scaleWorldTrsWithoutShear
-} from "../packages/renderer-three/src/LocalBoundsScale.js?build=20260807-0052b";
+} from "../packages/renderer-three/src/index.js?build=20260809-0053k";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -50,4 +50,28 @@ const scaled = scaleWorldTrsWithoutShear({
 });
 assert(Math.abs(scaled[12] - 4) < 1e-9, "posição não escalou em torno do pivô");
 
-console.log("0052b local-bounds scale: 5/5 testes aprovados.");
+const mirroredFactor = proportionalScaleFactor2D({
+  fixed: [0, 0],
+  initial: [100, 0],
+  current: [-50, 0]
+});
+assert(Math.abs(mirroredFactor + 0.5) < 1e-9,
+  "fator negativo foi bloqueado ao cruzar o pivô");
+
+const mirrored = scaleWorldTrsWithoutShear({
+  matrixWorld: [
+    1,0,0,0,
+    0,1,0,0,
+    0,0,1,0,
+    2,0,0,1
+  ],
+  pivotWorld: [0,0,0],
+  frameQuaternion: [0,0,0,1],
+  factors: [-1,1,1]
+});
+assert(Math.abs(mirrored[0] + 1) < 1e-9,
+  "escala negativa não preservou a paridade do espelho");
+assert(Math.abs(mirrored[12] + 2) < 1e-9,
+  "espelho não reposicionou o objeto em torno do pivô");
+
+console.log("0053k local-bounds scale: 8/8 testes aprovados.");

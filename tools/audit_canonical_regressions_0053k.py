@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Static integration gate for recursive locally-resolved objects."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_BUILD = "20260809-0053k"
+
+
+def source(relative: str) -> str:
+    return (ROOT / relative).read_text(encoding="utf-8")
+
+
+build = json.loads(source("apps/web/build-info.json"))
+if build.get("build") != EXPECTED_BUILD:
+    raise SystemExit(
+        f"build incorreto: {build.get('build')!r}; esperado {EXPECTED_BUILD}."
+    )
+
+checks = {
+    "packages/transform-hierarchy/src/LocallyResolvedObjectHierarchy.js": (
+        "export class LocallyResolvedObjectHierarchy",
+        "this.#resolveAt(parentId, layerIndex, resolving)",
+        "invertAffineMatrix(lowerParent.worldMatrix)",
+        "sourceLayer: entry ? layer.id : lower.sourceLayer",
+    ),
+    "packages/instance-graph/src/InstanceGraph.js": (
+        "pathOverrides[`${slotId}/${pathKey}`]",
+    ),
+    "packages/local-viewers/src/LocalTransformPreviewCoordinator.js": (
+        'this.#localSession?.phase !== "committing"',
+        "barreira entre essas duas épocas",
+        "projectionApplied(revision)",
+    ),
+    "packages/renderer-three/src/ThreeRegionRenderer.js": (
+        "new LocallyResolvedObjectHierarchy()",
+        '`shared-preview:${key}`',
+        'this.#resolvedObjects.setLayer("animation"',
+        'this.#emitTransformPreview("commit", session)',
+        "new MeshEditVisibility",
+    ),
+    "packages/renderer-three/src/LocalBoundsScale.js": (
+        "if (Math.abs(factor) >= floor) return factor",
+        'throw new RangeError("A escala não pode ser singular.")',
+    ),
+    "tools/test_canonical_regressions_0053k.mjs": (
+        "Canonical regressions 0053k",
+        "override interno foi perdido",
+        "mutação do commit removeu preview antes da projeção",
+        "confirmação da revisão projetada não liberou preview",
+    ),
+}
+
+for relative, markers in checks.items():
+    content = source(relative)
+    for marker in markers:
+        if marker not in content:
+            raise SystemExit(f"{relative}: marcador ausente: {marker}")
+
+print(
+    "Auditoria 0053k aprovada: resolução recursiva em camadas, overrides "
+    "aninhados, barreira de commit, visibilidade atômica e espelho."
+)

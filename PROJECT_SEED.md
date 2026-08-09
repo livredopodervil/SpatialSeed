@@ -206,6 +206,14 @@ Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
 `docs/DRAWN_AUTHORING_0047F.md`; esboços e slots explícitos estão em
 `docs/SEMANTIC_SKETCH_INPUTS_0047G.md`.
 
+O build `0053k` introduz uma hierarquia derivada de objetos localmente
+resolvidos para compor base canônica, animação e preview por precedência
+recursiva. Grupos de grupos preservam overrides internos por caminho; o commit
+mantém uma barreira visual até a projeção canônica; a primeira edição de malha
+oculta atomicamente todos os recursos do lote; e a escala pode cruzar o pivô
+para produzir um espelho sem matriz singular. Consulte
+`docs/CANONICAL_REGRESSIONS_0053K.md`.
+
 ## Protocolo para nova LLM
 
 1. Ler `AGENTS.md`, `PROJECT_SEED.md` e

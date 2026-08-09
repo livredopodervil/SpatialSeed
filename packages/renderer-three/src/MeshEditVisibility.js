@@ -4,7 +4,7 @@ export class MeshEditVisibility {
   #batchManager;
   #heterogeneousBatchManager;
   #markBatchDirty;
-  #hiddenOwners = new Set();
+  #hiddenReasons = new Map();
   #hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
   #lastStatusByOwner = new Map();
 
@@ -24,7 +24,7 @@ export class MeshEditVisibility {
   }
 
   isHidden(ownerId) {
-    return this.#hiddenOwners.has(String(ownerId));
+    return Boolean(this.#hiddenReasons.get(String(ownerId))?.size);
   }
 
   effectiveMatrix(ownerId, matrix) {
@@ -52,13 +52,20 @@ export class MeshEditVisibility {
     return changed;
   }
 
-  setHidden(ownerId, hidden, canonicalMatrix = null) {
+  setHidden(ownerId, hidden, canonicalMatrix = null, {
+    reason = "mesh-edit"
+  } = {}) {
     const id = String(ownerId ?? "").trim();
     if (!id) return Object.freeze({ changed: false, ownerId: id });
-    if (hidden) this.#hiddenOwners.add(id);
-    else this.#hiddenOwners.delete(id);
+    const normalizedReason = String(reason ?? "mesh-edit").trim() || "mesh-edit";
+    let reasons = this.#hiddenReasons.get(id);
+    if (!reasons) this.#hiddenReasons.set(id, reasons = new Set());
+    if (hidden) reasons.add(normalizedReason);
+    else reasons.delete(normalizedReason);
+    if (!reasons.size) this.#hiddenReasons.delete(id);
 
-    const target = hidden
+    const effectivelyHidden = this.isHidden(id);
+    const target = effectivelyHidden
       ? this.#hiddenMatrix
       : normalizeMatrix(canonicalMatrix);
     const standardResources = this.#batchManager.resourcesForOwner(id);
@@ -84,7 +91,8 @@ export class MeshEditVisibility {
 
     const status = Object.freeze({
       ownerId: id,
-      hidden: Boolean(hidden),
+      hidden: effectivelyHidden,
+      reasons: Object.freeze([...(this.#hiddenReasons.get(id) ?? [])]),
       standardResourceCount: standardResources.length,
       standardWrites,
       heterogeneousWrites,
@@ -99,7 +107,7 @@ export class MeshEditVisibility {
 
   remove(ownerId) {
     const id = String(ownerId ?? "");
-    this.#hiddenOwners.delete(id);
+    this.#hiddenReasons.delete(id);
     this.#lastStatusByOwner.delete(id);
   }
 
@@ -107,7 +115,8 @@ export class MeshEditVisibility {
     const id = String(ownerId ?? "");
     return this.#lastStatusByOwner.get(id) ?? Object.freeze({
       ownerId: id,
-      hidden: this.#hiddenOwners.has(id),
+      hidden: this.isHidden(id),
+      reasons: Object.freeze([...(this.#hiddenReasons.get(id) ?? [])]),
       standardResourceCount:
         this.#batchManager.resourcesForOwner(id).length,
       standardWrites: 0,
