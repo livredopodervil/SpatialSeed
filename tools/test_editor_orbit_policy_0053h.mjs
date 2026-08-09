@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   EDITOR_ORBIT_POLICY_VERSION,
   resolveEditorOrbitEnabled
-} from "../packages/renderer-three/src/EditorOrbitPolicy.js?build=20260808-0053h";
+} from "../packages/renderer-three/src/EditorOrbitPolicy.js?build=20260808-0053i";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const renderer = fs.readFileSync(

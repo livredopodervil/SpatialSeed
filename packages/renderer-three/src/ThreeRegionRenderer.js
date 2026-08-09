@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import {
   RenderDemandScheduler
-} from "./RenderDemandScheduler.js?build=20260808-0053h";
+} from "./RenderDemandScheduler.js?build=20260808-0053i";
 import {
   SpatialObjectIndex,
   spatialCellKeyForPoint
@@ -62,7 +62,7 @@ import {
   composeAnimationLayer,
   rebaseAnimationLayerInput,
   createAnimationTargetSnapshot
-} from "./AnimationTransformOverlay.js?build=20260808-0053h";
+} from "./AnimationTransformOverlay.js?build=20260808-0053i";
 import { FastTransformOverlay } from "./FastTransformOverlay.js?build=20260808-0053f";
 
 import {
@@ -92,7 +92,7 @@ import {
 } from "./ToolGestureNavigation.js?build=20260731-0043x1";
 import {
   resolveEditorOrbitEnabled
-} from "./EditorOrbitPolicy.js?build=20260808-0053h";
+} from "./EditorOrbitPolicy.js?build=20260808-0053i";
 import { ReplicaRenderIndex } from "./ReplicaRenderIndex.js?build=20260808-0053f";
 import {
   createLocalBoundsScaleHandleSet,
@@ -2562,6 +2562,13 @@ export class ThreeRegionRenderer {
       if (!proxy.userData.batchKey) continue;
       this.#removeFromBatch(id, proxy.userData.batchKey);
       proxy.userData.batchKey = null;
+      /*
+       * A reconstrução removeu de fato a instância. Preservar a identidade
+       * lógica do lote faria #upsertObject escolher somente o caminho de
+       * update e nunca reinserir o objeto no novo material do viewer.
+       */
+      proxy.userData.batchBaseKey = null;
+      proxy.userData.spatialShardBaseKey = null;
     }
     if (state) this.update(state);
   }
@@ -5305,6 +5312,11 @@ export class ThreeRegionRenderer {
           frameQuaternion,
           factors
         })
+      );
+      this.#fastTransformOverlay.setWorldMatrix(
+        session.previewId,
+        objectId,
+        next.toArray()
       );
       rootDeltas.set(
         objectId,

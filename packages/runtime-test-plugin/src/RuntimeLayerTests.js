@@ -57,7 +57,7 @@ import {
 import {
   ReplicaRenderIndex,
   resolveEditorOrbitEnabled
-} from "../../renderer-three/src/index.js?build=20260808-0053h";
+} from "../../renderer-three/src/index.js?build=20260808-0053i";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -81,16 +81,16 @@ import {
   createAnimationEvaluator,
   createAnimationTrackEvaluator,
   resolveAnimationPreset
-} from "../../animation-runtime/src/index.js?build=20260808-0053h";
+} from "../../animation-runtime/src/index.js?build=20260808-0053i";
 import {
   composeAnimationOverlay,
   createAnimationTargetSnapshot,
   rebaseAnimationLayerInput
-} from "../../renderer-three/src/index.js?build=20260808-0053h";
+} from "../../renderer-three/src/index.js?build=20260808-0053i";
 import {
   AnalyticTimeDomains,
   TemporalRuntime
-} from "../../temporal-runtime/src/index.js?build=20260808-0053h";
+} from "../../temporal-runtime/src/index.js?build=20260808-0053i";
 import {
   compileAffineExpression,
   compileAffineProgram,
@@ -158,10 +158,10 @@ import {
 } from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/index.js?build=20260808-0053h";
+} from "../../region-box/src/index.js?build=20260808-0053i";
 import {
   projectInstanceGraphScene
-} from "../../instance-graph/src/index.js?build=20260808-0053h";
+} from "../../instance-graph/src/index.js?build=20260808-0053i";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -372,7 +372,7 @@ import {
 } from "./ToolCapabilityTests.js?build=20260802-0047g";
 import {
   BenchmarkRunner
-} from "../../benchmarks/src/index.js?build=20260808-0053h";
+} from "../../benchmarks/src/index.js?build=20260808-0053i";
 
 export function createRuntimeLayerTests() {
   return {
