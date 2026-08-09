@@ -55,8 +55,9 @@ import {
   HeterogeneousBatchManager
 } from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260807-0051a";
 import {
-  ReplicaRenderIndex
-} from "../../renderer-three/src/index.js?build=20260808-0053g";
+  ReplicaRenderIndex,
+  resolveEditorOrbitEnabled
+} from "../../renderer-three/src/index.js?build=20260808-0053h";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -80,16 +81,16 @@ import {
   createAnimationEvaluator,
   createAnimationTrackEvaluator,
   resolveAnimationPreset
-} from "../../animation-runtime/src/index.js?build=20260808-0053g";
+} from "../../animation-runtime/src/index.js?build=20260808-0053h";
 import {
   composeAnimationOverlay,
   createAnimationTargetSnapshot,
   rebaseAnimationLayerInput
-} from "../../renderer-three/src/index.js?build=20260808-0053g";
+} from "../../renderer-three/src/index.js?build=20260808-0053h";
 import {
   AnalyticTimeDomains,
   TemporalRuntime
-} from "../../temporal-runtime/src/index.js?build=20260808-0053g";
+} from "../../temporal-runtime/src/index.js?build=20260808-0053h";
 import {
   compileAffineExpression,
   compileAffineProgram,
@@ -157,10 +158,10 @@ import {
 } from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/index.js?build=20260808-0053g";
+} from "../../region-box/src/index.js?build=20260808-0053h";
 import {
   projectInstanceGraphScene
-} from "../../instance-graph/src/index.js?build=20260808-0053g";
+} from "../../instance-graph/src/index.js?build=20260808-0053h";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -371,7 +372,7 @@ import {
 } from "./ToolCapabilityTests.js?build=20260802-0047g";
 import {
   BenchmarkRunner
-} from "../../benchmarks/src/index.js?build=20260808-0053g";
+} from "../../benchmarks/src/index.js?build=20260808-0053h";
 
 export function createRuntimeLayerTests() {
   return {
@@ -1431,6 +1432,21 @@ export function createRuntimeLayerTests() {
         assertEqual(orbit.touches.ONE, original.one);
         assertEqual(orbit.touches.TWO, original.two);
         navigation.dispose();
+      },
+
+      "arraste do gizmo prevalece sobre navegação auxiliar de mouse e touch"() {
+        assertEqual(resolveEditorOrbitEnabled({
+          toolGestureNavigationActive: true,
+          transformDragging: true
+        }), false);
+        assertEqual(resolveEditorOrbitEnabled({
+          toolGestureNavigationActive: true,
+          transformDragging: false
+        }), true);
+        assertEqual(resolveEditorOrbitEnabled({
+          toolGestureNavigationActive: true,
+          boundsScaleActive: true
+        }), false);
       }
     },
 

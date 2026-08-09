@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import {
   RenderDemandScheduler
-} from "./RenderDemandScheduler.js?build=20260808-0053g";
+} from "./RenderDemandScheduler.js?build=20260808-0053h";
 import {
   SpatialObjectIndex,
   spatialCellKeyForPoint
@@ -62,7 +62,7 @@ import {
   composeAnimationLayer,
   rebaseAnimationLayerInput,
   createAnimationTargetSnapshot
-} from "./AnimationTransformOverlay.js?build=20260808-0053g";
+} from "./AnimationTransformOverlay.js?build=20260808-0053h";
 import { FastTransformOverlay } from "./FastTransformOverlay.js?build=20260808-0053f";
 
 import {
@@ -90,6 +90,9 @@ import {
 import {
   ToolGestureNavigation
 } from "./ToolGestureNavigation.js?build=20260731-0043x1";
+import {
+  resolveEditorOrbitEnabled
+} from "./EditorOrbitPolicy.js?build=20260808-0053h";
 import { ReplicaRenderIndex } from "./ReplicaRenderIndex.js?build=20260808-0053f";
 import {
   createLocalBoundsScaleHandleSet,
@@ -112,7 +115,7 @@ import {
 } from "../../appearance-binding/src/index.js?build=20260730-0041a";
 
 export class ThreeRegionRenderer {
-  static apiVersion = "renderer-three-navigation-camera-v7";
+  static apiVersion = "renderer-three-navigation-camera-v8";
   #meshes = new Map();
   #cameraVisuals = new Map();
   #lightVisuals = new Map();
@@ -499,8 +502,9 @@ export class ThreeRegionRenderer {
     });
 
     this.transform.addEventListener("dragging-changed", event => {
-      this.orbit.enabled = this.#toolGestureNavigation.active ||
-        !event.value;
+      this.orbit.enabled = this.#resolveEditorOrbitEnabled({
+        transformDragging: Boolean(event.value)
+      });
       if (event.value) this.#beginSession();
       else if (this.#session) this.#commitSession();
     });
@@ -4320,9 +4324,9 @@ export class ThreeRegionRenderer {
         this.transform.showY = axes.y;
         this.transform.showZ = axes.z;
       }
-      this.orbit.enabled = this.#toolGestureNavigation.active ||
-        (!selectionGestureActive &&
-          (mode === "navigate" || !this.transform.dragging));
+      this.orbit.enabled = this.#resolveEditorOrbitEnabled({
+        selectionGestureActive
+      });
       return;
     }
 
@@ -4341,9 +4345,24 @@ export class ThreeRegionRenderer {
           : this.#objectTransformFrame.mode
       );
     }
-    this.orbit.enabled = this.#toolGestureNavigation.active ||
-      (!selectionGestureActive &&
-        (mode === "navigate" || !this.transform.dragging));
+    this.orbit.enabled = this.#resolveEditorOrbitEnabled({
+      selectionGestureActive
+    });
+  }
+
+  #resolveEditorOrbitEnabled({
+    transformDragging = this.transform.dragging,
+    selectionGestureActive = (
+      this.#interactionMode === "select" &&
+      Boolean(this.editorState.areaSelection)
+    )
+  } = {}) {
+    return resolveEditorOrbitEnabled({
+      transformDragging,
+      boundsScaleActive: Boolean(this.#boundsScale),
+      toolGestureNavigationActive: this.#toolGestureNavigation.active,
+      selectionGestureActive
+    });
   }
 
   #beginSession() {

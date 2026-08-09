@@ -18,6 +18,7 @@ GATES = [
     ("pwa-precache", [PYTHON, "tools/generate_pwa_precache.py", "--check"]),
     ("reachability", [PYTHON, "tools/analyze_reachable_surface.py", "--check"]),
     ("0053g-contract", [PYTHON, "tools/audit_regression_systematization_0053g.py"]),
+    ("0053h-gizmo-orbit", [PYTHON, "tools/audit_mouse_gizmo_orbit_0053h.py"]),
     ("event-previews", [PYTHON, "tools/audit_event_driven_previews.py"]),
     ("animation-overlays", [PYTHON, "tools/audit_independent_animation_overlays.py"]),
     ("mesh-ui", [PYTHON, "tools/audit_mesh_edit_ui.py"]),

@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_BUILD = "20260808-0053g"
+EXPECTED_BUILDS = {"20260808-0053g", "20260808-0053h"}
 
 
 def require(relative: str, marker: str) -> None:
@@ -18,9 +18,10 @@ def require(relative: str, marker: str) -> None:
 
 
 build = json.loads((ROOT / "apps/web/build-info.json").read_text(encoding="utf-8"))
-if build.get("build") != EXPECTED_BUILD:
+if build.get("build") not in EXPECTED_BUILDS:
     raise SystemExit(
-        f"build incorreto: {build.get('build')!r}; esperado {EXPECTED_BUILD}."
+        f"build incorreto: {build.get('build')!r}; esperado um descendente "
+        f"de 0053g em {sorted(EXPECTED_BUILDS)}."
     )
 
 checks = [

@@ -5,11 +5,11 @@ export {
 export {
   TEMPORAL_ANIMATION_RUNTIME_VERSION,
   TemporalAnimationRuntime
-} from "./TemporalAnimationRuntime.js?build=20260808-0053g";
+} from "./TemporalAnimationRuntime.js?build=20260808-0053h";
 export {
   ANIMATION_RUNTIME_VERSION,
   AnimationRuntime
-} from "./AnimationRuntime.js?build=20260808-0053g";
+} from "./AnimationRuntime.js?build=20260808-0053h";
 export {
   ANIMATION_PROGRAM_VERSION,
   compileAnimationProgram,
@@ -24,7 +24,7 @@ export {
 export {
   ANIMATION_COMMAND_SERVICE_VERSION,
   AnimationCommandService
-} from "./AnimationCommandService.js?build=20260808-0053g";
+} from "./AnimationCommandService.js?build=20260808-0053h";
 export {
   ANIMATION_TRACK_PROGRAM_VERSION,
   compileAnimationTrackProgram,
@@ -34,4 +34,4 @@ export {
 export {
   EvolutionKind,
   EvolutionResult
-} from "../../temporal-runtime/src/index.js?build=20260808-0053g";
+} from "../../temporal-runtime/src/index.js?build=20260808-0053h";

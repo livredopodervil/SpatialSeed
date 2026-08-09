@@ -1,5 +1,5 @@
 import { Region } from "../../../packages/core/src/Region.js?build=20260808-0053f";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260808-0053g";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260808-0053h";
 import {
   ModuleRegistry
 } from "../../../packages/plugin-api/src/index.js?build=20260808-0053f";
@@ -13,8 +13,8 @@ import {
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260808-0053g";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260808-0053g";
+} from "../../../packages/region-box/src/index.js?build=20260808-0053h";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260808-0053h";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260808-0053g";
+} from "../../../packages/platform-web/src/index.js?build=20260808-0053h";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -106,7 +106,7 @@ import {
   AnimationCommandService,
   AnimationProcedureService,
   TemporalAnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260808-0053g";
+} from "../../../packages/animation-runtime/src/index.js?build=20260808-0053h";
 import {
   AnimationPanel
 } from "../../../packages/animation-panel/src/index.js?build=20260808-0053f";
@@ -175,7 +175,7 @@ import {
   createIndependentProjectUrl
 } from "../../../packages/local-viewers/src/index.js?build=20260808-0053f";
 
-const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v7";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v8";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({

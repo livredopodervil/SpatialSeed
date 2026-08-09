@@ -214,6 +214,7 @@
     "packages/renderer-resource-cache/src/ThreeResourceCache.js",
     "packages/renderer-resource-cache/src/index.js",
     "packages/renderer-three/src/AnimationTransformOverlay.js",
+    "packages/renderer-three/src/EditorOrbitPolicy.js",
     "packages/renderer-three/src/FastTransformOverlay.js",
     "packages/renderer-three/src/HeterogeneousBatchManager.js",
     "packages/renderer-three/src/LocalBoundsScale.js",

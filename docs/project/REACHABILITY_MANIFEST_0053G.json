@@ -16,9 +16,9 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 330,
-    "productionFiles": 287,
-    "productionFirstPartyFiles": 286,
+    "firstPartyJavaScriptFiles": 331,
+    "productionFiles": 288,
+    "productionFirstPartyFiles": 287,
     "productionExternalFiles": 1,
     "diagnosticFiles": 19,
     "unreferencedFiles": 25,
@@ -535,8 +535,8 @@
       "status": "production",
       "target": "renderer-three",
       "role": "production",
-      "sourceFiles": 19,
-      "productionFiles": 16,
+      "sourceFiles": 20,
+      "productionFiles": 17,
       "diagnosticFiles": 0,
       "unreferencedFiles": 3
     },
@@ -887,6 +887,7 @@
     "packages/renderer-resource-cache/src/ThreeResourceCache.js",
     "packages/renderer-resource-cache/src/index.js",
     "packages/renderer-three/src/AnimationTransformOverlay.js",
+    "packages/renderer-three/src/EditorOrbitPolicy.js",
     "packages/renderer-three/src/FastTransformOverlay.js",
     "packages/renderer-three/src/HeterogeneousBatchManager.js",
     "packages/renderer-three/src/LocalBoundsScale.js",

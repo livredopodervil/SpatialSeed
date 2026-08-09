@@ -9,7 +9,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   boxRegionReducer,
   regionBoxModule
-} from "../../region-box/src/index.js?build=20260808-0053g";
+} from "../../region-box/src/index.js?build=20260808-0053h";
 
 export function createModuleRegistryTests() {
   return {
