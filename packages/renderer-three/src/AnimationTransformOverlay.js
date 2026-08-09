@@ -1,5 +1,6 @@
 import {
   multiplyMatrices,
+  translationMatrix,
   validateMatrix
 } from "../../math-affine/src/index.js?build=20260719-0028a";
 
@@ -78,6 +79,63 @@ export function composeAnimationLayer(targets, unitFrames) {
     transforms: Object.freeze(transforms),
     pivots: Object.freeze(pivots),
     colors: Object.freeze(colors)
+  });
+}
+
+/**
+ * Moves an already-evaluated affine delta from its captured pivot to the
+ * current canonical pivot. This keeps rotations/scales relative after an
+ * editorial transform without changing the declarative animation program.
+ */
+export function rebaseAnimationLayerInput(
+  targets,
+  unitFrames,
+  currentPivotForUnit
+) {
+  validateTargets(targets);
+  if (!Array.isArray(unitFrames)) {
+    throw new TypeError("Quadro de animação deve ser uma lista.");
+  }
+  if (typeof currentPivotForUnit !== "function") {
+    throw new TypeError("Rebase de animação exige resolvedor de pivô.");
+  }
+  const targetById = new Map(
+    targets.units.map(unit => [String(unit.unitId), unit])
+  );
+  const currentPivots = new Map();
+  const frames = unitFrames.map(frame => {
+    const unit = targetById.get(String(frame?.unitId ?? ""));
+    if (!unit) return frame;
+    const candidate = currentPivotForUnit(unit.unitId, unit);
+    const current = candidate == null
+      ? [...unit.pivot]
+      : vector3(candidate, `Pivô atual inválido para ${unit.unitId}.`);
+    currentPivots.set(unit.unitId, current);
+    const offset = current.map((value, index) => value - unit.pivot[index]);
+    if (offset.every(value => Math.abs(value) <= 1e-12)) return frame;
+    validateMatrix(frame.matrix);
+    const matrix = multiplyMatrices(
+      translationMatrix(offset),
+      multiplyMatrices(
+        frame.matrix,
+        translationMatrix(offset.map(value => -value))
+      )
+    );
+    return Object.freeze({
+      ...frame,
+      matrix: Object.freeze(matrix)
+    });
+  });
+  const units = targets.units.map(unit => Object.freeze({
+    ...unit,
+    pivot: Object.freeze(currentPivots.get(unit.unitId) ?? [...unit.pivot])
+  }));
+  return Object.freeze({
+    targets: Object.freeze({
+      ...targets,
+      units: Object.freeze(units)
+    }),
+    unitFrames: Object.freeze(frames)
   });
 }
 

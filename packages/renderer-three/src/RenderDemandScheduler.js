@@ -31,8 +31,8 @@ export class RenderDemandScheduler {
   constructor({
     render,
     prepareFrame = null,
-    requestFrame = callback => requestAnimationFrame(callback),
-    cancelFrame = handle => cancelAnimationFrame(handle),
+    requestFrame = callback => globalThis["requestAnimationFrame"](callback),
+    cancelFrame = handle => globalThis["cancelAnimationFrame"](handle),
     setTimer = (callback, delay) => setTimeout(callback, delay),
     clearTimer = handle => clearTimeout(handle),
     now = () => globalThis.performance?.now?.() ?? Date.now()

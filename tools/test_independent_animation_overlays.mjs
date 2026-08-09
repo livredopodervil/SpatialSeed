@@ -2,15 +2,15 @@ import {
   AnalyticTimeDomains,
   DependencyVersions,
   TemporalRuntime
-} from "../packages/temporal-runtime/src/index.js?build=20260806-0050b";
+} from "../packages/temporal-runtime/src/index.js?build=20260808-0053g";
 import {
   AnimationCommandService,
   TemporalAnimationRuntime
-} from "../packages/animation-runtime/src/index.js?build=20260806-0050c";
+} from "../packages/animation-runtime/src/index.js?build=20260808-0053g";
 import {
   composeAnimationLayer,
   createAnimationTargetSnapshot
-} from "../packages/renderer-three/src/AnimationTransformOverlay.js?build=20260806-0050c";
+} from "../packages/renderer-three/src/index.js?build=20260808-0053g";
 import { identityMatrix } from "../packages/math-affine/src/index.js";
 
 let now = 0;
@@ -66,8 +66,18 @@ assert(impact.changed === false && service.status().instanceCount === 2,
 impact = service.sceneChanged([
   { type: "object-transform", objectId: "a" }
 ]);
+assert(impact.rebasedInstanceIds.includes(firstId),
+  "alterar o objeto a deve rebasar sua instância");
+assert(impact.stoppedInstanceIds.length === 0,
+  "transformar um alvo não deve parar sua animação");
+assert(service.status().instanceCount === 2,
+  "as duas animações devem continuar após o rebase");
+
+impact = service.sceneChanged([
+  { type: "object-deleted", objectId: "a" }
+]);
 assert(impact.stoppedInstanceIds.includes(firstId),
-  "alterar o objeto a deve parar apenas sua instância");
+  "remover o objeto a deve parar apenas sua instância");
 assert(service.status().instanceCount === 1,
   "a animação de b deve continuar");
 assert(service.status().instances[0].instanceId === secondId,
@@ -122,7 +132,7 @@ assert(layer.transforms.length === 2,
 assert(layer.transforms.every(entry => entry.matrix[12] === 3),
   "o renderer deve receber o delta, não matriz absoluta capturada");
 
-console.log("Independent animation overlays: 18/18 testes aprovados.");
+console.log("Independent animation overlays: 20/20 testes aprovados.");
 
 function createSurface() {
   return {

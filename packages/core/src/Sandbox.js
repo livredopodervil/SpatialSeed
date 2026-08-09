@@ -78,11 +78,12 @@ export class Sandbox {
   /*
    * Snapshot público imutável. Recursos geométricos/materials já são
    * imutáveis e permanecem compartilhados; não fazemos structuredClone do
-   * mundo inteiro a cada consulta. Para serialização explícita use
-   * materializeState().
+   * mundo inteiro a cada consulta. Para serialização explícita do estado
+   * corrente use materializeState(). O estado-base é uma fronteira de
+   * checkpoint e por isso getBaseState() devolve um valor clonável.
    */
   getState() { return cloneStateShell(this.#state); }
-  getBaseState() { return cloneStateShell(this.#baseState); }
+  getBaseState() { return materializeState(this.#baseState); }
   materializeState() { return materializeState(this.#state); }
   getObjectPosition(id) {
     this.#ensureObjectPositions();
@@ -123,15 +124,16 @@ export class Sandbox {
         continue;
       }
 
-      const queue = [rootId];
-      let cursor = 0;
-      while (cursor < queue.length) {
-        const id = queue[cursor++];
+      const stack = [rootId];
+      while (stack.length) {
+        const id = stack.pop();
         if (!id || seen.has(id) || !this.#objectsById.has(id)) continue;
         seen.add(id);
         if (includeRoots || !rootSet.has(id)) result.push(id);
         const children = this.#objectIdsByParent.get(hierarchyParentKey(id)) ?? [];
-        for (const childId of children) queue.push(childId);
+        for (let index = children.length - 1; index >= 0; index -= 1) {
+          stack.push(children[index]);
+        }
       }
     }
     return Object.freeze(result);
@@ -192,8 +194,13 @@ export class Sandbox {
     const size = nonNegativeInteger(limit, "O limite hierárquico");
     let ids = this.#objectIdsByParent.get(hierarchyParentKey(parentId)) ?? [];
     if (parentId !== null && parentId !== undefined) {
-      const parent = this.getObject(String(parentId));
-      if (parent?.kind === "group" && parent?.projectedInstance === true) {
+      const parentIdString = String(parentId);
+      const parent = this.getObject(parentIdString);
+      const rawParent = this.getRawObject(parentIdString);
+      if (
+        parent?.kind === "group" &&
+        (parent?.projectedInstance === true || isInstanceNode(rawParent))
+      ) {
         const segment = this.getObjectDescendantIds([String(parentId)], { includeRoots: true });
         ids = segment.filter(id => this.getObject(id)?.parentId === String(parentId));
       }

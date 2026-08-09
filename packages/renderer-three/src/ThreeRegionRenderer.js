@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import {
   RenderDemandScheduler
-} from "./RenderDemandScheduler.js?build=20260806-0050a1";
+} from "./RenderDemandScheduler.js?build=20260808-0053g";
 import {
   SpatialObjectIndex,
   spatialCellKeyForPoint
@@ -60,8 +60,9 @@ import {
 } from "./SelectionOutlineBatch.js?build=20260718-0027g";
 import {
   composeAnimationLayer,
+  rebaseAnimationLayerInput,
   createAnimationTargetSnapshot
-} from "./AnimationTransformOverlay.js?build=20260807-0051a";
+} from "./AnimationTransformOverlay.js?build=20260808-0053g";
 import { FastTransformOverlay } from "./FastTransformOverlay.js?build=20260808-0053f";
 
 import {
@@ -2157,7 +2158,18 @@ export class ThreeRegionRenderer {
     if (!overlay) {
       throw new Error(`Sobreposição de animação inexistente: ${id}.`);
     }
-    const layer = composeAnimationLayer(targets, unitFrames);
+    const rebased = rebaseAnimationLayerInput(
+      targets,
+      unitFrames,
+      unitId => this.#hierarchy.has(unitId)
+        ? this.#hierarchy.worldPivotOf(unitId)
+        : null
+    );
+    const layer = composeAnimationLayer(
+      rebased.targets,
+      rebased.unitFrames
+    );
+    overlay.targets = rebased.targets;
     overlay.transforms = new Map(
       layer.transforms
         .filter(entry => overlay.objectIds.has(entry.objectId))

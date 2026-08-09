@@ -1,7 +1,7 @@
 import {
   EvolutionKind,
   EvolutionResult
-} from "../../temporal-runtime/src/EvolutionResult.js?build=20260806-0050c";
+} from "../../temporal-runtime/src/index.js?build=20260808-0053g";
 import {
   identityMatrix
 } from "../../math-affine/src/index.js?build=20260719-0028b";
@@ -15,6 +15,9 @@ const FULL_SCENE_CHANGE_TYPES = new Set([
   "sandbox-discard",
   "sandbox-rebased",
   "sandbox-state-replaced"
+]);
+const REMOVED_OBJECT_CHANGE_TYPES = new Set([
+  "object-deleted"
 ]);
 
 export class TemporalAnimationRuntime {
@@ -281,22 +284,42 @@ export class TemporalAnimationRuntime {
         changed: false,
         full: false,
         affectedObjectIds: Object.freeze([]),
+        rebasedInstanceIds: Object.freeze([]),
         stoppedInstanceIds: Object.freeze([])
       });
     }
     const stopped = [];
+    const rebased = [];
     for (const instance of [...this.instances.values()]) {
-      if (impact.full || setsIntersect(instance.objectIdSet, impact.objectIds)) {
+      if (impact.full || setsIntersect(instance.objectIdSet, impact.removedObjectIds)) {
         stopped.push(instance.instanceId);
         this.#stopInstance(instance, impact.full
           ? "scene-replaced"
-          : "animated-object-changed");
+          : "animated-object-removed");
+        continue;
+      }
+      if (setsIntersect(instance.objectIdSet, impact.objectIds)) {
+        /*
+         * A sobreposição é um delta sobre a matriz canônica atual. Uma
+         * edição TRS deve apenas invalidar o último quadro, não destruir a
+         * sessão. O renderer recompõe esse delta sobre a nova base.
+         */
+        for (const segment of instance.segments) {
+          segment.lastAppliedSignature = null;
+          this.temporalRuntime.wake(segment.operationId);
+        }
+        rebased.push(instance.instanceId);
       }
     }
+    if (rebased.length) {
+      this.statistics.wakes += rebased.length;
+      this.statistics.lastWakeReason = "animated-object-rebased";
+    }
     return Object.freeze({
-      changed: stopped.length > 0,
+      changed: stopped.length > 0 || rebased.length > 0,
       full: impact.full,
       affectedObjectIds: Object.freeze([...impact.objectIds]),
+      rebasedInstanceIds: Object.freeze(rebased),
       stoppedInstanceIds: Object.freeze(stopped)
     });
   }
@@ -957,11 +980,16 @@ function classifySceneChanges(changes) {
     FULL_SCENE_CHANGE_TYPES.has(String(change?.type ?? ""))
   );
   const objectIds = new Set();
+  const removedObjectIds = new Set();
   for (const change of list) {
     const id = String(change?.objectId ?? change?.object?.id ?? "").trim();
-    if (id) objectIds.add(id);
+    if (!id) continue;
+    objectIds.add(id);
+    if (REMOVED_OBJECT_CHANGE_TYPES.has(String(change?.type ?? ""))) {
+      removedObjectIds.add(id);
+    }
   }
-  return Object.freeze({ full, objectIds });
+  return Object.freeze({ full, objectIds, removedObjectIds });
 }
 
 function setsIntersect(left, right) {

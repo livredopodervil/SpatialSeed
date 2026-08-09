@@ -55,6 +55,9 @@ import {
   HeterogeneousBatchManager
 } from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260807-0051a";
 import {
+  ReplicaRenderIndex
+} from "../../renderer-three/src/index.js?build=20260808-0053g";
+import {
   aroundPivot,
   composeAffineOperations,
   affineCopies,
@@ -71,16 +74,22 @@ import {
 import {
   AnimationCommandService,
   AnimationRuntime,
+  TemporalAnimationRuntime,
   compileAnimationProgram,
   compileAnimationTrackProgram,
   createAnimationEvaluator,
   createAnimationTrackEvaluator,
   resolveAnimationPreset
-} from "../../animation-runtime/src/index.js?build=20260806-0050b";
+} from "../../animation-runtime/src/index.js?build=20260808-0053g";
 import {
   composeAnimationOverlay,
-  createAnimationTargetSnapshot
-} from "../../renderer-three/src/AnimationTransformOverlay.js?build=20260720-0028d";
+  createAnimationTargetSnapshot,
+  rebaseAnimationLayerInput
+} from "../../renderer-three/src/index.js?build=20260808-0053g";
+import {
+  AnalyticTimeDomains,
+  TemporalRuntime
+} from "../../temporal-runtime/src/index.js?build=20260808-0053g";
 import {
   compileAffineExpression,
   compileAffineProgram,
@@ -148,7 +157,10 @@ import {
 } from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/index.js?build=20260802-0047b";
+} from "../../region-box/src/index.js?build=20260808-0053g";
+import {
+  projectInstanceGraphScene
+} from "../../instance-graph/src/index.js?build=20260808-0053g";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -359,7 +371,7 @@ import {
 } from "./ToolCapabilityTests.js?build=20260802-0047g";
 import {
   BenchmarkRunner
-} from "../../benchmarks/src/index.js?build=20260802-0047a";
+} from "../../benchmarks/src/index.js?build=20260808-0053g";
 
 export function createRuntimeLayerTests() {
   return {
@@ -373,7 +385,10 @@ export function createRuntimeLayerTests() {
         });
         const result = runner.runCompact({ samples: 1 });
 
-        assertEqual(result.baselineVersion, "compact-runtime-baseline-v1");
+        assertEqual(
+          result.baselineVersion,
+          "compact-runtime-baseline-v2-instance-graph"
+        );
         assertEqual(result.structure.family.members, 10000);
         assertEqual(result.structure.instanceBatch.batches, 1);
         assertEqual(result.structure.instanceBatch.instances, 10000);
@@ -7953,7 +7968,7 @@ export function createRuntimeLayerTests() {
         pair.dispose();
       },
 
-      async "mudança editorial encerra a sessão em todas as abas"() {
+      async "adaptador legado encerra a sessão em todas as abas"() {
         const pair = await createLocalAnimationPair();
         pair.authority.animation.play("preset", {
           id: "spin",
@@ -7972,7 +7987,7 @@ export function createRuntimeLayerTests() {
         assertEqual(pair.replica.animation.status().state, "idle");
         assertEqual(
           pair.authority.animation.status().shared.reason,
-          "scene-changed"
+          "animated-object-changed"
         );
         pair.dispose();
       },
@@ -8291,6 +8306,44 @@ export function createRuntimeLayerTests() {
         runtime.dispose();
       },
 
+      "runtime temporal rebasa edição e só encerra alvo removido"() {
+        const fixture = createAnimationFixture();
+        let nowSeconds = 0;
+        const domains = new AnalyticTimeDomains({
+          nowSeconds: () => nowSeconds
+        });
+        const temporal = new TemporalRuntime({ domains });
+        const runtime = new TemporalAnimationRuntime({
+          surface: fixture.surface,
+          temporalRuntime: temporal,
+          timeDomains: domains,
+          now: monotonicNow()
+        });
+        runtime.start({
+          targetIds: ["group-a"],
+          evaluate: identityAnimationFrame
+        });
+        const instanceId = runtime.status().activeInstanceId;
+
+        const rebased = runtime.sceneChanged([{
+          type: "object-transform",
+          objectId: "a"
+        }]);
+        assertDeepEqual(rebased.rebasedInstanceIds, [instanceId]);
+        assertDeepEqual(rebased.stoppedInstanceIds, []);
+        assertEqual(runtime.status().state, "playing");
+        assertEqual(fixture.restored.length, 0);
+
+        const removed = runtime.sceneChanged([{
+          type: "object-deleted",
+          objectId: "b"
+        }]);
+        assertDeepEqual(removed.stoppedInstanceIds, [instanceId]);
+        assertEqual(runtime.status().state, "idle");
+        assertEqual(fixture.restored.length, 1);
+        runtime.dispose();
+      },
+
       "falha de avaliação restaura sem escapar pelo main loop"() {
         const fixture = createAnimationFixture();
         const runtime = new AnimationRuntime({
@@ -8330,6 +8383,38 @@ export function createRuntimeLayerTests() {
           [[1, 5, 0], [3, 5, 0]]
         );
         assertDeepEqual(overlay.pivots[0].position, [1, 7, 3]);
+      },
+
+      "rebase afim acompanha o novo pivô canônico"() {
+        const targets = createAnimationTargetSnapshot([{
+          unitId: "group-a",
+          pivot: [0, 0, 0],
+          objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+        }]);
+        const frame = [{
+          unitId: "group-a",
+          matrix: composeAffineOperations([
+            { type: "pivot", value: [0, 0, 0] },
+            { type: "rotate", value: [0, 0, 90] }
+          ])
+        }];
+        const rebased = rebaseAnimationLayerInput(
+          targets,
+          frame,
+          () => [10, 0, 0]
+        );
+
+        assertVectorNear(
+          transformAnimationPoint(rebased.unitFrames[0].matrix, [10, 0, 0]),
+          [10, 0, 0],
+          1e-8
+        );
+        assertVectorNear(
+          transformAnimationPoint(rebased.unitFrames[0].matrix, [11, 0, 0]),
+          [10, 1, 0],
+          1e-8
+        );
+        assertDeepEqual(rebased.targets.units[0].pivot, [10, 0, 0]);
       },
 
       "relógio contabiliza passos descartados"() {
@@ -8595,7 +8680,9 @@ export function createRuntimeLayerTests() {
               operations: [{
                 type: "rotate",
                 value: [0, "45 * sin(t)", 0]
-              }]
+              }],
+              targetMode: "selection",
+              timeDomainId: "world"
             }
           },
           {
@@ -8603,7 +8690,8 @@ export function createRuntimeLayerTests() {
             args: {
               id: "spin",
               parameters: { speed: 90, axis: "z" },
-              targetMode: "selection"
+              targetMode: "selection",
+              timeDomainId: "world"
             }
           },
           {
@@ -8614,7 +8702,8 @@ export function createRuntimeLayerTests() {
                 type: "color",
                 value: "hsl(60*t + 360*u,0.8,0.55)"
               }],
-              targetMode: "objects"
+              targetMode: "objects",
+              timeDomainId: "world"
             }
           },
           { id: "animation.pause", args: undefined },
@@ -9156,18 +9245,19 @@ assets: {
       groupId: "group-a",
       targetIds: ["box-a", "box-b"]
     });
-    const projected = result.state.objects.map(object =>
+    const projected = projectInstanceGraphScene(result.state).objects.map(object =>
       runtime.projectObject(object)
     );
     const group = projected.find(object => object.id === "group-a");
-    const child = projected.find(object => object.id === "box-a");
-    const hierarchy = new HierarchyIndex(result.state.objects);
+    const child = projected.find(object => object.prototypeId === "box-a");
+    const sibling = projected.find(object => object.prototypeId === "box-b");
+    const hierarchy = new HierarchyIndex(projected);
 
     assertEqual(group.kind, "group");
     assertEqual("material" in group, false);
     assert(Boolean(child.material));
-    assertEqual(hierarchy.parentOf("box-a"), "group-a");
-    assertEqual(hierarchy.parentOf("box-b"), "group-a");
+    assertEqual(hierarchy.parentOf(child.id), "group-a");
+    assertEqual(hierarchy.parentOf(sibling.id), "group-a");
   },
 
   "stats distingue assets e cache"() {
@@ -9819,40 +9909,45 @@ assets: {
           groupId:"new-group",
           targetIds:["moving","nested"]
         });
-        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
-        assertDeepEqual(hierarchy.childrenOf("new-group"),["moving"]);
-        assertEqual(hierarchy.parentOf("nested"),"moving");
+        const descendants=sandbox.getObjectDescendantIds(["new-group"]);
+        assertEqual(descendants.length,2);
+        assertEqual(sandbox.getObject(descendants[0]).parentId,"new-group");
+        assertEqual(sandbox.getObject(descendants[1]).parentId,descendants[0]);
       },
       "agrupamento preserva toda a subárvore no mundo"() {
         const sandbox=createHierarchySandbox();
-        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
-        const movingWorld=before.worldMatrixOf("moving");
-        const nestedWorld=before.worldMatrixOf("nested");
+        const movingWorld=sandbox.getObjectWorldMatrix("moving");
+        const nestedWorld=sandbox.getObjectWorldMatrix("nested");
         sandbox.dispatch({
           type:"selection.group",
           groupId:"new-group",
           targetIds:["moving"]
         });
-        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
-        assertMatricesNear(after.worldMatrixOf("moving"),movingWorld);
-        assertMatricesNear(after.worldMatrixOf("nested"),nestedWorld);
+        const descendants=sandbox.getObjectDescendantIds(["new-group"]);
+        assertMatricesNear(sandbox.getObjectWorldMatrix(descendants[0]),movingWorld);
+        assertMatricesNear(sandbox.getObjectWorldMatrix(descendants[1]),nestedWorld);
       },
       "alvos de pais diferentes usam ancestral comum"() {
         const sandbox=createHierarchySandbox();
-        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
-        const movingWorld=before.worldMatrixOf("moving");
-        const targetWorld=before.worldMatrixOf("target");
+        const movingWorld=sandbox.getObjectWorldMatrix("moving");
+        const targetWorld=sandbox.getObjectWorldMatrix("target");
         sandbox.dispatch({
           type:"selection.group",
           groupId:"cross-group",
           targetIds:["moving","target"]
         });
-        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
-        assertEqual(after.parentOf("cross-group"),null);
-        assertEqual(after.parentOf("moving"),"cross-group");
-        assertEqual(after.parentOf("target"),"cross-group");
-        assertMatricesNear(after.worldMatrixOf("moving"),movingWorld);
-        assertMatricesNear(after.worldMatrixOf("target"),targetWorld);
+        const descendants=sandbox.getObjectDescendantIds(["cross-group"]);
+        const movingId=descendants.find(id =>
+          sandbox.getObject(id)?.kind === "group"
+        );
+        const targetId=descendants.find(id =>
+          sandbox.getObject(id)?.prototypeId === "target"
+        );
+        assertEqual(sandbox.getObject("cross-group").parentId,null);
+        assertEqual(sandbox.getObject(movingId).parentId,"cross-group");
+        assertEqual(sandbox.getObject(targetId).parentId,"cross-group");
+        assertMatricesNear(sandbox.getObjectWorldMatrix(movingId),movingWorld);
+        assertMatricesNear(sandbox.getObjectWorldMatrix(targetId),targetWorld);
       },
       "grupo pode ser agrupado novamente"() {
         const sandbox=createHierarchySandbox();
@@ -9866,10 +9961,36 @@ assets: {
           groupId:"outer",
           targetIds:["inner"]
         });
-        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
-        assertEqual(hierarchy.parentOf("inner"),"outer");
-        assertEqual(hierarchy.parentOf("moving"),"inner");
-        assertEqual(hierarchy.parentOf("nested"),"moving");
+        const descendants=sandbox.getObjectDescendantIds(["outer"]);
+        assertEqual(descendants.length,3);
+        assertEqual(sandbox.getObject(descendants[0]).parentId,"outer");
+        assertEqual(sandbox.getObject(descendants[1]).parentId,descendants[0]);
+        assertEqual(sandbox.getObject(descendants[2]).parentId,descendants[1]);
+      },
+      "grupo de grupos publica todos os alvos de preview no índice"() {
+        const sandbox=createGroupTransformSandbox({nested:true});
+        sandbox.dispatch({
+          type:"selection.group",
+          groupId:"outer",
+          targetIds:["group"]
+        });
+        const scene=projectInstanceGraphScene(sandbox.getSnapshot());
+        const hierarchy=new HierarchyIndex(scene.objects);
+        const replicas=new ReplicaRenderIndex();
+        for (const object of scene.objects) {
+          replicas.register(object,hierarchy.worldMatrixOf(object.id));
+        }
+        const members=replicas.members("outer");
+        const byId=new Map(scene.objects.map(object=>[object.id,object]));
+
+        assertEqual(sandbox.listObjectChildren("outer").total,1);
+        assertEqual(members.length,3);
+        assertEqual(
+          members.filter(id=>isRenderableSceneNode(byId.get(id))).length,
+          1
+        );
+        assertEqual(replicas.status().diagnostics.sceneScans,0);
+        assertEqual(replicas.status().diagnostics.definitionTraversals,0);
       },
       "grupo lógico não solicita geometria ao renderer"() {
         assertEqual(isRenderableSceneNode({kind:"group"}),false);
@@ -10197,16 +10318,14 @@ assets: {
           regionId:"region-main"
         });
         const result=operations.duplicateMany(2);
-        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
-
-        assertEqual(result.createdCount,4);
+        assertEqual(result.createdCount,2);
         assertEqual(result.duplicateIds.length,2);
         assertDeepEqual(
           editor.selection.snapshot().members.map(member => member.objectId),
           result.duplicateIds
         );
         for (const rootId of result.duplicateIds) {
-          assertEqual(hierarchy.childrenOf(rootId).length,1);
+          assertEqual(sandbox.listObjectChildren(rootId).total,1);
         }
       },
 
@@ -10228,17 +10347,15 @@ assets: {
         const result=operations.duplicateAffine(3,[
           {type:"move",value:[2,0,0]}
         ]);
-        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
-
-        assertEqual(result.createdCount,6);
+        assertEqual(result.createdCount,3);
         assertEqual(result.duplicateIds.length,3);
         for (const [index,rootId] of result.duplicateIds.entries()) {
-          const childId=after.childrenOf(rootId)[0];
+          const childId=sandbox.listObjectChildren(rootId).items[0];
           const expected=multiplyMatrices(
             composeTransform({position:[2*(index+1),0,0]}),
             childBefore
           );
-          assertMatricesNear(after.worldMatrixOf(childId),expected);
+          assertMatricesNear(sandbox.getObjectWorldMatrix(childId),expected);
         }
       },
 
@@ -10570,7 +10687,7 @@ assets: {
     },
 
     "project-files": {
-      "schema 3 preserva câmera hierárquica e câmera padrão"() {
+      "schema atual preserva câmera hierárquica e câmera padrão"() {
         const assets = new AppearanceRuntime().exportAssets();
         const project = new ProjectValidator().validate({
           format: "spatial-seed",
@@ -10606,7 +10723,7 @@ assets: {
           }
         });
 
-        assertEqual(project.schemaVersion, 3);
+        assertEqual(project.schemaVersion, 4);
         assertEqual(project.scene.defaultCameraId, "camera-main");
         assertEqual(project.scene.objects[1].kind, "camera");
         assertEqual("appearanceId" in project.scene.objects[1], false);
@@ -12920,7 +13037,7 @@ assets: {
           { regionId: "region-properties", objectId: "a" },
           { regionId: "region-properties", objectId: "b" }
         ]);
-        const before = structuredClone(fixture.sandbox.getState());
+        const before = fixture.sandbox.materializeState();
 
         assertThrowsMessage(
           () => fixture.service.setSelectionProcedural({
@@ -12929,7 +13046,7 @@ assets: {
           }),
           "Valor numérico inválido"
         );
-        assertDeepEqual(fixture.sandbox.getState(), before);
+        assertDeepEqual(fixture.sandbox.materializeState(), before);
         assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 0);
       },
 
@@ -16529,50 +16646,11 @@ function affineDiagnosticSnapshot(copy) {
 }
 
 function createAffineDiagnosticSandbox(initialObjects = []) {
-  let state = Object.freeze({
-    objects: Object.freeze(structuredClone(initialObjects))
-  });
-  const listeners = new Set();
-
-  return {
-    getSnapshot() {
-      return state;
-    },
-
-    getState() {
-      return state;
-    },
-
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-
-    dispatch(command) {
-      if (command.type !== "selection.duplicate") {
-        return false;
-      }
-
-      state = Object.freeze({
-        ...state,
-        objects: Object.freeze([
-          ...state.objects,
-          ...structuredClone(command.objects)
-        ])
-      });
-
-      const changes = command.objects.map(object => ({
-        type: "object-created",
-        objectId: object.id
-      }));
-
-      for (const listener of listeners) {
-        listener(state, changes);
-      }
-
-      return true;
-    }
-  };
+  const region = new Region(
+    { id: "affine-diagnostic", type: "box-region" },
+    { schemaVersion: 1, objects: structuredClone(initialObjects) }
+  );
+  return new Sandbox(region, boxRegionReducer);
 }
 
 function createSelectionRepeatFixture({

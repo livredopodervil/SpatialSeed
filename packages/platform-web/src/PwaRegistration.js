@@ -1,4 +1,4 @@
-import { formatBuildLabel } from "./BuildInfo.js?build=20260808-0053f";
+import { formatBuildLabel } from "./BuildInfo.js?build=20260808-0053g";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const UPDATE_TIMEOUT_MS = 15000;
@@ -192,6 +192,10 @@ export function formatPwaBuildLabel(buildInfo, pwaState = {}) {
     waitingBuild: pwaState.waitingBuild,
     installingBuild: pwaState.installingBuild
   })) {
+    const controllerBuild = String(pwaState.controllerBuild ?? "").trim();
+    if (controllerBuild && controllerBuild !== String(buildInfo.build)) {
+      return `${base} · cache ${controllerBuild} · feche para atualizar`;
+    }
     return `${base} · nova versão disponível`;
   }
   if (pwaState.updatePending) return `${base} · verificando atualização`;

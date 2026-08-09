@@ -190,6 +190,7 @@ export class AnimationCommandService {
 
     if (!samePlayback) {
       this.#applyDescriptor(next.descriptor, {
+        timeSource,
         initialTime: currentTime
       });
       this.sharedPlaybackId = next.playbackId;
