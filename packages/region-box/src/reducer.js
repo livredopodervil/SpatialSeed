@@ -975,7 +975,11 @@ export function boxRegionReducer(state, command, context = {}) {
         name: command.name ?? command.id,
         position: Object.freeze([...(command.position ?? [0, 1, 0])]),
         rotation: Object.freeze([...(command.rotation ?? [0, 0, 0, 1])]),
-        scale: Object.freeze([1, 1, 1]),
+        scale: freezeVector(
+          command.scale ?? [1, 1, 1],
+          3,
+          "Escala do objeto inválida."
+        ),
         ...(geometry
           ? { geometry }
           : { size: command.size ?? [2, 2, 2] }),

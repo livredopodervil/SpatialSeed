@@ -62,12 +62,15 @@ export class ObjectPlacementController {
     this.#preview = preview;
     this.#active = {
       settings,
+      scaleReference: geometryScaleReference(geometry),
       previousTool: this.renderer.editorState?.snapshot?.().tool?.mode ?? "select",
       previousOrbitEnabled: this.renderer.orbit.enabled,
       navigationToken:
         this.renderer.acquireToolGestureNavigation?.("object-placement") ?? null,
       pointerId: null,
       pointerType: null,
+      pointerStart: null,
+      placementStart: null,
       lastPlacement: null,
       lastResult: null,
       error: null
@@ -140,8 +143,11 @@ export class ObjectPlacementController {
         event.pointerId !== this.#active.pointerId) {
       return;
     }
-    const placement = this.#resolve(event);
-    if (!placement) return;
+    const resolved = this.#resolve(event);
+    if (!resolved) return;
+    const placement = this.#active.pointerId === null
+      ? withPlacementScale(resolved, 1)
+      : this.#scaledPlacement(resolved, event);
     this.#active.lastPlacement = placement;
     this.#updatePreview(placement);
     this.#notify();
@@ -154,8 +160,8 @@ export class ObjectPlacementController {
       this.#cancelPointer();
       return;
     }
-    const placement = this.#resolve(event);
-    if (!placement) return;
+    const resolved = this.#resolve(event);
+    if (!resolved) return;
     event.preventDefault();
     const active = this.#active;
     if (event.pointerType !== "touch") {
@@ -164,6 +170,9 @@ export class ObjectPlacementController {
     }
     active.pointerId = event.pointerId;
     active.pointerType = event.pointerType || "mouse";
+    active.pointerStart = [event.clientX, event.clientY];
+    active.placementStart = resolved;
+    const placement = withPlacementScale(resolved, 1);
     active.lastPlacement = placement;
     this.#updatePreview(placement);
     this.#notify();
@@ -182,9 +191,14 @@ export class ObjectPlacementController {
       event.stopImmediatePropagation();
       this.renderer.canvas.releasePointerCapture?.(event.pointerId);
     }
-    const placement = this.#resolve(event) ?? active.lastPlacement;
+    const resolved = this.#resolve(event);
+    const placement = resolved
+      ? this.#scaledPlacement(resolved, event)
+      : active.lastPlacement;
     active.pointerId = null;
     active.pointerType = null;
+    active.pointerStart = null;
+    active.placementStart = null;
     if (!placement) return;
     try {
       const result = this.createObject({
@@ -192,6 +206,7 @@ export class ObjectPlacementController {
         geometry: active.settings.geometry,
         position: placement.position,
         rotation: placement.rotation,
+        scale: placement.scale,
         color: active.settings.color,
         materialPatch: active.settings.materialPatch
       });
@@ -235,6 +250,8 @@ export class ObjectPlacementController {
     }
     active.pointerId = null;
     active.pointerType = null;
+    active.pointerStart = null;
+    active.placementStart = null;
     active.lastPlacement = null;
     if (this.#preview) this.#preview.visible = false;
     this.renderer.invalidateRender?.("object-placement-preview-clear");
@@ -277,8 +294,31 @@ export class ObjectPlacementController {
     if (!this.#preview) return;
     this.#preview.position.fromArray(placement.position);
     this.#preview.quaternion.fromArray(placement.rotation);
+    this.#preview.scale.fromArray(placement.scale ?? [1, 1, 1]);
     this.#preview.visible = true;
     this.renderer.invalidateRender?.("object-placement-preview");
+  }
+
+  #scaledPlacement(current, event) {
+    const active = this.#active;
+    const start = active?.placementStart;
+    if (!active || !start) return withPlacementScale(current, 1);
+    const pixels = active.pointerStart
+      ? Math.hypot(
+          event.clientX - active.pointerStart[0],
+          event.clientY - active.pointerStart[1]
+        )
+      : 0;
+    const threshold = active.pointerType === "touch" ? 10 : 4;
+    if (pixels <= threshold) return withPlacementScale(start, 1);
+    const distance = new THREE.Vector3()
+      .fromArray(current.position)
+      .distanceTo(new THREE.Vector3().fromArray(start.position));
+    const factor = Math.max(
+      distance / active.scaleReference,
+      1e-4
+    );
+    return withPlacementScale(start, factor);
   }
 
   #finish({ restoreTool }) {
@@ -349,6 +389,24 @@ function normalizeSettings(value, registry) {
     materialPatch: value.materialPatch && typeof value.materialPatch === "object"
       ? structuredClone(value.materialPatch)
       : null
+  });
+}
+
+function geometryScaleReference(geometry) {
+  geometry.computeBoundingBox?.();
+  const bounds = geometry.boundingBox;
+  if (!bounds) return 1;
+  const size = bounds.getSize(new THREE.Vector3());
+  return Math.max(size.x, size.y, size.z, 2e-4) / 2;
+}
+
+function withPlacementScale(placement, factor) {
+  const value = Number.isFinite(factor) ? factor : 1;
+  return Object.freeze({
+    ...placement,
+    position: Object.freeze([...placement.position]),
+    rotation: Object.freeze([...placement.rotation]),
+    scale: Object.freeze([value, value, value])
   });
 }
 

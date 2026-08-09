@@ -69,8 +69,10 @@ import {
   proportionalScaleFactor2D,
   resolveEditorOrbitEnabled,
   scaleFactorsForAxes,
-  scaleWorldTrsWithoutShear
-} from "../../renderer-three/src/index.js?build=20260809-0053l";
+  scaleWorldTrsWithoutShear,
+  mirrorGeometryXInPlace,
+  positiveInstanceMatrixForMirror
+} from "../../renderer-three/src/index.js?build=20260809-0053m";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -171,7 +173,7 @@ import {
 } from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/index.js?build=20260808-0053i";
+} from "../../region-box/src/index.js?build=20260809-0053m";
 import {
   compactHierarchyRoots,
   instanceOccurrenceId,
@@ -274,7 +276,7 @@ import {
 } from "../../planar-authoring/src/index.js?build=20260802-0047g";
 import {
   ObjectPlacementController
-} from "../../object-placement/src/index.js?build=20260730-0040e";
+} from "../../object-placement/src/index.js?build=20260809-0053m";
 import {
   MeasurementController,
   formatMeasurementResult,
@@ -347,8 +349,9 @@ import {
   SelectionMarquee,
   UiActionRegistry,
   UiRefreshCoordinator,
+  formatConsoleEntry,
   normalizeShortcutChord
-} from "../../ui-widgets/src/index.js?build=20260730-0040e";
+} from "../../ui-widgets/src/index.js?build=20260809-0053m";
 import {
   normalizeUiConfiguration
 } from "../../ui-config/src/index.js?build=20260720-0028c";
@@ -1541,6 +1544,66 @@ export function createRuntimeLayerTests() {
         );
         assertEqual(calls.length, 1);
         controller.dispose();
+      },
+
+      "arrasto escala a primitiva a partir do ponto inicial"() {
+        const renderer = createPathSketchRendererStub();
+        const calls = [];
+        const controller = new ObjectPlacementController({
+          renderer,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          createObject(args) {
+            calls.push(structuredClone(args));
+            return { changed: true, id: `placed-${calls.length}` };
+          }
+        });
+        controller.begin({
+          geometry: {
+            type: "box",
+            size: [1, 1, 1],
+            segments: [1, 1, 1]
+          },
+          continuous: true
+        });
+        renderer.canvas.emit("pointerdown", pathPointerEvent(1, 10, 10));
+        renderer.canvas.emit("pointermove", pathPointerEvent(1, 30, 10));
+        assertVectorNear(controller.status().placement.position, [1, 1, 0]);
+        assertVectorNear(controller.status().placement.scale, [4, 4, 4]);
+        renderer.canvas.emit("pointerup", pathPointerEvent(1, 30, 10));
+        assertEqual(calls.length, 1);
+        assertVectorNear(calls[0].position, [1, 1, 0]);
+        assertVectorNear(calls[0].scale, [4, 4, 4]);
+
+        renderer.canvas.emit("pointerdown", pathPointerEvent(2, 40, 20));
+        renderer.canvas.emit("pointerup", pathPointerEvent(2, 40, 20));
+        assertVectorNear(calls[1].scale, [1, 1, 1]);
+        controller.dispose();
+      },
+
+      "escala da inserção atravessa comando e reducer"() {
+        const region = new Region(
+          { id: "placement-scale", name: "Placement", type: "box-region" },
+          { schemaVersion: 1, objects: [] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const operations = new SelectionOperations({
+          editor: new EditorState(),
+          sandbox,
+          regionId: region.descriptor.id,
+          geometryRegistry: createDefaultGeometryRegistry(),
+          appearanceRuntime: new AppearanceRuntime()
+        });
+        const result = operations.createGeometry({
+          geometry: {
+            type: "box",
+            size: [1, 1, 1],
+            segments: [1, 1, 1]
+          },
+          scale: [3, 3, 3]
+        });
+        assertEqual(result.changed, true);
+        assertVectorNear(sandbox.getObject(result.id).scale, [3, 3, 3]);
+        operations.dispose();
       }
     },
 
@@ -4543,6 +4606,50 @@ export function createRuntimeLayerTests() {
     },
 
     "mesh-edit-math": {
+      "espelho corrige winding, normal, tangente e matriz de instância"() {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute([
+          0, 0, 0,
+          1, 0, 0,
+          0, 1, 0
+        ], 3));
+        geometry.setAttribute("normal", new THREE.Float32BufferAttribute([
+          0, 0, 1,
+          0, 0, 1,
+          0, 0, 1
+        ], 3));
+        geometry.setAttribute("tangent", new THREE.Float32BufferAttribute([
+          1, 0, 0, 1,
+          1, 0, 0, 1,
+          1, 0, 0, 1
+        ], 4));
+        geometry.setIndex([0, 1, 2]);
+        mirrorGeometryXInPlace(geometry);
+        assertDeepEqual([...geometry.index.array], [0, 2, 1]);
+        assertNear(geometry.getAttribute("normal").getZ(0), 1);
+        assertNear(geometry.getAttribute("tangent").getX(0), -1);
+        assertNear(geometry.getAttribute("tangent").getW(0), -1);
+
+        const position = geometry.getAttribute("position");
+        const a = new THREE.Vector3().fromBufferAttribute(position, 0);
+        const b = new THREE.Vector3().fromBufferAttribute(position, 2);
+        const c = new THREE.Vector3().fromBufferAttribute(position, 1);
+        const faceNormal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+        assertNear(faceNormal.z, 1);
+
+        const logical = new THREE.Matrix4().makeScale(-2, 3, 4);
+        const instance = positiveInstanceMatrixForMirror(logical);
+        assert(instance.determinant() > 0);
+        const point = new THREE.Vector3(2, 3, 4);
+        const mirroredPoint = point.clone().applyMatrix4(
+          new THREE.Matrix4().makeScale(-1, 1, 1)
+        ).applyMatrix4(instance);
+        assertVectorNear(
+          mirroredPoint.toArray(),
+          point.clone().applyMatrix4(logical).toArray()
+        );
+      },
+
       "escala livre cruza o pivô e produz fator negativo"() {
         const factor = proportionalScaleFactor2D({
           fixed: [0, 0],
@@ -12650,9 +12757,86 @@ assets: {
     },
 
     "ui-actions": {
+      "console resume testes e mutações sem despejar o objeto inteiro"() {
+        assertEqual(
+          formatConsoleEntry({
+            result: {
+              scope: "runtime-layers",
+              passed: 625,
+              failed: 0,
+              total: 625,
+              durationMs: 1843,
+              ok: true,
+              results: Array.from({ length: 625 }, () => ({ ok: true }))
+            }
+          }),
+          "Passou: 625/625 testes · 1.84 s"
+        );
+        assertEqual(
+          formatConsoleEntry({ result: {
+            changed: false,
+            reason: "no-repeat-history",
+            payload: { large: true }
+          } }),
+          "alterado false · motivo no-repeat-history"
+        );
+        assertEqual(
+          formatConsoleEntry({ error: "comando inválido" }),
+          "Erro: comando inválido"
+        );
+      },
+
       "normaliza acordes portáveis para Ctrl e Command"() {
         assertEqual(normalizeShortcutChord("primary + shift + z"),"Primary+Shift+Z");
         assertEqual(normalizeShortcutChord("delete"),"Delete");
+      },
+      "Ctrl+C duplica e Ctrl+D repete fora de campos de texto"() {
+        const calls = [];
+        const registry = new UiActionRegistry({
+          root: null,
+          configuration: { bindings: [
+            {
+              action: "selection.duplicate",
+              chord: "Primary+C",
+              context: "global"
+            },
+            {
+              action: "selection.repeat",
+              chord: "Primary+D",
+              context: "global"
+            }
+          ] }
+        });
+        registry
+          .register("selection.duplicate", () => calls.push("duplicate"))
+          .register("selection.repeat", () => calls.push("repeat"));
+        assertEqual(
+          registry.handleKeydown(
+            createShortcutEvent({ key: "c", ctrlKey: true }),
+            "viewport"
+          ),
+          true
+        );
+        assertEqual(
+          registry.handleKeydown(
+            createShortcutEvent({ key: "d", ctrlKey: true }),
+            "viewport"
+          ),
+          true
+        );
+        assertDeepEqual(calls, ["duplicate", "repeat"]);
+        assertEqual(
+          registry.handleKeydown(
+            createShortcutEvent({
+              key: "c",
+              ctrlKey: true,
+              textEditing: true
+            }),
+            "viewport"
+          ),
+          false
+        );
+        registry.dispose();
       },
       "atalho e ação visual compartilham o mesmo handler"() {
         let calls=0;

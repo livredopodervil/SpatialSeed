@@ -5,10 +5,21 @@ button:disabled{opacity:.35}
 .tt-uniform-scale-hint{grid-column:1/-1;margin:.25rem 0 .55rem;color:#cbd8ea;font-size:.78rem;line-height:1.35}
 #toolbar{position:fixed;z-index:20;top:.45rem;left:.45rem;right:.45rem;display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;pointer-events:none}
 #toolbar>*{pointer-events:auto}#status{margin-left:auto;font-size:.72rem;opacity:.72}
-#selection-panel{position:fixed;z-index:15;left:.55rem;bottom:.55rem;width:min(350px,calc(100vw - 1.1rem));padding:.65rem;border:1px solid #ffffff22;border-radius:12px;background:#0b111be8;font-size:.76rem}
+#selection-panel{position:fixed;z-index:15;left:.55rem;bottom:.55rem;width:min(350px,calc(100vw - 1.1rem));min-width:240px;min-height:180px;overflow:auto;border:1px solid #ffffff22;border-radius:12px;background:#0b111be8;font-size:.76rem}
+#selection-panel>header{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:.4rem;padding:.5rem .65rem;border-bottom:1px solid #ffffff18;background:#0b111bf4;cursor:move}
+#selection-panel>header strong{flex:1}
+#selection-panel>header button{padding:.25rem .5rem}
+#selection-panel-content{padding:.6rem}
 #selection-content,#pivot-content,#active-camera-indicator,#build-content{margin-top:.35rem;opacity:.82;overflow-wrap:anywhere}
 #active-camera-indicator[data-camera-active="true"]{color:#ff9de4;font-weight:650}
 #build-content{font-family:monospace;font-size:.68rem;opacity:.55}
+#status-console-form{display:grid;gap:.32rem;margin-top:.55rem;padding-top:.5rem;border-top:1px solid #ffffff18}
+#status-console-form>label{font-size:.68rem;color:#aebed1}
+.status-console-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.32rem}
+#status-console-input{min-width:0;padding:.42rem .5rem;border:1px solid #ffffff22;border-radius:8px;background:#02060c;color:#edf4ff;font:.76rem monospace}
+.status-console-row>button{padding:.35rem .55rem;border-radius:8px}
+#status-console-output{display:block;min-height:1.25rem;max-height:4.8rem;overflow:auto;color:#b9d7ff;font:.7rem/1.35 monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+#status-console-output[data-error="true"]{color:#ff9b9b}
 #outline,#review-panel,#diagnostic-panel,#camera-panel{position:fixed;z-index:24;right:.55rem;top:4rem;width:min(430px,calc(100vw - 1.1rem));max-height:72vh;overflow:auto;border:1px solid #ffffff22;border-radius:14px;background:#0b111bf5}
 #outline>header,#review-panel>header,#diagnostic-panel>header,#camera-panel>header{display:flex;gap:.5rem;align-items:center;padding:.65rem;border-bottom:1px solid #ffffff18}
 #outline>header strong,#review-panel>header strong,#diagnostic-panel>header strong,#camera-panel>header strong{flex:1}

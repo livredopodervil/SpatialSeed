@@ -313,6 +313,7 @@
     "packages/ui-config/src/ShortcutConfiguration.js",
     "packages/ui-config/src/UiConfiguration.js",
     "packages/ui-config/src/index.js",
+    "packages/ui-widgets/src/ConsoleOutputFormatter.js",
     "packages/ui-widgets/src/FloatingPanelManager.js",
     "packages/ui-widgets/src/ScrubbableField.js",
     "packages/ui-widgets/src/SelectionMarquee.js",

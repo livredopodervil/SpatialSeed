@@ -82,6 +82,12 @@
   "panels": {
     "storageKey": "spatialseed.ui.layout.v2",
     "items": {
+      "selection-panel": {
+        "anchor": "left",
+        "bottom": 9,
+        "width": 350,
+        "height": 270
+      },
       "outline": {
         "anchor": "right",
         "top": "toolbar",
@@ -163,8 +169,8 @@
     }
   },
   "shortcuts": {
-    "profile": "spatialseed",
-    "storageKey": "spatialseed.ui.shortcuts.v1",
+    "profile": "spatialseed-0053m",
+    "storageKey": "spatialseed.ui.shortcuts.v2",
     "bindings": [
       {
         "action": "history.undo",
@@ -208,6 +214,11 @@
       },
       {
         "action": "selection.duplicate",
+        "chord": "Primary+C",
+        "context": "global"
+      },
+      {
+        "action": "selection.repeat",
         "chord": "Primary+D",
         "context": "global"
       },

@@ -396,15 +396,34 @@
   </svg>
 </div>
 <aside id="selection-panel">
-  <strong>Seleção do editor</strong>
-  <div id="selection-summary">0 selecionados</div>
-  <div id="selection-content">∅</div>
-  <div id="pivot-content">Pivô: mediana</div>
-  <div id="active-camera-indicator">Vista: navegação livre</div>
-  <div id="build-content">build carregando…</div>
-  <div id="pwa-update-actions" class="pwa-update-actions">
-    <button id="pwa-update-button" type="button" disabled>Atualizar agora</button>
-    <button id="pwa-repair-button" type="button" hidden>Reparar atualização</button>
+  <header>
+    <strong>Status e comandos</strong>
+    <button id="status-open-console" type="button" title="Abrir console completo">↗</button>
+  </header>
+  <div id="selection-panel-content">
+    <div id="selection-summary">0 selecionados</div>
+    <div id="selection-content">∅</div>
+    <div id="pivot-content">Pivô: mediana</div>
+    <div id="active-camera-indicator">Vista: navegação livre</div>
+    <form id="status-console-form" autocomplete="off">
+      <label for="status-console-input">Comando</label>
+      <div class="status-console-row">
+        <input
+          id="status-console-input"
+          type="text"
+          spellcheck="false"
+          autocapitalize="off"
+          placeholder="help"
+        >
+        <button type="submit" title="Executar comando">↵</button>
+      </div>
+      <output id="status-console-output" aria-live="polite">Pronto.</output>
+    </form>
+    <div id="build-content">build carregando…</div>
+    <div id="pwa-update-actions" class="pwa-update-actions">
+      <button id="pwa-update-button" type="button" disabled>Atualizar agora</button>
+      <button id="pwa-repair-button" type="button" hidden>Reparar atualização</button>
+    </div>
   </div>
 </aside>
 
@@ -1350,6 +1369,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260809-0053l"></script>
+<script type="module" src="./boot.js?build=20260809-0053m"></script>
 </body>
 </html>

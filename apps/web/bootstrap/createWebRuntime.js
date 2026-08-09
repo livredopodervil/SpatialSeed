@@ -13,8 +13,8 @@ import {
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260808-0053i";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260809-0053l";
+} from "../../../packages/region-box/src/index.js?build=20260809-0053m";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260809-0053m";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -23,7 +23,7 @@ import {
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260808-0053f";
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260808-0053f";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260808-0053f";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260808-0053f";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260809-0053m";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260809-0053l";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260808-0053f";
 import {
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260809-0053l";
+} from "../../../packages/platform-web/src/index.js?build=20260809-0053m";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -136,7 +136,7 @@ import {
 } from "../../../packages/edit-tools/src/index.js?build=20260808-0053f";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260808-0053f";
+} from "../../../packages/object-placement/src/index.js?build=20260809-0053m";
 import {
   DrawingTargetController
 } from "../../../packages/drawing-target/src/index.js?build=20260808-0053f";

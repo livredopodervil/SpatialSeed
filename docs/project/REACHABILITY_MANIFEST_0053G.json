@@ -16,9 +16,9 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 332,
-    "productionFiles": 291,
-    "productionFirstPartyFiles": 290,
+    "firstPartyJavaScriptFiles": 333,
+    "productionFiles": 292,
+    "productionFirstPartyFiles": 291,
     "productionExternalFiles": 1,
     "diagnosticFiles": 22,
     "unreferencedFiles": 20,
@@ -679,8 +679,8 @@
       "status": "production",
       "target": "interface",
       "role": "production",
-      "sourceFiles": 7,
-      "productionFiles": 7,
+      "sourceFiles": 8,
+      "productionFiles": 8,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -985,6 +985,7 @@
     "packages/ui-config/src/ShortcutConfiguration.js",
     "packages/ui-config/src/UiConfiguration.js",
     "packages/ui-config/src/index.js",
+    "packages/ui-widgets/src/ConsoleOutputFormatter.js",
     "packages/ui-widgets/src/FloatingPanelManager.js",
     "packages/ui-widgets/src/ScrubbableField.js",
     "packages/ui-widgets/src/SelectionMarquee.js",

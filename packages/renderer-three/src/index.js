@@ -1,4 +1,4 @@
-export { ThreeRegionRenderer } from "./ThreeRegionRenderer.js?build=20260809-0053l";
+export { ThreeRegionRenderer } from "./ThreeRegionRenderer.js?build=20260809-0053m";
 export {
   EDITOR_ORBIT_POLICY_VERSION,
   resolveEditorOrbitEnabled
@@ -26,3 +26,7 @@ export {
   matricesApproximatelyEqual
 } from "./VisualCommitHandoff.js?build=20260809-0053l";
 export { MeshEditVisibility } from "./MeshEditVisibility.js?build=20260809-0053l";
+export {
+  mirrorGeometryXInPlace,
+  positiveInstanceMatrixForMirror
+} from "./MirroredGeometry.js?build=20260809-0053m";

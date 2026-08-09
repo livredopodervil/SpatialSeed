@@ -7,8 +7,9 @@ import {
   spatialCellKeyForPoint
 } from "./SpatialObjectIndex.js?build=20260807-0051a";
 import {
-  mirrorGeometryXInPlace
-} from "./MirroredGeometry.js?build=20260807-0051a";
+  mirrorGeometryXInPlace,
+  positiveInstanceMatrixForMirror
+} from "./MirroredGeometry.js?build=20260809-0053m";
 import {
   InstanceBatch,
   updateAbsoluteInstanceColor
@@ -170,7 +171,6 @@ export class ThreeRegionRenderer {
   #replicaRenderIndex = new ReplicaRenderIndex();
   #spatialShardSize = 32;
   #spatialShardCapacity = 256;
-  #mirrorXMatrix = new THREE.Matrix4().makeScale(-1, 1, 1);
   #navigationDefaults = {
     enableRotate: true,
     enablePan: true,
@@ -2962,6 +2962,10 @@ export class ThreeRegionRenderer {
       geometryKey,
       () => this.#geometryRegistry.create(descriptor)
     );
+    const mirroredGeometry = this.#resourceCache.acquireGeometry(
+      `${geometryKey}|mirror:x`,
+      () => mirrorGeometryXInPlace(this.#geometryRegistry.create(descriptor))
+    );
     const material = this.#materialCache.acquire({
       ...materialRequest,
       renderProfile
@@ -2992,6 +2996,8 @@ export class ThreeRegionRenderer {
         estimatedBytes: explicitInstanceFamilyEstimatedBytes(family),
         geometryKey: geometry.key,
         geometry: geometry.value,
+        mirroredGeometryKey: mirroredGeometry.key,
+        mirroredGeometry: mirroredGeometry.value,
         materialKey: material.key,
         material: material.value.material,
         materialIdentity,
@@ -2999,6 +3005,7 @@ export class ThreeRegionRenderer {
         bindingIdentity,
         signature,
         resourceIds: [],
+        resourceMirrors: [],
         batchKeys: new Set(),
         nextIndex: 0,
         building: true,
@@ -3027,6 +3034,7 @@ export class ThreeRegionRenderer {
       return visual;
     } catch (error) {
       this.#resourceCache.releaseGeometry(geometry.key);
+      this.#resourceCache.releaseGeometry(mirroredGeometry.key);
       this.#materialCache.release(material.key);
       throw error;
     }
@@ -3157,40 +3165,14 @@ export class ThreeRegionRenderer {
         visual.objectId,
         memberId
       );
-      const cell = familyBatchSpatialCell(
-        visual.worldMatrix,
-        this.#spatialShardSize
-      );
-      const baseKey = JSON.stringify([
-        "shared-family",
-        visual.signature,
-        cell
-      ]);
-      const desired = this.#familyMemberColor(visual, index);
-      const added = this.#batchManager.addSegmented({
+      const added = this.#addFamilyResource(
+        visual,
+        index,
         resourceId,
-        ownerId: visual.objectId,
-        memberId,
-        batchBaseKey: baseKey,
-        matrix: visual.worldMatrix,
-        attributes: desired
-          ? { color: absoluteInstanceColorFactor(visual.material, desired) }
-          : {},
-        descriptor: {
-          geometry: visual.geometry,
-          material: visual.material,
-          capacity: this.#spatialShardCapacity
-        },
-        metadata: Object.freeze({
-          kind: "family-member",
-          ordinal: index
-        })
-      });
-      added.batch.mesh.userData.sharedFamilyResources = true;
-      added.batch.mesh.userData.renderSignature = visual.signature;
+        memberId
+      );
       visual.resourceIds[index] = resourceId;
-      visual.batchKeys.add(added.batch.key);
-      this.#markBatchDirty(added.batch.key);
+      visual.resourceMirrors[index] = added.mirroredX;
     }
     visual.nextIndex = end;
     if (end > start) this.invalidateRender("family-build");
@@ -3232,14 +3214,79 @@ export class ThreeRegionRenderer {
         visual.localMatrix
       );
       const resourceId = visual.resourceIds[index];
+      const mirroredX = visual.worldMatrix.determinant() < 0;
+      if (visual.resourceMirrors[index] !== mirroredX) {
+        this.#removeFamilyResource(visual, resourceId);
+        const memberId = visual.transform.memberId ?? `member-${index + 1}`;
+        this.#addFamilyResource(
+          visual,
+          index,
+          resourceId,
+          memberId
+        );
+        visual.resourceMirrors[index] = mirroredX;
+        changed = true;
+        continue;
+      }
       const location = this.#batchManager.locationOf(resourceId);
-      if (this.#batchManager.update(resourceId, visual.worldMatrix)) {
+      const matrix = positiveInstanceMatrixForMirror(visual.worldMatrix);
+      if (this.#batchManager.update(resourceId, matrix)) {
         changed = true;
         this.#markBatchDirty(location?.batchKey);
       }
     }
     this.#updateSpatialObjectIndex(visual.objectId, visual.proxy);
     return changed;
+  }
+
+  #addFamilyResource(visual, index, resourceId, memberId) {
+    const mirroredX = visual.worldMatrix.determinant() < 0;
+    const matrix = positiveInstanceMatrixForMirror(visual.worldMatrix);
+    const cell = familyBatchSpatialCell(matrix, this.#spatialShardSize);
+    const baseKey = JSON.stringify([
+      "shared-family",
+      visual.signature,
+      mirroredX ? "mirror-x" : "normal",
+      cell
+    ]);
+    const desired = this.#familyMemberColor(visual, index);
+    const added = this.#batchManager.addSegmented({
+      resourceId,
+      ownerId: visual.objectId,
+      memberId,
+      batchBaseKey: baseKey,
+      matrix,
+      attributes: desired
+        ? { color: absoluteInstanceColorFactor(visual.material, desired) }
+        : {},
+      descriptor: {
+        geometry: mirroredX ? visual.mirroredGeometry : visual.geometry,
+        material: visual.material,
+        capacity: this.#spatialShardCapacity
+      },
+      metadata: Object.freeze({
+        kind: "family-member",
+        ordinal: index
+      })
+    });
+    added.batch.mesh.userData.sharedFamilyResources = true;
+    added.batch.mesh.userData.renderSignature = visual.signature;
+    visual.batchKeys.add(added.batch.key);
+    this.#markBatchDirty(added.batch.key);
+    return Object.freeze({ batch: added.batch, mirroredX });
+  }
+
+  #removeFamilyResource(visual, resourceId) {
+    const result = this.#batchManager.remove(resourceId);
+    const batch = result.batchKey
+      ? this.#batchManager.getBatch(result.batchKey)
+      : null;
+    if (!batch || batch.size > 0) return result.removed;
+    this.scene.remove(batch.mesh);
+    this.#batchManager.deleteBatch(result.batchKey);
+    this.#dirtyBatchKeys.delete(result.batchKey);
+    visual.batchKeys.delete(result.batchKey);
+    return result.removed;
   }
 
   #notifyObjectVisual(visual, { ready, partial }) {
@@ -3276,6 +3323,7 @@ export class ThreeRegionRenderer {
       this.#dirtyBatchKeys.delete(batchKey);
     }
     this.#resourceCache.releaseGeometry(visual.geometryKey);
+    this.#resourceCache.releaseGeometry(visual.mirroredGeometryKey);
     this.#materialCache.release(visual.materialKey);
     this.#familyVisuals.delete(String(id));
     if (proxy?.userData) {
@@ -3650,12 +3698,15 @@ export class ThreeRegionRenderer {
       renderProfile,
       binding
     );
+    proxy.updateMatrixWorld(true);
+    const mirroredX = this.#proxyUsesMirrorX(proxy);
     const signature = JSON.stringify([
       "segmented-stroke-bundle",
       materialIdentity,
+      mirroredX ? "mirror-x" : "normal",
       this.#viewerRenderSettings.shadows.enabled
     ]);
-    proxy.updateMatrixWorld(true);
+    const batchMatrix = this.#batchMatrixForProxy(proxy);
 
     let visual = this.#strokeVisuals.get(String(object.id)) ?? null;
     if (visual && visual.signature !== signature) {
@@ -3697,10 +3748,16 @@ export class ThreeRegionRenderer {
       const chunkId = String(chunk.id);
       if (visual.chunks.has(chunkId)) continue;
       const descriptor = strokeBundleChunkDescriptor(bundle, chunk);
-      const geometryKey = this.#geometryRegistry.key(descriptor);
+      const baseGeometryKey = this.#geometryRegistry.key(descriptor);
+      const geometryKey = mirroredX
+        ? `${baseGeometryKey}|mirror:x`
+        : baseGeometryKey;
       const geometryResource = this.#resourceCache.acquireGeometry(
         geometryKey,
-        () => this.#geometryRegistry.create(descriptor)
+        () => {
+          const created = this.#geometryRegistry.create(descriptor);
+          return mirroredX ? mirrorGeometryXInPlace(created) : created;
+        }
       );
       try {
         const resourceId = strokeChunkRenderResourcePath(object.id, chunkId);
@@ -3727,7 +3784,7 @@ export class ThreeRegionRenderer {
           }),
           batchBaseKey,
           geometry: geometryResource.value,
-          matrix: proxy.matrixWorld,
+          matrix: batchMatrix,
           materialFactory: () => {
             const acquired = this.#materialCache.acquire({
               ...materialRequest,
@@ -3766,6 +3823,7 @@ export class ThreeRegionRenderer {
     visual.renderProfile = renderProfile;
     proxy.userData.strokeBundleVisual = true;
     proxy.userData.heterogeneousBatch = true;
+    proxy.userData.heterogeneousMirroredX = mirroredX;
     proxy.userData.appearanceBinding = binding;
     proxy.userData.appearanceId = object.appearanceId;
     proxy.userData.instanceColor = object.instanceState?.color ?? null;
@@ -3782,7 +3840,7 @@ export class ThreeRegionRenderer {
       (value, axis) => value - bundle.bounds.min[axis]
     );
     if (proxy.parent !== this.scene) this.scene.add(proxy);
-    this.#heterogeneousBatchManager.updateOwner(object.id, proxy.matrixWorld);
+    this.#heterogeneousBatchManager.updateOwner(object.id, batchMatrix);
     this.#updateSpatialObjectIndex(object.id, proxy);
     this.#applyObjectInstanceColor(object.id);
     return true;
@@ -3800,6 +3858,7 @@ export class ThreeRegionRenderer {
     if (proxy?.userData) {
       proxy.userData.strokeBundleVisual = false;
       proxy.userData.heterogeneousBatch = false;
+      delete proxy.userData.heterogeneousMirroredX;
       delete proxy.userData.selectionAnchorPolicy;
       delete proxy.userData.selectionAnchorLocal;
     }
@@ -3816,7 +3875,12 @@ export class ThreeRegionRenderer {
 
   #upsertHeterogeneousVisual(object, proxy) {
     const descriptor = this.#geometryRegistry.describeLegacyObject(object);
-    const geometryKey = this.#geometryRegistry.key(descriptor);
+    proxy.updateMatrixWorld(true);
+    const mirroredX = this.#proxyUsesMirrorX(proxy);
+    const baseGeometryKey = this.#geometryRegistry.key(descriptor);
+    const geometryKey = mirroredX
+      ? `${baseGeometryKey}|mirror:x`
+      : baseGeometryKey;
     const binding = appearanceBindingForObject(object);
     const renderProfile = this.#geometryRegistry.renderProfile(descriptor);
     const materialRequest = renderMaterialRequest(object, binding);
@@ -3825,18 +3889,19 @@ export class ThreeRegionRenderer {
       renderProfile,
       binding
     );
-    proxy.updateMatrixWorld(true);
+    const batchMatrix = this.#batchMatrixForProxy(proxy);
     const cell = familyBatchSpatialCell(proxy.matrixWorld, 64);
     const signature = JSON.stringify([
       "heterogeneous-tube",
       materialIdentity,
+      mirroredX ? "mirror-x" : "normal",
       cell,
       this.#viewerRenderSettings.shadows.enabled
     ]);
     if (proxy.userData.heterogeneousBatch &&
         proxy.userData.heterogeneousGeometryKey === geometryKey &&
         proxy.userData.heterogeneousSignature === signature) {
-      this.#heterogeneousBatchManager.update(object.id, proxy.matrixWorld);
+      this.#heterogeneousBatchManager.update(object.id, batchMatrix);
       this.#updateSpatialObjectIndex(object.id, proxy);
       this.#applyObjectInstanceColor(object.id);
       return true;
@@ -3847,9 +3912,12 @@ export class ThreeRegionRenderer {
 
     const geometryResource = this.#resourceCache.acquireGeometry(
       geometryKey,
-      () => this.#geometryRegistry.create(descriptor)
+      () => {
+        const created = this.#geometryRegistry.create(descriptor);
+        return mirroredX ? mirrorGeometryXInPlace(created) : created;
+      }
     );
-    this.#storeGeometryBounds(proxy, geometryResource.value);
+    this.#storeGeometryBounds(proxy, geometryResource.value, { mirroredX });
     const attributeSignature = bufferGeometryAttributeSignature(
       geometryResource.value
     );
@@ -3859,7 +3927,7 @@ export class ThreeRegionRenderer {
         objectId: object.id,
         batchBaseKey,
         geometry: geometryResource.value,
-        matrix: proxy.matrixWorld,
+        matrix: batchMatrix,
         materialFactory: () => {
           const acquired = this.#materialCache.acquire({
             ...materialRequest,
@@ -3875,6 +3943,7 @@ export class ThreeRegionRenderer {
       proxy.userData.heterogeneousBatch = true;
       proxy.userData.heterogeneousGeometryKey = geometryKey;
       proxy.userData.heterogeneousSignature = signature;
+      proxy.userData.heterogeneousMirroredX = mirroredX;
       proxy.userData.appearanceBinding = binding;
       proxy.userData.appearanceId = object.appearanceId;
       proxy.userData.instanceColor = object.instanceState?.color ?? null;
@@ -3900,6 +3969,7 @@ export class ThreeRegionRenderer {
       proxy.userData.heterogeneousBatch = false;
       delete proxy.userData.heterogeneousGeometryKey;
       delete proxy.userData.heterogeneousSignature;
+      delete proxy.userData.heterogeneousMirroredX;
     }
     return Number(result.removed ?? 0) > 0;
   }
@@ -3950,10 +4020,7 @@ export class ThreeRegionRenderer {
 
   #batchMatrixForProxy(proxy) {
     proxy.updateMatrixWorld(true);
-    const matrix = proxy.matrixWorld.clone();
-    return this.#proxyUsesMirrorX(proxy)
-      ? matrix.multiply(this.#mirrorXMatrix)
-      : matrix;
+    return positiveInstanceMatrixForMirror(proxy.matrixWorld);
   }
 
   #addToBatch(object, proxy, batchBaseKey) {
@@ -4183,10 +4250,18 @@ export class ThreeRegionRenderer {
     if (family) return this.#updateSharedFamilyMatrices(family);
     if (proxy.matrixAutoUpdate) proxy.updateMatrix();
     proxy.updateMatrixWorld(true);
+    const rawObject = this.#objectsById.get(String(objectId));
+    const projectedObject = rawObject ? this.#projectObject(rawObject) : null;
     if (this.#heterogeneousBatchManager.resourcesForOwner(objectId).length) {
+      const mirroredX = this.#proxyUsesMirrorX(proxy);
+      if (proxy.userData.heterogeneousMirroredX !== mirroredX && projectedObject) {
+        return proxy.userData.strokeBundleVisual
+          ? this.#upsertStrokeBundleVisual(projectedObject, proxy)
+          : this.#upsertHeterogeneousVisual(projectedObject, proxy);
+      }
       const changed = this.#heterogeneousBatchManager.updateOwner(
         objectId,
-        proxy.matrixWorld
+        this.#batchMatrixForProxy(proxy)
       ) > 0;
       this.#updateSpatialObjectIndex(objectId, proxy);
       return changed;
@@ -4194,8 +4269,6 @@ export class ThreeRegionRenderer {
 
     const location = this.#batchManager.locationOf(objectId);
     const baseKey = proxy.userData.batchBaseKey;
-    const rawObject = this.#objectsById.get(String(objectId));
-    const projectedObject = rawObject ? this.#projectObject(rawObject) : null;
     const desiredBaseKey = projectedObject
       ? this.#batchKeyFor(projectedObject, proxy)
       : baseKey;

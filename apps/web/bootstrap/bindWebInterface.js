@@ -1,7 +1,7 @@
-import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar } from "../../../packages/ui-widgets/src/index.js?build=20260808-0053f";
+import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260809-0053m";
 import {
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260809-0053l";
+} from "../../../packages/platform-web/src/index.js?build=20260809-0053m";
 
 export function bindWebInterface({
   runtime,
@@ -182,6 +182,7 @@ export function bindWebInterface({
     storageKey: uiConfiguration?.panels?.storageKey
   });
   for (const selector of [
+    "#selection-panel",
     "#outline",
     "#review-panel",
     "#diagnostic-panel",
@@ -416,6 +417,13 @@ export function bindWebInterface({
     }
 
     const output = $("console-output");
+    const compactOutput = $("status-console-output");
+
+    if (compactOutput) {
+      compactOutput.textContent = formatConsoleEntry(entry);
+      compactOutput.dataset.error = entry.error == null ? "false" : "true";
+      compactOutput.title = entry.input ?? entry.type ?? "Resultado";
+    }
 
     if (!output) return;
 
@@ -1532,6 +1540,11 @@ export function bindWebInterface({
     $("console-input").focus();
   });
 
+  $("status-open-console").addEventListener("click", () => {
+    panelManager.show("#console-panel");
+    $("console-input").focus();
+  });
+
   $("procedure-editor").addEventListener("click", () => {
     panelManager.show("#procedure-editor-panel");
     procedureCatalogEditor.refresh();
@@ -1552,8 +1565,8 @@ export function bindWebInterface({
     () => panelManager.hide("#procedure-editor-panel")
   );
 
-  $("console-run").addEventListener("click", () => {
-    const input = $("console-input").value.trim();
+  const runConsoleInput = inputValue => {
+    const input = String(inputValue ?? "").trim();
     if (!input) return;
 
     if (consoleInputHistory.at(-1) !== input) {
@@ -1563,6 +1576,17 @@ export function bindWebInterface({
     consoleHistoryIndex = consoleInputHistory.length;
     Promise.resolve(devConsole.execute(input))
       .finally(refreshDeveloperPanel);
+  };
+
+  $("console-run").addEventListener("click", () => {
+    runConsoleInput($("console-input").value);
+  });
+
+  $("status-console-form").addEventListener("submit", event => {
+    event.preventDefault();
+    const input = $("status-console-input");
+    runConsoleInput(input.value);
+    input.value = "";
   });
 
   $("console-help").addEventListener("click", () => {
