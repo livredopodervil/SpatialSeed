@@ -24,6 +24,7 @@ GATES = [
     ("0053k-canonical-regressions", [PYTHON, "tools/audit_canonical_regressions_0053k.py"]),
     ("0053l-main-consolidation", [PYTHON, "tools/audit_main_consolidation_0053l.py"]),
     ("0053m-interaction-console-mirror", [PYTHON, "tools/audit_interaction_console_mirror_0053m.py"]),
+    ("0054a-game-mode", [PYTHON, "tools/audit_game_mode_0054a.py"]),
     ("event-previews", [PYTHON, "tools/audit_event_driven_previews.py"]),
     ("animation-overlays", [PYTHON, "tools/audit_independent_animation_overlays.py"]),
     ("mesh-ui", [PYTHON, "tools/audit_mesh_edit_ui.py"]),

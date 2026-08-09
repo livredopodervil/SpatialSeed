@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260809-0053m";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260809-0053m";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260809-0054a";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260809-0053m";
+} from "../../../packages/platform-web/src/index.js?build=20260809-0054a";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -111,6 +111,10 @@ import {
   AnimationPanel
 } from "../../../packages/animation-panel/src/index.js?build=20260808-0053f";
 import {
+  GAME_RUNTIME_VERSION,
+  GameRuntime
+} from "../../../packages/game-runtime/src/index.js?build=20260809-0054a";
+import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
 import {
@@ -175,7 +179,7 @@ import {
   createIndependentProjectUrl
 } from "../../../packages/local-viewers/src/index.js?build=20260809-0053k";
 
-const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v8";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v9";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({
@@ -761,7 +765,11 @@ export async function createWebRuntime({
   });
 
   let toolWorkspace = null;
+  let gameRuntime = null;
   const resetTransientAuthoring = ({ operation }) => {
+    if (gameRuntime?.state === "running") {
+      gameRuntime.stop(`transient-reset:${String(operation)}`);
+    }
     if (meshEditor.active) meshEditor.cancel();
     const path = pathSketch.resetForProjectChange({
       reason: `project:${String(operation)}`
@@ -838,6 +846,59 @@ export async function createWebRuntime({
       viewerCoordinator.requireAuthority(action)
   });
   commandsRef = commands;
+  gameRuntime = new GameRuntime({
+    surface: renderer,
+    cameraController
+  });
+  commands
+    .register(
+      "game.start",
+      ({ characterId = null, config = {}, camera = {} } = {}) => {
+        const selection = editor.selection.snapshot();
+        const selectedId = characterId ??
+          selection.activeMember?.objectId ??
+          selection.members?.[0]?.objectId ??
+          null;
+        if (!selectedId) {
+          throw new Error(
+            "Selecione a geometria que será usada como personagem."
+          );
+        }
+        resetTransientAuthoring({ operation: "game.start" });
+        commands.execute("tool.set", { mode: "navigate" });
+        return gameRuntime.start({
+          characterId: selectedId,
+          config,
+          camera
+        });
+      },
+      { category: "game", mutates: false, label: "Iniciar modo jogo" }
+    )
+    .register(
+      "game.stop",
+      ({ reason = "user" } = {}) => gameRuntime.stop(reason),
+      { category: "game", mutates: false, label: "Sair do modo jogo" }
+    )
+    .register(
+      "game.input.set",
+      args => gameRuntime.setInput(args),
+      { category: "game", mutates: false, label: "Controlar personagem" }
+    )
+    .register(
+      "game.respawn",
+      () => gameRuntime.respawn(),
+      { category: "game", mutates: false, label: "Reposicionar personagem" }
+    )
+    .register(
+      "game.config.set",
+      args => gameRuntime.configure(args),
+      { category: "game", mutates: false, label: "Configurar modo jogo" }
+    )
+    .register(
+      "game.status",
+      () => gameRuntime.status(),
+      { category: "game", mutates: false, label: "Estado do modo jogo" }
+    );
   commands.register(
     "path.stroke.create",
     ({
@@ -1625,6 +1686,7 @@ export async function createWebRuntime({
 
   const queries = new RuntimeQueryRegistry();
   queries
+    .register("game.status", () => gameRuntime.status())
     .register("time.status", () => temporalRuntime.status())
     .register("instance.graph.status", () =>
       instanceGraphDiagnostics(sandbox.getSnapshot())
@@ -1681,6 +1743,12 @@ export async function createWebRuntime({
     events,
     capabilities
   });
+  const unsubscribeGame = gameRuntime.subscribe(
+    (snapshot, event) => runtime.emit("game.changed", { snapshot, event })
+  );
+  runtime
+    .onDispose(unsubscribeGame)
+    .onDispose(() => gameRuntime.dispose());
   temporalExecution = new TemporalExecutionController({
     runtime: temporalRuntime,
     surface: renderer,
@@ -2271,6 +2339,7 @@ export async function createWebRuntime({
       editor: editor.snapshot(),
       viewer: viewer.snapshot(),
       camera: cameraController.snapshot(),
+      game: gameRuntime.status(),
       input: renderer.getInputDiagnostics(),
       transform: {
         mode: renderer.transform?.mode ?? null,
@@ -2303,6 +2372,18 @@ export async function createWebRuntime({
     .register("runtime.performance", () => runtime.metrics());
 
   capabilities
+    .register("game", () => ({
+      apiVersion: GAME_RUNTIME_VERSION,
+      scope: "local-viewer",
+      persistence: "ephemeral",
+      characterSource: "selected-scene-object",
+      collisionShape: "world-aabb",
+      collisionWorld: "static-renderable-objects",
+      gravity: true,
+      jumping: true,
+      characterAnimationStates: ["idle", "walk", "jump", "fall"],
+      camera: "third-person-damped-follow"
+    }))
     .register("authoringTools", () => ({
       ...toolCapabilities.capabilities(),
       workspaceApiVersion: ToolWorkspaceController.apiVersion,
@@ -2490,6 +2571,21 @@ export async function createWebRuntime({
         changes,
         classification
       });
+      if (gameRuntime.state === "running") {
+        gameRuntime.sceneChanged(changes);
+        if (gameRuntime.state === "running") {
+          const refreshGameWorld = () => {
+            if (gameRuntime.state === "running") {
+              gameRuntime.refreshCollisionWorld();
+            }
+          };
+          if (typeof globalThis.requestAnimationFrame === "function") {
+            globalThis.requestAnimationFrame(refreshGameWorld);
+          } else {
+            globalThis.setTimeout(refreshGameWorld, 0);
+          }
+        }
+      }
       viewerDirectory.announce();
     }
   );
@@ -2655,6 +2751,7 @@ export async function createWebRuntime({
       temporalExecution,
       animationRuntime,
       animationCommands,
+      gameRuntime,
       sharedAnimations,
       transformPreviews,
       sandboxRecovery,

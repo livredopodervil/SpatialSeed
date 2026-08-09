@@ -16,13 +16,13 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 333,
-    "productionFiles": 292,
-    "productionFirstPartyFiles": 291,
+    "firstPartyJavaScriptFiles": 337,
+    "productionFiles": 295,
+    "productionFirstPartyFiles": 294,
     "productionExternalFiles": 1,
-    "diagnosticFiles": 22,
+    "diagnosticFiles": 23,
     "unreferencedFiles": 20,
-    "productionComponents": 64,
+    "productionComponents": 65,
     "diagnosticComponents": 9,
     "unreferencedComponents": 2
   },
@@ -240,6 +240,15 @@
       "role": "production",
       "sourceFiles": 4,
       "productionFiles": 4,
+      "diagnosticFiles": 0,
+      "unreferencedFiles": 0
+    },
+    "packages/game-runtime": {
+      "status": "production",
+      "target": "viewer",
+      "role": "production",
+      "sourceFiles": 3,
+      "productionFiles": 3,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -580,9 +589,9 @@
       "status": "diagnostics",
       "target": "platform-web",
       "role": "diagnostics",
-      "sourceFiles": 6,
+      "sourceFiles": 7,
       "productionFiles": 0,
-      "diagnosticFiles": 6,
+      "diagnosticFiles": 7,
       "unreferencedFiles": 0
     },
     "packages/scene-hierarchy": {
@@ -778,6 +787,9 @@
     "packages/experiment-runtime/src/ExperimentRegistry.js",
     "packages/experiment-runtime/src/ExperimentService.js",
     "packages/experiment-runtime/src/index.js",
+    "packages/game-runtime/src/CharacterPhysics.js",
+    "packages/game-runtime/src/GameRuntime.js",
+    "packages/game-runtime/src/index.js",
     "packages/geometry-creation-panel/src/GeometryCreationPanel.js",
     "packages/geometry-creation-panel/src/index.js",
     "packages/geometry-registry/src/BufferRenderProfile.js",
@@ -1010,6 +1022,7 @@
     "packages/project-files/src/ProjectAppearanceAdapter.js",
     "packages/resource-audit/src/ResourceAudit.js",
     "packages/resource-audit/src/index.js",
+    "packages/runtime-test-plugin/src/GameRuntimeTests.js",
     "packages/runtime-test-plugin/src/ModuleRegistryTests.js",
     "packages/runtime-test-plugin/src/RuntimeDiagnosticsExtension.js",
     "packages/runtime-test-plugin/src/RuntimeLayerTests.js",

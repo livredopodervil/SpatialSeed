@@ -118,7 +118,7 @@ import {
 } from "../../appearance-binding/src/index.js?build=20260730-0041a";
 
 export class ThreeRegionRenderer {
-  static apiVersion = "renderer-three-navigation-camera-v8";
+  static apiVersion = "renderer-three-navigation-camera-v9";
   #meshes = new Map();
   #cameraVisuals = new Map();
   #lightVisuals = new Map();
@@ -150,6 +150,7 @@ export class ThreeRegionRenderer {
   #selectedVisualIds = new Set();
   #selectionOutlines = null;
   #interactionMode = "select";
+  #runtimePresentationMode = "authoring";
   #selectionOperation = "replace";
   #objectTransformFrame = {
     mode: "world",
@@ -1610,6 +1611,60 @@ export class ThreeRegionRenderer {
           min: bounds.min.toArray(),
           max: bounds.max.toArray()
         });
+  }
+
+  readGameCollisionWorld(characterId) {
+    const id = String(characterId ?? "").trim();
+    if (!id) throw new TypeError("Personagem do modo jogo não informado.");
+    this.#refreshHierarchyForTargets([id]);
+    if (!this.#hierarchy.has(id)) {
+      throw new Error(`Objeto de personagem inexistente: ${id}.`);
+    }
+    const characterBounds = this.#worldBoundsForObjectId(id);
+    if (characterBounds.isEmpty()) {
+      throw new Error(`Personagem sem geometria renderizável: ${id}.`);
+    }
+    const excluded = new Set([id, ...this.#hierarchy.descendantsOf(id)]);
+    const colliders = [];
+    for (const [objectId, object] of this.#objectsById) {
+      if (excluded.has(objectId) || !isRenderableSceneNode(object)) continue;
+      if (!this.hasObjectVisual(objectId)) continue;
+      const bounds = this.#worldBoundsForObjectId(objectId);
+      if (bounds.isEmpty()) continue;
+      colliders.push(Object.freeze({
+        id: objectId,
+        bounds: freezeBounds(bounds)
+      }));
+    }
+    return Object.freeze({
+      version: "game-collision-world-v1",
+      revision: this.#resolvedRevision,
+      character: Object.freeze({
+        id,
+        bounds: freezeBounds(characterBounds)
+      }),
+      colliders: Object.freeze(colliders)
+    });
+  }
+
+  getRuntimePresentationMode() {
+    return this.#runtimePresentationMode;
+  }
+
+  setRuntimePresentationMode(mode = "authoring") {
+    const next = String(mode ?? "authoring").trim().toLowerCase();
+    if (!["authoring", "game"].includes(next)) {
+      throw new RangeError(`Modo de apresentação desconhecido: ${mode}.`);
+    }
+    if (next === this.#runtimePresentationMode) {
+      return Object.freeze({ changed: false, mode: next });
+    }
+    this.#runtimePresentationMode = next;
+    this.#configureTransformForEditor();
+    this.#updateSelectionAppearance();
+    this.#updateVertexMarkers();
+    this.#updateCameraVisualAppearance();
+    return Object.freeze({ changed: true, mode: next });
   }
 
   setCameraProjection({
@@ -4483,6 +4538,13 @@ export class ThreeRegionRenderer {
 
   #configureTransformForEditor() {
     const mode=this.editorState.tool.mode;
+    if (this.#runtimePresentationMode === "game") {
+      this.#interactionMode = "navigate";
+      this.transform.enabled = false;
+      this.transform.getHelper().visible = false;
+      this.orbit.enabled = false;
+      return;
+    }
     const selectionGestureActive =
       mode === "select" && Boolean(this.editorState.areaSelection);
     if (mode === "navigate" && this.#editorToolNavigationToken) {
@@ -5583,6 +5645,10 @@ export class ThreeRegionRenderer {
   }
 
   #updateVertexMarkers() {
+    if (this.#runtimePresentationMode === "game") {
+      this.#vertexMarkers.visible = false;
+      return;
+    }
     const scaleFrame = this.#localBoundsScaleFrame();
     if (scaleFrame) {
       const vertices = scaleFrame.handles.flatMap(handle => handle.world.toArray());
@@ -6594,6 +6660,15 @@ export class ThreeRegionRenderer {
   }
 
   #updateSelectionAppearance() {
+    if (this.#runtimePresentationMode === "game") {
+      this.#selectionOutlines.update([]);
+      for (const id of this.#selectedVisualIds) {
+        this.#applyObjectInstanceColor(id);
+      }
+      this.#selectedVisualIds = new Set();
+      this.#updateCameraVisualAppearance();
+      return;
+    }
     if (this.#meshEdit) {
       this.#selectionOutlines.update([]);
       this.#selectedVisualIds = new Set();
@@ -6620,6 +6695,14 @@ export class ThreeRegionRenderer {
   }
 
   #updateCameraVisualAppearance() {
+    if (this.#runtimePresentationMode === "game") {
+      for (const visual of this.#cameraVisuals.values()) {
+        visual.body.visible = false;
+        visual.lens.visible = false;
+        visual.lines.visible = false;
+      }
+      return;
+    }
     const selected = new Set(
       (this.#selectionSnapshot?.members ?? [])
         .map(member => member.objectId)
@@ -7154,6 +7237,7 @@ function installRenderInvalidationWrappers(renderer) {
     "setEditPlane",
     "setDrawingPlane",
     "applyNavigationCamera",
+    "setRuntimePresentationMode",
     "setCameraProjection",
     "setTransformMode",
     "setSelectionOperation",
@@ -7176,6 +7260,13 @@ function installRenderInvalidationWrappers(renderer) {
       return result;
     };
   }
+}
+
+function freezeBounds(bounds) {
+  return Object.freeze({
+    min: Object.freeze(bounds.min.toArray()),
+    max: Object.freeze(bounds.max.toArray())
+  });
 }
 
 function shouldInvalidateRenderResult(result) {

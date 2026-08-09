@@ -1,4 +1,4 @@
-export { ThreeRegionRenderer } from "./ThreeRegionRenderer.js?build=20260809-0053m";
+export { ThreeRegionRenderer } from "./ThreeRegionRenderer.js?build=20260809-0054a";
 export {
   EDITOR_ORBIT_POLICY_VERSION,
   resolveEditorOrbitEnabled

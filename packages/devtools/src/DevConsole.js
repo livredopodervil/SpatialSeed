@@ -528,6 +528,10 @@ export class DevConsole {
       case "camera":
         return this.#camera(tokens);
 
+      case "game":
+      case "jogo":
+        return this.#game(tokens);
+
       case "recovery":
         return this.#recovery(tokens);
 
@@ -645,6 +649,9 @@ export class DevConsole {
       if (String(topic).toLowerCase() === "camera") {
         return this.#cameraHelp();
       }
+      if (["game", "jogo"].includes(String(topic).toLowerCase())) {
+        return this.#gameHelp();
+      }
       if (String(topic).toLowerCase() === "recovery") {
         return this.#recoveryHelp();
       }
@@ -706,6 +713,7 @@ export class DevConsole {
         "animate color \"hsl(...)|rgb(...)|mix(...)\" [mode=selection|objects]",
         "animate pause|resume|stop|status|list|help",
         "camera status|position|move|quaternion|lookat|orbit|frame|projection|restore|interpolate",
+        "game start [object-id]|stop|status|respawn|config {JSON}|help",
         "recovery status|help",
         "viewers status|open|sync|help",
         "session status|reset|cancel|help",
@@ -821,6 +829,26 @@ export class DevConsole {
         "plan commit"
       ]
     };
+  }
+
+  #gameHelp() {
+    return Object.freeze({
+      usage: Object.freeze([
+        "game start [object-id]",
+        "game stop",
+        "game status",
+        "game respawn",
+        "game config {\"character\":{\"walkSpeed\":5},\"camera\":{\"distance\":7}}"
+      ]),
+      controls: Object.freeze([
+        "WASD ou setas: mover",
+        "Espaço: saltar",
+        "Shift: correr",
+        "Arrastar a cena: girar câmera",
+        "Esc: sair do modo jogo"
+      ]),
+      note: "A geometria selecionada vira o personagem; os demais objetos renderizáveis são colisores estáticos."
+    });
   }
 
   #recoveryHelp() {
@@ -2605,6 +2633,40 @@ export class DevConsole {
 
     this.#expectMaximum(tokens, 0, `test ${action}`);
     return this.commands.execute("test.run", { suite: action });
+  }
+
+  #game(tokens) {
+    const action = (tokens.shift() ?? "status").toLowerCase();
+    if (action === "help" || action === "ajuda") {
+      this.#expectMaximum(tokens, 0, "game help");
+      return this.#gameHelp();
+    }
+    if (action === "status") {
+      this.#expectMaximum(tokens, 0, "game status");
+      return this.commands.execute("game.status");
+    }
+    if (action === "start" || action === "iniciar") {
+      this.#expectMaximum(tokens, 1, "game start [object-id]");
+      return this.commands.execute("game.start", {
+        characterId: tokens[0] ?? null
+      });
+    }
+    if (action === "stop" || action === "parar" || action === "sair") {
+      this.#expectMaximum(tokens, 0, "game stop");
+      return this.commands.execute("game.stop");
+    }
+    if (action === "respawn" || action === "reposicionar") {
+      this.#expectMaximum(tokens, 0, "game respawn");
+      return this.commands.execute("game.respawn");
+    }
+    if (action === "config" || action === "configure") {
+      if (!tokens.length) throw new Error("Uso: game config {JSON}.");
+      return this.commands.execute(
+        "game.config.set",
+        parseJson(tokens.join(" "), "Configuração do modo jogo")
+      );
+    }
+    throw new Error("Uso: game start|stop|status|respawn|config|help.");
   }
 
   #integer(value) {

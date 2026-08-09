@@ -9,6 +9,7 @@
       "geometry-create",
       "inspector",
       "animation",
+      "game-mode",
       "scene-only",
       "viewport-fullscreen"
     ],
@@ -169,7 +170,7 @@
     }
   },
   "shortcuts": {
-    "profile": "spatialseed-0053m",
+    "profile": "spatialseed-0054a",
     "storageKey": "spatialseed.ui.shortcuts.v2",
     "bindings": [
       {
@@ -235,6 +236,11 @@
       {
         "action": "scene.toggle",
         "chord": "Tab",
+        "context": "viewport"
+      },
+      {
+        "action": "game.toggle",
+        "chord": "G",
         "context": "viewport"
       },
       {

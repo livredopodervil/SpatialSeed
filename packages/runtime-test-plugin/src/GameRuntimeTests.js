@@ -1,0 +1,217 @@
+import {
+  GameRuntime,
+  createCharacterPhysicsState,
+  normalizeCollisionWorld,
+  stepCharacterPhysics
+} from "../../game-runtime/src/index.js?build=20260809-0054a";
+
+const CHARACTER_BOUNDS = Object.freeze({
+  min: Object.freeze([-0.5, 0.5, -0.5]),
+  max: Object.freeze([0.5, 1.5, 0.5])
+});
+const PLATFORM = Object.freeze({
+  id: "platform",
+  bounds: Object.freeze({
+    min: Object.freeze([-8, -1, -8]),
+    max: Object.freeze([8, 0, 8])
+  })
+});
+
+export function createGameRuntimeTests() {
+  return {
+    "gravidade apoia o personagem sobre uma plataforma"() {
+      const state = characterState([0, 3, 0]);
+      const world = normalizeCollisionWorld([PLATFORM]);
+      simulate(state, world, 180);
+      assertEqual(state.grounded, true);
+      assertNear(state.position[1], 0.5, 0.002);
+      assertEqual(state.animationState, "idle");
+    },
+
+    "colisão lateral impede atravessar uma parede"() {
+      const state = characterState([0, 0.5, 0]);
+      const world = normalizeCollisionWorld([
+        PLATFORM,
+        {
+          id: "wall",
+          bounds: { min: [1, -1, -2], max: [1.5, 3, 2] }
+        }
+      ]);
+      simulate(state, world, 120, { worldX: 1 });
+      assertEqual(state.position[0] < 0.6, true);
+      assertEqual(state.grounded, true);
+    },
+
+    "interpenetração inicial é resolvida sem atravessar a plataforma"() {
+      const state = characterState([0, 0.35, 0]);
+      const world = normalizeCollisionWorld([PLATFORM]);
+      simulate(state, world, 10);
+      assertEqual(state.grounded, true);
+      assertEqual(state.position[1] >= 0.5, true);
+    },
+
+    "pulo sobe, cai e retorna ao chão"() {
+      const state = characterState([0, 0.5, 0]);
+      const world = normalizeCollisionWorld([PLATFORM]);
+      simulate(state, world, 2);
+      stepCharacterPhysics(
+        state,
+        { jump: true },
+        world,
+        undefined,
+        1 / 60
+      );
+      let maximumY = state.position[1];
+      let sawFall = false;
+      for (let index = 0; index < 180; index += 1) {
+        stepCharacterPhysics(state, {}, world, undefined, 1 / 60);
+        maximumY = Math.max(maximumY, state.position[1]);
+        sawFall ||= state.animationState === "fall";
+      }
+      assertEqual(maximumY > 1.5, true);
+      assertEqual(sawFall, true);
+      assertEqual(state.grounded, true);
+      assertNear(state.position[1], 0.5, 0.002);
+    },
+
+    "runtime aplica overlay local, acompanha com câmera e restaura autoria"() {
+      const fixture = runtimeFixture();
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      const started = runtime.start({ characterId: "character" });
+      assertEqual(started.state, "running");
+      assertEqual(fixture.presentation.at(-1), "game");
+      assertEqual(fixture.acquired.length, 1);
+      runtime.setInput({ forward: 1 });
+      for (let index = 0; index < 30; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+      }
+      assertEqual(fixture.frames.length > 1, true);
+      assertEqual(
+        fixture.cameraCommands.some(entry =>
+          entry.command === "viewer.camera.look-at"
+        ),
+        true
+      );
+      const stopped = runtime.stop("test");
+      assertEqual(stopped.state, "idle");
+      assertEqual(fixture.restored, 1);
+      assertEqual(fixture.released.length, 1);
+      assertEqual(fixture.presentation.at(-1), "authoring");
+      assertEqual(fixture.cameraCommands.at(-1).command, "viewer.camera.restore");
+      runtime.dispose();
+    },
+
+    "alteração do próprio personagem encerra a sessão transitória"() {
+      const fixture = runtimeFixture();
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({ characterId: "character" });
+      const handled = runtime.sceneChanged([
+        { type: "object-updated", objectId: "character" }
+      ]);
+      assertEqual(handled, true);
+      assertEqual(runtime.status().state, "idle");
+      assertEqual(runtime.status().statistics.lastStopReason, "character-changed");
+      runtime.dispose();
+    }
+  };
+}
+
+function characterState(pivot) {
+  return createCharacterPhysicsState({
+    pivot,
+    bounds: {
+      min: CHARACTER_BOUNDS.min.map((value, axis) =>
+        value + pivot[axis] - [0, 1, 0][axis]
+      ),
+      max: CHARACTER_BOUNDS.max.map((value, axis) =>
+        value + pivot[axis] - [0, 1, 0][axis]
+      )
+    }
+  });
+}
+
+function simulate(state, world, frames, input = {}) {
+  for (let index = 0; index < frames; index += 1) {
+    stepCharacterPhysics(state, input, world, undefined, 1 / 60);
+  }
+}
+
+function runtimeFixture() {
+  const frames = [];
+  const acquired = [];
+  const released = [];
+  const presentation = [];
+  const cameraCommands = [];
+  const cameraSnapshot = Object.freeze({
+    position: Object.freeze([4, 4, 7]),
+    target: Object.freeze([0, 1, 0]),
+    up: Object.freeze([0, 1, 0]),
+    projection: Object.freeze({ mode: "perspective" })
+  });
+  const fixture = {
+    frames,
+    acquired,
+    released,
+    presentation,
+    cameraCommands,
+    restored: 0
+  };
+  fixture.surface = {
+    subscribeFrame(listener) {
+      fixture.frameListener = listener;
+      return () => { fixture.frameListener = null; };
+    },
+    acquireFrameDemand(label) {
+      const token = `demand-${acquired.length + 1}`;
+      acquired.push({ token, label });
+      return token;
+    },
+    releaseFrameDemand(token) { released.push(token); },
+    readGameCollisionWorld() {
+      return {
+        character: { id: "character", bounds: CHARACTER_BOUNDS },
+        colliders: [PLATFORM]
+      };
+    },
+    captureAnimationTargets(ids, { overlayId }) {
+      return Object.freeze({
+        overlayId,
+        units: Object.freeze([
+          Object.freeze({ unitId: ids[0], pivot: Object.freeze([0, 1, 0]) })
+        ])
+      });
+    },
+    applyAnimationFrame(targets, unitFrames) {
+      frames.push({ targets, unitFrames });
+      return { changed: true };
+    },
+    restoreAnimationTargets() { fixture.restored += 1; },
+    setRuntimePresentationMode(mode) { presentation.push(mode); }
+  };
+  fixture.camera = {
+    snapshot() { return cameraSnapshot; },
+    execute(command, args) {
+      cameraCommands.push({ command, args });
+      return { changed: true };
+    }
+  };
+  return fixture;
+}
+
+function assertEqual(actual, expected) {
+  if (!Object.is(actual, expected)) {
+    throw new Error(`Expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}.`);
+  }
+}
+
+function assertNear(actual, expected, tolerance) {
+  if (Math.abs(actual - expected) > tolerance) {
+    throw new Error(`Expected ${actual} to be within ${tolerance} of ${expected}.`);
+  }
+}

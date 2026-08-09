@@ -34,6 +34,8 @@ O resultado atual combina:
   enquanto outra aba fornece a saída;
 - animações efêmeras sincronizadas por definição e relógio absoluto entre esses
   viewers;
+- modo jogo local com personagem selecionado, gravidade, plataformas, pulo,
+  locomoção e câmera de acompanhamento;
 - testes, diagnósticos, auditoria de recursos e benchmarks executáveis no próprio aplicativo.
 
 ## Por que existe
@@ -70,6 +72,14 @@ O build efetivamente carregado aparece no rodapé. Se a publicação e o cache c
 ## Renderização do viewer
 
 O menu **Painéis → Render** controla iluminação, sombras, reflexos ambientais e materiais físicos apenas no viewer atual. A configuração não altera o mundo nem o arquivo do projeto. Consulte [Renderização local do viewer — build 0032a](docs/VIEWER_RENDERING_0032A.md).
+
+## Modo jogo
+
+Selecione um objeto renderizável e pressione **Jogar** (ou `G`). O objeto passa
+a responder a `WASD`/setas, `Shift` e `Espaço`, com gravidade e colisão sobre os
+limites dos demais objetos. Arraste a cena para mover a câmera e use `Esc` para
+voltar à autoria. A sessão é local e não grava movimento no projeto ou no undo.
+Consulte [Modo jogo local — build 0054a](docs/GAME_MODE_0054A.md).
 
 ## Edição de malha
 
@@ -725,7 +735,8 @@ SpatialSeed ainda não é um modelador DCC completo nem um motor de jogo pronto 
 - operações topológicas avançadas de DCC, como bevel, knife, loop cut, remalhamento e UVs por canto;
 - relações vinculadas por modificadores, curvas 2D compostas e edição independente de atributos por canto ainda não estão implementadas;
 - persistência de clips, keyframes e animações no documento;
-- eventos, colisões e interatividade programável contínua;
+- colisão por malha, corpos dinâmicos, eventos e interatividade programável
+  contínua além do modo jogo local com AABB;
 - serialização compacta de grandes receitas procedurais e instâncias hierárquicas;
 - colaboração multiusuário e autoridade distribuída em produção;
 - importação e exportação completas de formatos como glTF, STL e Collada;

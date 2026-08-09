@@ -22,6 +22,21 @@
 </head>
 <body>
 <canvas id="world"></canvas>
+<aside id="game-hud" hidden aria-label="Controles do modo jogo">
+  <output id="game-status" aria-live="polite">Preparando personagem…</output>
+  <div class="game-direction-pad" aria-label="Movimento">
+    <button type="button" data-game-control="forward" aria-label="Avançar">▲</button>
+    <button type="button" data-game-control="left" aria-label="Mover para esquerda">◀</button>
+    <button type="button" data-game-control="back" aria-label="Recuar">▼</button>
+    <button type="button" data-game-control="right" aria-label="Mover para direita">▶</button>
+  </div>
+  <div class="game-action-pad">
+    <button type="button" data-game-control="sprint" aria-label="Correr">Corrida</button>
+    <button type="button" data-game-control="jump" aria-label="Pular">Pular</button>
+  </div>
+  <p>WASD/Setas · Espaço pula · arraste para olhar · Esc sai</p>
+  <button id="game-exit" type="button">Sair do jogo</button>
+</aside>
 <button id="scene-exit-hotspot" type="button"
   aria-label="Restaurar interface" title="Restaurar interface"></button>
 <dialog id="scene-help-dialog">
@@ -150,6 +165,9 @@
   </button>
   <button id="animation" title="Abrir espaço de trabalho de animação">
     ▶ Animar
+  </button>
+  <button id="game-mode" title="Jogar com o objeto selecionado">
+    ▶ Jogar
   </button>
   <select id="toolbar-layout" aria-label="Disposição da barra">
     <option value="horizontal">Barra horizontal</option>
@@ -1369,6 +1387,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260809-0053m"></script>
+<script type="module" src="./boot.js?build=20260809-0054a"></script>
 </body>
 </html>

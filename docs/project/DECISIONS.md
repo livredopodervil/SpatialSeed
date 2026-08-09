@@ -1084,6 +1084,30 @@ incremento separado.
 
 Consulte [`MAIN_CONSOLIDATION_0053L.md`](../MAIN_CONSOLIDATION_0053L.md).
 
+## D-057 — Simulação jogável é estado efêmero do viewer
+
+**Estado:** implementada inicialmente no incremento 0054a.
+
+Posição física, velocidade, entrada, estado de locomoção e câmera de
+acompanhamento pertencem a uma sessão local e substituível do viewer. O runtime
+usa passo fixo, lê uma fotografia de colisão derivada da projeção e escreve
+somente numa camada visual de animação; nenhum quadro entra no documento,
+sandbox, recuperação ou histórico.
+
+**Motivação:** gravar o movimento contínuo como comandos editoriais criaria
+undo por quadro, misturaria autoria e execução e acoplaria o formato persistente
+a uma primeira implementação simplificada de física. A camada de viewer já
+possui relógio, demanda de frame, câmera local e overlays restauráveis.
+
+**Consequências:** iniciar o jogo exige um objeto renderizável, oculta a
+apresentação de autoria e captura a câmera; parar restaura ambos. Alterar o
+personagem ou substituir a cena encerra a sessão, enquanto mudanças em outros
+objetos renovam os colisores depois da projeção. Persistência de gameplay,
+corpos dinâmicos, rigs e clips precisam de contratos próprios e não podem
+converter silenciosamente esse estado transitório em documento.
+
+Consulte [`GAME_MODE_0054A.md`](../GAME_MODE_0054A.md).
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

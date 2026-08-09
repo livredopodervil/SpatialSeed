@@ -334,6 +334,17 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - troca de projeto cancela sessões transitórias antes de substituir o documento;
 - erros operacionais são recuperáveis e não ocupam a superfície de falha fatal.
 
+### 0054a — Primeiro loop jogável local — implementado
+
+- objeto selecionado como personagem sem mutação do documento por quadro;
+- gravidade, apoio em plataformas, bloqueio lateral, corrida, pulo e respawn;
+- estados básicos `idle`, `walk`, `jump` e `fall` projetados como overlay;
+- câmera local de acompanhamento com órbita por arraste;
+- controles por teclado e toque com interface editorial oculta durante a sessão;
+- comandos públicos `game.*`, console equivalente e testes de regressão;
+- fronteira explícita para substituir AABB e animação simples por física e rigs
+  futuros sem alterar o documento canônico.
+
 ### Próximas extensões geométricas
 
 - receitas procedurais vinculadas para sweep, extrude e lathe, com avaliação

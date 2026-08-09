@@ -64,6 +64,8 @@ Não copie para esta semente contagens de testes, hashes ou listas geráveis.
 - laboratório declarativo de experimentos;
 - ações e atalhos configuráveis sobre os mesmos comandos;
 - runtime de animação efêmero, presets, faixas por objeto e cor animada;
+- modo jogo local e efêmero com personagem selecionado, gravidade, colisão AABB,
+  pulo, locomoção básica e câmera de acompanhamento;
 - testes, auditorias e benchmarks consultáveis pelo perfil diagnóstico
   explícito, sem integrar o grafo de produção.
 - catálogo ampliado de geometrias Three.js e providers declarativos;
@@ -221,6 +223,12 @@ limites da seleção. Previews locais passam a ser camadas hierárquicas
 recursivas, inclusive para grupos contendo grupos; âncoras referenciadas usam a
 mesma matriz efetiva de animação e preview. Consulte
 `docs/MAIN_CONSOLIDATION_0053L.md`.
+
+O build `0054a` acrescenta um loop jogável local ao viewer. O objeto selecionado
+recebe gravidade, colisão AABB, locomoção, pulo e estados visuais básicos por
+overlay, enquanto a câmera acompanha o personagem e a interface editorial fica
+oculta. A sessão não grava quadros no documento ou no undo e é restaurada ao
+sair. Consulte `docs/GAME_MODE_0054A.md`.
 
 ## Protocolo para nova LLM
 

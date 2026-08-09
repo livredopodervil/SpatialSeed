@@ -128,6 +128,10 @@
       "target": "procedural",
       "disposition": "preserve-declarative-providers"
     },
+    "packages/game-runtime": {
+      "target": "viewer",
+      "disposition": "preserve-replaceable-local-simulation"
+    },
     "packages/incremental-runtime": {
       "target": "renderer-three",
       "disposition": "preserve-incremental-projection"
