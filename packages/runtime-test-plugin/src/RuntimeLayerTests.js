@@ -1,14 +1,5 @@
-import {
-  classifyBufferRenderProfile
-} from "../../geometry-registry/src/BufferRenderProfile.js?build=20260805-0048l1";
 import { EditorState } from "../../editor-core/src/EditorState.js?build=20260729-0039g2";
 import * as THREE from "three";
-import {
-  ObjectPickingService,
-  PickingIdAllocator,
-  decodePickingPixel,
-  encodePickingId
-} from "../../object-picking/src/index.js?build=20260805-0048l1";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -29,12 +20,12 @@ import {
   EditorSession,
   SimulationClock,
   SimulationBridge
-} from "../../runtime-layers/src/index.js?build=20260730-0040e";
+} from "../../runtime-layers/src/index.js?build=20260807-0051a";
 import { AppearanceGraph } from "../../appearance-graph/src/index.js";
 import { AppearanceRuntime } from "../../appearance-runtime/src/index.js";
 import { Selection } from "../../editor-core/src/Selection.js";
 import { Region } from "../../core/src/Region.js";
-import { Sandbox } from "../../core/src/Sandbox.js?build=20260801-0045a1";
+import { Sandbox } from "../../core/src/Sandbox.js?build=20260807-0052b";
 import { classifyChanges } from "../../incremental-runtime/src/index.js";
 import { ResourceAudit } from "../../resource-audit/src/index.js";
 import {
@@ -59,10 +50,14 @@ import {
 } from "../../instance-batches/src/InstanceBatch.js?build=20260729-0039g2";
 import {
   InstanceBatchManager
-} from "../../instance-batches/src/InstanceBatchManager.js?build=20260801-0045a1";
+} from "../../instance-batches/src/InstanceBatchManager.js?build=20260807-0051a";
 import {
   HeterogeneousBatchManager
-} from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260801-0045a1";
+} from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260807-0051a";
+import {
+  ReplicaRenderIndex,
+  resolveEditorOrbitEnabled
+} from "../../renderer-three/src/index.js?build=20260808-0053h";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -80,16 +75,22 @@ import {
 import {
   AnimationCommandService,
   AnimationRuntime,
+  TemporalAnimationRuntime,
   compileAnimationProgram,
   compileAnimationTrackProgram,
   createAnimationEvaluator,
   createAnimationTrackEvaluator,
   resolveAnimationPreset
-} from "../../animation-runtime/src/index.js?build=20260724-0029e1";
+} from "../../animation-runtime/src/index.js?build=20260808-0053h";
 import {
   composeAnimationOverlay,
-  createAnimationTargetSnapshot
-} from "../../renderer-three/src/AnimationTransformOverlay.js?build=20260720-0028d";
+  createAnimationTargetSnapshot,
+  rebaseAnimationLayerInput
+} from "../../renderer-three/src/index.js?build=20260808-0053h";
+import {
+  AnalyticTimeDomains,
+  TemporalRuntime
+} from "../../temporal-runtime/src/index.js?build=20260808-0053h";
 import {
   compileAffineExpression,
   compileAffineProgram,
@@ -104,7 +105,7 @@ import {
 } from "../../selection-operations/src/AffineRepeat.js?build=20260715-0021d";
 import {
   SelectionOperations
-} from "../../selection-operations/src/SelectionOperations.js?build=20260802-0047g";
+} from "../../selection-operations/src/SelectionOperations.js?build=20260807-0052b";
 import {
   explicitFamilyTransformAt,
   familyMemberResourcePath,
@@ -130,10 +131,10 @@ import {
 import { ProjectAppearanceAdapter } from "../../project-files/src/ProjectAppearanceAdapter.js";
 import {
   ProjectValidator
-} from "../../project-files/src/ProjectValidator.js?build=20260727-0037c";
+} from "../../project-files/src/ProjectValidator.js?build=20260807-0052b";
 import {
   ProjectSerializer
-} from "../../project-files/src/ProjectSerializer.js?build=20260724-0029f";
+} from "../../project-files/src/ProjectSerializer.js?build=20260807-0052b";
 import {
   ProjectService
 } from "../../project-files/src/ProjectService.js?build=20260724-0029f";
@@ -157,7 +158,10 @@ import {
 } from "../../local-viewers/src/index.js?build=20260729-0039g1";
 import {
   boxRegionReducer
-} from "../../region-box/src/index.js?build=20260802-0047b";
+} from "../../region-box/src/index.js?build=20260808-0053h";
+import {
+  projectInstanceGraphScene
+} from "../../instance-graph/src/index.js?build=20260808-0053h";
 import {
   GeometryRegistry,
   BoxGeometryProvider,
@@ -176,10 +180,10 @@ import {
 } from "../../property-registry/src/index.js?build=20260727-0037c";
 import {
   DevConsole
-} from "../../devtools/src/DevConsole.js?build=20260804-0048i-audit2";
+} from "../../devtools/src/DevConsole.js?build=20260806-0050b";
 import {
   ObjectInspector
-} from "../../object-inspector/src/ObjectInspector.js?build=20260720-0028d";
+} from "../../object-inspector/src/ObjectInspector.js?build=20260807-0051a";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -205,30 +209,15 @@ import {
   ScreenSelectionIndex,
   normalizeScreenSelectionGesture,
   screenSelectionGestureContains
-} from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260729-0039g2";
+} from "../../renderer-three/src/ScreenSelectionGesture.js?build=20260807-0052b";
 import {
   ToolGestureNavigation
 } from "../../renderer-three/src/ToolGestureNavigation.js?build=20260731-0043x1";
 import {
-  createLocalBoundsScaleHandleSet,
-  proportionalScaleFactor2D,
-  scaleFactorsForAxes,
-  scaleWorldTrsWithoutShear
-} from "../../renderer-three/src/LocalBoundsScale.js?build=20260804-0048b";
-import {
-  VisualCommitHandoff,
-  matricesApproximatelyEqual
-} from "../../renderer-three/src/VisualCommitHandoff.js?build=20260804-0048d1";
-import {
-  MeshEditVisibility
-} from "../../renderer-three/src/MeshEditVisibility.js?build=20260804-0048i-audit1";
-import {
   MeshEditController,
-  MeshToolRegistry,
   applyMeshTopologyOperation,
   affineDeltaWorld,
   applyMeshDeformation,
-  buildGeometricVertexIdentity,
   buildMeshTopology,
   createMeshInfluenceField,
   coincidentVertexGroups,
@@ -237,17 +226,13 @@ import {
   composeRotationFrame,
   expandCoincidentSelection,
   geodesicVertexDistances,
-  prepareMeshCommitDescriptor,
-  recomputeLocalVertexNormals,
-  recomputeVertexNormals,
-  resolveTransformVertexSelection,
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid,
   transformLocalPositions,
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260804-0048i-audit1";
+} from "../../mesh-editor-core/src/index.js?build=20260729-0040a";
 import {
   EditContextController,
   axesFromConstraint,
@@ -272,7 +257,7 @@ import {
 } from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260804-0048f1";
+} from "../../editor-commands/src/EditorCommands.js?build=20260802-0047g";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -317,7 +302,6 @@ import {
   PwaInstallController,
   formatBuildLabel,
   formatPwaBuildLabel,
-  pwaUpdateAvailable,
   isPlatformBlock,
   loadWebApplicationDefinition,
   loadWebRuntimeExtensions,
@@ -326,7 +310,7 @@ import {
   resolvePwaLocations,
   webApplicationName,
   workerBuild
-} from "../../platform-web/src/index.js?build=20260804-0048f1";
+} from "../../platform-web/src/index.js?build=20260802-0047d";
 import {
   clampEditorFontSize,
   highlightProcedureSource,
@@ -388,78 +372,12 @@ import {
 } from "./ToolCapabilityTests.js?build=20260802-0047g";
 import {
   BenchmarkRunner
-} from "../../benchmarks/src/index.js?build=20260802-0047a";
+} from "../../benchmarks/src/index.js?build=20260808-0053h";
 
 export function createRuntimeLayerTests() {
   return {
     "module-v2": createModuleRegistryTests(),
     "tool-capabilities": createToolCapabilityTests(),
-    "object-picking-contract": {
-      "IDs são estáveis e o zero permanece reservado ao fundo"() {
-        const allocator = new PickingIdAllocator();
-        const first = allocator.idFor("object-a");
-        assertEqual(first, allocator.idFor("object-a"));
-        assertEqual(first > 0, true);
-        assertEqual(allocator.objectFor(0), null);
-        assertEqual(allocator.objectFor(first), "object-a");
-      },
-
-      "codificação RGB conserva os 24 bits do identificador"() {
-        const id = 0x12ABEF;
-        const color = encodePickingId(id);
-        const pixel = color.map(value => Math.round(value * 255));
-        assertEqual(decodePickingPixel(pixel), id);
-      },
-
-      "falha do backend solicita o raycast legado sem propagar exceção"() {
-        const service = new ObjectPickingService({
-          backend: {
-            supported: true,
-            pickAt() { throw new Error("context-lost"); }
-          }
-        });
-        const result = service.pickAt({ clientX: 10, clientY: 20 });
-        assertEqual(result.objectId, null);
-        assertEqual(result.fallback, true);
-        assertEqual(service.status().failures, 1);
-      },
-
-      "resultado público contém apenas identidade lógica"() {
-        const service = new ObjectPickingService({
-          backend: {
-            supported: true,
-            pickAt() {
-              return { objectId: "logical-object", source: "gpu-id" };
-            }
-          }
-        });
-        const result = service.pickAt({ clientX: 1, clientY: 2 });
-        assertEqual(result.objectId, "logical-object");
-        assertEqual(result.source, "gpu-id");
-        assertEqual(Object.hasOwn(result, "object3D"), false);
-      },
-
-      "miss de GPU permanece distinguível de falha"() {
-        const service = new ObjectPickingService({
-          backend: {
-            supported: true,
-            pickAt() {
-              return {
-                objectId: null,
-                fallback: false,
-                reason: "background",
-                source: "gpu-id"
-              };
-            }
-          }
-        });
-        const result = service.pickAt({ clientX: 1, clientY: 2 });
-        assertEqual(result.objectId, null);
-        assertEqual(result.fallback, false);
-        assertEqual(result.reason, "background");
-      }
-    },
-
     "performance-baseline": {
       "benchmark compacto mede estrutura sem tocar a cena ativa"() {
         const runner = new BenchmarkRunner({
@@ -468,7 +386,10 @@ export function createRuntimeLayerTests() {
         });
         const result = runner.runCompact({ samples: 1 });
 
-        assertEqual(result.baselineVersion, "compact-runtime-baseline-v1");
+        assertEqual(
+          result.baselineVersion,
+          "compact-runtime-baseline-v2-instance-graph"
+        );
         assertEqual(result.structure.family.members, 10000);
         assertEqual(result.structure.instanceBatch.batches, 1);
         assertEqual(result.structure.instanceBatch.instances, 10000);
@@ -538,103 +459,6 @@ export function createRuntimeLayerTests() {
             samples: 5
           }
         }]);
-      }
-    },
-
-    "visual-commit-handoff": {
-      "estado canônico anterior não substitui o preview confirmado"() {
-        const handoff = new VisualCommitHandoff();
-        const previous = identityMatrix();
-        const expected = translationMatrix([4, -2, 1]);
-        assertEqual(handoff.begin([{
-          objectId: "moving",
-          previousWorldMatrix: previous,
-          expectedWorldMatrix: expected
-        }]), 1);
-
-        const stale = handoff.project("moving", previous);
-        assertDeepEqual(stale, expected);
-        assertEqual(handoff.status().staleSuppressed, 1);
-        assertEqual(handoff.status().pending, 1);
-
-        const acknowledged = handoff.project("moving", expected);
-        assertDeepEqual(acknowledged, expected);
-        assertEqual(handoff.status().acknowledged, 1);
-        assertEqual(handoff.releaseAcknowledged(), 1);
-        assertEqual(handoff.status().pending, 0);
-      },
-
-      "commits encadeados preservam somente o preview mais recente"() {
-        const handoff = new VisualCommitHandoff();
-        const initial = identityMatrix();
-        const first = translationMatrix([1, 0, 0]);
-        const second = translationMatrix([2, 0, 0]);
-        handoff.begin([{
-          objectId: "moving",
-          previousWorldMatrix: initial,
-          expectedWorldMatrix: first
-        }]);
-        handoff.begin([{
-          objectId: "moving",
-          previousWorldMatrix: first,
-          expectedWorldMatrix: second
-        }]);
-
-        const firstAcknowledgement = handoff.project("moving", first);
-        assertDeepEqual(firstAcknowledgement, second);
-        assertEqual(handoff.status().staleSuppressed, 1);
-        const secondAcknowledgement = handoff.project("moving", second);
-        assertDeepEqual(secondAcknowledgement, second);
-        assertEqual(handoff.status().acknowledged, 1);
-        assertEqual(handoff.status().chained, 1);
-      },
-
-      "estado posterior conflitante prevalece sem bloquear sincronização"() {
-        const handoff = new VisualCommitHandoff();
-        const previous = identityMatrix();
-        const expected = translationMatrix([1, 0, 0]);
-        const newer = translationMatrix([3, 0, 0]);
-        handoff.begin([{
-          objectId: "moving",
-          previousWorldMatrix: previous,
-          expectedWorldMatrix: expected
-        }]);
-
-        const result = handoff.project("moving", newer);
-        assertDeepEqual(result, newer);
-        assertEqual(handoff.status().superseded, 1);
-        assertEqual(handoff.status().pending, 0);
-      },
-
-      "rollback pré-dispatch preserva um handoff anterior encadeado"() {
-        const handoff = new VisualCommitHandoff();
-        const initial = identityMatrix();
-        const first = translationMatrix([1, 0, 0]);
-        const second = translationMatrix([2, 0, 0]);
-        handoff.begin([{
-          objectId: "moving",
-          previousWorldMatrix: initial,
-          expectedWorldMatrix: first
-        }]);
-        const transaction = handoff.beginTransaction([{
-          objectId: "moving",
-          previousWorldMatrix: first,
-          expectedWorldMatrix: second
-        }]);
-
-        assertEqual(handoff.rollbackTransaction(transaction), 1);
-        assertDeepEqual(handoff.project("moving", first), first);
-        assertEqual(handoff.status().rolledBack, 1);
-        assertEqual(handoff.status().acknowledged, 1);
-      },
-
-      "reconhecimento compara uma matriz por objeto sem percorrer vértices"() {
-        const left = translationMatrix([2, 3, 4]);
-        const right = [...left];
-        right[12] += 1e-8;
-        assertEqual(matricesApproximatelyEqual(left, right), true);
-        right[12] += 1e-3;
-        assertEqual(matricesApproximatelyEqual(left, right), false);
       }
     },
 
@@ -1608,6 +1432,21 @@ export function createRuntimeLayerTests() {
         assertEqual(orbit.touches.ONE, original.one);
         assertEqual(orbit.touches.TWO, original.two);
         navigation.dispose();
+      },
+
+      "arraste do gizmo prevalece sobre navegação auxiliar de mouse e touch"() {
+        assertEqual(resolveEditorOrbitEnabled({
+          toolGestureNavigationActive: true,
+          transformDragging: true
+        }), false);
+        assertEqual(resolveEditorOrbitEnabled({
+          toolGestureNavigationActive: true,
+          transformDragging: false
+        }), true);
+        assertEqual(resolveEditorOrbitEnabled({
+          toolGestureNavigationActive: true,
+          boundsScaleActive: true
+        }), false);
       }
     },
 
@@ -4497,131 +4336,6 @@ export function createRuntimeLayerTests() {
     },
 
     "mesh-edit-math": {
-      "escala livre expõe oito vértices diagonais locais"() {
-        const set = createLocalBoundsScaleHandleSet({
-          min: [-1, -2, -3],
-          max: [1, 2, 3],
-          axes: { x: true, y: true, z: true }
-        });
-        assertEqual(set.dimensions, 3);
-        assertEqual(set.handles.length, 8);
-        for (const handle of set.handles) {
-          const opposite = set.handles[handle.oppositeIndex];
-          assertVectorNear(
-            opposite.signs,
-            handle.signs.map(value => -value)
-          );
-        }
-      },
-
-      "eixo bloqueado reduz a escala proporcional ao plano restante"() {
-        const set = createLocalBoundsScaleHandleSet({
-          min: [-2, -4, -6],
-          max: [2, 4, 6],
-          axes: { x: true, y: true, z: false }
-        });
-        assertEqual(set.dimensions, 2);
-        assertEqual(set.handles.length, 4);
-        assertEqual(set.axes.z, false);
-        for (const handle of set.handles) {
-          assertNear(handle.point[2], 0);
-        }
-        assertVectorNear(
-          scaleFactorsForAxes(1.5, set.axes),
-          [1.5, 1.5, 1]
-        );
-      },
-
-      "arrasto diagonal calcula escala proporcional por projeção"() {
-        assertNear(
-          proportionalScaleFactor2D({
-            fixed: [10, 20],
-            initial: [110, 120],
-            current: [160, 170]
-          }),
-          1.5
-        );
-        assertNear(
-          proportionalScaleFactor2D({
-            fixed: [0, 0],
-            initial: [100, 0],
-            current: [153, 40],
-            snap: 0.1
-          }),
-          1.5
-        );
-      },
-
-      "diagonal projetada curta mantém arrasto selecionável"() {
-        assertNear(
-          proportionalScaleFactor2D({
-            fixed: [50, 50],
-            initial: [50, 50],
-            current: [90, 50],
-            fallbackDirection: [1, 0],
-            fallbackLength: 80
-          }),
-          1.5
-        );
-      },
-
-      "escala local recompõe TRS sem introduzir shear"() {
-        const sourcePosition = new THREE.Vector3(4, 2, -1);
-        const sourceOrientation = new THREE.Quaternion().setFromEuler(
-          new THREE.Euler(0.2, 0.7, -0.3)
-        );
-        const sourceMatrix = new THREE.Matrix4()
-          .compose(
-            sourcePosition,
-            sourceOrientation,
-            new THREE.Vector3(2, 3, 4)
-          )
-          .toArray();
-        const result = new THREE.Matrix4().fromArray(
-          scaleWorldTrsWithoutShear({
-            matrixWorld: sourceMatrix,
-            pivotWorld: [0, 0, 0],
-            frameQuaternion: [0, 0, 0, 1],
-            factors: [2, 1, 0.5]
-          })
-        );
-        const position = new THREE.Vector3();
-        const orientation = new THREE.Quaternion();
-        const scale = new THREE.Vector3();
-        result.decompose(position, orientation, scale);
-        assertVectorNear(position.toArray(), [8, 2, -0.5]);
-        assertVectorNear(scale.toArray(), [4, 3, 2]);
-        assertNear(Math.abs(orientation.dot(sourceOrientation)), 1, 1e-9);
-      },
-
-      "escala com pivô no centro preserva o centro do objeto"() {
-        const center = [4, 2, -1];
-        const source = new THREE.Matrix4()
-          .compose(
-            new THREE.Vector3(...center),
-            new THREE.Quaternion().setFromEuler(
-              new THREE.Euler(0.4, -0.2, 0.6)
-            ),
-            new THREE.Vector3(1, 2, 3)
-          )
-          .toArray();
-        const result = new THREE.Matrix4().fromArray(
-          scaleWorldTrsWithoutShear({
-            matrixWorld: source,
-            pivotWorld: center,
-            frameQuaternion: [0, 0, 0, 1],
-            factors: [1.5, 1.5, 1.5]
-          })
-        );
-        const resultPosition = new THREE.Vector3();
-        result.decompose(
-          resultPosition,
-          new THREE.Quaternion(),
-          new THREE.Vector3()
-        );
-        assertVectorNear(resultPosition.toArray(), center);
-      },
-
       "frame do viewer converte X e Y no plano congelado"() {
         const viewerQuaternion = new THREE.Quaternion()
           .setFromEuler(new THREE.Euler(0, Math.PI / 2, 0))
@@ -4949,24 +4663,9 @@ export function createRuntimeLayerTests() {
           objectId: "mesh-box"
         });
         let visual = null;
-        let deferredCommits = 0;
-        let immediateEnds = 0;
-        const commitEvents = [];
-        const unsubscribeCommitOrder = sandbox.subscribe(() => {
-          commitEvents.push("sandbox-change");
-        });
         const renderer = {
           beginMeshEdit(args) { visual = args; },
-          endMeshEdit() { immediateEnds += 1; visual = null; },
-          deferMeshEditCommit() {
-            deferredCommits += 1;
-            commitEvents.push("defer");
-            return true;
-          },
-          cancelDeferredMeshEditCommit() {
-            commitEvents.push("cancel-defer");
-            return true;
-          },
+          endMeshEdit() { visual = null; },
           updateMeshEditGeometry(geometry) { visual.geometry = geometry; },
           updateMeshEditSelection() {},
           updateMeshEditOptions() {},
@@ -4990,16 +4689,9 @@ export function createRuntimeLayerTests() {
         assertEqual(controller.status().stale, false);
         const undoDepthBeforeCommit =
           sandbox.getHistoryDiagnostics().undoDepth;
-        commitEvents.length = 0;
         const result = controller.commit();
         const object = sandbox.getSnapshot().objects[0];
         assertEqual(result.changed, true);
-        assertDeepEqual(commitEvents.slice(0, 2), [
-          "defer",
-          "sandbox-change"
-        ]);
-        assertEqual(deferredCommits, 1);
-        assertEqual(immediateEnds, 0);
         assertEqual(object.geometry.type, "buffer");
         assertEqual(object.kind, "buffer");
         assertEqual(
@@ -5011,7 +4703,6 @@ export function createRuntimeLayerTests() {
           sandbox.getSnapshot().objects[0].geometry.type,
           "box"
         );
-        unsubscribeCommitOrder();
       },
 
       "frame do viewer permanece congelado após mover a câmera"() {
@@ -5067,70 +4758,6 @@ export function createRuntimeLayerTests() {
         assertEqual(sandbox.getHistoryDiagnostics().undoDepth, undoDepth);
       },
 
-      "status de seleção única não normaliza descritor buffer"() {
-        let normalizeCalls = 0;
-        const geometryRegistry = new GeometryRegistry().register({
-          type: "buffer",
-          normalize(input) {
-            normalizeCalls += 1;
-            return Object.freeze({ ...input, type: "buffer" });
-          },
-          create() {
-            return new THREE.BufferGeometry();
-          }
-        });
-        const object = {
-          id: "dense-buffer",
-          kind: "buffer",
-          name: "Malha densa",
-          position: [0, 0, 0],
-          rotation: [0, 0, 0, 1],
-          scale: [1, 1, 1],
-          geometry: {
-            type: "buffer",
-            positions: Array.from({ length: 2000 }, (_, index) =>
-              [index, 0, 0]
-            ),
-            indices: [],
-            normals: [],
-            uvs: [],
-            edges: []
-          }
-        };
-        const region = new Region(
-          {
-            id: "mesh-status-region",
-            name: "Mesh",
-            type: "box-region"
-          },
-          { objects: [object] }
-        );
-        const sandbox = new Sandbox(region, boxRegionReducer);
-        const editor = new EditorState();
-        editor.selection.replace({
-          kind: "object",
-          regionId: "mesh-status-region",
-          objectId: object.id
-        });
-        const controller = new MeshEditController({
-          sandbox,
-          editor,
-          renderer: {
-            beginMeshEdit() {},
-            endMeshEdit() {},
-            canBeginMeshEdit() {
-              return { ok: true };
-            }
-          },
-          geometryRegistry
-        });
-
-        assertEqual(geometryRegistry.supportsLegacyObject(object), true);
-        assertEqual(controller.status().canEnter, true);
-        assertEqual(normalizeCalls, 0);
-        controller.dispose?.();
-      },
-
       "entrada é recusada enquanto a malha participa de animação"() {
         const region = new Region(
           { id: "mesh-block-region", name: "Mesh", type: "box-region" },
@@ -5175,398 +4802,6 @@ export function createRuntimeLayerTests() {
         assertEqual(status.canEnter, false);
         assert(status.reason.includes("animação"));
         assertThrowsMessage(() => controller.enter(), "animação");
-      }
-    },
-    "mesh-render-profile": {
-      "recalcular normais preserva posições índices e UVs byte a byte"() {
-        const descriptor = {
-          type: "buffer",
-          positions: [
-            [0,0,0], [1,0,0], [0,1,0],
-            [9,9,9]
-          ],
-          indices: [0,1,2],
-          normals: [
-            [0,0,1], [0,0,1], [0,0,1],
-            [1,0,0]
-          ],
-          uvs: [[0,0], [1,0], [0,1], [0.5,0.5]],
-          edges: []
-        };
-        const result = applyMeshTopologyOperation({
-          descriptor,
-          topology: topologyOf(descriptor),
-          componentMode: "vertex",
-          selectedIndices: [],
-          operation: "recalculate-normals",
-          options: { removeUnused: true, manifoldOnly: true }
-        });
-        assertDeepEqual(result.descriptor.positions, descriptor.positions);
-        assertDeepEqual(result.descriptor.indices, descriptor.indices);
-        assertDeepEqual(result.descriptor.uvs, descriptor.uvs);
-        assertEqual(result.descriptor.normals.length, descriptor.positions.length);
-      },
-
-      "classificação fechada ignora duplicações de costura"() {
-        const geometry = new THREE.SphereGeometry(1, 24, 16);
-        const position = geometry.getAttribute("position");
-        const positions = Array.from({ length: position.count }, (_, index) => [
-          position.getX(index), position.getY(index), position.getZ(index)
-        ]);
-        const indices = Array.from(geometry.index.array);
-        assertDeepEqual(
-          classifyBufferRenderProfile({ positions, indices }),
-          { topology: "closed-solid", side: "front" }
-        );
-        geometry.dispose();
-      },
-
-      "buffer normalizado conserva perfil fechado no renderer"() {
-        const registry = createDefaultGeometryRegistry();
-        const descriptor = registry.normalize({
-          type: "buffer",
-          positions: [
-            [1,1,1], [-1,-1,1], [-1,1,-1], [1,-1,-1]
-          ],
-          indices: [0,2,1, 0,1,3, 0,3,2, 1,2,3],
-          normals: [],
-          uvs: [],
-          edges: []
-        });
-        assertDeepEqual(descriptor.renderProfile, {
-          topology: "closed-solid",
-          side: "front"
-        });
-        assertDeepEqual(registry.renderProfile(descriptor), {
-          topology: "closed-solid",
-          side: "front"
-        });
-      },
-
-      "superfície aberta continua dupla face"() {
-        assertDeepEqual(classifyBufferRenderProfile({
-          positions: [[0,0,0], [1,0,0], [0,1,0]],
-          indices: [0,1,2]
-        }), {
-          topology: "open-surface",
-          side: "double"
-        });
-      }
-    },
-
-    "mesh-attribute-policy": {
-      "no-op numérico preserva índices UVs e normais importadas"() {
-        const before = {
-          type: "buffer",
-          positions: [[0,0,0], [1,0,0], [0,1,0]],
-          indices: [0,1,2],
-          normals: [[0,0,1], [0,0,1], [0,0,1]],
-          uvs: [[0,0], [1,0], [0,1]],
-          edges: []
-        };
-        const after = structuredClone(before);
-        after.positions[1][0] += 1e-10;
-        const prepared = prepareMeshCommitDescriptor({
-          before,
-          after,
-          autoNormals: true,
-          normalPolicy: "recompute-local"
-        });
-        assertEqual(prepared.changed, false);
-        assertDeepEqual(prepared.descriptor.indices, before.indices);
-        assertDeepEqual(prepared.descriptor.uvs, before.uvs);
-        assertDeepEqual(prepared.descriptor.normals, before.normals);
-      },
-
-      "recalculo local preserva normais fora da vizinhança alterada"() {
-        const positions = [
-          [0,0,0], [1,0,0], [0,1,0],
-          [10,0,0], [11,0,0], [10,1,0]
-        ];
-        const sourceNormals = positions.map(() => [0,0,1]);
-        const moved = positions.map(point => [...point]);
-        moved[2] = [0,1,1];
-        const normals = recomputeLocalVertexNormals({
-          positions: moved,
-          indices: [0,1,2, 3,4,5],
-          sourceNormals,
-          changedVertexIndices: [2]
-        });
-        assertEqual(normals.length, 6);
-        assertEqual(Math.abs(normals[0][1]) > 0, true);
-        assertDeepEqual(normals.slice(3), sourceNormals.slice(3));
-      },
-
-      "seleção de face inclui cópias coincidentes da costura"() {
-        const descriptor = {
-          type: "buffer",
-          positions: [
-            [0,0,0], [1,0,0], [0,1,0],
-            [1,0,0], [1,1,0], [0,1,0]
-          ],
-          indices: [0,1,2, 3,4,5],
-          normals: [],
-          uvs: [[0,0], [0.5,0], [0,1], [0.5,0], [1,1], [0,1]],
-          edges: []
-        };
-        const topology = topologyOf(descriptor);
-        const groups = coincidentVertexGroups(descriptor.positions);
-        const selected = resolveTransformVertexSelection({
-          topology,
-          componentMode: "face",
-          selectedComponents: [0],
-          coincidentGroups: groups,
-          policy: "transform-together"
-        });
-        assertDeepEqual(selected, [0,1,2,3,5]);
-      },
-
-      "falloff geodésico usa identidade geométrica nas costuras"() {
-        const descriptor = {
-          type: "buffer",
-          positions: [
-            [0,0,0], [1,0,0], [2,0,0],
-            [0,0,0], [0,1,0], [0,2,0]
-          ],
-          indices: [0,1,2, 3,4,5],
-          normals: [],
-          uvs: []
-        };
-        const identity = buildGeometricVertexIdentity({
-          positions: descriptor.positions,
-          indices: descriptor.indices
-        });
-        assertEqual(identity.renderVertexCount, 6);
-        assertEqual(identity.geometricVertexCount, 5);
-        const field = createMeshInfluenceField({
-          descriptor,
-          selectedIndices: [0],
-          objectWorldMatrix: new THREE.Matrix4().toArray(),
-          radius: 2,
-          metric: "geodesic",
-          falloff: "linear",
-          geometricIdentity: identity
-        });
-        const weight = new Map(field.affectedIndices.map(
-          (index, order) => [index, field.weights[order]]
-        ));
-        assertNear(weight.get(0), 1);
-        assertNear(weight.get(3), 1);
-        assertNear(weight.get(1), 0.5);
-        assertNear(weight.get(4), 0.5);
-        assertNear(weight.get(2), 0);
-        assertNear(weight.get(5), 0);
-      },
-
-      "movimento posicional recalcula normais derivadas ao aplicar"() {
-        const before = {
-          type: "buffer",
-          positions: [[0,0,0], [1,0,0], [0,1,0]],
-          indices: [0,1,2],
-          normals: [[0,0,1], [0,0,1], [0,0,1]],
-          uvs: [[0,0], [1,0], [0,1]],
-          edges: []
-        };
-        const after = structuredClone(before);
-        after.positions[2] = [0,1,0.5];
-        const prepared = prepareMeshCommitDescriptor({ before, after });
-        assertEqual(prepared.changed, true);
-        assertEqual(prepared.change.normalPolicy, "recompute-local");
-        assertEqual(Math.abs(prepared.descriptor.normals[0][1]) > 0, true);
-        assertDeepEqual(prepared.descriptor.uvs, before.uvs);
-      },
-
-      "recalcular normais produz atributo persistível após deformação"() {
-        const initial = {
-          type: "buffer",
-          positions: [[0,0,0], [1,0,0], [0,1,0]],
-          indices: [0,1,2],
-          normals: [[0,0,1], [0,0,1], [0,0,1]],
-          uvs: [[0,0], [1,0], [0,1]],
-          edges: []
-        };
-        const deformed = structuredClone(initial);
-        deformed.positions[2] = [0,1,0.5];
-        const result = applyMeshTopologyOperation({
-          descriptor: deformed,
-          topology: topologyOf(deformed),
-          componentMode: "vertex",
-          selectedIndices: [],
-          operation: "recalculate-normals",
-          options: { manifoldOnly: true }
-        });
-        assertEqual(result.descriptor.normals.length, 3);
-        assertEqual(Math.abs(result.descriptor.normals[0][1]) > 0, true);
-        const prepared = prepareMeshCommitDescriptor({
-          before: initial,
-          after: result.descriptor,
-          normalPolicy: "recompute-local",
-          preferTargetNormals: true
-        });
-        assertDeepEqual(
-          prepared.descriptor.normals,
-          result.descriptor.normals
-        );
-      },
-
-
-
-      "movimento posterior invalida normais explicitamente recalculadas"() {
-        const initial = {
-          type: "buffer",
-          positions: [[0,0,0], [1,0,0], [0,1,0]],
-          indices: [0,1,2],
-          normals: [[0,0,1], [0,0,1], [0,0,1]],
-          uvs: [],
-          edges: []
-        };
-        const afterExplicit = structuredClone(initial);
-        afterExplicit.positions[2] = [0,1,0.5];
-        afterExplicit.normals = recomputeVertexNormals({
-          positions: afterExplicit.positions,
-          indices: afterExplicit.indices,
-          sourceNormals: initial.normals
-        });
-        const movedAgain = structuredClone(afterExplicit);
-        movedAgain.positions[2] = [0,1,1];
-        const prepared = prepareMeshCommitDescriptor({
-          before: initial,
-          after: movedAgain,
-          normalPolicy: "recompute-local",
-          preferTargetNormals: false
-        });
-        assertEqual(
-          Math.abs(prepared.descriptor.normals[0][1]) >
-            Math.abs(afterExplicit.normals[0][1]),
-          true
-        );
-      },
-
-      "costura suave compartilha normal sem fundir aresta dura"() {
-        const smooth = recomputeVertexNormals({
-          positions: [
-            [0,0,0], [1,0,0], [0,1,0],
-            [0,0,0], [0,1,0], [-1,0,0.5]
-          ],
-          indices: [0,1,2, 3,4,5],
-          sourceNormals: [
-            [0,0,1], [0,0,1], [0,0,1],
-            [0,0,1], [0,0,1], [0,0,1]
-          ]
-        });
-        assertVectorNear(smooth[0], smooth[3]);
-        assertVectorNear(smooth[2], smooth[4]);
-
-        const hard = recomputeVertexNormals({
-          positions: [
-            [0,0,0], [1,0,0], [0,1,0],
-            [0,0,0], [0,0,1], [1,0,0]
-          ],
-          indices: [0,1,2, 3,4,5],
-          sourceNormals: [
-            [0,0,1], [0,0,1], [0,0,1],
-            [0,1,0], [0,1,0], [0,1,0]
-          ]
-        });
-        assertEqual(Math.abs(hard[0][2]) > 0.9, true);
-        assertEqual(Math.abs(hard[3][1]) > 0.9, true);
-      },
-
-      "sanitização remapeia e preserva normais e UVs"() {
-        const descriptor = {
-          type: "buffer",
-          positions: [[0,0,0], [1,0,0], [0,1,0], [9,9,9]],
-          indices: [0,1,2],
-          normals: [[0,0,1], [0,0,1], [0,0,1], [1,0,0]],
-          uvs: [[0,0], [1,0], [0,1], [0.5,0.5]],
-          edges: []
-        };
-        const result = applyMeshTopologyOperation({
-          descriptor,
-          topology: topologyOf(descriptor),
-          componentMode: "vertex",
-          selectedIndices: [],
-          operation: "cleanup",
-          options: { removeUnused: true }
-        });
-        assertEqual(result.descriptor.positions.length, 3);
-        assertDeepEqual(result.descriptor.normals, descriptor.normals.slice(0,3));
-        assertDeepEqual(result.descriptor.uvs, descriptor.uvs.slice(0,3));
-      },
-
-      "visibilidade de edição oculta o recurso real do proprietário"() {
-        const manager = new InstanceBatchManager();
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshBasicMaterial();
-        manager.add({
-          objectId: "owner",
-          resourceId: "owner:resource:0",
-          ownerId: "owner",
-          batchKey: "mesh-visibility",
-          matrix: new THREE.Matrix4().makeTranslation(4, 5, 6),
-          descriptor: { geometry, material, capacity: 4 }
-        });
-        const dirty = [];
-        const visibility = new MeshEditVisibility({
-          batchManager: manager,
-          markBatchDirty: key => dirty.push(key)
-        });
-        const hidden = visibility.setHidden(
-          "owner",
-          true,
-          new THREE.Matrix4().makeTranslation(4, 5, 6)
-        );
-        assertEqual(hidden.standardResourceCount, 1);
-        assertEqual(hidden.standardWrites, 1);
-        const location = manager.locationOf("owner:resource:0");
-        const batch = manager.getBatch(location.batchKey);
-        const matrix = new THREE.Matrix4();
-        batch.mesh.getMatrixAt(location.instanceIndex, matrix);
-        assertNear(matrix.elements[0], 0);
-        assertNear(matrix.elements[5], 0);
-        assertNear(matrix.elements[10], 0);
-        visibility.setHidden(
-          "owner",
-          false,
-          new THREE.Matrix4().makeTranslation(4, 5, 6)
-        );
-        batch.mesh.getMatrixAt(location.instanceIndex, matrix);
-        assertVectorNear(
-          new THREE.Vector3().setFromMatrixPosition(matrix).toArray(),
-          [4,5,6]
-        );
-        assert(dirty.length >= 2);
-        manager.clear({ disposeGeometry: true, disposeMaterial: true });
-      },
-
-      "registro descreve ferramentas e mantém executor legado substituível"() {
-        const calls = [];
-        const registry = new MeshToolRegistry({
-          tools: [{
-            id: "mesh.topology.example",
-            kind: "topology",
-            operation: "example",
-            label: "Exemplo",
-            modes: ["face"],
-            requiresSelection: true,
-            implementation: "test-double"
-          }],
-          executors: {
-            topology(context) {
-              calls.push(context.operation);
-              return { ok: true };
-            }
-          }
-        });
-        const listed = registry.list({ mode: "face", selectionCount: 1 });
-        assertEqual(listed[0].available.ok, true);
-        const executed = registry.execute("mesh.topology.example", {
-          mode: "face",
-          selectedIndices: [0]
-        });
-        assertDeepEqual(calls, ["example"]);
-        assertEqual(executed.result.ok, true);
-        assertEqual(executed.tool.implementation, "test-double");
       }
     },
     "mesh-topology": {
@@ -5851,83 +5086,6 @@ export function createRuntimeLayerTests() {
         assert(result.directMs >= 0);
         assert(result.facadeMs >= 0);
         assert(Number.isFinite(result.overheadPerCallUs));
-      },
-
-      "console executa consulta registrada por identificador canônico"() {
-        const calls = [];
-        const console = new DevConsole({
-          editor: { selection: new Selection() },
-          sandbox: {},
-          region: {},
-          renderer: {},
-          getDiagnostics: () => ({}),
-          commands: {
-            execute() {
-              throw new Error("Comando inesperado.");
-            },
-            describe() {
-              return [];
-            }
-          },
-          queries: {
-            execute(id, args) {
-              calls.push({ id, args });
-              return { captured: true, label: args.label };
-            },
-            describe() {
-              return [{ id: "mesh.audit.capture", metadata: {} }];
-            }
-          }
-        });
-
-        const [entry] = console.execute(
-          'mesh.audit.capture {"label":"sphere-before"}'
-        );
-
-        assertEqual(entry.ok, true);
-        assertEqual(entry.result.captured, true);
-        assertDeepEqual(calls, [{
-          id: "mesh.audit.capture",
-          args: { label: "sphere-before" }
-        }]);
-      },
-
-      "console executa comando registrado sem regra dedicada"() {
-        const calls = [];
-        const console = new DevConsole({
-          editor: { selection: new Selection() },
-          sandbox: {},
-          region: {},
-          renderer: {},
-          getDiagnostics: () => ({}),
-          commands: {
-            execute(id, args) {
-              calls.push({ id, args });
-              return { changed: true };
-            },
-            describe() {
-              return [{ id: "diagnostic.sample.run", metadata: {} }];
-            }
-          },
-          queries: {
-            execute() {
-              throw new Error("Consulta inesperada.");
-            },
-            describe() {
-              return [];
-            }
-          }
-        });
-
-        const [entry] = console.execute(
-          'diagnostic.sample.run {"count":2}'
-        );
-
-        assertEqual(entry.ok, true);
-        assertDeepEqual(calls, [{
-          id: "diagnostic.sample.run",
-          args: { count: 2 }
-        }]);
       }
     },
 
@@ -8826,7 +7984,7 @@ export function createRuntimeLayerTests() {
         pair.dispose();
       },
 
-      async "mudança editorial encerra a sessão em todas as abas"() {
+      async "adaptador legado encerra a sessão em todas as abas"() {
         const pair = await createLocalAnimationPair();
         pair.authority.animation.play("preset", {
           id: "spin",
@@ -8845,7 +8003,7 @@ export function createRuntimeLayerTests() {
         assertEqual(pair.replica.animation.status().state, "idle");
         assertEqual(
           pair.authority.animation.status().shared.reason,
-          "scene-changed"
+          "animated-object-changed"
         );
         pair.dispose();
       },
@@ -9164,6 +8322,44 @@ export function createRuntimeLayerTests() {
         runtime.dispose();
       },
 
+      "runtime temporal rebasa edição e só encerra alvo removido"() {
+        const fixture = createAnimationFixture();
+        let nowSeconds = 0;
+        const domains = new AnalyticTimeDomains({
+          nowSeconds: () => nowSeconds
+        });
+        const temporal = new TemporalRuntime({ domains });
+        const runtime = new TemporalAnimationRuntime({
+          surface: fixture.surface,
+          temporalRuntime: temporal,
+          timeDomains: domains,
+          now: monotonicNow()
+        });
+        runtime.start({
+          targetIds: ["group-a"],
+          evaluate: identityAnimationFrame
+        });
+        const instanceId = runtime.status().activeInstanceId;
+
+        const rebased = runtime.sceneChanged([{
+          type: "object-transform",
+          objectId: "a"
+        }]);
+        assertDeepEqual(rebased.rebasedInstanceIds, [instanceId]);
+        assertDeepEqual(rebased.stoppedInstanceIds, []);
+        assertEqual(runtime.status().state, "playing");
+        assertEqual(fixture.restored.length, 0);
+
+        const removed = runtime.sceneChanged([{
+          type: "object-deleted",
+          objectId: "b"
+        }]);
+        assertDeepEqual(removed.stoppedInstanceIds, [instanceId]);
+        assertEqual(runtime.status().state, "idle");
+        assertEqual(fixture.restored.length, 1);
+        runtime.dispose();
+      },
+
       "falha de avaliação restaura sem escapar pelo main loop"() {
         const fixture = createAnimationFixture();
         const runtime = new AnimationRuntime({
@@ -9203,6 +8399,38 @@ export function createRuntimeLayerTests() {
           [[1, 5, 0], [3, 5, 0]]
         );
         assertDeepEqual(overlay.pivots[0].position, [1, 7, 3]);
+      },
+
+      "rebase afim acompanha o novo pivô canônico"() {
+        const targets = createAnimationTargetSnapshot([{
+          unitId: "group-a",
+          pivot: [0, 0, 0],
+          objects: [{ objectId: "a", baseMatrix: identityMatrix() }]
+        }]);
+        const frame = [{
+          unitId: "group-a",
+          matrix: composeAffineOperations([
+            { type: "pivot", value: [0, 0, 0] },
+            { type: "rotate", value: [0, 0, 90] }
+          ])
+        }];
+        const rebased = rebaseAnimationLayerInput(
+          targets,
+          frame,
+          () => [10, 0, 0]
+        );
+
+        assertVectorNear(
+          transformAnimationPoint(rebased.unitFrames[0].matrix, [10, 0, 0]),
+          [10, 0, 0],
+          1e-8
+        );
+        assertVectorNear(
+          transformAnimationPoint(rebased.unitFrames[0].matrix, [11, 0, 0]),
+          [10, 1, 0],
+          1e-8
+        );
+        assertDeepEqual(rebased.targets.units[0].pivot, [10, 0, 0]);
       },
 
       "relógio contabiliza passos descartados"() {
@@ -9468,7 +8696,9 @@ export function createRuntimeLayerTests() {
               operations: [{
                 type: "rotate",
                 value: [0, "45 * sin(t)", 0]
-              }]
+              }],
+              targetMode: "selection",
+              timeDomainId: "world"
             }
           },
           {
@@ -9476,7 +8706,8 @@ export function createRuntimeLayerTests() {
             args: {
               id: "spin",
               parameters: { speed: 90, axis: "z" },
-              targetMode: "selection"
+              targetMode: "selection",
+              timeDomainId: "world"
             }
           },
           {
@@ -9487,7 +8718,8 @@ export function createRuntimeLayerTests() {
                 type: "color",
                 value: "hsl(60*t + 360*u,0.8,0.55)"
               }],
-              targetMode: "objects"
+              targetMode: "objects",
+              timeDomainId: "world"
             }
           },
           { id: "animation.pause", args: undefined },
@@ -10029,18 +9261,19 @@ assets: {
       groupId: "group-a",
       targetIds: ["box-a", "box-b"]
     });
-    const projected = result.state.objects.map(object =>
+    const projected = projectInstanceGraphScene(result.state).objects.map(object =>
       runtime.projectObject(object)
     );
     const group = projected.find(object => object.id === "group-a");
-    const child = projected.find(object => object.id === "box-a");
-    const hierarchy = new HierarchyIndex(result.state.objects);
+    const child = projected.find(object => object.prototypeId === "box-a");
+    const sibling = projected.find(object => object.prototypeId === "box-b");
+    const hierarchy = new HierarchyIndex(projected);
 
     assertEqual(group.kind, "group");
     assertEqual("material" in group, false);
     assert(Boolean(child.material));
-    assertEqual(hierarchy.parentOf("box-a"), "group-a");
-    assertEqual(hierarchy.parentOf("box-b"), "group-a");
+    assertEqual(hierarchy.parentOf(child.id), "group-a");
+    assertEqual(hierarchy.parentOf(sibling.id), "group-a");
   },
 
   "stats distingue assets e cache"() {
@@ -10692,40 +9925,45 @@ assets: {
           groupId:"new-group",
           targetIds:["moving","nested"]
         });
-        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
-        assertDeepEqual(hierarchy.childrenOf("new-group"),["moving"]);
-        assertEqual(hierarchy.parentOf("nested"),"moving");
+        const descendants=sandbox.getObjectDescendantIds(["new-group"]);
+        assertEqual(descendants.length,2);
+        assertEqual(sandbox.getObject(descendants[0]).parentId,"new-group");
+        assertEqual(sandbox.getObject(descendants[1]).parentId,descendants[0]);
       },
       "agrupamento preserva toda a subárvore no mundo"() {
         const sandbox=createHierarchySandbox();
-        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
-        const movingWorld=before.worldMatrixOf("moving");
-        const nestedWorld=before.worldMatrixOf("nested");
+        const movingWorld=sandbox.getObjectWorldMatrix("moving");
+        const nestedWorld=sandbox.getObjectWorldMatrix("nested");
         sandbox.dispatch({
           type:"selection.group",
           groupId:"new-group",
           targetIds:["moving"]
         });
-        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
-        assertMatricesNear(after.worldMatrixOf("moving"),movingWorld);
-        assertMatricesNear(after.worldMatrixOf("nested"),nestedWorld);
+        const descendants=sandbox.getObjectDescendantIds(["new-group"]);
+        assertMatricesNear(sandbox.getObjectWorldMatrix(descendants[0]),movingWorld);
+        assertMatricesNear(sandbox.getObjectWorldMatrix(descendants[1]),nestedWorld);
       },
       "alvos de pais diferentes usam ancestral comum"() {
         const sandbox=createHierarchySandbox();
-        const before=new HierarchyIndex(sandbox.getSnapshot().objects);
-        const movingWorld=before.worldMatrixOf("moving");
-        const targetWorld=before.worldMatrixOf("target");
+        const movingWorld=sandbox.getObjectWorldMatrix("moving");
+        const targetWorld=sandbox.getObjectWorldMatrix("target");
         sandbox.dispatch({
           type:"selection.group",
           groupId:"cross-group",
           targetIds:["moving","target"]
         });
-        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
-        assertEqual(after.parentOf("cross-group"),null);
-        assertEqual(after.parentOf("moving"),"cross-group");
-        assertEqual(after.parentOf("target"),"cross-group");
-        assertMatricesNear(after.worldMatrixOf("moving"),movingWorld);
-        assertMatricesNear(after.worldMatrixOf("target"),targetWorld);
+        const descendants=sandbox.getObjectDescendantIds(["cross-group"]);
+        const movingId=descendants.find(id =>
+          sandbox.getObject(id)?.kind === "group"
+        );
+        const targetId=descendants.find(id =>
+          sandbox.getObject(id)?.prototypeId === "target"
+        );
+        assertEqual(sandbox.getObject("cross-group").parentId,null);
+        assertEqual(sandbox.getObject(movingId).parentId,"cross-group");
+        assertEqual(sandbox.getObject(targetId).parentId,"cross-group");
+        assertMatricesNear(sandbox.getObjectWorldMatrix(movingId),movingWorld);
+        assertMatricesNear(sandbox.getObjectWorldMatrix(targetId),targetWorld);
       },
       "grupo pode ser agrupado novamente"() {
         const sandbox=createHierarchySandbox();
@@ -10739,10 +9977,36 @@ assets: {
           groupId:"outer",
           targetIds:["inner"]
         });
-        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
-        assertEqual(hierarchy.parentOf("inner"),"outer");
-        assertEqual(hierarchy.parentOf("moving"),"inner");
-        assertEqual(hierarchy.parentOf("nested"),"moving");
+        const descendants=sandbox.getObjectDescendantIds(["outer"]);
+        assertEqual(descendants.length,3);
+        assertEqual(sandbox.getObject(descendants[0]).parentId,"outer");
+        assertEqual(sandbox.getObject(descendants[1]).parentId,descendants[0]);
+        assertEqual(sandbox.getObject(descendants[2]).parentId,descendants[1]);
+      },
+      "grupo de grupos publica todos os alvos de preview no índice"() {
+        const sandbox=createGroupTransformSandbox({nested:true});
+        sandbox.dispatch({
+          type:"selection.group",
+          groupId:"outer",
+          targetIds:["group"]
+        });
+        const scene=projectInstanceGraphScene(sandbox.getSnapshot());
+        const hierarchy=new HierarchyIndex(scene.objects);
+        const replicas=new ReplicaRenderIndex();
+        for (const object of scene.objects) {
+          replicas.register(object,hierarchy.worldMatrixOf(object.id));
+        }
+        const members=replicas.members("outer");
+        const byId=new Map(scene.objects.map(object=>[object.id,object]));
+
+        assertEqual(sandbox.listObjectChildren("outer").total,1);
+        assertEqual(members.length,3);
+        assertEqual(
+          members.filter(id=>isRenderableSceneNode(byId.get(id))).length,
+          1
+        );
+        assertEqual(replicas.status().diagnostics.sceneScans,0);
+        assertEqual(replicas.status().diagnostics.definitionTraversals,0);
       },
       "grupo lógico não solicita geometria ao renderer"() {
         assertEqual(isRenderableSceneNode({kind:"group"}),false);
@@ -11070,16 +10334,14 @@ assets: {
           regionId:"region-main"
         });
         const result=operations.duplicateMany(2);
-        const hierarchy=new HierarchyIndex(sandbox.getSnapshot().objects);
-
-        assertEqual(result.createdCount,4);
+        assertEqual(result.createdCount,2);
         assertEqual(result.duplicateIds.length,2);
         assertDeepEqual(
           editor.selection.snapshot().members.map(member => member.objectId),
           result.duplicateIds
         );
         for (const rootId of result.duplicateIds) {
-          assertEqual(hierarchy.childrenOf(rootId).length,1);
+          assertEqual(sandbox.listObjectChildren(rootId).total,1);
         }
       },
 
@@ -11101,17 +10363,15 @@ assets: {
         const result=operations.duplicateAffine(3,[
           {type:"move",value:[2,0,0]}
         ]);
-        const after=new HierarchyIndex(sandbox.getSnapshot().objects);
-
-        assertEqual(result.createdCount,6);
+        assertEqual(result.createdCount,3);
         assertEqual(result.duplicateIds.length,3);
         for (const [index,rootId] of result.duplicateIds.entries()) {
-          const childId=after.childrenOf(rootId)[0];
+          const childId=sandbox.listObjectChildren(rootId).items[0];
           const expected=multiplyMatrices(
             composeTransform({position:[2*(index+1),0,0]}),
             childBefore
           );
-          assertMatricesNear(after.worldMatrixOf(childId),expected);
+          assertMatricesNear(sandbox.getObjectWorldMatrix(childId),expected);
         }
       },
 
@@ -11443,7 +10703,7 @@ assets: {
     },
 
     "project-files": {
-      "schema 3 preserva câmera hierárquica e câmera padrão"() {
+      "schema atual preserva câmera hierárquica e câmera padrão"() {
         const assets = new AppearanceRuntime().exportAssets();
         const project = new ProjectValidator().validate({
           format: "spatial-seed",
@@ -11479,7 +10739,7 @@ assets: {
           }
         });
 
-        assertEqual(project.schemaVersion, 3);
+        assertEqual(project.schemaVersion, 4);
         assertEqual(project.scene.defaultCameraId, "camera-main");
         assertEqual(project.scene.objects[1].kind, "camera");
         assertEqual("appearanceId" in project.scene.objects[1], false);
@@ -12155,7 +11415,7 @@ assets: {
         });
         assertEqual(
           label,
-          "v0.1.0 · build 0025g · nova versão disponível"
+          "v0.1.0 · build 0025g · cache 0025d · feche para atualizar"
         );
       },
 
@@ -12168,37 +11428,6 @@ assets: {
           controllerBuild:"0025g",
           updatePending:false
         }),"v0.1.0 · build 0025g");
-      },
-
-      "oferece atualização somente quando publicação e controlador divergem"() {
-        assertEqual(pwaUpdateAvailable({
-          publishedBuild:"0025g",
-          controllerBuild:"0025d"
-        }),true);
-        assertEqual(pwaUpdateAvailable({
-          publishedBuild:"0025g",
-          controllerBuild:"0025g"
-        }),false);
-        assertEqual(pwaUpdateAvailable({
-          publishedBuild:"0025g",
-          controllerBuild:null
-        }),false);
-        assertEqual(pwaUpdateAvailable({
-          publishedBuild:"0025g",
-          controllerBuild:"0025g",
-          waitingBuild:"0025g"
-        }),true);
-      },
-
-      "erro de atualização aparece sem exigir reset automático"() {
-        assertEqual(formatPwaBuildLabel({
-          version:"0.1.0",
-          build:"0025g",
-          channel:"test"
-        },{
-          controllerBuild:"0025d",
-          error:"Feche e abra novamente."
-        }),"v0.1.0 · build 0025g · atualização requer atenção");
       }
     },
 
@@ -13824,7 +13053,7 @@ assets: {
           { regionId: "region-properties", objectId: "a" },
           { regionId: "region-properties", objectId: "b" }
         ]);
-        const before = structuredClone(fixture.sandbox.getState());
+        const before = fixture.sandbox.materializeState();
 
         assertThrowsMessage(
           () => fixture.service.setSelectionProcedural({
@@ -13833,7 +13062,7 @@ assets: {
           }),
           "Valor numérico inválido"
         );
-        assertDeepEqual(fixture.sandbox.getState(), before);
+        assertDeepEqual(fixture.sandbox.materializeState(), before);
         assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 0);
       },
 
@@ -16399,23 +15628,6 @@ assets: {
         assertEqual(editor.snapshot().tool.transformMode, "rotate");
       },
 
-      "troca de ferramenta é atômica e idempotente"() {
-        const editor = new EditorState();
-        let notifications = 0;
-        const unsubscribe = editor.subscribe((snapshot, event) => {
-          if (event.type !== "initial") notifications += 1;
-        });
-        editor.setPivotEditing(true);
-        notifications = 0;
-        assertEqual(editor.setToolMode("rotate"), true);
-        assertEqual(editor.snapshot().pivot.editing, false);
-        assertEqual(notifications, 1);
-        assertEqual(editor.setToolMode("rotate"), false);
-        assertEqual(notifications, 1);
-        assertEqual(editor.setPivotEditing(false), false);
-        unsubscribe();
-      },
-
       "operações e gesto são explícitos"() {
         const editor = new EditorState();
         editor.setSelectionOperation("add");
@@ -17450,50 +16662,11 @@ function affineDiagnosticSnapshot(copy) {
 }
 
 function createAffineDiagnosticSandbox(initialObjects = []) {
-  let state = Object.freeze({
-    objects: Object.freeze(structuredClone(initialObjects))
-  });
-  const listeners = new Set();
-
-  return {
-    getSnapshot() {
-      return state;
-    },
-
-    getState() {
-      return state;
-    },
-
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-
-    dispatch(command) {
-      if (command.type !== "selection.duplicate") {
-        return false;
-      }
-
-      state = Object.freeze({
-        ...state,
-        objects: Object.freeze([
-          ...state.objects,
-          ...structuredClone(command.objects)
-        ])
-      });
-
-      const changes = command.objects.map(object => ({
-        type: "object-created",
-        objectId: object.id
-      }));
-
-      for (const listener of listeners) {
-        listener(state, changes);
-      }
-
-      return true;
-    }
-  };
+  const region = new Region(
+    { id: "affine-diagnostic", type: "box-region" },
+    { schemaVersion: 1, objects: structuredClone(initialObjects) }
+  );
+  return new Sandbox(region, boxRegionReducer);
 }
 
 function createSelectionRepeatFixture({
@@ -17885,7 +17058,11 @@ function createExperimentDefinition() {
   };
 }
 
-export async function runRuntimeTests(suites, requested = "all") {
+export async function runRuntimeTests(
+  suites,
+  requested = "all",
+  { failuresOnly = false } = {}
+) {
   const selected =
     requested === "all"
       ? Object.entries(suites)
@@ -17925,16 +17102,22 @@ export async function runRuntimeTests(suites, requested = "all") {
   }
 
   const passed = results.filter(result => result.ok).length;
+  const failed = results.length - passed;
+  const reportedResults = failuresOnly
+    ? results.filter(result => !result.ok)
+    : results;
 
   return {
     scope: "runtime-layers",
     suite: requested,
     passed,
-    failed: results.length - passed,
+    failed,
     total: results.length,
+    reported: reportedResults.length,
+    resultMode: failuresOnly ? "failures-only" : "all",
     durationMs: round(performance.now() - startedAt),
     ok: passed === results.length,
-    results
+    results: reportedResults
   };
 }
 

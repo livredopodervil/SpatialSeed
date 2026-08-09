@@ -62,11 +62,11 @@ def main() -> int:
         "const pwaRegistration = registerPwa(buildInfo",
         "O observador PWA não é registrado no início do bootstrap.",
     )
-    require(
-        boot,
-        "void pwaRegistration.checkForUpdate();",
-        "O bootstrap não verifica atualizações explicitamente.",
-    )
+    if (
+        "void pwaRegistration.checkForUpdate();" not in boot
+        and "await pwaRegistration.checkForUpdate();" not in boot
+    ):
+        raise SystemExit("O bootstrap não verifica atualizações explicitamente.")
     if boot.index("const pwaRegistration = registerPwa(buildInfo") > boot.index(
         'import(`./main.js?build=${cacheKey}`)'
     ):
@@ -75,6 +75,21 @@ def main() -> int:
         boot,
         "ensureCurrentServiceWorker",
         "O bootstrap ainda contém o fluxo bloqueante antigo.",
+    )
+    require(
+        boot,
+        "requiresPwaHandoff(buildInfo, pwaState)",
+        "O bootstrap não bloqueia runtime misto sob controlador antigo.",
+    )
+    require(
+        pwa_registration,
+        'updateViaCache: "none"',
+        "O registro PWA ainda permite cache na atualização do service worker.",
+    )
+    require(
+        pwa_registration,
+        "waitForMatchingWorker(",
+        "A atualização não aguarda o worker da versão publicada.",
     )
     forbid(
         boot,

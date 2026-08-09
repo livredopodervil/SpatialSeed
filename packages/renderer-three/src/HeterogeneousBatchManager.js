@@ -32,7 +32,6 @@ export class HeterogeneousBatchManager {
     this.locations = new Map();
     this.resourceMetadata = new Map();
     this.ownerResources = new Map();
-    this.pickingGeometryByResource = new Map();
     this.shards = new Map();
     this.diagnostics = {
       batchesCreated: 0,
@@ -59,6 +58,10 @@ export class HeterogeneousBatchManager {
       if (resourceId) location = this.locations.get(resourceId);
     }
     return location ? Object.freeze({ ...location }) : null;
+  }
+
+  getBatch(batchKey) {
+    return this.batchesByKey.get(String(batchKey)) ?? null;
   }
 
   add({
@@ -168,7 +171,6 @@ export class HeterogeneousBatchManager {
     batch.vertices += counts.vertices;
     batch.indices += counts.indices;
     this.locations.set(id, location);
-    this.pickingGeometryByResource.set(id, geometry);
     this.resourceMetadata.set(id, Object.freeze({
       ownerId: owner,
       metadata
@@ -211,7 +213,6 @@ export class HeterogeneousBatchManager {
     if (!location) return Object.freeze({ removed: false });
     const batch = this.batchesByKey.get(location.batchKey);
     this.locations.delete(id);
-    this.pickingGeometryByResource.delete(id);
     const metadata = this.resourceMetadata.get(id);
     this.resourceMetadata.delete(id);
     if (metadata?.ownerId) {
@@ -261,34 +262,6 @@ export class HeterogeneousBatchManager {
     return this.referenceFromHit(hit)?.ownerId ?? null;
   }
 
-  pickingEntries() {
-    const entries = [];
-    const localMatrix = new THREE.Matrix4();
-    for (const [resourceId, location] of this.locations) {
-      const batch = this.batchesByKey.get(location.batchKey);
-      const geometry = this.pickingGeometryByResource.get(resourceId);
-      if (!batch?.mesh || !geometry) continue;
-      batch.mesh.updateMatrixWorld(true);
-      batch.mesh.getMatrixAt(location.instanceId, localMatrix);
-      const metadata = this.resourceMetadata.get(resourceId);
-      entries.push(Object.freeze({
-        resourceId,
-        ownerId: String(metadata?.ownerId ?? resourceId),
-        batchKey: location.batchKey,
-        instanceId: location.instanceId,
-        geometry,
-        matrix: new THREE.Matrix4().multiplyMatrices(
-          batch.mesh.matrixWorld,
-          localMatrix
-        ),
-        side: batch.mesh.material?.side,
-        visible: batch.mesh.visible,
-        layersMask: batch.mesh.layers.mask
-      }));
-    }
-    return Object.freeze(entries);
-  }
-
   resourcesForOwner(ownerId) {
     return Object.freeze([...(this.ownerResources.get(String(ownerId)) ?? [])]);
   }
@@ -330,7 +303,6 @@ export class HeterogeneousBatchManager {
       batches: this.batchesByKey.size,
       resources: this.locations.size,
       owners: this.ownerResources.size,
-      pickingResources: this.pickingGeometryByResource.size,
       diagnostics: Object.freeze({ ...this.diagnostics }),
       byBatch: Object.freeze(this.batches().map(batch => Object.freeze({
         key: batch.key,
@@ -349,7 +321,6 @@ export class HeterogeneousBatchManager {
     this.locations.clear();
     this.resourceMetadata.clear();
     this.ownerResources.clear();
-    this.pickingGeometryByResource.clear();
     this.shards.clear();
   }
 

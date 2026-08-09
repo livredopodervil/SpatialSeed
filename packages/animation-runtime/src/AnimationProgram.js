@@ -53,7 +53,8 @@ export function compileAnimationProgram(operations, {
     operations: source,
     compiled,
     colorProgram,
-    unitDependent: usesUnitVariables(source)
+    unitDependent: usesUnitVariables(source),
+    timeDependent: usesTimeVariables(source)
   });
 }
 
@@ -100,6 +101,7 @@ export function describeAnimationProgram(program) {
     id: program.id,
     operationCount: program.operations.length,
     unitDependent: program.unitDependent,
+    timeDependent: program.timeDependent,
     astHash: program.compiled.astHash,
     colorExpression: program.colorProgram?.source ?? null,
     language: program.compiled.syntax
@@ -141,6 +143,17 @@ function usesUnitVariables(value) {
   if (Array.isArray(value)) return value.some(usesUnitVariables);
   if (value && typeof value === "object") {
     return Object.values(value).some(usesUnitVariables);
+  }
+  return false;
+}
+
+function usesTimeVariables(value) {
+  if (typeof value === "string") {
+    return /\b(?:t|dt|time|deltaTime)\b/.test(value);
+  }
+  if (Array.isArray(value)) return value.some(usesTimeVariables);
+  if (value && typeof value === "object") {
+    return Object.values(value).some(usesTimeVariables);
   }
   return false;
 }

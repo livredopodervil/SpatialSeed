@@ -2,7 +2,7 @@ const MESSAGE_FORMAT = "spatial-seed-local-animation";
 const MESSAGE_VERSION = 1;
 
 export class LocalAnimationCoordinator {
-  static apiVersion = "local-animation-coordinator-v1";
+  static apiVersion = "local-animation-coordinator-v2-selective-scenes";
 
   #listeners = new Set();
   #channel = null;
@@ -41,6 +41,12 @@ export class LocalAnimationCoordinator {
           `Adaptador de animação compartilhada sem ${method}().`
         );
       }
+    }
+    if (adapter?.sceneChanged !== undefined &&
+        typeof adapter.sceneChanged !== "function") {
+      throw new TypeError(
+        "Adaptador de animação compartilhada exige sceneChanged() válido."
+      );
     }
 
     this.sandbox = sandbox;
@@ -388,11 +394,34 @@ export class LocalAnimationCoordinator {
   #sandboxChanged(changes = []) {
     if (
       changes.some(change => change?.type === "initial") ||
-      this.session.state === "idle"
+      !changes.length
     ) {
       return;
     }
-    this.sceneChanged();
+
+    let impact = null;
+    if (typeof this.adapter.sceneChanged === "function") {
+      try {
+        impact = this.adapter.sceneChanged(
+          structuredClone(changes),
+          structuredClone(this.session)
+        );
+      } catch (error) {
+        this.#lastError = error;
+      }
+    }
+
+    if (this.session.state === "idle") {
+      if (impact?.changed) this.#notify();
+      return;
+    }
+    if (impact && impact.sharedAffected === false) {
+      if (impact.changed) this.#notify();
+      return;
+    }
+    this.sceneChanged(
+      impact?.full ? "scene-replaced" : "animated-object-changed"
+    );
   }
 
   #sendResult(target, requestId, result) {

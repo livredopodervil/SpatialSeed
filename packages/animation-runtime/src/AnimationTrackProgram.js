@@ -2,7 +2,7 @@ import {
   compileAnimationProgram,
   createAnimationEvaluator,
   describeAnimationProgram
-} from "./AnimationProgram.js?build=20260720-0028d";
+} from "./AnimationProgram.js?build=20260806-0050b";
 
 export const ANIMATION_TRACK_PROGRAM_VERSION = "animation-track-program-v1";
 

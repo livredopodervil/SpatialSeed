@@ -27,6 +27,7 @@ export class OutlineRenderer {
     this.#captureOpenPaths();
     if (!this.tree) {
       this.tree = createVirtualResourceTree({
+        sandbox,
         state,
         pageSize: this.pageSize
       });

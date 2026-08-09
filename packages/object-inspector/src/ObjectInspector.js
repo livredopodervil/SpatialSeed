@@ -3,7 +3,7 @@ import {
   normalizeHexColor,
   parsePropertyInput,
   propertyComponentCount
-} from "../../property-registry/src/index.js?build=20260727-0037c";
+} from "../../property-registry/src/index.js?build=20260807-0051a";
 
 const GROUP_LABELS = Object.freeze({
   object: "Identificação",
@@ -16,12 +16,13 @@ const GROUP_LABELS = Object.freeze({
 });
 
 export class ObjectInspector {
-  static apiVersion = "object-inspector-properties-v1";
+  static apiVersion = "object-inspector-properties-v2-occurrence-resolver";
 
   constructor({
     root,
     editor,
     sandbox,
+    occurrenceResolver = null,
     query,
     execute,
     scheduleRefresh = null,
@@ -31,6 +32,7 @@ export class ObjectInspector {
     this.document = root.ownerDocument;
     this.editor = editor;
     this.sandbox = sandbox;
+    this.occurrenceResolver = occurrenceResolver;
     this.query = query;
     this.execute = execute;
     this.controls = new Map();
@@ -40,6 +42,7 @@ export class ObjectInspector {
     this.targetScope = root.querySelector("#inspector-target-scope")?.value ??
       "selection";
     this.selectionKey = "";
+    this.targetIds = new Set();
     this.applying = false;
     this.active = false;
     this.pendingRefresh = true;
@@ -74,9 +77,14 @@ export class ObjectInspector {
     this.unsubscribeSelection = editor.selection.subscribe(() =>
       this.invalidate("selection")
     );
-    this.unsubscribeSandbox = sandbox.subscribe(() =>
-      this.invalidate("sandbox")
-    );
+    this.unsubscribeSandbox = sandbox.subscribe((_snapshot, changes) => {
+      if (this.#sandboxChangesAffectInspector(changes)) {
+        this.invalidate("sandbox-target");
+      } else {
+        this.refreshStatistics.sources["sandbox-ignored"] =
+          (this.refreshStatistics.sources["sandbox-ignored"] ?? 0) + 1;
+      }
+    });
     this.setActive(!root.hidden);
   }
 
@@ -106,6 +114,7 @@ export class ObjectInspector {
     const form = this.root.querySelector("#inspector-form");
     const summary = this.root.querySelector("#inspector-summary");
     const nextSelectionKey = inspection.targetIds.join("\u0000");
+    this.targetIds = new Set(inspection.targetIds.map(String));
 
     if (nextSelectionKey !== this.selectionKey) {
       this.selectionKey = nextSelectionKey;
@@ -159,6 +168,59 @@ export class ObjectInspector {
       this.refresh();
     });
     return true;
+  }
+
+  #sandboxChangesAffectInspector(changes) {
+    const list = Array.isArray(changes) ? changes : [];
+    if (!list.length) return true;
+
+    const selectedIds = new Set(
+      this.editor.selection.snapshot().members
+        .map(member => String(member.objectId))
+    );
+
+    for (const change of list) {
+      if (!change || typeof change !== "object") return true;
+      const id = String(change.objectId ?? change.object?.id ?? "");
+      if (!id) return true;
+      const affectedOccurrences = new Set(
+        (change.affectedOccurrenceIds ?? []).map(String)
+      );
+      if ([...affectedOccurrences].some(occurrenceId =>
+        this.targetIds.has(occurrenceId) || selectedIds.has(occurrenceId)
+      )) return true;
+      if (this.targetIds.has(id) || selectedIds.has(id)) return true;
+      if (this.targetScope !== "renderables") continue;
+
+      /*
+       * Para escopo renderizável, uma criação/reparentização abaixo de uma
+       * raiz selecionada altera o conjunto exibido. Percorremos somente a
+       * cadeia de pais do objeto afetado, nunca state.objects inteiro.
+       */
+      let current = change.object ?? (this.occurrenceResolver
+        ? this.occurrenceResolver.object(id)
+        : this.sandbox.getObject(id));
+      const visited = new Set([id]);
+      while (current?.parentId != null) {
+        const parentId = String(current.parentId);
+        if (selectedIds.has(parentId) || this.targetIds.has(parentId)) {
+          return true;
+        }
+        if (visited.has(parentId)) break;
+        visited.add(parentId);
+        current = this.occurrenceResolver
+          ? this.occurrenceResolver.object(parentId)
+          : this.sandbox.getObject(parentId);
+      }
+
+      const previousParent = change.previousObject?.parentId;
+      if (previousParent != null &&
+          (selectedIds.has(String(previousParent)) ||
+           this.targetIds.has(String(previousParent)))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   setActive(value) {

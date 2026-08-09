@@ -3,7 +3,7 @@ import {
 } from "../../platform-web/src/index.js?build=20260804-0048f1";
 import {
   BenchmarkRunner
-} from "../../benchmarks/src/index.js?build=20260802-0047a";
+} from "../../benchmarks/src/index.js?build=20260808-0053h";
 import {
   ResourceAudit
 } from "../../resource-audit/src/index.js?build=20260714-0020b-a";
@@ -12,7 +12,7 @@ import {
 } from "../../tests/src/index.js?build=20260804-0048f1";
 import {
   activateRuntimeTestPlugin
-} from "./RuntimeTestPlugin.js?build=20260804-0048i-audit2";
+} from "./RuntimeTestPlugin.js?build=20260808-0053h";
 
 export const runtimeDiagnosticsManifest = Object.freeze({
   id: "spatialseed.diagnostics.runtime-tests",

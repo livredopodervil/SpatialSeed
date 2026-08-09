@@ -70,6 +70,17 @@ export class InstanceBatchManager {
     return { batch, instanceIndex, resourceId: id };
   }
 
+  writableBatchForBaseKey(batchBaseKey) {
+    const baseKey = String(batchBaseKey);
+    let shard = this.#baseBatchShards.get(baseKey) ?? 0;
+    let batch = this.#batches.get(`${baseKey}#${shard}`) ?? null;
+    while (batch && batch.size >= batch.capacity) {
+      shard += 1;
+      batch = this.#batches.get(`${baseKey}#${shard}`) ?? null;
+    }
+    return batch;
+  }
+
   addSegmented({
     batchBaseKey,
     descriptor,
@@ -194,6 +205,7 @@ export class InstanceBatchManager {
       resources: this.#objectLocations.size,
       objects: this.#objectLocations.size,
       owners: this.#ownerResources.size,
+      shardBases: this.#baseBatchShards.size,
       byBatch: [...this.#batches.values()].map(batch => batch.stats())
     });
   }

@@ -16,7 +16,7 @@ import { InstanceBatchManager } from "../../instance-batches/src/index.js";
 import * as THREE from "three";
 import { summarizeSamples } from "./BenchmarkStatistics.js";
 
-export const COMPACT_BASELINE_VERSION = "compact-runtime-baseline-v1";
+export const COMPACT_BASELINE_VERSION = "compact-runtime-baseline-v2-instance-graph";
 
 export const COMPACT_BASELINE_SCALE = Object.freeze({
   instanceCount: 10000,
@@ -34,7 +34,8 @@ export const COMPACT_BASELINE_LIMITS = Object.freeze({
   strokeBundleEstimatedBytes: 124932,
   strokeBundleJsonBytes: 198667,
   strokeChunkCount: 8,
-  sceneSerializedBytes: 1819009,
+  // v2 inclui o InstanceGraph canônico vazio (+65 bytes fixos).
+  sceneSerializedBytes: 1819074,
   virtualPageDescriptors: 25
 });
 

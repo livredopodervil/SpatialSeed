@@ -1,3 +1,24 @@
+import {
+  createPersistentObjectArray,
+  isPersistentObjectArray,
+  materializePersistentObjectArray,
+  persistentObjectArrayDiagnostics
+} from "./PersistentObjectArray.js?build=20260807-0051a";
+import {
+  emptyInstanceGraph,
+  isInstanceNode,
+  normalizeInstanceGraph,
+  resolveInstanceNode,
+  resolveInstanceOccurrence,
+  projectInstanceGraphObject,
+  projectInstanceOccurrenceSubtree,
+  instanceGraphDiagnostics
+} from "../../instance-graph/src/index.js?build=20260807-0052b";
+import {
+  composeTransform,
+  multiplyMatrices
+} from "../../math-affine/src/index.js";
+
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
 
 export class Sandbox {
@@ -42,8 +63,8 @@ export class Sandbox {
     this.region = region;
     this.reducer = reducer;
     this.#baseVersion = region.version;
-    this.#baseState = region.getState();
-    this.#state = structuredClone(this.#baseState);
+    this.#baseState = normalizeSandboxState(region.getState());
+    this.#state = this.#baseState;
     this.#rebuildObjectIndex();
   }
 
@@ -54,10 +75,116 @@ export class Sandbox {
   get dirty() { return this.#commands.length > 0; }
   get objectCount() { return this.#state.objects.length; }
   getSnapshot() { return this.#state; }
-  getState() { return structuredClone(this.#state); }
-  getBaseState() { return structuredClone(this.#baseState); }
-  getObject(id) {
+  /*
+   * Snapshot público imutável. Recursos geométricos/materials já são
+   * imutáveis e permanecem compartilhados; não fazemos structuredClone do
+   * mundo inteiro a cada consulta. Para serialização explícita do estado
+   * corrente use materializeState(). O estado-base é uma fronteira de
+   * checkpoint e por isso getBaseState() devolve um valor clonável.
+   */
+  getState() { return cloneStateShell(this.#state); }
+  getBaseState() { return materializeState(this.#baseState); }
+  materializeState() { return materializeState(this.#state); }
+  getObjectPosition(id) {
+    this.#ensureObjectPositions();
+    const value = this.#objectPositions.get(String(id));
+    return Number.isInteger(value) ? value : -1;
+  }
+  getObjectDescendantIds(rootIds = [], { includeRoots = false } = {}) {
+    const roots = [...new Set((rootIds ?? []).map(String).filter(Boolean))];
+    const rootSet = new Set(roots);
+    const seen = new Set();
+    const result = [];
+
+    const appendProjected = segment => {
+      for (const object of segment ?? []) {
+        const id = String(object?.id ?? "");
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        if (includeRoots || !rootSet.has(id)) result.push(id);
+      }
+    };
+
+    for (const rootId of roots) {
+      const raw = this.#objectsById.get(rootId) ?? null;
+      if (raw && isInstanceNode(raw)) {
+        const segment = projectInstanceGraphObject(this.#state, raw);
+        if (segment.length > 1) {
+          appendProjected(segment);
+          continue;
+        }
+      }
+      const occurrence = this.getInstanceOccurrence(rootId);
+      if (occurrence) {
+        appendProjected(projectInstanceOccurrenceSubtree(
+          this.#state,
+          rootId,
+          { rootInstance: occurrence.rootInstance }
+        ));
+        continue;
+      }
+
+      const stack = [rootId];
+      while (stack.length) {
+        const id = stack.pop();
+        if (!id || seen.has(id) || !this.#objectsById.has(id)) continue;
+        seen.add(id);
+        if (includeRoots || !rootSet.has(id)) result.push(id);
+        const children = this.#objectIdsByParent.get(hierarchyParentKey(id)) ?? [];
+        for (let index = children.length - 1; index >= 0; index -= 1) {
+          stack.push(children[index]);
+        }
+      }
+    }
+    return Object.freeze(result);
+  }
+  getRawObject(id) {
     return this.#objectsById.get(String(id)) ?? null;
+  }
+  getInstanceOccurrence(id) {
+    const value = String(id ?? "");
+    if (!value || this.#objectsById.has(value)) return null;
+    const parsedRoot = occurrenceRootId(value);
+    const rootInstance = parsedRoot
+      ? this.#objectsById.get(parsedRoot) ?? null
+      : null;
+    return resolveInstanceOccurrence(this.#state, value, { rootInstance });
+  }
+  getObject(id) {
+    const raw = this.getRawObject(id);
+    if (raw) return resolveInstanceNode(this.#state, raw);
+    return this.getInstanceOccurrence(id)?.object ?? null;
+  }
+  getObjectWorldMatrix(id) {
+    const start = this.getObject(id);
+    if (!start) return null;
+    const chain = [];
+    let current = start;
+    const seen = new Set();
+    while (current) {
+      const currentId = String(current.id ?? "");
+      if (!currentId || seen.has(currentId)) break;
+      seen.add(currentId);
+      chain.push(current);
+      if (current.parentId === null || current.parentId === undefined || current.parentId === "") break;
+      current = this.getObject(String(current.parentId));
+    }
+    let world = identityMatrix();
+    for (let index = chain.length - 1; index >= 0; index -= 1) {
+      world = multiplyMatrices(world, composeTransform({
+        position: chain[index].position ?? [0, 0, 0],
+        rotation: chain[index].rotation ?? [0, 0, 0, 1],
+        scale: chain[index].scale ?? [1, 1, 1]
+      }));
+    }
+    return Object.freeze([...world]);
+  }
+  getObjectParentWorldMatrix(id) {
+    const object = this.getObject(id);
+    if (!object || object.parentId === null || object.parentId === undefined || object.parentId === "") {
+      return Object.freeze(identityMatrix());
+    }
+    return this.getObjectWorldMatrix(String(object.parentId)) ?? Object.freeze(identityMatrix());
   }
   getObjects(ids = []) {
     return ids.map(id => this.getObject(id));
@@ -65,8 +192,19 @@ export class Sandbox {
   listObjectChildren(parentId = null, { offset = 0, limit = 100 } = {}) {
     const start = nonNegativeInteger(offset, "O offset hierárquico");
     const size = nonNegativeInteger(limit, "O limite hierárquico");
-    const key = hierarchyParentKey(parentId);
-    const ids = this.#objectIdsByParent.get(key) ?? [];
+    let ids = this.#objectIdsByParent.get(hierarchyParentKey(parentId)) ?? [];
+    if (parentId !== null && parentId !== undefined) {
+      const parentIdString = String(parentId);
+      const parent = this.getObject(parentIdString);
+      const rawParent = this.getRawObject(parentIdString);
+      if (
+        parent?.kind === "group" &&
+        (parent?.projectedInstance === true || isInstanceNode(rawParent))
+      ) {
+        const segment = this.getObjectDescendantIds([String(parentId)], { includeRoots: true });
+        ids = segment.filter(id => this.getObject(id)?.parentId === String(parentId));
+      }
+    }
     const end = Math.min(ids.length, start + size);
     return Object.freeze({
       items: Object.freeze(ids.slice(start, end)),
@@ -77,7 +215,7 @@ export class Sandbox {
     });
   }
   getObjectChildCount(parentId = null) {
-    return (this.#objectIdsByParent.get(hierarchyParentKey(parentId)) ?? []).length;
+    return this.listObjectChildren(parentId, { offset: 0, limit: 0 }).total;
   }
 
   dispatch(command) {
@@ -86,15 +224,15 @@ export class Sandbox {
     const preparationStartedAt = performanceNow();
     const prepared = isPreparedImmutableCommand(command);
     /*
-     * Comandos preparados preservam identidade e imutabilidade do produtor
-     * até o histórico. Comandos comuns continuam isolados por cópia.
+     * Duplicações podem carregar descritores geométricos grandes. Copiar o
+     * comando inteiro destruiria o compartilhamento de recursos antes mesmo
+     * de o reducer recebê-lo. O preparador especial preserva recursos
+     * imutáveis por referência e copia apenas o envelope mutável.
      */
     const reducerCommand = prepared
       ? deepFreeze(command)
-      : structuredClone(command);
-    const historyCommand = prepared
-      ? reducerCommand
-      : structuredClone(command);
+      : prepareSandboxCommand(command);
+    const historyCommand = reducerCommand;
     const commandPreparationMs = performanceNow() - preparationStartedAt;
     const reducerStartedAt = performanceNow();
     const result = this.reducer(
@@ -103,11 +241,12 @@ export class Sandbox {
       this.#reducerContext()
     );
     if (!result || result.state === before) return false;
+    const nextState = normalizeSandboxState(result.state);
     const reducerMs = performanceNow() - reducerStartedAt;
     const changes = this.#materializeChanges(
       result.changes ?? [],
       before,
-      result.state
+      nextState
     );
     const inverseChanges = invertObjectChanges(changes);
 
@@ -119,7 +258,7 @@ export class Sandbox {
     });
     this.#redo.length = 0;
     this.#commands.push(historyCommand);
-    this.#state = result.state;
+    this.#state = nextState;
     this.#revision += 1;
     this.#updateObjectIndex(changes);
     const notificationStartedAt = performanceNow();
@@ -161,13 +300,14 @@ export class Sandbox {
       this.#reducerContext()
     );
     if (!result || result.state === before) return false;
+    const nextState = normalizeSandboxState(result.state);
 
     const changes = this.#materializeChanges(
       result.changes ?? [],
       before,
-      result.state
+      nextState
     );
-    this.#state = result.state;
+    this.#state = nextState;
     this.#revision += 1;
     this.#updateObjectIndex(changes);
     this.#notify(changes);
@@ -243,7 +383,7 @@ export class Sandbox {
   }
 
   discard() {
-    this.#state = structuredClone(this.#baseState);
+    this.#state = this.#baseState;
     this.#undo.length = 0;
     this.#redo.length = 0;
     this.#commands.length = 0;
@@ -254,8 +394,8 @@ export class Sandbox {
 
   rebaseFromRegion() {
     this.#baseVersion = this.region.version;
-    this.#baseState = this.region.getState();
-    this.#state = structuredClone(this.#baseState);
+    this.#baseState = normalizeSandboxState(this.region.getState());
+    this.#state = this.#baseState;
     this.#undo.length = 0;
     this.#redo.length = 0;
     this.#commands.length = 0;
@@ -268,7 +408,7 @@ export class Sandbox {
   }
 
   replaceState(state, { markClean = true } = {}) {
-    const next = structuredClone(state);
+    const next = normalizeSandboxState(state);
 
     if (
       !next ||
@@ -288,7 +428,7 @@ export class Sandbox {
     this.#rebuildObjectIndex();
 
     if (markClean) {
-      this.#baseState = structuredClone(next);
+      this.#baseState = next;
       this.#baseVersion = this.region.version;
     }
 
@@ -315,7 +455,7 @@ export class Sandbox {
       state = result.state;
     }
 
-    return structuredClone(state);
+    return materializeState(state);
   }
 
   restoreCommandSequence({
@@ -354,7 +494,7 @@ export class Sandbox {
       state = result.state;
     }
 
-    this.#baseState = structuredClone(base);
+    this.#baseState = normalizeSandboxState(base);
     this.#baseVersion = nonNegativeInteger(
       baseVersion,
       "A versão-base recuperada"
@@ -362,7 +502,7 @@ export class Sandbox {
     this.#state = state;
     this.#undo = undo;
     this.#redo.length = 0;
-    this.#commands = structuredClone(sequence);
+    this.#commands = sequence.map(prepareSandboxCommand);
     this.#revision = restoredRevision;
     this.#rebuildObjectIndex();
     this.#notify([{
@@ -383,6 +523,8 @@ export class Sandbox {
       canUndo: this.canUndo,
       canRedo: this.canRedo,
       subscriberCount: this.#subscribers.size,
+      objectStorage: persistentObjectArrayDiagnostics(this.#state.objects),
+      instanceGraph: instanceGraphDiagnostics(this.#state),
       performance: Object.freeze({ ...this.#performance })
     });
   }
@@ -391,8 +533,8 @@ export class Sandbox {
     return Object.freeze({
       regionId: this.region.descriptor.id,
       baseVersion: this.#baseVersion,
-      commands: structuredClone(this.#commands),
-      proposedState: this.getState(),
+      commands: this.#commands.map(cloneCommandForExport),
+      proposedState: materializeState(this.#state),
       createdAt: new Date().toISOString()
     });
   }
@@ -432,8 +574,15 @@ export class Sandbox {
 
   #reducerContext() {
     return Object.freeze({
-      hasObject: id => this.#objectsById.has(String(id)),
-      getObject: id => this.#objectsById.get(String(id)) ?? null
+      hasObject: id => Boolean(this.getObject(id)),
+      getObject: id => this.getObject(id),
+      getRawObject: id => this.#objectsById.get(String(id)) ?? null,
+      getObjectPosition: id => this.getObjectPosition(id),
+      getInstanceOccurrence: id => this.getInstanceOccurrence(id),
+      getObjectWorldMatrix: id => this.getObjectWorldMatrix(id),
+      getObjectParentWorldMatrix: id => this.getObjectParentWorldMatrix(id),
+      getObjectDescendantIds: (ids, options) =>
+        this.getObjectDescendantIds(ids, options)
     });
   }
 
@@ -449,10 +598,24 @@ export class Sandbox {
       return list;
     }
 
-    const createdCount = list.filter(
+    const createdChanges = list.filter(
       change => change.type === "object-created"
-    ).length;
+    );
+    const createdCount = createdChanges.length;
     const createdOffset = after.objects.length - createdCount;
+    const appendOnlyCreates = createdCount > 0
+      && createdOffset >= 0
+      && createdChanges.every((change, index) => {
+        const id = String(change.objectId ?? change.object?.id ?? "");
+        return id && String(after.objects[createdOffset + index]?.id ?? "") === id;
+      });
+    let createdPositionById = null;
+    if (createdCount > 0 && !appendOnlyCreates) {
+      createdPositionById = new Map();
+      for (let index = 0; index < after.objects.length; index += 1) {
+        createdPositionById.set(String(after.objects[index]?.id ?? ""), index);
+      }
+    }
     let createdIndex = 0;
     const materialized = [];
 
@@ -464,10 +627,14 @@ export class Sandbox {
 
       let objectPosition = null;
       if (change.type === "object-created") {
-        const position = createdOffset + createdIndex;
+        const position = appendOnlyCreates
+          ? createdOffset + createdIndex
+          : createdPositionById?.get(id);
         createdIndex += 1;
-        objectPosition = position;
-        object ??= after.objects[position] ?? null;
+        if (Number.isInteger(position)) {
+          objectPosition = position;
+          object ??= after.objects[position] ?? null;
+        }
       } else if (change.type !== "object-deleted" && !object) {
         const position = this.#objectPositionsValid
           ? this.#objectPositions.get(id)
@@ -544,6 +711,17 @@ export class Sandbox {
     }
   }
 
+  #ensureObjectPositions() {
+    if (this.#objectPositionsValid) return;
+    this.#objectPositions.clear();
+    let index = 0;
+    for (const object of this.#state.objects) {
+      this.#objectPositions.set(String(object.id), index);
+      index += 1;
+    }
+    this.#objectPositionsValid = true;
+  }
+
   #attachObjectToParentIndex(idValue, parentValue) {
     const id = String(idValue);
     const key = hierarchyParentKey(parentValue);
@@ -615,10 +793,16 @@ function invertObjectChanges(changes) {
       const object = change.previousObject;
       if (!object) return Object.freeze([]);
       inverse.push(Object.freeze({
-        type: "object-updated",
+        type: change.type,
         objectId: id,
         object,
-        previousObject: change.object
+        previousObject: change.object,
+        ...(Array.isArray(change.affectedOccurrenceIds)
+          ? { affectedOccurrenceIds: change.affectedOccurrenceIds }
+          : {}),
+        ...(Array.isArray(change.occurrenceChanges)
+          ? { occurrenceChanges: change.occurrenceChanges }
+          : {})
       }));
       continue;
     }
@@ -631,18 +815,30 @@ function hierarchyParentKey(value) {
   return value === null || value === undefined ? "@root" : `@${String(value)}`;
 }
 
-function validateState(value) {
-  const state = structuredClone(value);
-  if (
-    !state ||
-    typeof state !== "object" ||
-    !Array.isArray(state.objects)
-  ) {
-    throw new TypeError(
-      "O estado do sandbox deve conter um array objects."
-    );
+function occurrenceRootId(value) {
+  const id = String(value ?? "");
+  if (!id.startsWith("@ig/")) return null;
+  const body = id.slice(4);
+  const slash = body.indexOf("/");
+  if (slash <= 0) return null;
+  try {
+    return decodeURIComponent(body.slice(0, slash));
+  } catch {
+    return null;
   }
-  return state;
+}
+
+function identityMatrix() {
+  return [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1
+  ];
+}
+
+function validateState(value) {
+  return normalizeSandboxState(value);
 }
 
 function performanceNow() {
@@ -657,7 +853,96 @@ function validateCommands(value) {
       "A sequência de comandos recuperada deve ser um array."
     );
   }
-  return structuredClone(value);
+  return value.map(prepareSandboxCommand);
+}
+
+
+function normalizeSandboxState(value) {
+  if (!value || typeof value !== "object" || !Array.isArray(value.objects)) {
+    throw new TypeError("O estado do sandbox deve conter um array objects.");
+  }
+  const objects = isPersistentObjectArray(value.objects)
+    ? value.objects
+    : createPersistentObjectArray(
+        value.objects.map(object => freezeObjectShell(object))
+      );
+  const instanceGraph = value.instanceGraph
+    ? normalizeInstanceGraph(value.instanceGraph)
+    : emptyInstanceGraph();
+  if (
+    objects === value.objects &&
+    instanceGraph === value.instanceGraph &&
+    Object.isFrozen(value)
+  ) return value;
+  return Object.freeze({ ...value, objects, instanceGraph });
+}
+
+function freezeObjectShell(value) {
+  if (!value || typeof value !== "object") return value;
+  if (Object.isFrozen(value)) return value;
+  const object = { ...value };
+  for (const key of ["position", "rotation", "scale"]) {
+    if (Array.isArray(object[key]) && !Object.isFrozen(object[key])) {
+      object[key] = Object.freeze([...object[key]]);
+    }
+  }
+  for (const key of [
+    "geometry", "sketch", "material", "appearanceBinding", "family",
+    "camera", "light", "instanceState"
+  ]) {
+    if (object[key] && typeof object[key] === "object") {
+      object[key] = deepFreeze(object[key]);
+    }
+  }
+  return Object.freeze(object);
+}
+
+function cloneStateShell(state) {
+  return Object.freeze({
+    ...state,
+    objects: state.objects
+  });
+}
+
+function materializeState(state) {
+  return {
+    ...state,
+    instanceGraph: cloneExportValue(state.instanceGraph ?? emptyInstanceGraph()),
+    objects: materializePersistentObjectArray(state.objects).map(
+      cloneObjectForExport
+    )
+  };
+}
+
+function cloneObjectForExport(object) {
+  const result = {};
+  for (const [key, value] of Object.entries(object ?? {})) {
+    result[key] = cloneExportValue(value);
+  }
+  return result;
+}
+
+function cloneExportValue(value) {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(cloneExportValue);
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, cloneExportValue(child)])
+  );
+}
+
+function prepareSandboxCommand(command) {
+  if (!command || typeof command !== "object") return command;
+  if (command.type === "selection.duplicate" && Array.isArray(command.objects)) {
+    return deepFreeze({
+      ...command,
+      objects: Object.freeze(command.objects.map(object => freezeObjectShell(object)))
+    });
+  }
+  return deepFreeze(structuredClone(command));
+}
+
+function cloneCommandForExport(command) {
+  return cloneExportValue(command);
 }
 
 function nonNegativeInteger(value, label) {

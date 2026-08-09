@@ -1016,6 +1016,7 @@ export class PathSketchController {
       object.visible = points.length > 0;
     }
     this.#scheduleResultPreview(points);
+    this.renderer.invalidateRender?.("path-sketch-input-preview");
   }
 
   #ensureInputCapacity(pointCount) {
@@ -1139,6 +1140,7 @@ export class PathSketchController {
         this.#clearResultPreview();
       }
     }
+    this.renderer.invalidateRender?.("path-sketch-result-preview");
     this.#notify();
   }
 
@@ -1154,10 +1156,15 @@ export class PathSketchController {
       this.#active.previewCount = rendered.previewCount;
       this.#active.previewTruncated = rendered.truncated;
     }
+    this.renderer.invalidateRender?.("path-sketch-array-preview");
   }
 
   #clearArrayPreview() {
+    const hadObjects = this.#previewArrayGroup.children.length > 0;
     this.#previewArrayCache.clear();
+    if (hadObjects) {
+      this.renderer.invalidateRender?.("path-sketch-array-clear");
+    }
   }
 
   #clearResultPreview() {
@@ -1171,6 +1178,7 @@ export class PathSketchController {
       this.#active.previewCount = 0;
       this.#active.previewTruncated = false;
     }
+    this.renderer.invalidateRender?.("path-sketch-result-clear");
   }
 
   #clearInputPreview() {
@@ -1179,6 +1187,7 @@ export class PathSketchController {
       object.geometry.setDrawRange(0, 0);
       object.visible = false;
     }
+    this.renderer.invalidateRender?.("path-sketch-input-clear");
   }
 
   #flushPendingResultPreview() {
@@ -1225,6 +1234,7 @@ export class PathSketchController {
         maximumInstances: 4096
       });
       this.renderer.scene.add(this.#previewArrayGroup);
+      this.renderer.invalidateRender?.("path-sketch-array-handoff");
       return handoff;
     }
     const handoff = {
@@ -1239,6 +1249,7 @@ export class PathSketchController {
     handoff.mesh.userData.pathSketchHandoff = true;
     this.#previewTube = createPreviewTube();
     this.renderer.scene.add(this.#previewTube);
+    this.renderer.invalidateRender?.("path-sketch-geometry-handoff");
     return handoff;
   }
 
@@ -1814,6 +1825,7 @@ export class PathSketchController {
     if (clear) {
       this.#previewTube.visible = false;
       this.#clearArrayPreview();
+      this.renderer.invalidateRender?.("path-sketch-handoff-clear");
     }
   }
 

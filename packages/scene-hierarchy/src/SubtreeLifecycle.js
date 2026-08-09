@@ -20,6 +20,7 @@ export function cloneHierarchySubtrees(
     createId,
     rename = ({ name }) => name,
     transformRoot = ({ clone }) => clone,
+    hasNode = null,
     maxNodes = 100000
   } = {}
 ) {
@@ -46,7 +47,16 @@ export function cloneHierarchySubtrees(
     );
   }
 
-  const reservedIds=new Set(nodes.map(node => String(node.id)));
+  const generatedIds = new Set();
+  const reservedIds = typeof hasNode === "function"
+    ? null
+    : new Set(nodes.map(node => String(node.id)));
+  const isReserved = id => generatedIds.has(id) ||
+    (reservedIds ? reservedIds.has(id) : Boolean(hasNode(id)));
+  const reserve = id => {
+    generatedIds.add(id);
+    reservedIds?.add(id);
+  };
   const objects=[];
   const duplicatedRootIds=[];
   const copiesResult=[];
@@ -59,14 +69,14 @@ export function cloneHierarchySubtrees(
       if (!id) {
         throw new HierarchyError("INVALID_NODE_ID","createId retornou ID inválido.");
       }
-      if (reservedIds.has(id)) {
+      if (isReserved(id)) {
         throw new HierarchyError(
           "DUPLICATE_NODE_ID",
           `Identificador duplicado durante clonagem: ${id}.`,
           { id }
         );
       }
-      reservedIds.add(id);
+      reserve(id);
       idMap.set(sourceId,id);
     }
 
@@ -74,9 +84,15 @@ export function cloneHierarchySubtrees(
     for (const sourceId of sourceIds) {
       const source=hierarchy.node(sourceId);
       const isRoot=rootSet.has(sourceId);
+      /*
+       * Recursos pesados (geometry/sketch/material/family) são imutáveis no
+       * modelo e devem continuar compartilhados entre duplicatas. Clonamos
+       * apenas o envelope lógico e os vetores de transformação.
+       */
       const clone={
-        ...structuredClone(source),
-        id:idMap.get(sourceId)
+        ...cloneNodeShell(source),
+        id:idMap.get(sourceId),
+        prototypeId: source.prototypeId ?? source.id
       };
       const parentId=hierarchy.parentOf(sourceId);
       if (parentId !== null) {
@@ -96,7 +112,7 @@ export function cloneHierarchySubtrees(
       const transformed=isRoot
         ? transformRoot({clone,source,sourceId,copyIndex})
         : clone;
-      const frozen=Object.freeze(structuredClone(transformed));
+      const frozen=freezeNodeShell(transformed);
       copyObjects.push(frozen);
       objects.push(frozen);
     }
@@ -110,7 +126,9 @@ export function cloneHierarchySubtrees(
     }));
   }
 
-  new HierarchyIndex([...nodes,...objects]);
+  /* A hierarquia de entrada já foi validada e cada parentId novo foi
+     resolvido acima. Evitamos reconstruir um HierarchyIndex O(N) apenas para
+     confirmar a clonagem. */
   return Object.freeze({
     sourceRootIds:Object.freeze([...roots]),
     sourceIds,
@@ -118,4 +136,21 @@ export function cloneHierarchySubtrees(
     duplicatedRootIds:Object.freeze(duplicatedRootIds),
     copies:Object.freeze(copiesResult)
   });
+}
+
+
+function cloneNodeShell(source) {
+  const clone = { ...source };
+  for (const key of ["position", "rotation", "scale"]) {
+    if (Array.isArray(source?.[key])) clone[key] = [...source[key]];
+  }
+  return clone;
+}
+
+function freezeNodeShell(value) {
+  const clone = cloneNodeShell(value);
+  for (const key of ["position", "rotation", "scale"]) {
+    if (Array.isArray(clone[key])) clone[key] = Object.freeze(clone[key]);
+  }
+  return Object.freeze(clone);
 }

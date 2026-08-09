@@ -63,6 +63,10 @@
       "target": "interface",
       "disposition": "convert-to-schema-derived-components"
     },
+    "packages/complexity-audit": {
+      "target": "kernel",
+      "disposition": "preserve-runtime-complexity-counters"
+    },
     "packages/core": {
       "target": "document",
       "disposition": "split-event-bus-into-kernel"
@@ -78,6 +82,11 @@
     "packages/edit-context": {
       "target": "authoring",
       "disposition": "preserve-operational-context"
+    },
+    "packages/edit-contracts": {
+      "target": "authoring",
+      "role": "diagnostics",
+      "disposition": "retain-outside-production-until-adopted"
     },
     "packages/edit-hud": {
       "target": "interface",
@@ -127,12 +136,16 @@
       "target": "renderer-three",
       "disposition": "preserve-batching"
     },
+    "packages/instance-graph": {
+      "target": "document",
+      "disposition": "preserve-compact-dag-and-derived-projection"
+    },
     "packages/local-viewers": {
       "target": "viewer",
       "disposition": "preserve-coordination-protocols"
     },
     "packages/math-affine": {
-      "target": "procedural",
+      "target": "kernel",
       "disposition": "preserve-pure-math"
     },
     "packages/measurement-tools": {
@@ -143,13 +156,42 @@
       "target": "interface",
       "disposition": "convert-to-declarative-components"
     },
+    "packages/mesh-attributes": {
+      "target": "authoring",
+      "disposition": "preserve-mesh-attribute-contracts"
+    },
     "packages/mesh-editor-core": {
       "target": "authoring",
       "disposition": "preserve-topology-core"
     },
+    "packages/mesh-geometric-identity": {
+      "target": "authoring",
+      "disposition": "preserve-stable-component-identity"
+    },
+    "packages/mesh-geometry-audit": {
+      "target": "platform-web",
+      "role": "diagnostics",
+      "disposition": "retain-as-geometry-correctness-gate"
+    },
+    "packages/mesh-tool-registry": {
+      "target": "authoring",
+      "disposition": "merge-with-authoring-tool-registry"
+    },
     "packages/object-inspector": {
       "target": "interface",
       "disposition": "convert-to-schema-derived-components"
+    },
+    "packages/object-picking": {
+      "target": "viewer",
+      "disposition": "preserve-derived-picking-contract"
+    },
+    "packages/occurrence-contracts": {
+      "target": "document",
+      "disposition": "preserve-public-occurrence-contracts"
+    },
+    "packages/occurrence-runtime": {
+      "target": "document",
+      "disposition": "merge-with-instance-graph-projection"
     },
     "packages/object-placement": {
       "target": "authoring",
@@ -174,6 +216,11 @@
     "packages/procedure-editor": {
       "target": "interface",
       "disposition": "split-editor-view-from-catalog-commands"
+    },
+    "packages/preview-contracts": {
+      "target": "viewer",
+      "role": "diagnostics",
+      "disposition": "retain-outside-production-until-adopted"
     },
     "packages/project-files": {
       "target": "document",
@@ -202,6 +249,11 @@
     "packages/renderer-three": {
       "target": "renderer-three",
       "disposition": "preserve-as-projection-adapter"
+    },
+    "packages/render-contracts": {
+      "target": "renderer-three",
+      "role": "diagnostics",
+      "disposition": "retain-outside-production-until-adopted"
     },
     "packages/resource-audit": {
       "target": "platform-web",
@@ -249,10 +301,18 @@
       "target": "procedural",
       "disposition": "preserve-segmented-compaction"
     },
+    "packages/temporal-runtime": {
+      "target": "viewer",
+      "disposition": "preserve-analytic-time-and-dependency-runtime"
+    },
     "packages/tests": {
       "target": "platform-web",
       "role": "diagnostics",
       "disposition": "remove-from-production-dependency-graph"
+    },
+    "packages/transform-hierarchy": {
+      "target": "document",
+      "disposition": "preserve-occurrence-aware-transform-kernel"
     },
     "packages/ui-config": {
       "target": "interface",

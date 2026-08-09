@@ -1,10 +1,10 @@
 import {
   ProjectSerializer
-} from "./ProjectSerializer.js?build=20260724-0029f";
-import { ProjectValidator } from "./ProjectValidator.js?build=20260727-0037c";
+} from "./ProjectSerializer.js?build=20260807-0052b";
+import { ProjectValidator } from "./ProjectValidator.js?build=20260807-0052b";
 
 export class ProjectService {
-  static apiVersion = "project-service-v6";
+  static apiVersion = "project-service-v7-instance-graph";
 
   #subscribers = new Set();
 
@@ -84,7 +84,7 @@ export class ProjectService {
       tool: { type: "transform", mode: "translate" },
       multiSelect: false,
       pivot: {
-        policy: "median",
+        policy: "anchor",
         editing: false,
         reference: "absolute",
         customPosition: [0, 0, 0],

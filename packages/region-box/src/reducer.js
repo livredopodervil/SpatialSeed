@@ -1,11 +1,32 @@
 import {
+  persistentObjectAppendMany,
+  persistentObjectRemoveIds,
+  persistentObjectUpdateAt,
+  persistentObjectUpdateMany
+} from "../../core/src/index.js?build=20260808-0053h";
+import {
+  compactHierarchyRoots,
+  duplicateReferenceRoots,
+  isInstanceNode,
+  replaceInstanceObjectDefinition,
+  replaceInstanceOccurrenceObjectDefinition,
+  resolveInstanceOccurrence,
+  updateInstanceOccurrenceRoot,
+  ungroupAssemblyInstance
+} from "../../instance-graph/src/index.js?build=20260807-0052b";
+import {
   applyWorldTransforms,
   groupNodes,
   hierarchySubtreeIds,
   HierarchyIndex,
   reparentPreservingWorld,
   ungroupNodes
-} from "../../scene-hierarchy/src/index.js";
+} from "../../scene-hierarchy/src/index.js?build=20260807-0051a";
+import {
+  decomposeTransformStrict,
+  invertAffineMatrix,
+  multiplyMatrices
+} from "../../math-affine/src/index.js";
 import {
   normalizeExplicitInstanceFamily
 } from "../../procedural-families/src/index.js?build=20260731-0044a";
@@ -21,39 +42,77 @@ import {
   normalizeSketchDescriptor
 } from "../../sketch-descriptor/src/index.js?build=20260802-0047g";
 
-function updateById(objects, id, updater) {
-  const index = objects.findIndex(object => object.id === id);
+function updateById(objects, id, updater, context = {}) {
+  const index = typeof context.getObjectPosition === "function"
+    ? context.getObjectPosition(id)
+    : objects.findIndex(object => object.id === id);
   if (index < 0) return objects;
-
-  const next = objects.slice();
-  next[index] = Object.freeze(updater(objects[index]));
-  return Object.freeze(next);
+  const current = typeof context.getObject === "function"
+    ? context.getObject(id) ?? objects[index]
+    : objects[index];
+  const nextObject = Object.freeze(updater(current));
+  return persistentObjectUpdateAt(objects, index, nextObject);
 }
 
-function updateMany(objects, transforms) {
-  const byId = new Map(
-    transforms.map(transform => [transform.id, transform])
-  );
-
-  let changed = false;
-
-  const next = objects.map(object => {
-    const transform = byId.get(object.id);
-    if (!transform) return object;
-
-    changed = true;
-    return Object.freeze({
-      ...object,
-      position: [...transform.position],
-      rotation: [...transform.rotation],
-      scale: [...transform.scale]
+function updateMany(objects, transforms, context = {}) {
+  const updates = [];
+  for (const transform of transforms ?? []) {
+    const index = typeof context.getObjectPosition === "function"
+      ? context.getObjectPosition(transform.id)
+      : objects.findIndex(object => object.id === transform.id);
+    if (index < 0) continue;
+    const object = typeof context.getObject === "function"
+      ? context.getObject(transform.id) ?? objects[index]
+      : objects[index];
+    updates.push({
+      index,
+      value: Object.freeze({
+        ...object,
+        position: Object.freeze([...transform.position]),
+        rotation: Object.freeze([...transform.rotation]),
+        scale: Object.freeze([...transform.scale])
+      })
     });
-  });
-
-  return changed ? Object.freeze(next) : objects;
+  }
+  return persistentObjectUpdateMany(objects, updates);
 }
 
 function applyObjectPatch(object, patch = {}) {
+  if (isInstanceNode(object)) {
+    const currentSelf = object.overrides?.$self ?? {};
+    const selfPatch = { ...patch };
+    if ("instanceState" in patch) {
+      selfPatch.instanceState = freezeInstanceState({
+        ...(currentSelf.instanceState ?? {}),
+        ...(patch.instanceState ?? {})
+      });
+    }
+    if ("camera" in patch) {
+      selfPatch.camera = freezeCamera({
+        ...(currentSelf.camera ?? {}),
+        ...(patch.camera ?? {})
+      });
+    }
+    if ("light" in patch) {
+      selfPatch.light = freezeLight({
+        ...(currentSelf.light ?? {}),
+        ...(patch.light ?? {})
+      });
+    }
+    if ("appearanceId" in patch) {
+      selfPatch.appearanceId = String(patch.appearanceId);
+      delete selfPatch.material;
+    }
+    const overrides = Object.freeze({
+      ...(object.overrides ?? {}),
+      $self: Object.freeze({
+        ...currentSelf,
+        ...selfPatch
+      })
+    });
+    return { ...object, overrides };
+  }
+
   const next = {
     ...object,
     ...patch
@@ -107,42 +166,229 @@ function applyObjectPatch(object, patch = {}) {
     );
   }
 
+  if (resourcePatchKeys(patch).length) {
+    next.prototypeId = newPrototypeId(object.id);
+    next.derivedFromPrototypeId = object.prototypeId ?? object.id;
+  }
+
   return next;
 }
 
-function applyPropertyUpdates(objects, command) {
-  const targetIds = [...(command.targetIds ?? [])];
+function applyPropertyUpdates(state, command, context = {}) {
+  const objects = state.objects;
+  const targetIds = [...(command.targetIds ?? [])].map(String);
   const updates = command.updates ?? [];
-
-  if (!targetIds.length || !updates.length) return objects;
-
+  if (!targetIds.length || !updates.length) {
+    return { objects, rootChanges: new Map(), changedTargets: [] };
+  }
   const uniqueTargets = new Set(targetIds);
-  const existingIds = new Set(objects.map(object => object.id));
-  const updateById = new Map(updates.map(update => [update.id, update]));
-
+  const updateByIdMap = new Map(updates.map(update => [String(update.id), update]));
   if (uniqueTargets.size !== targetIds.length) {
     throw new Error("Alvos de propriedades duplicados.");
   }
-
   for (const id of targetIds) {
-    if (!existingIds.has(id)) throw new Error(`Objeto inexistente: ${id}.`);
-    if (!updateById.has(id)) throw new Error(`Atualização ausente: ${id}.`);
+    const exists = typeof context.hasObject === "function"
+      ? context.hasObject(id)
+      : objects.some(object => String(object.id) === id);
+    if (!exists) throw new Error(`Objeto inexistente: ${id}.`);
+    if (!updateByIdMap.has(id)) throw new Error(`Atualização ausente: ${id}.`);
   }
-
   if (
     updates.length !== targetIds.length ||
-    updates.some(update => !uniqueTargets.has(update.id))
+    updates.some(update => !uniqueTargets.has(String(update.id)))
   ) {
     throw new Error("Atualizações de propriedades não correspondem aos alvos.");
   }
 
-  return Object.freeze(objects.map(object => {
-    const update = updateById.get(object.id);
-    return update
-      ? Object.freeze(applyObjectPatch(object, update.patch))
-      : object;
+  const indexed = [];
+  const rootChanges = new Map();
+  const changedTargets = [];
+  for (const id of targetIds) {
+    const occurrence = typeof context.getInstanceOccurrence === "function"
+      ? context.getInstanceOccurrence(id)
+      : null;
+    const update = updateByIdMap.get(id);
+    if (occurrence) {
+      const rootId = occurrence.rootId;
+      const existing = rootChanges.get(rootId);
+      const rootObject = existing?.value ?? context.getRawObject?.(rootId);
+      if (!rootObject) continue;
+      const currentOccurrence = resolveInstanceOccurrence(
+        state,
+        id,
+        { rootInstance: rootObject }
+      );
+      if (!currentOccurrence) continue;
+      const effective = applyObjectPatch(currentOccurrence.object, update.patch);
+      const occurrenceUpdate = occurrencePatchFromEffective(
+        currentOccurrence.object,
+        effective,
+        update.patch
+      );
+      const value = updateInstanceOccurrenceRoot(
+        rootObject,
+        currentOccurrence.path,
+        occurrenceUpdate
+      );
+      const index = context.getObjectPosition?.(rootId) ?? -1;
+      if (index < 0) continue;
+      rootChanges.set(rootId, {
+        index,
+        value,
+        previousObject: existing?.previousObject ?? rootObject,
+        affectedOccurrenceIds: [
+          ...(existing?.affectedOccurrenceIds ?? []),
+          id
+        ]
+      });
+      changedTargets.push(id);
+      continue;
+    }
+
+    const index = typeof context.getObjectPosition === "function"
+      ? context.getObjectPosition(id)
+      : objects.findIndex(object => String(object.id) === id);
+    if (index < 0) continue;
+    const object = typeof context.getObject === "function"
+      ? context.getObject(id) ?? objects[index]
+      : objects[index];
+    indexed.push({
+      index,
+      value: Object.freeze(applyObjectPatch(object, update.patch))
+    });
+    changedTargets.push(id);
+  }
+  for (const entry of rootChanges.values()) {
+    indexed.push({ index: entry.index, value: entry.value });
+  }
+  return {
+    objects: persistentObjectUpdateMany(objects, indexed),
+    rootChanges,
+    changedTargets
+  };
+}
+
+function occurrencePatchFromEffective(before, after, requestedPatch = {}) {
+  const update = {};
+  if (
+    "position" in requestedPatch ||
+    "rotation" in requestedPatch ||
+    "scale" in requestedPatch
+  ) {
+    update.transform = {
+      position: after.position ?? before.position ?? [0, 0, 0],
+      rotation: after.rotation ?? before.rotation ?? [0, 0, 0, 1],
+      scale: after.scale ?? before.scale ?? [1, 1, 1]
+    };
+  }
+  if ("name" in requestedPatch) update.name = after.name;
+  if ("pivot" in requestedPatch) update.pivot = after.pivot;
+  const reserved = new Set(["position", "rotation", "scale", "name", "pivot"]);
+  const patch = {};
+  for (const key of Object.keys(requestedPatch)) {
+    if (!reserved.has(key)) patch[key] = after[key];
+  }
+  if (Object.keys(patch).length) update.patch = patch;
+  return update;
+}
+
+function applyLocalTransforms(state, transforms, context = {}) {
+  const indexed = [];
+  const rootChanges = new Map();
+  const changedTargets = [];
+  for (const transform of transforms ?? []) {
+    const id = String(transform?.id ?? "");
+    if (!id) continue;
+    const occurrence = context.getInstanceOccurrence?.(id) ?? null;
+    if (occurrence) {
+      const rootId = occurrence.rootId;
+      const existing = rootChanges.get(rootId);
+      const rootObject = existing?.value ?? context.getRawObject?.(rootId);
+      if (!rootObject) continue;
+      const currentOccurrence = resolveInstanceOccurrence(state, id, { rootInstance: rootObject });
+      if (!currentOccurrence) continue;
+      const value = updateInstanceOccurrenceRoot(
+        rootObject,
+        currentOccurrence.path,
+        {
+          transform: {
+            position: transform.position,
+            rotation: transform.rotation,
+            scale: transform.scale
+          }
+        }
+      );
+      const index = context.getObjectPosition?.(rootId) ?? -1;
+      if (index < 0) continue;
+      rootChanges.set(rootId, {
+        index,
+        value,
+        previousObject: existing?.previousObject ?? rootObject,
+        affectedOccurrenceIds: [
+          ...(existing?.affectedOccurrenceIds ?? []),
+          id
+        ]
+      });
+      changedTargets.push(id);
+      continue;
+    }
+    const index = context.getObjectPosition?.(id) ?? -1;
+    if (index < 0) continue;
+    const object = context.getRawObject?.(id) ?? state.objects[index];
+    indexed.push({
+      index,
+      value: Object.freeze({
+        ...object,
+        position: Object.freeze([...transform.position]),
+        rotation: Object.freeze([...transform.rotation]),
+        scale: Object.freeze([...transform.scale])
+      })
+    });
+    changedTargets.push(id);
+  }
+  for (const entry of rootChanges.values()) indexed.push({ index: entry.index, value: entry.value });
+  return {
+    objects: persistentObjectUpdateMany(state.objects, indexed),
+    rootChanges,
+    changedTargets
+  };
+}
+
+function localTransformsFromWorld(transforms, context = {}) {
+  return (transforms ?? []).map(transform => {
+    const id = String(transform?.id ?? "");
+    const occurrence = context.getInstanceOccurrence?.(id) ?? null;
+    if (!occurrence) return null;
+    const parentWorld = context.getObjectParentWorldMatrix?.(id);
+    if (!parentWorld) return null;
+    const localMatrix = multiplyMatrices(
+      invertAffineMatrix(parentWorld),
+      transform.worldMatrix
+    );
+    const local = decomposeTransformStrict(localMatrix);
+    return {
+      id,
+      position: local.position,
+      rotation: local.rotation,
+      scale: local.scale
+    };
+  }).filter(Boolean);
+}
+
+function occurrenceRootChanges(rootChanges, source, type = "object-updated") {
+  return [...rootChanges.entries()].map(([rootId, entry]) => ({
+    type,
+    objectId: rootId,
+    object: entry.value,
+    previousObject: entry.previousObject,
+    source,
+    affectedOccurrenceIds: Object.freeze([...new Set(entry.affectedOccurrenceIds ?? [])]),
+    occurrenceChanges: Object.freeze([...new Set(entry.affectedOccurrenceIds ?? [])].map(
+      occurrenceId => Object.freeze({ occurrenceId, type: "sync" })
+    ))
   }));
 }
+
 
 export function boxRegionReducer(state, command, context = {}) {
   switch (command.type) {
@@ -151,12 +397,15 @@ export function boxRegionReducer(state, command, context = {}) {
       if (!id) {
         throw new TypeError("Câmera persistente exige id.");
       }
-      if (state.objects.some(object => object.id === id)) {
+      if (typeof context.hasObject === "function"
+        ? context.hasObject(id)
+        : state.objects.some(object => object.id === id)) {
         throw new Error(`Duplicate object id: ${id}`);
       }
       const camera = freezeCamera(command.camera);
       const object = Object.freeze({
         id,
+        prototypeId: command.prototypeId ?? id,
         kind: "camera",
         name: String(command.name ?? id),
         parentId: command.parentId ?? null,
@@ -173,8 +422,8 @@ export function boxRegionReducer(state, command, context = {}) {
         scale: Object.freeze([1, 1, 1]),
         camera
       });
-      const objects = Object.freeze([...state.objects, object]);
-      new HierarchyIndex(objects);
+      const objects = persistentObjectAppendMany(state.objects, [object]);
+      validateNewParent(object, context);
       const makeDefault = Boolean(command.makeDefault);
       return {
         state: Object.freeze({
@@ -201,7 +450,9 @@ export function boxRegionReducer(state, command, context = {}) {
 
     case "camera.update": {
       const id = String(command.id ?? "").trim();
-      const current = state.objects.find(object => object.id === id);
+      const current = typeof context.getObject === "function"
+        ? context.getObject(id)
+        : state.objects.find(object => object.id === id);
       if (!current || current.kind !== "camera") {
         throw new Error(`Câmera persistente inexistente: ${id}.`);
       }
@@ -237,7 +488,8 @@ export function boxRegionReducer(state, command, context = {}) {
           rotation: nextRotation,
           scale: object.scale ?? [1, 1, 1],
           camera: nextCamera
-        })
+        }),
+        context
       );
       return {
         state: Object.freeze({ ...state, objects }),
@@ -254,9 +506,10 @@ export function boxRegionReducer(state, command, context = {}) {
         ? null
         : String(command.id).trim();
       if (id !== null) {
-        const camera = state.objects.find(object =>
-          object.id === id && object.kind === "camera"
-        );
+        const candidate = typeof context.getObject === "function"
+          ? context.getObject(id)
+          : state.objects.find(object => object.id === id);
+        const camera = candidate?.kind === "camera" ? candidate : null;
         if (!camera) {
           throw new Error(`Câmera persistente inexistente: ${id}.`);
         }
@@ -280,11 +533,14 @@ export function boxRegionReducer(state, command, context = {}) {
     case "light.create": {
       const id = String(command.id ?? "").trim();
       if (!id) throw new TypeError("Luz persistente exige id.");
-      if (state.objects.some(object => object.id === id)) {
+      if (typeof context.hasObject === "function"
+        ? context.hasObject(id)
+        : state.objects.some(object => object.id === id)) {
         throw new Error(`Duplicate object id: ${id}`);
       }
       const object = Object.freeze({
         id,
+        prototypeId: command.prototypeId ?? id,
         kind: "light",
         name: String(command.name ?? id),
         parentId: command.parentId ?? null,
@@ -301,8 +557,8 @@ export function boxRegionReducer(state, command, context = {}) {
         scale: Object.freeze([1, 1, 1]),
         light: freezeLight(command.light)
       });
-      const objects = Object.freeze([...state.objects, object]);
-      new HierarchyIndex(objects);
+      const objects = persistentObjectAppendMany(state.objects, [object]);
+      validateNewParent(object, context);
       return {
         state: Object.freeze({ ...state, objects }),
         changes: [{ type: "object-created", objectId: id, object }]
@@ -331,7 +587,8 @@ export function boxRegionReducer(state, command, context = {}) {
       const objects = updateById(
         state.objects,
         objectId,
-        () => object
+        () => object,
+        context
       );
       return {
         state: Object.freeze({ ...state, objects }),
@@ -346,19 +603,20 @@ export function boxRegionReducer(state, command, context = {}) {
 
     case "stroke-logical-group.create": {
       const target = freezeStrokeBundleObject(command.object, context);
-      const existingIds = new Set(state.objects.map(object => String(object.id)));
-      if (existingIds.has(String(target.id))) {
+      if (typeof context.hasObject === "function"
+        ? context.hasObject(target.id)
+        : state.objects.some(object => String(object.id) === String(target.id))) {
         throw new Error(`Duplicate object id: ${target.id}`);
       }
-      const withTarget = Object.freeze([...state.objects, target]);
+      const withTarget = persistentObjectAppendMany(state.objects, [target]);
       const existingGroupId = command.existingGroupId == null
         ? null
         : String(command.existingGroupId);
 
       if (existingGroupId !== null) {
-        const group = state.objects.find(object =>
-          String(object.id) === existingGroupId
-        );
+        const group = typeof context.getObject === "function"
+          ? context.getObject(existingGroupId)
+          : state.objects.find(object => String(object.id) === existingGroupId);
         if (!group || group.kind !== "group") {
           throw new Error(`Grupo lógico inexistente: ${existingGroupId}.`);
         }
@@ -450,12 +708,14 @@ export function boxRegionReducer(state, command, context = {}) {
           (value, axis) => Number(value) + positionDelta[axis]
         )),
         geometry,
+        prototypeId: newPrototypeId(objectId),
+        derivedFromPrototypeId: existing.prototypeId ?? existing.id,
         selectionAnchorPolicy: geometry.selectionAnchorPolicy,
         ...(geometry.selectionAnchorLocal
           ? { selectionAnchorLocal: geometry.selectionAnchorLocal }
           : {})
       });
-      const objects = updateById(state.objects, objectId, () => object);
+      const objects = updateById(state.objects, objectId, () => object, context);
       return {
         state: Object.freeze({ ...state, objects }),
         changes: [{
@@ -486,12 +746,14 @@ export function boxRegionReducer(state, command, context = {}) {
       const object = Object.freeze({
         ...existing,
         geometry,
+        prototypeId: newPrototypeId(objectId),
+        derivedFromPrototypeId: existing.prototypeId ?? existing.id,
         selectionAnchorPolicy: geometry.selectionAnchorPolicy,
         ...(geometry.selectionAnchorLocal
           ? { selectionAnchorLocal: geometry.selectionAnchorLocal }
           : {})
       });
-      const objects = updateById(state.objects, objectId, () => object);
+      const objects = updateById(state.objects, objectId, () => object, context);
       return {
         state: Object.freeze({ ...state, objects }),
         changes: [{
@@ -640,6 +902,7 @@ export function boxRegionReducer(state, command, context = {}) {
       const family = normalizeExplicitInstanceFamily(command.family);
       const object = Object.freeze({
         id,
+        prototypeId: command.prototypeId ?? id,
         kind: "instance-family",
         name: String(command.name ?? id),
         parentId: command.parentId ?? null,
@@ -690,7 +953,7 @@ export function boxRegionReducer(state, command, context = {}) {
       return {
         state: Object.freeze({
           ...state,
-          objects: Object.freeze([...state.objects, object])
+          objects: persistentObjectAppendMany(state.objects, [object])
         }),
         changes: [{
           type: "object-created",
@@ -707,11 +970,12 @@ export function boxRegionReducer(state, command, context = {}) {
         : null;
       const object = Object.freeze({
         id: command.id,
+        prototypeId: command.prototypeId ?? command.id,
         kind: command.kind ?? geometry?.type ?? "box",
         name: command.name ?? command.id,
-        position: command.position ?? [0, 1, 0],
+        position: Object.freeze([...(command.position ?? [0, 1, 0])]),
         rotation: Object.freeze([...(command.rotation ?? [0, 0, 0, 1])]),
-        scale: [1, 1, 1],
+        scale: Object.freeze([1, 1, 1]),
         ...(geometry
           ? { geometry }
           : { size: command.size ?? [2, 2, 2] }),
@@ -743,7 +1007,7 @@ export function boxRegionReducer(state, command, context = {}) {
       return {
         state: Object.freeze({
           ...state,
-          objects: Object.freeze([...state.objects, object])
+          objects: persistentObjectAppendMany(state.objects, [object])
         }),
         changes: [{
           type: "object-created",
@@ -755,6 +1019,99 @@ export function boxRegionReducer(state, command, context = {}) {
 
     case "object.geometry.replace": {
       const geometry = freezeGeometry(command.geometry);
+      const current = typeof context.getObject === "function"
+        ? context.getObject(command.id)
+        : state.objects.find(object => String(object.id) === String(command.id));
+      if (!current) return { state, changes: [] };
+
+      const occurrence = context.getInstanceOccurrence?.(command.id) ?? null;
+      if (occurrence) {
+        const payload = {
+          ...occurrence.object,
+          kind: geometry.type,
+          geometry,
+          ...(command.sketch
+            ? { sketch: normalizeSketchDescriptor(command.sketch) }
+            : {})
+        };
+        for (const key of [
+          "id", "parentId", "position", "rotation", "scale", "name",
+          "definitionId", "instanceKind", "projectedInstance",
+          "instanceRootId", "instancePath"
+        ]) delete payload[key];
+        const result = replaceInstanceOccurrenceObjectDefinition(
+          state,
+          command.id,
+          payload,
+          {
+            prototypeId: newPrototypeId(command.id),
+            rootInstance: context.getRawObject?.(occurrence.rootId) ?? occurrence.rootInstance
+          }
+        );
+        if (!result.changed) return { state, changes: [] };
+        const index = context.getObjectPosition?.(occurrence.rootId) ?? -1;
+        if (index < 0) return { state, changes: [] };
+        const objects = persistentObjectUpdateAt(state.objects, index, result.rootInstance);
+        return {
+          state: Object.freeze({
+            ...state,
+            objects,
+            instanceGraph: result.graph
+          }),
+          changes: [{
+            type: "object-updated",
+            objectId: occurrence.rootId,
+            object: result.rootInstance,
+            previousObject: occurrence.rootInstance,
+            source: command.source ?? "object.geometry.replace",
+            affectedOccurrenceIds: Object.freeze([String(command.id)]),
+            occurrenceChanges: Object.freeze([{
+              occurrenceId: String(command.id),
+              type: "sync"
+            }])
+          }]
+        };
+      }
+
+      if (isInstanceNode(current)) {
+        const effective = resolveEffectiveInstanceForReducer(state, current);
+        const payload = {
+          ...effective,
+          kind: geometry.type,
+          geometry,
+          ...(command.sketch
+            ? { sketch: normalizeSketchDescriptor(command.sketch) }
+            : {})
+        };
+        delete payload.id;
+        delete payload.parentId;
+        delete payload.position;
+        delete payload.rotation;
+        delete payload.scale;
+        delete payload.name;
+        delete payload.definitionId;
+        delete payload.instanceKind;
+        delete payload.projectedInstance;
+        delete payload.instanceRootId;
+        delete payload.instancePath;
+        const result = replaceInstanceObjectDefinition(
+          state,
+          command.id,
+          payload,
+          { prototypeId: newPrototypeId(command.id) }
+        );
+        if (!result.changed) return { state, changes: [] };
+        return {
+          state: Object.freeze(result.scene),
+          changes: [{
+            type: "object-updated",
+            objectId: command.id,
+            object: result.instance,
+            source: command.source ?? "object.geometry.replace"
+          }]
+        };
+      }
+
       const objects = updateById(
         state.objects,
         command.id,
@@ -764,8 +1121,11 @@ export function boxRegionReducer(state, command, context = {}) {
           geometry,
           ...(command.sketch
             ? { sketch: normalizeSketchDescriptor(command.sketch) }
-            : {})
-        })
+            : {}),
+          prototypeId: newPrototypeId(command.id),
+          derivedFromPrototypeId: object.prototypeId ?? object.id
+        }),
+        context
       );
       if (objects === state.objects) return { state, changes: [] };
       return {
@@ -779,57 +1139,123 @@ export function boxRegionReducer(state, command, context = {}) {
     }
 
     case "object.transform": {
-      const objects = updateById(
-        state.objects,
-        command.id,
-        object => ({
-          ...object,
-          position: [...command.position],
-          rotation: [...command.rotation],
-          scale: [...command.scale]
-        })
+      const result = applyLocalTransforms(state, [{
+        id: command.id,
+        position: command.position,
+        rotation: command.rotation,
+        scale: command.scale
+      }], context);
+      if (result.objects === state.objects) return { state, changes: [] };
+      const occurrenceChanges = occurrenceRootChanges(
+        result.rootChanges,
+        command.source ?? "object.transform",
+        "object-transform"
       );
-
-      if (objects === state.objects) {
-        return { state, changes: [] };
-      }
-
+      const occurrenceRoots = new Set(result.rootChanges.keys());
       return {
-        state: Object.freeze({ ...state, objects }),
-        changes: [{
-          type: "object-transform",
-          objectId: command.id
-        }]
+        state: Object.freeze({ ...state, objects: result.objects }),
+        changes: [
+          ...result.changedTargets
+            .filter(id => !context.getInstanceOccurrence?.(id))
+            .map(objectId => ({ type: "object-transform", objectId })),
+          ...occurrenceChanges
+        ].filter(change => !occurrenceRoots.has(change.objectId) || change.occurrenceChanges)
       };
     }
 
     case "object.update": {
+      const occurrence = context.getInstanceOccurrence?.(command.id) ?? null;
+      if (occurrence) {
+        const rootObject = context.getRawObject?.(occurrence.rootId);
+        const index = context.getObjectPosition?.(occurrence.rootId) ?? -1;
+        if (!rootObject || index < 0) return { state, changes: [] };
+        const effective = applyObjectPatch(occurrence.object, command.patch);
+        const nextRoot = updateInstanceOccurrenceRoot(
+          rootObject,
+          occurrence.path,
+          occurrencePatchFromEffective(occurrence.object, effective, command.patch)
+        );
+        const objects = persistentObjectUpdateAt(state.objects, index, nextRoot);
+        return {
+          state: Object.freeze({ ...state, objects }),
+          changes: [{
+            type: "object-updated",
+            objectId: occurrence.rootId,
+            object: nextRoot,
+            previousObject: rootObject,
+            affectedOccurrenceIds: Object.freeze([String(command.id)]),
+            occurrenceChanges: Object.freeze([{ occurrenceId: String(command.id), type: "sync" }])
+          }]
+        };
+      }
       const objects = updateById(
         state.objects,
         command.id,
-        object => applyObjectPatch(object, command.patch)
+        object => applyObjectPatch(object, command.patch),
+        context
       );
       if (objects === state.objects) return { state, changes: [] };
       return { state: Object.freeze({ ...state, objects }), changes: [{ type: "object-updated", objectId: command.id }] };
     }
 
     case "selection.properties.set": {
-      const objects = applyPropertyUpdates(state.objects, command);
-      if (objects === state.objects) return { state, changes: [] };
-
+      const result = applyPropertyUpdates(state, command, context);
+      if (result.objects === state.objects) return { state, changes: [] };
+      const occurrenceTargets = new Set(
+        [...result.rootChanges.values()].flatMap(entry => entry.affectedOccurrenceIds ?? [])
+      );
       return {
-        state: Object.freeze({ ...state, objects }),
-        changes: command.targetIds.map(objectId => ({
-          type: "object-updated",
-          objectId,
-          source: "selection.properties"
-        }))
+        state: Object.freeze({ ...state, objects: result.objects }),
+        changes: [
+          ...result.changedTargets
+            .filter(id => !occurrenceTargets.has(id))
+            .map(objectId => ({
+              type: "object-updated",
+              objectId,
+              source: "selection.properties"
+            })),
+          ...occurrenceRootChanges(result.rootChanges, "selection.properties")
+        ]
+      };
+    }
+
+    case "selection.duplicate-reference": {
+      const result = duplicateReferenceRoots(
+        state,
+        command.copies ?? []
+      );
+      if (!result.changed) return { state, changes: [] };
+      const compactedIds = new Set(
+        result.compacted?.rootInstances?.map(object => String(object.id)) ?? []
+      );
+      const removedIds = result.compacted?.removedIds ?? [];
+      return {
+        state: Object.freeze(result.scene),
+        changes: [
+          ...[...compactedIds].map(objectId => ({
+            type: "object-updated",
+            objectId,
+            object: result.scene.objects.find(object => String(object.id) === objectId),
+            source: "instance-graph.compact"
+          })),
+          ...removedIds.map(objectId => ({
+            type: "object-deleted",
+            objectId,
+            source: "instance-graph.compact"
+          })),
+          ...result.created.map(object => ({
+            type: "object-created",
+            objectId: object.id,
+            object,
+            source: command.source ?? "selection.duplicate-reference"
+          }))
+        ]
       };
     }
 
     case "selection.duplicate": {
       const incoming = (command.objects ?? []).map(object =>
-        Object.freeze(structuredClone(object))
+        freezeDuplicateObject(object)
       );
       if (!incoming.length) return { state, changes: [] };
 
@@ -855,7 +1281,7 @@ export function boxRegionReducer(state, command, context = {}) {
         hasExisting,
         incomingIds
       });
-      const objects = Object.freeze([...state.objects, ...incoming]);
+      const objects = persistentObjectAppendMany(state.objects, incoming);
 
       return {
         state: Object.freeze({
@@ -872,73 +1298,155 @@ export function boxRegionReducer(state, command, context = {}) {
     }
 
     case "selection.delete": {
-      const requestedIds=command.ids ?? [];
+      const requestedIds = [...new Set((command.ids ?? []).map(String).filter(Boolean))];
       if (!requestedIds.length) return { state, changes: [] };
-      const ids=new Set(hierarchySubtreeIds(state.objects,requestedIds));
+      const rawObject = id => typeof context.getRawObject === "function"
+        ? context.getRawObject(id)
+        : state.objects.find(object => String(object.id) === String(id)) ?? null;
+      const objectPosition = id => typeof context.getObjectPosition === "function"
+        ? context.getObjectPosition(id)
+        : state.objects.findIndex(object => String(object.id) === String(id));
 
-      const removed = state.objects.filter(object => ids.has(object.id));
-      if (!removed.length) return { state, changes: [] };
+      const occurrenceDescriptors = requestedIds
+        .map(id => context.getInstanceOccurrence?.(id) ?? null)
+        .filter(Boolean);
+      const occurrenceByRoot = new Map();
+      for (const occurrence of occurrenceDescriptors) {
+        const list = occurrenceByRoot.get(occurrence.rootId) ?? [];
+        list.push(occurrence);
+        occurrenceByRoot.set(occurrence.rootId, list);
+      }
+      // If an authoritative root itself is deleted, no descendant override is needed.
+      const requestedAuthoritative = new Set(
+        requestedIds.filter(id => Boolean(rawObject(id)))
+      );
 
-      const nextState = {
-        ...state,
-        objects: Object.freeze(state.objects.filter(object => !ids.has(object.id)))
-      };
-      const defaultRemoved = ids.has(state.defaultCameraId);
+      const rootUpdates = new Map();
+      for (const [rootId, descriptors] of occurrenceByRoot) {
+        if (requestedAuthoritative.has(rootId)) continue;
+        const canonical = descriptors.filter(candidate => !descriptors.some(other =>
+          other !== candidate &&
+          candidate.path.length > other.path.length &&
+          other.path.every((slot, index) => candidate.path[index] === slot)
+        ));
+        let rootObject = rawObject(rootId);
+        const index = objectPosition(rootId);
+        if (!rootObject || index < 0) continue;
+        const previousObject = rootObject;
+        const affectedOccurrenceIds = [];
+        for (const occurrence of canonical) {
+          rootObject = updateInstanceOccurrenceRoot(
+            rootObject,
+            occurrence.path,
+            { hidden: true }
+          );
+          affectedOccurrenceIds.push(occurrence.id);
+        }
+        rootUpdates.set(rootId, {
+          index,
+          value: rootObject,
+          previousObject,
+          affectedOccurrenceIds
+        });
+      }
+
+      const authoritativeIds = new Set();
+      for (const id of requestedIds) {
+        const raw = rawObject(id);
+        if (!raw) continue;
+        if (isInstanceNode(raw) || command.expandedSubtree === true) {
+          authoritativeIds.add(id);
+          continue;
+        }
+        const subtree = context.getObjectDescendantIds?.([id], { includeRoots: true }) ?? [id];
+        for (const childId of subtree) {
+          if (rawObject(childId)) authoritativeIds.add(String(childId));
+        }
+      }
+
+      let objects = state.objects;
+      if (rootUpdates.size) {
+        objects = persistentObjectUpdateMany(
+          objects,
+          [...rootUpdates.values()].map(entry => ({ index: entry.index, value: entry.value }))
+        );
+      }
+      const removed = [...authoritativeIds]
+        .map(id => rawObject(id))
+        .filter(Boolean);
+      if (authoritativeIds.size) objects = persistentObjectRemoveIds(objects, authoritativeIds);
+      if (objects === state.objects) return { state, changes: [] };
+
+      const nextState = { ...state, objects };
+      const defaultRemoved = authoritativeIds.has(String(state.defaultCameraId ?? ""));
       if (defaultRemoved) delete nextState.defaultCameraId;
       return {
         state: Object.freeze(nextState),
         changes: [
+          ...occurrenceRootChanges(rootUpdates, command.source ?? "selection.delete"),
           ...removed.map(object => ({
-          type: "object-deleted",
-          objectId: object.id,
-          source: command.source ?? "selection.delete"
+            type: "object-deleted",
+            objectId: object.id,
+            object,
+            previousObject: object,
+            source: command.source ?? "selection.delete"
           })),
           ...(defaultRemoved
-            ? [{
-                type: "camera-default-changed",
-                objectId: null,
-                cameraId: null
-              }]
+            ? [{ type: "camera-default-changed", objectId: null, cameraId: null }]
             : [])
         ]
       };
     }
 
     case "selection.transform": {
-      const objects = updateMany(
-        state.objects,
-        command.transforms ?? []
+      const result = applyLocalTransforms(state, command.transforms ?? [], context);
+      if (result.objects === state.objects) return { state, changes: [] };
+      const occurrenceTargets = new Set(
+        [...result.rootChanges.values()].flatMap(entry => entry.affectedOccurrenceIds ?? [])
       );
-
-      if (objects === state.objects) {
-        return { state, changes: [] };
-      }
-
       return {
-        state: Object.freeze({ ...state, objects }),
-        changes: command.transforms.map(transform => ({
-          type: "object-transform",
-          objectId: transform.id,
-          source: "selection"
-        }))
+        state: Object.freeze({ ...state, objects: result.objects }),
+        changes: [
+          ...result.changedTargets
+            .filter(id => !occurrenceTargets.has(id))
+            .map(objectId => ({ type: "object-transform", objectId, source: "selection" })),
+          ...occurrenceRootChanges(result.rootChanges, "selection", "object-transform")
+        ]
       };
     }
 
     case "selection.transform-world": {
-      const objects=applyWorldTransforms(
-        state.objects,
-        command.transforms ?? []
-      );
-
+      const all = command.transforms ?? [];
+      const occurrenceWorld = all.filter(transform => context.getInstanceOccurrence?.(transform.id));
+      const authoritativeWorld = all.filter(transform => !context.getInstanceOccurrence?.(transform.id));
+      let objects = authoritativeWorld.length
+        ? applyWorldTransforms(state.objects, authoritativeWorld, context)
+        : state.objects;
+      let occurrenceResult = { objects, rootChanges: new Map(), changedTargets: [] };
+      if (occurrenceWorld.length) {
+        const localTransforms = localTransformsFromWorld(occurrenceWorld, context);
+        occurrenceResult = applyLocalTransforms(
+          { ...state, objects },
+          localTransforms,
+          context
+        );
+        objects = occurrenceResult.objects;
+      }
       if (objects === state.objects) return { state, changes: [] };
-
       return {
         state: Object.freeze({ ...state, objects }),
-        changes: command.transforms.map(transform => ({
-          type: "object-transform",
-          objectId: transform.id,
-          source: "selection-world"
-        }))
+        changes: [
+          ...authoritativeWorld.map(transform => ({
+            type: "object-transform",
+            objectId: transform.id,
+            source: "selection-world"
+          })),
+          ...occurrenceRootChanges(
+            occurrenceResult.rootChanges,
+            "selection-world",
+            "object-transform"
+          )
+        ]
       };
     }
 
@@ -968,37 +1476,74 @@ export function boxRegionReducer(state, command, context = {}) {
         anchorWorldPosition:command.anchorWorldPosition,
         pivot:command.pivot
       });
-
+      const groupedScene = Object.freeze({
+        ...state,
+        objects: result.nodes
+      });
+      const compacted = compactHierarchyRoots(groupedScene, [result.group.id]);
+      const groupInstance = compacted.scene.objects.find(
+        object => String(object.id) === String(result.group.id)
+      );
       return {
-        state:Object.freeze({
-          ...state,
-          objects:result.nodes
-        }),
+        state:Object.freeze(compacted.scene),
         changes:[{
           type:"hierarchy-grouped",
           objectId:result.group.id,
-          targetIds:result.targetIds
+          object:groupInstance,
+          targetIds:result.targetIds,
+          compacted:true
         }]
       };
     }
 
     case "selection.ungroup": {
-      const result=ungroupNodes(state.objects,{
-        groupIds:command.groupIds
-      });
-      if (!result.groupIds.length) return {state,changes:[]};
+      let workingState = state;
+      const promoted = [];
+      const removedGroups = [];
+      const legacyGroups = [];
+      for (const groupIdValue of command.groupIds ?? []) {
+        const groupId = String(groupIdValue);
+        const raw = typeof context.getObject === "function"
+          ? context.getObject(groupId)
+          : workingState.objects.find(object => String(object.id) === groupId);
+        if (isInstanceNode(raw)) {
+          const childIds = command.promotedIdsByGroup?.[groupId] ?? [];
+          const result = ungroupAssemblyInstance(workingState, groupId, childIds);
+          if (result.changed) {
+            workingState = result.scene;
+            promoted.push(...result.promoted);
+            removedGroups.push(groupId);
+            continue;
+          }
+        }
+        legacyGroups.push(groupId);
+      }
+
+      if (legacyGroups.length) {
+        const result=ungroupNodes(workingState.objects,{ groupIds:legacyGroups });
+        if (result.groupIds.length) {
+          workingState = Object.freeze({ ...workingState, objects: result.nodes });
+          removedGroups.push(...result.groupIds);
+          for (const id of result.promotedIds) {
+            const object = result.nodes.find(node => String(node.id) === String(id));
+            if (object) promoted.push(object);
+          }
+        }
+      }
+      if (!removedGroups.length) return {state,changes:[]};
 
       return {
-        state:Object.freeze({...state,objects:result.nodes}),
+        state:Object.freeze(workingState),
         changes:[
-          ...result.groupIds.map(objectId => ({
+          ...removedGroups.map(objectId => ({
             type:"object-deleted",
             objectId,
             source:"selection.ungroup"
           })),
-          ...result.promotedIds.map(objectId => ({
-            type:"object-transform",
-            objectId,
+          ...promoted.map(object => ({
+            type:"object-created",
+            objectId:String(object.id),
+            object,
             source:"selection.ungroup"
           }))
         ]
@@ -1051,6 +1596,66 @@ function normalizeSelectionAnchorPolicy(value) {
     throw new RangeError(`Política de âncora desconhecida: ${policy}.`);
   }
   return policy;
+}
+
+
+function resolveEffectiveInstanceForReducer(state, instance) {
+  if (!isInstanceNode(instance)) return instance;
+  const definition = state.instanceGraph?.definitions?.[instance.definitionId];
+  if (!definition || definition.type !== "object") return instance;
+  const reserved = new Set([
+    "id", "kind", "definitionId", "name", "parentId", "position",
+    "rotation", "scale", "pivot", "overrides"
+  ]);
+  const overrides = Object.fromEntries(
+    Object.entries(instance).filter(([key]) => !reserved.has(key))
+  );
+  return Object.freeze({
+    ...definition.object,
+    ...overrides,
+    id: instance.id,
+    name: instance.name ?? instance.id,
+    parentId: instance.parentId ?? null,
+    position: instance.position,
+    rotation: instance.rotation,
+    scale: instance.scale,
+    definitionId: instance.definitionId,
+    instanceKind: "object"
+  });
+}
+
+function validateNewParent(object, context = {}) {
+  if (object?.parentId === null || object?.parentId === undefined) return true;
+  if (typeof context.hasObject === "function" && !context.hasObject(object.parentId)) {
+    throw new Error(`Parent object not found: ${object.parentId}`);
+  }
+  return true;
+}
+
+function freezeDuplicateObject(value) {
+  if (!value || typeof value !== "object") {
+    throw new TypeError("Objeto duplicado inválido.");
+  }
+  if (Object.isFrozen(value)) return value;
+  const object = { ...value };
+  object.prototypeId ??= value.id;
+  for (const key of ["position", "rotation", "scale"]) {
+    if (Array.isArray(object[key])) object[key] = Object.freeze([...object[key]]);
+  }
+  return Object.freeze(object);
+}
+
+function resourcePatchKeys(patch = {}) {
+  const transformOnly = new Set([
+    "position", "rotation", "scale", "name", "parentId", "instanceState"
+  ]);
+  return Object.keys(patch).filter(key => !transformOnly.has(key));
+}
+
+function newPrototypeId(objectId) {
+  const suffix = globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `prototype:${String(objectId)}:${suffix}`;
 }
 
 function freezeGeometry(value) {

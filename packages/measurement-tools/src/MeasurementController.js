@@ -117,6 +117,7 @@ export class MeasurementController {
     this.renderer.setTransformMode?.(active.previousTool);
     this.#active = null;
     this.#overlay.visible = false;
+    this.renderer.invalidateRender?.("measurement-overlay-clear");
     this.#notify();
     return this.status();
   }
@@ -321,7 +322,11 @@ export class MeasurementController {
     this.#cancelRenderFrame();
     const active = this.#active;
     if (!active) {
+      const wasVisible = this.#overlay.visible;
       this.#overlay.visible = false;
+      if (wasVisible) {
+        this.renderer.invalidateRender?.("measurement-overlay-clear");
+      }
       return;
     }
     const points = active.points.map(point => [...point]);
@@ -352,6 +357,7 @@ export class MeasurementController {
       this.#overlay.geometry.computeBoundingSphere();
     }
     this.#overlay.visible = vertexCount >= 2;
+    this.renderer.invalidateRender?.("measurement-overlay");
   }
 
   #notify() {

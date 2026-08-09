@@ -1,6 +1,9 @@
+import {
+  compactSceneToInstanceGraph
+} from "../../instance-graph/src/index.js?build=20260807-0052b";
 export class ProjectSerializer {
   static format = "spatial-seed";
-  static schemaVersion = 3;
+  static schemaVersion = 4;
 
   constructor({
     sandbox,
@@ -17,9 +20,10 @@ export class ProjectSerializer {
   }
 
   serialize(metadata = {}, { state = null } = {}) {
-    const scene = this.appearanceRuntime.normalizeScene(
+    const compactScene = compactSceneToInstanceGraph(
       state ?? this.sandbox.getState()
     );
+    const scene = this.appearanceRuntime.normalizeScene(compactScene);
 
     return {
       format: ProjectSerializer.format,

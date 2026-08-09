@@ -157,6 +157,38 @@ export class HierarchyIndex {
     });
   }
 
+  updateNode(id, node) {
+    this.#assertKnown(id);
+    const normalizedId = requiredId(node?.id, "Identificador de nó ausente.");
+    if (normalizedId !== id) {
+      throw new HierarchyError(
+        "NODE_ID_CHANGED",
+        `Atualização hierárquica não pode trocar o id ${id} por ${normalizedId}.`,
+        { id, normalizedId }
+      );
+    }
+    const parentId = optionalId(node.parentId);
+    const currentParentId = this.#parents.get(id);
+    if (parentId !== currentParentId) {
+      throw new HierarchyError(
+        "PARENT_CHANGED",
+        `Atualização local de ${id} alterou o pai.`,
+        { id, parentId, currentParentId }
+      );
+    }
+    this.#nodes.set(id, node);
+    let invalidated = 1;
+    this.#worldMatrices.delete(id);
+    const stack = [...this.#children.get(id)];
+    while (stack.length) {
+      const childId = stack.pop();
+      invalidated += 1;
+      this.#worldMatrices.delete(childId);
+      for (const nested of this.#children.get(childId)) stack.push(nested);
+    }
+    return invalidated;
+  }
+
   worldMatrixOf(id) {
     this.#assertKnown(id);
     if (this.#worldMatrices.has(id)) return this.#worldMatrices.get(id);

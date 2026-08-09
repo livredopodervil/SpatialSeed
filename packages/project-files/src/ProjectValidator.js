@@ -1,9 +1,14 @@
 import {
   ProjectSerializer
-} from "./ProjectSerializer.js?build=20260724-0029f";
+} from "./ProjectSerializer.js?build=20260807-0052b";
 import {
   HierarchyIndex
 } from "../../scene-hierarchy/src/index.js";
+import {
+  isInstanceNode,
+  normalizeInstanceGraph,
+  validateInstanceGraph
+} from "../../instance-graph/src/index.js?build=20260807-0052b";
 
 export class ProjectValidator {
   parse(text) {
@@ -35,7 +40,7 @@ export class ProjectValidator {
       );
     }
 
-    if (![1, 2, ProjectSerializer.schemaVersion].includes(
+    if (![1, 2, 3, ProjectSerializer.schemaVersion].includes(
       value.schemaVersion
     )) {
       throw new Error(
@@ -94,7 +99,7 @@ export class ProjectValidator {
 
         if (
           value.schemaVersion >= 2 &&
-          !["group", "camera", "light"].includes(object.kind) &&
+          !["group", "camera", "light", "instance"].includes(object.kind) &&
           !object.appearanceId
         ) {
           throw new Error(
@@ -118,9 +123,27 @@ export class ProjectValidator {
           validateLightNode(object, id);
         }
 
+        if (object.kind === "instance" && value.schemaVersion < 4) {
+          throw new Error(`Instância de definição exige schema 4: ${id}.`);
+        }
+
         return structuredClone(object);
       }
     );
+
+    const instanceGraph = value.schemaVersion >= 4
+      ? normalizeInstanceGraph(value.scene.instanceGraph)
+      : normalizeInstanceGraph(null);
+    if (value.schemaVersion >= 4) {
+      validateInstanceGraph(instanceGraph);
+      for (const object of objects) {
+        if (isInstanceNode(object) && !instanceGraph.definitions[object.definitionId]) {
+          throw new Error(
+            `Definição inexistente para instância ${object.id}: ${object.definitionId}.`
+          );
+        }
+      }
+    }
 
     if (
       value.schemaVersion < 3 &&
@@ -157,17 +180,29 @@ export class ProjectValidator {
         value.schemaVersion >= 2
           ? structuredClone(value.assets)
           : null,
-      scene: {
-        ...structuredClone(value.scene),
-        ...(defaultCameraId === null
-          ? {}
-          : { defaultCameraId }),
+      scene: validatedSceneShell(value.scene, {
+        instanceGraph: value.schemaVersion >= 4 ? instanceGraph : null,
+        defaultCameraId,
         objects
-      },
+      }),
       editor: structuredClone(value.editor ?? {}),
       renderer: structuredClone(value.renderer ?? {})
     };
   }
+}
+
+function validatedSceneShell(scene, { instanceGraph, defaultCameraId, objects }) {
+  const {
+    objects: _objects,
+    instanceGraph: _instanceGraph,
+    ...shell
+  } = scene ?? {};
+  return {
+    ...structuredClone(shell),
+    ...(instanceGraph ? { instanceGraph } : {}),
+    ...(defaultCameraId === null ? {} : { defaultCameraId }),
+    objects
+  };
 }
 
 function validateLightNode(object, id) {

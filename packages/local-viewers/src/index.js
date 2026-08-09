@@ -7,10 +7,10 @@ export {
 } from "./LocalViewerSessionDirectory.js";
 export {
   CoordinatedSandbox
-} from "./CoordinatedSandbox.js?build=20260729-0039g1";
+} from "./CoordinatedSandbox.js?build=20260807-0052c";
 export {
   LocalAnimationCoordinator
-} from "./LocalAnimationCoordinator.js";
+} from "./LocalAnimationCoordinator.js?build=20260806-0050c";
 export {
   LocalTransformPreviewCoordinator
 } from "./LocalTransformPreviewCoordinator.js";

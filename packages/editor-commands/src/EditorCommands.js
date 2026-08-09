@@ -702,7 +702,13 @@ export function createEditorCommands({
         category: "planar-edit",
         mutates: false
       })
-      .register("mesh.edit.enter", args => meshEditor.enter(args), {
+      .register("mesh.edit.enter", (args = {}) => {
+        const selectAll = args.selectAll !== false;
+        if (!editContext) return meshEditor.enter({ ...args, selectAll });
+        editContext.setSubjectLevel("vertex", { selectAll });
+        editContext.setTool("translate");
+        return meshEditor.status();
+      }, {
         category: "mesh-edit",
         mutates: false
       })

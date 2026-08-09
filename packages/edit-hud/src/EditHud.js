@@ -278,7 +278,7 @@ export class EditHud {
     this.#element("edit-hud-pivot-edit").dataset.active =
       state.pivotEditing ? "true" : "false";
     this.#element("edit-hud-pivot-policy").value =
-      state.pivot?.policy ?? "median";
+      state.pivot?.policy ?? "anchor";
     this.#element("edit-hud-pivot-reference").value =
       state.pivot?.reference ?? "absolute";
     this.#element("edit-hud-keep-tool").checked = Boolean(state.keepToolActive);

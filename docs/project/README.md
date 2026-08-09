@@ -33,6 +33,7 @@ repetidos em documentos vivos quando podem ser consultados diretamente.
 | [`CAMERA_OBJECTS.md`](CAMERA_OBJECTS.md) | vivo | objetos câmera, ativação local, preview compartilhado e schema 3 | estabilizado no 0029f1 |
 | [`../LOCAL_RECOVERY_SPEC.md`](../LOCAL_RECOVERY_SPEC.md) | vivo | identidade, IndexedDB, checkpoint, journal e UX | implementado no 0029d |
 | [`DECISIONS.md`](DECISIONS.md) | vivo | registro arquitetural durável | separa portal, aplicativo, laboratório e protótipos |
+| [`REGRESSION_SYSTEMATIZATION_0053G.md`](REGRESSION_SYSTEMATIZATION_0053G.md) | marco 0053g | causalidade, correções, gates e fronteira de extração | mantém 25 arquivos não referenciados como fila de revisão, sem remoção automática |
 | [`DISTRIBUTION.md`](DISTRIBUTION.md) | vivo | Pages, PWA, HTTP e arquivos | registra raiz pública, catálogo e escopos offline |
 | [`ROADMAP.md`](ROADMAP.md) | vivo | sequência de marcos | detalha a sequência segura 0029a–0029h |
 | [`WORKFLOW.md`](WORKFLOW.md) | vivo | branches, patches, autoria, testes e integração | inclui auditoria de entradas web |

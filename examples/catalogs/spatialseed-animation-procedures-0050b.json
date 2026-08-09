@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "spatial-seed-procedure-library-v1",
+  "procedures": [
+    {
+      "name": "animation.catalog-spin",
+      "source": "({speed=45,axis=\"y\",timeDomainId=\"world\"}={}) => ({id:\"animation.catalog-spin\",timeDomainId,operations:[{type:\"rotate\",value:axis===\"x\"?[`${speed} * t`,0,0]:axis===\"z\"?[0,0,`${speed} * t`]:[0,`${speed} * t`,0]}]})",
+      "ui": {
+        "label": "Giro temporal",
+        "description": "Aplica rotação afim contínua no domínio temporal escolhido.",
+        "icon": "↻",
+        "group": "Animação",
+        "order": 10,
+        "commit": "immediate",
+        "parameters": [
+          {
+            "id": "axis",
+            "type": "select",
+            "label": "Eixo",
+            "default": "y",
+            "options": [
+              {"value": "x", "label": "X"},
+              {"value": "y", "label": "Y"},
+              {"value": "z", "label": "Z"}
+            ]
+          },
+          {
+            "id": "speed",
+            "type": "number",
+            "label": "Velocidade (graus/s)",
+            "default": 45,
+            "min": -720,
+            "max": 720,
+            "step": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "animation.catalog-pulse",
+      "source": "({amplitude=0.2,frequency=0.5,timeDomainId=\"world\"}={}) => ({presetId:\"pulse\",parameters:{amplitude,frequency},timeDomainId})",
+      "ui": {
+        "label": "Pulso temporal",
+        "description": "Resolve o preset de escala pulsante pelo catálogo de procedimentos.",
+        "icon": "◉",
+        "group": "Animação",
+        "order": 20,
+        "commit": "immediate",
+        "parameters": [
+          {
+            "id": "amplitude",
+            "type": "number",
+            "label": "Amplitude",
+            "default": 0.2,
+            "min": 0,
+            "max": 0.95,
+            "step": 0.05
+          },
+          {
+            "id": "frequency",
+            "type": "number",
+            "label": "Frequência (Hz)",
+            "default": 0.5,
+            "min": 0.01,
+            "max": 20,
+            "step": 0.05
+          }
+        ]
+      }
+    }
+  ]
+}

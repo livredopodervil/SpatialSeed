@@ -152,19 +152,23 @@ export function screenSelectionGestureContains(rawGesture, rawPoint) {
     y: Number(rawPoint?.y ?? rawPoint?.[1])
   };
   if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+  const entryBounds = rawPoint?.bounds
+    ? normalizeEntryBounds(rawPoint.bounds, point.x, point.y)
+    : null;
   if (gesture.mode === "rectangle") {
-    return point.x >= gesture.rectangle.left &&
-      point.x <= gesture.rectangle.right &&
-      point.y >= gesture.rectangle.top &&
-      point.y <= gesture.rectangle.bottom;
+    return entryBounds
+      ? rectanglesIntersect(gesture.rectangle, entryBounds)
+      : pointInsideRectangle(point, gesture.rectangle);
   }
   if (gesture.mode === "lasso") {
-    return pointInPolygon(point, gesture.points);
+    return entryBounds
+      ? polygonIntersectsRectangle(gesture.points, entryBounds)
+      : pointInPolygon(point, gesture.points);
   }
-  if (rawPoint?.bounds) {
+  if (entryBounds) {
     return strokeIntersectsRectangle(
       gesture.points,
-      rawPoint.bounds,
+      entryBounds,
       gesture.radiusPixels
     );
   }
@@ -220,6 +224,61 @@ function pointInPolygon(point, polygon) {
     if (crosses) inside = !inside;
   }
   return inside;
+}
+
+function rectanglesIntersect(left, right) {
+  return left.left <= right.right &&
+    left.right >= right.left &&
+    left.top <= right.bottom &&
+    left.bottom >= right.top;
+}
+
+function polygonIntersectsRectangle(points, rectangle) {
+  if (!Array.isArray(points) || points.length < 3) return false;
+  const corners = [
+    { x: rectangle.left, y: rectangle.top },
+    { x: rectangle.right, y: rectangle.top },
+    { x: rectangle.right, y: rectangle.bottom },
+    { x: rectangle.left, y: rectangle.bottom }
+  ];
+  if (corners.some(corner => pointInPolygon(corner, points))) return true;
+  if (points.some(point => pointInsideRectangle(point, rectangle))) return true;
+  const rectangleEdges = corners.map((corner, index) => [
+    corner,
+    corners[(index + 1) % corners.length]
+  ]);
+  for (let index = 0; index < points.length; index += 1) {
+    const first = points[index];
+    const last = points[(index + 1) % points.length];
+    for (const [edgeFirst, edgeLast] of rectangleEdges) {
+      if (segmentsIntersect(first, last, edgeFirst, edgeLast)) return true;
+    }
+  }
+  return false;
+}
+
+function segmentsIntersect(a, b, c, d) {
+  const orientation = (p, q, r) => {
+    const value = (q.y - p.y) * (r.x - q.x) -
+      (q.x - p.x) * (r.y - q.y);
+    if (Math.abs(value) <= 1e-9) return 0;
+    return value > 0 ? 1 : 2;
+  };
+  const onSegment = (p, q, r) =>
+    q.x <= Math.max(p.x, r.x) + 1e-9 &&
+    q.x + 1e-9 >= Math.min(p.x, r.x) &&
+    q.y <= Math.max(p.y, r.y) + 1e-9 &&
+    q.y + 1e-9 >= Math.min(p.y, r.y);
+  const o1 = orientation(a, b, c);
+  const o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a);
+  const o4 = orientation(c, d, b);
+  if (o1 !== o2 && o3 !== o4) return true;
+  if (o1 === 0 && onSegment(a, c, b)) return true;
+  if (o2 === 0 && onSegment(a, d, b)) return true;
+  if (o3 === 0 && onSegment(c, a, d)) return true;
+  if (o4 === 0 && onSegment(c, b, d)) return true;
+  return false;
 }
 
 function distanceToStroke(point, points) {

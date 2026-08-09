@@ -3,7 +3,7 @@ import {
   parsePropertyInput
 } from "../../property-registry/src/index.js?build=20260715-0022b";
 export class DevConsole {
-  static apiVersion = "dev-console-v12";
+  static apiVersion = "dev-console-v13";
 
   constructor({
     editor,
@@ -485,10 +485,6 @@ export class DevConsole {
         this.#expectMaximum(tokens, 0, "commands");
         return this.commands.describe();
 
-      case "queries":
-        this.#expectMaximum(tokens, 0, "queries");
-        return this.queries?.describe?.() ?? [];
-
       case "inspect":
         this.#expectMaximum(tokens, 2, "inspect");
         return this.#inspect(tokens[0], tokens[1]);
@@ -540,13 +536,8 @@ export class DevConsole {
 
       case "scale": {
         this.#expectExact(tokens, 3, "scale sx sy sz");
-        const meshActive = Boolean(
-          this.queries?.execute("mesh.edit.status")?.active
-        );
         return this.commands.execute("selection.scale", {
-          factors: tokens.map(value => meshActive
-            ? this.#nonZero(value)
-            : this.#positive(value))
+          factors: tokens.map(value => this.#nonZero(value))
         });
       }
 
@@ -625,48 +616,11 @@ export class DevConsole {
       case "property":
         return this.#property(tokens);
 
-      default: {
-        const registered = this.#executeRegisteredInvocation(line);
-        if (registered.matched) return registered.result;
+      default:
         throw new Error(
           `Comando desconhecido: ${command || "(vazio)"}. Use help.`
         );
-      }
     }
-  }
-
-  #executeRegisteredInvocation(line) {
-    const { head: id, tail } = takeHead(line, { lowercase: false });
-    if (!id || !id.includes(".")) {
-      return { matched: false, result: undefined };
-    }
-
-    const commandMatch = this.commands.describe?.().some(
-      command => command.id === id
-    ) ?? false;
-    const queryMatch = this.queries?.describe?.().some(
-      query => query.id === id
-    ) ?? false;
-
-    if (!commandMatch && !queryMatch) {
-      return { matched: false, result: undefined };
-    }
-    if (commandMatch && queryMatch) {
-      throw new Error(
-        `Identificador ambíguo no console: ${id}. ` +
-        "Use uma superfície pública com identificador exclusivo."
-      );
-    }
-
-    const args = tail
-      ? parseJson(tail, `Argumentos de ${id}`)
-      : {};
-    return {
-      matched: true,
-      result: commandMatch
-        ? this.commands.execute(id, args)
-        : this.queries.execute(id, args)
-    };
   }
 
   #help(topic = null) {
@@ -736,12 +690,12 @@ export class DevConsole {
       syntax: "Separe comandos por ponto e vírgula ou por quebra de linha.",
       commands: [
         "commands",
-        "queries",
-        "id.registrado [argumento-JSON]",
         ...diagnosticCommands,
         "selection stats",
         "runtime profile",
         "runtime ui-stats",
+        "runtime query <query-id> [argumentos-JSON]",
+        "runtime command <command-id> [argumentos-JSON]",
         "calc expressão JavaScript",
         "program código JavaScript",
         "procedure define|list|show|run|remove|export|import|help",
@@ -766,7 +720,7 @@ export class DevConsole {
         "position x y z",
         "move dx dy dz",
         "rotate xDeg yDeg zDeg",
-        "scale sx sy sz",
+        "scale sx sy sz  (valor negativo = espelho no eixo)",
         "duplicate",
         "group [nome]",
         "ungroup",
@@ -1039,7 +993,8 @@ export class DevConsole {
         "animate rotate expressão-x expressão-y expressão-z",
         "animate scale expressão-x expressão-y expressão-z",
         "animate matrix m00 ... m15",
-        "animate pause|resume|stop|status|list"
+        "animate procedure nome [parâmetros-JSON] [mode=...] [time=domínio]",
+        "animate pause|resume|stop|status|list|procedures"
       ],
       variables: {
         t: "tempo da simulação em segundos",
@@ -1266,6 +1221,28 @@ export class DevConsole {
       this.#expectMaximum(tokens, 0, "animate list");
       return this.commands.execute("animation.presets.describe");
     }
+    if (action === "procedures") {
+      this.#expectMaximum(tokens, 0, "animate procedures");
+      return this.commands.execute("animation.procedures.describe");
+    }
+    if (action === "procedure") {
+      const name = tokens.shift();
+      if (!name) {
+        throw new Error(
+          "Uso: animate procedure nome [parâmetros-JSON] [mode=...] [time=domínio]."
+        );
+      }
+      const options = takeAnimationOptions(tokens);
+      const parameters = options.tokens.length
+        ? parseJson(options.tokens.join(" "), "Parâmetros do procedimento")
+        : {};
+      return this.commands.execute("animation.procedure", {
+        name,
+        parameters,
+        targetMode: options.targetMode,
+        timeDomainId: options.timeDomainId
+      });
+    }
     if (action === "pause") {
       this.#expectMaximum(tokens, 0, "animate pause");
       return this.commands.execute("animation.pause");
@@ -1280,8 +1257,9 @@ export class DevConsole {
     }
 
     if (["move", "rotate", "scale"].includes(action)) {
+      const options = takeAnimationOptions(tokens);
       this.#expectExact(
-        tokens,
+        options.tokens,
         3,
         `animate ${action} expressão-x expressão-y expressão-z`
       );
@@ -1289,8 +1267,10 @@ export class DevConsole {
         id: `custom.${action}`,
         operations: [{
           type: action,
-          value: tokens.map(value => this.#affineValue(value))
-        }]
+          value: options.tokens.map(value => this.#affineValue(value))
+        }],
+        targetMode: options.targetMode,
+        timeDomainId: options.timeDomainId
       });
     }
 
@@ -1306,20 +1286,17 @@ export class DevConsole {
     }
 
     if (action === "color") {
-      let targetMode = "selection";
-      const modeIndex = tokens.findIndex(token => token.startsWith("mode="));
-      if (modeIndex >= 0) {
-        targetMode = tokens.splice(modeIndex, 1)[0].slice("mode=".length);
-      }
-      if (!["selection", "objects"].includes(targetMode) || tokens.length !== 1) {
+      const options = takeAnimationOptions(tokens);
+      if (options.tokens.length !== 1) {
         throw new Error(
-          'Uso: animate color "hsl(...)|rgb(...)|mix(...)" [mode=selection|objects].'
+          'Uso: animate color "hsl(...)|rgb(...)|mix(...)" [mode=selection|objects] [time=domínio].'
         );
       }
       return this.commands.execute("animation.start", {
         id: "custom.color",
-        operations: [{ type: "color", value: tokens[0] }],
-        targetMode
+        operations: [{ type: "color", value: options.tokens[0] }],
+        targetMode: options.targetMode,
+        timeDomainId: options.timeDomainId
       });
     }
 
@@ -1332,14 +1309,18 @@ export class DevConsole {
     }
     const parameters = parseExperimentParameters(tokens.join(" "));
     const targetMode = parameters.mode ?? "selection";
+    const timeDomainId = parameters.time ?? parameters.domain ?? "world";
     delete parameters.mode;
+    delete parameters.time;
+    delete parameters.domain;
     if (!["selection", "objects"].includes(targetMode)) {
       throw new Error("mode deve ser selection ou objects.");
     }
     return this.commands.execute("animation.preset", {
       id: presetId,
       parameters,
-      targetMode
+      targetMode,
+      timeDomainId
     });
   }
 
@@ -2648,6 +2629,31 @@ export class DevConsole {
       return this.queries.execute("runtime.ui-stats");
     }
 
+    if (namespace === "query") {
+      const queryId = tokens.shift();
+      if (!queryId) {
+        throw new Error("Uso: runtime query <query-id> [argumentos-JSON].");
+      }
+      if (!this.queries) {
+        throw new Error("Registro de consultas do runtime indisponível.");
+      }
+      const args = tokens.length
+        ? parseJson(tokens.join(" "), "Argumentos da consulta")
+        : {};
+      return this.queries.execute(queryId, args);
+    }
+
+    if (["command", "execute", "exec"].includes(namespace)) {
+      const commandId = tokens.shift();
+      if (!commandId) {
+        throw new Error("Uso: runtime command <command-id> [argumentos-JSON].");
+      }
+      const args = tokens.length
+        ? parseJson(tokens.join(" "), "Argumentos do comando")
+        : {};
+      return this.commands.execute(commandId, args);
+    }
+
     if (namespace === "benchmark") {
       const target =
         (tokens.shift() ?? "").toLowerCase();
@@ -2733,7 +2739,8 @@ export class DevConsole {
 
     if (namespace !== "test") {
       throw new Error(
-        "Uso: runtime profile|ui-stats|benchmark api [iterações]|" +
+        "Uso: runtime profile|ui-stats|query <id> [JSON]|" +
+        "command <id> [JSON]|benchmark api [iterações]|" +
         "resources|compaction status|run|set|help|" +
         "test help|animation-runtime|animation-commands|" +
         "tool-parameters|selection-ui|instance-batches|performance-baseline|" +
@@ -2748,11 +2755,21 @@ export class DevConsole {
     const suite =
       (tokens.shift() ?? "help").toLowerCase();
 
-    this.#expectMaximum(
-      tokens,
-      0,
-      `runtime test ${suite}`
-    );
+    let failuresOnly = false;
+    if (tokens.length) {
+      const filter = String(tokens.shift() ?? "").toLowerCase();
+      if ([
+        "failed", "failures", "fail",
+        "failed-only", "failures-only", "falhos"
+      ].includes(filter)) {
+        failuresOnly = true;
+      } else {
+        throw new Error(
+          `Uso: runtime test ${suite} [failed].`
+        );
+      }
+    }
+    this.#expectMaximum(tokens, 0, `runtime test ${suite} [failed]`);
 
     if (suite === "help") {
       return this.commands.execute(
@@ -2762,7 +2779,7 @@ export class DevConsole {
 
     return this.commands.execute(
       "runtime.test.run",
-      { suite }
+      { suite, failuresOnly }
     );
   }
 
@@ -2793,6 +2810,18 @@ export class DevConsole {
         position: tokens.map(value => this.#number(value))
       });
     }
+    if (["reference", "referencia", "referência"].includes(action)) {
+      const targetId = tokens.shift();
+      if (!targetId) throw new Error("Uso: anchor reference <object-id> [x y z].");
+      if (![0, 3].includes(tokens.length)) {
+        throw new Error("Uso: anchor reference <object-id> [x y z].");
+      }
+      return this.commands.execute("selection.anchor.set", {
+        policy: "reference",
+        referenceTargetId: targetId,
+        referencePoint: tokens.length ? tokens.map(value => this.#number(value)) : [0, 0, 0]
+      });
+    }
     if (action === "help" || action === "ajuda") {
       this.#expectMaximum(tokens, 0, "anchor help");
       return Object.freeze({
@@ -2801,13 +2830,14 @@ export class DevConsole {
           "anchor bounds-center",
           "anchor origin",
           "anchor pivot",
-          "anchor custom x y z"
+          "anchor custom x y z",
+          "anchor reference <object-id> [x y z]"
         ]),
         note: "A política altera somente a referência de seleção; não move a geometria."
       });
     }
     throw new Error(
-      "Uso: anchor status|bounds-center|origin|pivot|custom x y z."
+      "Uso: anchor status|bounds-center|origin|pivot|custom x y z|reference <object-id> [x y z]."
     );
   }
 
@@ -3112,6 +3142,30 @@ function splitAsynchronousConsoleInputs(source) {
   if (lines.length > 1 && lines.some(isAsynchronousConsoleInput)) return lines;
   if (isAsynchronousConsoleInput(input)) return [input];
   return null;
+}
+
+function takeAnimationOptions(tokens) {
+  const remaining = [];
+  let targetMode = "selection";
+  let timeDomainId = "world";
+  for (const token of tokens) {
+    if (token.startsWith("mode=")) {
+      targetMode = token.slice("mode=".length);
+      continue;
+    }
+    if (token.startsWith("time=") || token.startsWith("domain=")) {
+      timeDomainId = token.slice(token.indexOf("=") + 1);
+      continue;
+    }
+    remaining.push(token);
+  }
+  if (!["selection", "objects"].includes(targetMode)) {
+    throw new Error("mode deve ser selection ou objects.");
+  }
+  if (!String(timeDomainId).trim()) {
+    throw new Error("time deve indicar um domínio temporal.");
+  }
+  return { tokens: remaining, targetMode, timeDomainId };
 }
 
 function parseExperimentParameters(source) {

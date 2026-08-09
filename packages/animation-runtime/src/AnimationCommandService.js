@@ -2,7 +2,7 @@ import {
   compileAnimationProgram,
   createAnimationEvaluator,
   describeAnimationProgram
-} from "./AnimationProgram.js?build=20260720-0028d";
+} from "./AnimationProgram.js?build=20260806-0050c";
 import {
   listAnimationPresets,
   resolveAnimationPreset
@@ -11,10 +11,10 @@ import {
   compileAnimationTrackProgram,
   createAnimationTrackEvaluator,
   describeAnimationTrackProgram
-} from "./AnimationTrackProgram.js?build=20260720-0028d";
+} from "./AnimationTrackProgram.js?build=20260806-0050c";
 
 export const ANIMATION_COMMAND_SERVICE_VERSION =
-  "animation-command-service-v2";
+  "animation-command-service-v4-independent-instances";
 
 export class AnimationCommandService {
   constructor({ runtime, selection }) {
@@ -29,7 +29,10 @@ export class AnimationCommandService {
     this.currentProgram = null;
     this.currentPreset = null;
     this.currentComposition = null;
+    this.currentInstanceId = null;
     this.sharedSession = null;
+    this.sharedPlaybackId = null;
+    this.sharedRuntimeInstanceId = null;
     this.sharedNow = () => Date.now();
   }
 
@@ -37,32 +40,36 @@ export class AnimationCommandService {
     id = "custom",
     operations,
     targetIds = null,
-    targetMode = "selection"
+    targetMode = "selection",
+    timeDomainId = "world"
   } = {}) {
-    this.sharedSession = null;
+    this.#detachSharedSelection();
     return this.#applyDescriptor(this.prepareShared("program", {
       id,
       operations,
       targetIds,
-      targetMode
+      targetMode,
+      timeDomainId
     }));
   }
 
   preset(id, parameters = {}, {
     targetIds = null,
-    targetMode = "selection"
+    targetMode = "selection",
+    timeDomainId = "world"
   } = {}) {
-    this.sharedSession = null;
+    this.#detachSharedSelection();
     return this.#applyDescriptor(this.prepareShared("preset", {
       id,
       parameters,
       targetIds,
-      targetMode
+      targetMode,
+      timeDomainId
     }));
   }
 
   compose({ id = "composition", tracks, targetMode = "objects" } = {}) {
-    this.sharedSession = null;
+    this.#detachSharedSelection();
     return this.#applyDescriptor(this.prepareShared("composition", {
       id,
       tracks,
@@ -81,7 +88,8 @@ export class AnimationCommandService {
         id: program.id,
         operations: structuredClone(program.operations),
         targetIds: resolvedTargetIds(args.targetIds, this.selection),
-        targetMode: normalizeTargetMode(args.targetMode)
+        targetMode: normalizeTargetMode(args.targetMode),
+        timeDomainId: normalizeTimeDomainId(args.timeDomainId)
       });
     }
     if (kind === "preset") {
@@ -95,6 +103,7 @@ export class AnimationCommandService {
         operations: structuredClone(preset.operations),
         targetIds: resolvedTargetIds(args.targetIds, this.selection),
         targetMode: normalizeTargetMode(args.targetMode),
+        timeDomainId: normalizeTimeDomainId(args.timeDomainId),
         preset: describePreset(preset)
       });
     }
@@ -109,6 +118,7 @@ export class AnimationCommandService {
       const targetIds = track?.targetIds == null
         ? (fallbackTargets ??= selectedTargetIds(this.selection()))
         : normalizeTargetIds(track.targetIds);
+      const timeDomainId = normalizeTimeDomainId(track?.timeDomainId);
       if (track?.presetId) {
         const preset = resolveAnimationPreset(
           track.presetId,
@@ -118,14 +128,21 @@ export class AnimationCommandService {
           id: track.id ?? `track-${index + 1}`,
           targetIds,
           operations: structuredClone(preset.operations),
-          metadata: { preset: describePreset(preset) }
+          metadata: {
+            ...structuredClone(track?.metadata ?? {}),
+            timeDomainId,
+            preset: describePreset(preset)
+          }
         };
       }
       return {
         id: track?.id ?? `track-${index + 1}`,
         targetIds,
         operations: track?.operations,
-        metadata: structuredClone(track?.metadata ?? {})
+        metadata: {
+          ...structuredClone(track?.metadata ?? {}),
+          timeDomainId
+        }
       };
     });
     const composition = compileAnimationTrackProgram(resolvedTracks, {
@@ -145,19 +162,25 @@ export class AnimationCommandService {
   } = {}) {
     validateSharedSession(session);
     this.sharedNow = now;
+
     if (session.state === "idle") {
-      if (this.runtime.status().state !== "idle") {
-        this.runtime.stop(session.reason ?? "shared-stop");
+      if (this.sharedRuntimeInstanceId &&
+          this.#hasInstance(this.sharedRuntimeInstanceId)) {
+        this.runtime.stop(
+          session.reason ?? "shared-stop",
+          { instanceId: this.sharedRuntimeInstanceId }
+        );
       }
-      this.sharedSession = null;
-      this.#clearCurrent();
+      this.#clearSharedBinding();
+      this.#refreshCurrentSelection();
       return this.status();
     }
 
     const next = deepFreeze(structuredClone(session));
     const samePlayback =
-      this.sharedSession?.playbackId === next.playbackId &&
-      this.runtime.status().state !== "idle";
+      this.sharedPlaybackId === next.playbackId &&
+      this.sharedRuntimeInstanceId !== null &&
+      this.#hasInstance(this.sharedRuntimeInstanceId);
     this.sharedSession = next;
     const timeSource = () => sharedSessionTime(
       this.sharedSession,
@@ -170,45 +193,84 @@ export class AnimationCommandService {
         timeSource,
         initialTime: currentTime
       });
+      this.sharedPlaybackId = next.playbackId;
+      this.sharedRuntimeInstanceId = this.currentInstanceId;
     } else {
-      this.runtime.setTimeSource(timeSource);
-      this.runtime.seek(currentTime);
+      this.runtime.seek(currentTime, {
+        instanceId: this.sharedRuntimeInstanceId
+      });
     }
 
-    const runtimeState = this.runtime.status().state;
-    if (next.state === "paused" && runtimeState === "playing") {
-      this.runtime.pause();
-    } else if (next.state === "playing" && runtimeState === "paused") {
-      this.runtime.play();
+    const instance = this.#instance(this.sharedRuntimeInstanceId);
+    if (next.state === "paused" && instance?.state === "playing") {
+      this.runtime.pause({ instanceId: this.sharedRuntimeInstanceId });
+    } else if (next.state === "playing" && instance?.state === "paused") {
+      this.runtime.play({ instanceId: this.sharedRuntimeInstanceId });
     }
     return this.status();
   }
 
-  pause() {
-    this.runtime.pause();
+  pause(selector = null) {
+    this.runtime.pause(this.#resolvedSelector(selector));
     return this.status();
   }
 
-  resume() {
-    this.runtime.play();
+  resume(selector = null) {
+    this.runtime.play(this.#resolvedSelector(selector));
     return this.status();
   }
 
-  stop() {
-    this.runtime.stop("user");
-    this.sharedSession = null;
+  stop(selector = null, reason = "user") {
+    const resolved = this.#resolvedSelector(selector);
+    const ids = this.#selectorInstanceIds(resolved);
+    this.runtime.stop(reason, resolved);
+    this.#forgetStopped(ids);
+    return this.status();
+  }
+
+  stopAll(reason = "user-all") {
+    if (typeof this.runtime.stopAll === "function") {
+      this.runtime.stopAll(reason);
+    } else {
+      this.runtime.stop(reason);
+    }
+    this.#clearSharedBinding();
+    this.currentInstanceId = null;
     this.#clearCurrent();
     return this.status();
   }
 
+  sceneChanged(changes = [], session = null) {
+    const sharedId = this.sharedRuntimeInstanceId;
+    const currentId = this.currentInstanceId;
+    const result = this.runtime.sceneChanged(changes);
+    const stopped = new Set(result.stoppedInstanceIds ?? []);
+    const sharedAffected = Boolean(sharedId && stopped.has(sharedId));
+    const currentAffected = Boolean(currentId && stopped.has(currentId));
+    if (sharedAffected) this.#clearSharedBinding();
+    if (currentAffected) this.#refreshCurrentSelection();
+    return Object.freeze({
+      ...result,
+      sharedAffected,
+      currentAffected,
+      sharedPlaybackId: session?.playbackId ?? this.sharedPlaybackId
+    });
+  }
+
   status() {
     const runtime = this.runtime.status();
-    if (runtime.state === "idle") {
-      this.#clearCurrent();
+    if (this.currentInstanceId && !this.#hasInstance(this.currentInstanceId)) {
+      this.#refreshCurrentSelection(runtime);
+    }
+    if (this.sharedRuntimeInstanceId &&
+        !this.#hasInstance(this.sharedRuntimeInstanceId)) {
+      this.#clearSharedBinding();
     }
     return Object.freeze({
       serviceVersion: ANIMATION_COMMAND_SERVICE_VERSION,
       ...runtime,
+      currentInstanceId: this.currentInstanceId,
+      sharedRuntimeInstanceId: this.sharedRuntimeInstanceId,
       program: this.currentProgram
         ? describeAnimationProgram(this.currentProgram)
         : null,
@@ -240,15 +302,35 @@ export class AnimationCommandService {
         descriptor.tracks,
         { id: descriptor.id }
       );
-      this.runtime.start({
-        id: composition.id,
-        targetIds: composition.targetIds,
-        targetMode: descriptor.targetMode,
-        evaluate: createAnimationTrackEvaluator(composition),
-        timeSource,
-        initialTime
-      });
+      if (typeof this.runtime.startSegments === "function") {
+        this.runtime.startSegments({
+          id: composition.id,
+          targetIds: composition.targetIds,
+          targetMode: descriptor.targetMode,
+          segments: composition.tracks.map(track => ({
+            id: track.id,
+            targetIds: track.targetIds,
+            timeDomainId: normalizeTimeDomainId(
+              track.metadata?.timeDomainId
+            ),
+            evaluate: createAnimationEvaluator(track.program),
+            timeDependent: track.program.timeDependent
+          })),
+          timeSource,
+          initialTime
+        });
+      } else {
+        this.runtime.start({
+          id: composition.id,
+          targetIds: composition.targetIds,
+          targetMode: descriptor.targetMode,
+          evaluate: createAnimationTrackEvaluator(composition),
+          timeSource,
+          initialTime
+        });
+      }
       this.currentComposition = composition;
+      this.currentInstanceId = this.#runtimeCurrentInstanceId();
       return this.status();
     }
 
@@ -262,13 +344,105 @@ export class AnimationCommandService {
       targetMode: descriptor.targetMode,
       evaluate: createAnimationEvaluator(program),
       timeSource,
-      initialTime
+      initialTime,
+      timeDomainId: normalizeTimeDomainId(descriptor.timeDomainId),
+      timeDependent: program.timeDependent
     });
+    this.currentInstanceId = this.#runtimeCurrentInstanceId();
     this.currentProgram = program;
     this.currentPreset = descriptor.kind === "preset"
       ? deepFreeze(structuredClone(descriptor.preset))
       : null;
     return this.status();
+  }
+
+  #resolvedSelector(selector) {
+    if (!this.#runtimeSupportsInstances()) return null;
+    if (selector !== null && selector !== undefined) return selector;
+    if (this.currentInstanceId) {
+      return { instanceId: this.currentInstanceId };
+    }
+    return null;
+  }
+
+  #selectorInstanceIds(selector) {
+    const status = this.runtime.status();
+    if (!Array.isArray(status.instances)) {
+      return status.state === "idle" ? [] : ["__legacy__"];
+    }
+    if (selector === "all" || selector?.all === true) {
+      return status.instances.map(instance => instance.instanceId);
+    }
+    if (typeof selector === "string") return [selector];
+    if (selector?.instanceId) return [String(selector.instanceId)];
+    if (selector === null || selector === undefined) {
+      return status.activeInstanceId ? [status.activeInstanceId] : [];
+    }
+    if (Array.isArray(selector?.targetIds)) {
+      const targets = new Set(selector.targetIds.map(String));
+      return status.instances
+        .filter(instance => instance.objectIds.some(id => targets.has(id)))
+        .map(instance => instance.instanceId);
+    }
+    return [];
+  }
+
+  #forgetStopped(instanceIds) {
+    const stopped = new Set(instanceIds);
+    if (this.sharedRuntimeInstanceId &&
+        stopped.has(this.sharedRuntimeInstanceId)) {
+      this.#clearSharedBinding();
+    }
+    if (this.currentInstanceId && stopped.has(this.currentInstanceId)) {
+      this.#refreshCurrentSelection();
+    }
+  }
+
+  #refreshCurrentSelection(runtimeStatus = this.runtime.status()) {
+    this.currentInstanceId = Array.isArray(runtimeStatus.instances)
+      ? runtimeStatus.activeInstanceId ?? null
+      : runtimeStatus.state === "idle" ? null : "__legacy__";
+    if (!this.currentInstanceId) this.#clearCurrent();
+  }
+
+  #runtimeSupportsInstances() {
+    return Array.isArray(this.runtime.status().instances);
+  }
+
+  #runtimeCurrentInstanceId() {
+    const status = this.runtime.status();
+    return Array.isArray(status.instances)
+      ? status.activeInstanceId ?? null
+      : status.state === "idle" ? null : "__legacy__";
+  }
+
+  #hasInstance(instanceId) {
+    return Boolean(this.#instance(instanceId));
+  }
+
+  #instance(instanceId) {
+    if (!instanceId) return null;
+    const status = this.runtime.status();
+    if (!Array.isArray(status.instances)) {
+      return instanceId === "__legacy__" && status.state !== "idle"
+        ? Object.freeze({ instanceId, state: status.state })
+        : null;
+    }
+    return status.instances.find(
+      instance => instance.instanceId === instanceId
+    ) ?? null;
+  }
+
+  #detachSharedSelection() {
+    this.sharedSession = null;
+    this.sharedPlaybackId = null;
+    this.sharedRuntimeInstanceId = null;
+  }
+
+  #clearSharedBinding() {
+    this.sharedSession = null;
+    this.sharedPlaybackId = null;
+    this.sharedRuntimeInstanceId = null;
   }
 
   #clearCurrent() {
@@ -311,6 +485,12 @@ function normalizeTargetMode(value = "selection") {
   return mode;
 }
 
+function normalizeTimeDomainId(value = "world") {
+  const id = String(value ?? "world").trim();
+  if (!id) throw new TypeError("Domínio temporal vazio.");
+  return id;
+}
+
 function describePreset(preset) {
   return Object.freeze({
     version: preset.version,
@@ -330,6 +510,9 @@ function validateDescriptor(value) {
     throw new TypeError("Descritor compartilhado de animação inválido.");
   }
   normalizeTargetMode(value.targetMode);
+  if (value.kind !== "composition") {
+    normalizeTimeDomainId(value.timeDomainId);
+  }
 }
 
 function validateSharedSession(value) {

@@ -220,6 +220,7 @@ export class DrawingTargetController {
     this.#applyFrame();
     this.#updateHelperGeometry();
     this.#updateVisibility();
+    this.renderer.invalidateRender?.("drawing-target-set");
     this.#notify();
     return this.status();
   }
@@ -233,6 +234,7 @@ export class DrawingTargetController {
     this.#surfaceCursorRoot.visible = false;
     this.#offset = 0;
     this.#updateVisibility();
+    this.renderer.invalidateRender?.("drawing-target-clear");
     this.#notify();
     return this.status();
   }
@@ -246,6 +248,7 @@ export class DrawingTargetController {
       });
       this.#lastSurfacePlacement = null;
       this.#surfaceCursorRoot.visible = false;
+      this.renderer.invalidateRender?.("drawing-target-offset");
       this.#notify();
       return this.status();
     }
@@ -254,6 +257,7 @@ export class DrawingTargetController {
     }
     this.#offset = next;
     this.#applyFrame();
+    this.renderer.invalidateRender?.("drawing-target-offset");
     this.#notify();
     return this.status();
   }
@@ -294,6 +298,7 @@ export class DrawingTargetController {
     this.#helperGrid = Boolean(grid);
     this.#updateHelperGeometry();
     this.#updateVisibility();
+    this.renderer.invalidateRender?.("drawing-target-helper");
     this.#notify();
     return this.status();
   }
@@ -354,6 +359,7 @@ export class DrawingTargetController {
       }
     }
     this.#updateVisibility();
+    this.renderer.invalidateRender?.("drawing-target-editing");
     this.#notify();
     return this.status();
   }
@@ -497,6 +503,7 @@ export class DrawingTargetController {
     );
     this.#surfaceCursorRoot.updateMatrixWorld(true);
     this.#updateVisibility();
+    this.renderer.invalidateRender?.("drawing-target-surface-cursor");
   }
 
   #notify() {

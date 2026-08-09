@@ -1,6 +1,6 @@
 # Registro de decisões do SpatialSeed
 
-> Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`.
+> Documento vivo. Auditado em 8 de agosto de 2026 até o marco `0053g`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 
 ## Como ler
@@ -980,6 +980,64 @@ chega a uma cena nova coerente. Salvar ainda exige finalização explícita da
 malha. Falta de entrada, validação e indisponibilidade contextual desaparecem
 após sucesso, cancelamento ou troca de contexto; somente falha de inicialização
 ou integridade marcada como fatal ocupa a caixa persistente.
+
+## D-052 — Estado persistente rápido e checkpoint clonável são fronteiras distintas
+
+**Estado:** implementada no incremento 0053g.
+
+As leituras internas do sandbox podem conservar estruturas persistentes e
+proxies para evitar cópias. Fronteiras de checkpoint, projeto, worker ou outra
+API que exija clone estruturado recebem uma materialização explícita.
+`getBaseState()` é um checkpoint clonável; `getState()` é a projeção rápida e
+não promete ser serializável.
+
+**Motivação:** tornar todo acesso profundamente clonável eliminaria parte do
+ganho de memória da representação compacta. Permitir que proxies atravessem a
+persistência, por outro lado, quebra `structuredClone` e faz a otimização vazar
+para consumidores que não conhecem sua representação.
+
+**Consequências:** novos consumidores devem escolher a fronteira pela semântica,
+não por conveniência. Serialização usa `getBaseState()` ou
+`materializeState()`; algoritmos internos podem usar `getState()`. Testes de
+checkpoint verificam clone estruturado, enquanto testes de hot path não devem
+exigir cópia profunda.
+
+## D-053 — Edição canônica rebaseia animação relativa
+
+**Estado:** implementada no incremento 0053g.
+
+Mover, girar ou escalar uma ocorrência durante playback altera sua base
+canônica e rebaseia a camada temporal relativa; não encerra automaticamente a
+animação. A exclusão encerra apenas as instâncias afetadas e a substituição
+integral do documento encerra todos os transientes.
+
+**Motivação:** a política anterior tratava qualquer mudança de cena como
+invalidação terminal. Isso tornava edição e animação mutuamente exclusivas e,
+quando o pivô mudava, deixava o overlay preso à base capturada.
+
+**Consequências:** runtime e renderer precisam compartilhar a mesma fonte de
+tempo e o pivô canônico atual. Novos tipos de edição devem declarar se são
+rebaseáveis, removem ocorrências ou substituem a cena; não podem cair numa
+regra genérica de parada.
+
+## D-054 — Alcance estático orienta triagem, não exclusão
+
+**Estado:** implementada inicialmente no incremento 0053g.
+
+O manifest de alcance separa JavaScript de produção, diagnóstico e arquivos
+ausentes das raízes mantidas. A terceira classe é uma fila de revisão e não uma
+autorização para apagar, arquivar ou omitir automaticamente arquivos de um
+módulo autônomo.
+
+**Motivação:** imports calculados, registries, workers e assets não JavaScript
+podem manter dependências invisíveis a uma travessia estática de imports.
+Confundir ausência no grafo com código morto transforma uma otimização de
+empacotamento em perda silenciosa de capacidade ou compatibilidade.
+
+**Consequências:** uma extração parte de allowlist, inclui revisão de recursos e
+validação no navegador, preserva schemas/migrações e repete os gates na closure
+derivada. O manifest é regenerado e verificado, mas remoções continuam sendo
+decisões explícitas.
 
 ## Decisões superadas ou rejeitadas
 

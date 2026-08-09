@@ -13,7 +13,7 @@ export class EditorState {
     this.selectionBrushRadius = 24;
     this.multiSelect = false;
     this.pivot = {
-      policy: "median",
+      policy: "anchor",
       editing: false,
       reference: "absolute",
       customPosition: [0, 0, 0],
@@ -83,7 +83,7 @@ export class EditorState {
   }
 
   setPivotPolicy(policy) {
-    const allowed = new Set(["median", "bounds", "active", "custom"]);
+    const allowed = new Set(["anchor", "median", "bounds", "active", "custom"]);
     if (!allowed.has(policy)) throw new RangeError(`Unknown pivot policy: ${policy}`);
     this.pivot = {
       ...this.pivot,

@@ -10,7 +10,7 @@ import {
   registerPwa,
   resolvePwaLocations,
   webApplicationName
-} from "../../packages/platform-web/src/index.js?build=20260805-0048l1";
+} from "../../packages/platform-web/src/index.js?build=20260808-0053h";
 
 const $ = id => document.getElementById(id);
 const pwaInstallController = new PwaInstallController({ windowRef: window });
@@ -27,8 +27,19 @@ try {
     )
   });
   bindPwaActions(buildInfo, pwaRegistration);
-  void pwaRegistration.checkForUpdate();
+  bindPwaUpdateChecks(pwaRegistration);
+  const pwaState = await pwaRegistration.checkForUpdate();
 
+  if (requiresPwaHandoff(buildInfo, pwaState)) {
+    showPwaUpdateRequired(buildInfo, pwaState);
+  } else {
+    await startRuntime(buildInfo, pwaInstallController);
+  }
+} catch (error) {
+  showFatalError(error);
+}
+
+async function startRuntime(buildInfo, pwaInstallController) {
   const [uiConfiguration, applicationDefinition] = await Promise.all([
     loadUiConfiguration(),
     loadWebApplicationDefinition({
@@ -49,20 +60,23 @@ try {
     runtimeExtensions,
     pwaInstallController
   });
-} catch (error) {
-  showFatalError(error);
 }
 
 function bindPwaActions(buildInfo, pwaRegistration) {
   const updateButton = $("pwa-update-button");
   const repairButton = $("pwa-repair-button");
   updateButton?.addEventListener("click", async () => {
+    updateButton.dataset.busy = "true";
     updateButton.disabled = true;
     updateButton.textContent = "Atualizando…";
-    const updated = await pwaRegistration.updateNow();
-    if (updated) return;
-    updateButton.disabled = false;
-    updateButton.textContent = "Atualizar agora";
+    try {
+      const updated = await pwaRegistration.updateNow();
+      if (updated) return;
+    } finally {
+      delete updateButton.dataset.busy;
+      const state = pwaRegistration.snapshot();
+      exposePwaState(buildInfo, state, formatPwaBuildLabel);
+    }
   });
   repairButton?.addEventListener("click", () => {
     const locations = resolvePwaLocations(import.meta.url);
@@ -99,11 +113,59 @@ function exposePwaState(buildInfo, state, formatLabel) {
     installingBuild: state.installingBuild
   });
   if (updateButton) {
-    updateButton.hidden = !updateAvailable;
-    if (!updateButton.disabled) updateButton.textContent = "Atualizar agora";
+    updateButton.hidden = !state.supported;
+    if (updateButton.dataset.busy !== "true") {
+      updateButton.disabled = !updateAvailable;
+      updateButton.textContent = "Atualizar agora";
+      updateButton.title = updateAvailable
+        ? "Ativar a versão publicada e recarregar"
+        : "Esta página já usa a versão publicada";
+    }
   }
   const repairButton = $("pwa-repair-button");
-  if (repairButton) repairButton.hidden = !(state.error && updateAvailable);
+  if (repairButton) repairButton.hidden = !state.error;
+}
+
+function requiresPwaHandoff(buildInfo, state) {
+  return Boolean(
+    state?.controllerBuild &&
+    state.controllerBuild !== buildInfo.build
+  );
+}
+
+function showPwaUpdateRequired(buildInfo, state) {
+  const status = $("status");
+  if (status) {
+    status.textContent =
+      "Atualização PWA necessária antes de iniciar esta versão.";
+  }
+  const content = $("build-content");
+  if (content) {
+    content.textContent =
+      `build ${buildInfo.build} · controlador ${state.controllerBuild ?? "rede"}`;
+  }
+  const button = $("pwa-update-button");
+  if (button) {
+    button.hidden = false;
+    button.disabled = false;
+    button.textContent = "Atualizar agora";
+    button.focus?.();
+  }
+}
+
+function bindPwaUpdateChecks(pwaRegistration) {
+  let lastCheckAt = 0;
+  const check = () => {
+    const now = Date.now();
+    if (now - lastCheckAt < 30000) return;
+    lastCheckAt = now;
+    void pwaRegistration.checkForUpdate();
+  };
+  globalThis.addEventListener?.("online", check);
+  globalThis.addEventListener?.("focus", check);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") check();
+  });
 }
 
 function exposeBuildInfo(buildInfo) {

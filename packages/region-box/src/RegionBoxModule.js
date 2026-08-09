@@ -1,7 +1,14 @@
 import {
   MODULE_MANIFEST_VERSION
 } from "../../plugin-api/src/index.js?build=20260802-0047b";
-import { boxRegionReducer } from "./reducer.js?build=20260802-0047g";
+import { boxRegionReducer } from "./reducer.js?build=20260808-0053h";
+
+/*
+ * O reducer precisa sair pelo mesmo registro de módulo que o publica como
+ * contribuição. URLs de módulo diferentes (inclusive apenas pelo parâmetro
+ * `build`) criam identidades de função diferentes no browser.
+ */
+export { boxRegionReducer };
 
 export const REGION_BOX_REDUCER_CONTRIBUTION_ID =
   "spatialseed.document.reducer.box-region";

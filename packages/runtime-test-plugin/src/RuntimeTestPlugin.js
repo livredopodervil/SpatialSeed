@@ -1,7 +1,7 @@
 import {
   createRuntimeLayerTests,
   runRuntimeTests
-} from "./RuntimeLayerTests.js?build=20260804-0048i-audit2";
+} from "./RuntimeLayerTests.js?build=20260808-0053h";
 
 export const manifest = Object.freeze({
   id: "runtime-layer-tests",
@@ -74,7 +74,8 @@ export function activateRuntimeTestPlugin({ commands }) {
         "runtime test path-references",
         "runtime test mesh-edit-math",
         "runtime test mesh-topology",
-        "runtime test all"
+        "runtime test all",
+        "runtime test all failed"
       ],
       suites: Object.fromEntries(
         Object.entries(suites).map(([name, tests]) => [
@@ -85,8 +86,8 @@ export function activateRuntimeTestPlugin({ commands }) {
     }))
     .register(
       "runtime.test.run",
-      ({ suite = "all" } = {}) =>
-        runRuntimeTests(suites, suite)
+      ({ suite = "all", failuresOnly = false } = {}) =>
+        runRuntimeTests(suites, suite, { failuresOnly })
     );
 
   return Object.freeze({ manifest, suites });

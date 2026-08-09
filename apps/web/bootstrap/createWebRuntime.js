@@ -1,53 +1,64 @@
-import { Region } from "../../../packages/core/src/Region.js?build=20260724-0029d";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260801-0045a1";
+import { Region } from "../../../packages/core/src/Region.js?build=20260808-0053f";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260808-0053h";
 import {
   ModuleRegistry
-} from "../../../packages/plugin-api/src/index.js?build=20260802-0047b";
-import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260729-0039g2";
+} from "../../../packages/plugin-api/src/index.js?build=20260808-0053f";
+import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260808-0053f";
 import {
   VIEWER_CAMERA_COMMANDS,
   CameraObjectService,
   ViewerCameraController,
   ViewerState,
-} from "../../../packages/runtime-layers/src/index.js?build=20260730-0040e";
+} from "../../../packages/runtime-layers/src/index.js?build=20260808-0053f";
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260802-0047g";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/ThreeRegionRenderer.js?build=20260804-0048i-audit1";
-import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260801-0045a1";
+} from "../../../packages/region-box/src/index.js?build=20260808-0053h";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260808-0053h";
+import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
   parseResourcePath
-} from "../../../packages/resource-tree/src/index.js?build=20260801-0045a1";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260804-0048i-audit2";
-import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260727-0037c";
-import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260729-0039g1";
-import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260802-0047g";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260804-0048i-audit1";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260727-0037c";
+} from "../../../packages/resource-tree/src/index.js?build=20260808-0053f";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260808-0053f";
+import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260808-0053f";
+import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260808-0053f";
+import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260808-0053f";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260808-0053f";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260808-0053f";
+import {
+  InstanceGraphProjectionCache,
+  instanceGraphDiagnostics
+} from "../../../packages/instance-graph/src/index.js?build=20260808-0053f";
+import {
+  OccurrenceResolver
+} from "../../../packages/occurrence-runtime/src/index.js?build=20260808-0053f";
+import { OccurrenceTransformHierarchy } from "../../../packages/transform-hierarchy/src/index.js?build=20260808-0053f";
+import {
+  ComplexityReporter
+} from "../../../packages/complexity-audit/src/index.js?build=20260808-0053f";
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260805-0048l1";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260730-0041a";
+} from "../../../packages/platform-web/src/index.js?build=20260808-0053h";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
-} from "../../../packages/appearance-binding/src/index.js?build=20260730-0041b";
+} from "../../../packages/appearance-binding/src/index.js?build=20260808-0053f";
 import {
   classifyChanges,
   SceneProjectionScheduler
-} from "../../../packages/incremental-runtime/src/index.js?build=20260730-0040h";
+} from "../../../packages/incremental-runtime/src/index.js?build=20260808-0053f";
 import {
   createDefaultPropertyRegistry,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260727-0037c";
+} from "../../../packages/property-registry/src/index.js?build=20260808-0053f";
 import {
   createDefaultGeometryRegistry
-} from "../../../packages/geometry-registry/src/index.js?build=20260802-0047g";
+} from "../../../packages/geometry-registry/src/index.js?build=20260808-0053f";
 import {
   SKETCH_DESCRIPTOR_VERSION
-} from "../../../packages/sketch-descriptor/src/index.js?build=20260802-0047g";
+} from "../../../packages/sketch-descriptor/src/index.js?build=20260808-0053f";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -55,7 +66,7 @@ import {
   RuntimeCapabilities,
   describeRuntimeProfiles,
   resolveRuntimeProfile
-} from "../../../packages/runtime-api/src/index.js?build=20260718-0027h";
+} from "../../../packages/runtime-api/src/index.js?build=20260808-0053f";
 import {
   CAMERA_PLAN_COMMANDS,
   CameraPlanCommitService,
@@ -64,52 +75,56 @@ import {
   SpatialPlanCommitService,
   SPATIAL_CREATE_COMMAND,
   createBrowserProgramSessionWorker
-} from "../../../packages/script-runtime/src/index.js?build=20260731-0043x";
+} from "../../../packages/script-runtime/src/index.js?build=20260808-0053f";
 import {
   ProcedureCatalogEditor
-} from "../../../packages/procedure-editor/src/index.js?build=20260716-0026j";
+} from "../../../packages/procedure-editor/src/index.js?build=20260808-0053f";
 import {
   ProcedureCatalogUiPanel
-} from "../../../packages/catalog-ui/src/index.js?build=20260731-0043x";
+} from "../../../packages/catalog-ui/src/index.js?build=20260808-0053f";
 import {
   ExperimentActionService,
   ExperimentRegistry,
   ExperimentService
-} from "../../../packages/experiment-runtime/src/index.js?build=20260802-0047b";
+} from "../../../packages/experiment-runtime/src/index.js?build=20260808-0053f";
 import {
   STARTER_EXPERIMENT_CATALOG_CONTRIBUTION_ID,
   starterExperimentModule
-} from "../../../packages/experiment-plugin/src/index.js?build=20260802-0047b";
+} from "../../../packages/experiment-plugin/src/index.js?build=20260808-0053f";
 import {
   ExperimentPanel
-} from "../../../packages/experiment-panel/src/index.js?build=20260718-0027f";
+} from "../../../packages/experiment-panel/src/index.js?build=20260808-0053f";
+import {
+  AnalyticTimeDomains,
+  DependencyVersions,
+  TemporalExecutionController,
+  TemporalRuntime
+} from "../../../packages/temporal-runtime/src/index.js?build=20260808-0053f";
 import {
   ANIMATION_COMMAND_SERVICE_VERSION,
-  ANIMATION_RUNTIME_VERSION,
+  TEMPORAL_ANIMATION_RUNTIME_VERSION,
   AnimationCommandService,
-  AnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260724-0029e1";
+  AnimationProcedureService,
+  TemporalAnimationRuntime
+} from "../../../packages/animation-runtime/src/index.js?build=20260808-0053h";
 import {
   AnimationPanel
-} from "../../../packages/animation-panel/src/index.js?build=20260720-0028d";
+} from "../../../packages/animation-panel/src/index.js?build=20260808-0053f";
 import {
   ViewerRenderPanel
-} from "../../../packages/viewer-render-panel/src/index.js?build=20260726-0032a";
+} from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260804-0048i-audit1";
-import {
-  MeshGeometryAudit
-} from "../../../packages/mesh-geometry-audit/src/index.js?build=20260805-0048l1";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260808-0053f";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260802-0047g";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260808-0053f";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260730-0040e";
+} from "../../../packages/edit-context/src/index.js?build=20260808-0053f";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260802-0047g";
+} from "../../../packages/edit-hud/src/index.js?build=20260808-0053f";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -118,37 +133,37 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260802-0047g";
+} from "../../../packages/edit-tools/src/index.js?build=20260808-0053f";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260730-0040e";
+} from "../../../packages/object-placement/src/index.js?build=20260808-0053f";
 import {
   DrawingTargetController
-} from "../../../packages/drawing-target/src/index.js?build=20260730-0042c";
+} from "../../../packages/drawing-target/src/index.js?build=20260808-0053f";
 import {
   PlanarSketchController
-} from "../../../packages/planar-authoring/src/index.js?build=20260802-0047g";
+} from "../../../packages/planar-authoring/src/index.js?build=20260808-0053f";
 import {
   StrokeCompactionScheduler,
   StrokeFusionService,
   replaceStrokePointInBundle
-} from "../../../packages/stroke-resources/src/index.js?build=20260802-0047g";
+} from "../../../packages/stroke-resources/src/index.js?build=20260808-0053f";
 import {
   MeasurementController
-} from "../../../packages/measurement-tools/src/index.js?build=20260730-0040e";
+} from "../../../packages/measurement-tools/src/index.js?build=20260808-0053f";
 import {
   PATH_BRUSH_AFFINE_VARIABLES,
   PathSketchController,
   PathToolService,
   SpatialReferenceResolver
-} from "../../../packages/spatial-references/src/index.js?build=20260802-0047g";
+} from "../../../packages/spatial-references/src/index.js?build=20260808-0053f";
 import {
   BrowserSandboxIdentity,
   createSandboxId,
   createRecoveryRecord,
   IndexedDbRecoveryStore,
   SandboxRecoveryController
-} from "../../../packages/project-recovery/src/index.js?build=20260725-0029f1";
+} from "../../../packages/project-recovery/src/index.js?build=20260808-0053f";
 import {
   CoordinatedSandbox,
   LocalProjectLaunchReceiver,
@@ -158,9 +173,9 @@ import {
   LocalViewerCoordinator,
   LocalViewerSessionDirectory,
   createIndependentProjectUrl
-} from "../../../packages/local-viewers/src/index.js?build=20260730-0040f";
+} from "../../../packages/local-viewers/src/index.js?build=20260808-0053f";
 
-const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v7";
+const EXPECTED_RENDERER_API = "renderer-three-navigation-camera-v8";
 const EXPECTED_EDITOR_API = "editor-state-v2";
 
 export async function createWebRuntime({
@@ -274,7 +289,31 @@ export async function createWebRuntime({
     viewer,
     surface: renderer
   });
-  const animationRuntime = new AnimationRuntime({ surface: renderer });
+  const timeDomains = new AnalyticTimeDomains();
+  const temporalDependencies = new DependencyVersions();
+  const temporalRuntime = new TemporalRuntime({
+    domains: timeDomains,
+    dependencies: temporalDependencies
+  });
+  let temporalExecution = null;
+  const rescheduleTemporalRuntime = changed => {
+    if (!changed) return false;
+    temporalRuntime.wakeAll();
+    temporalExecution?.reconcile();
+    return true;
+  };
+  const updateTemporalDomain = (id, update) => {
+    const before = timeDomains.snapshot(id).revision;
+    const domain = update();
+    const changed = domain.revision !== before;
+    rescheduleTemporalRuntime(changed);
+    return Object.freeze({ changed, domain });
+  };
+  const animationRuntime = new TemporalAnimationRuntime({
+    surface: renderer,
+    temporalRuntime,
+    timeDomains
+  });
   const animationCommands = new AnimationCommandService({
     runtime: animationRuntime,
     selection: () => editor.selection.snapshot()
@@ -408,7 +447,9 @@ export async function createWebRuntime({
         animationCommands.prepareShared(operation, args),
       apply: (session, { now }) =>
         animationCommands.synchronizeShared(session, { now }),
-      status: () => animationCommands.status()
+      status: () => animationCommands.status(),
+      sceneChanged: (changes, session) =>
+        animationCommands.sceneChanged(changes, session)
     }
   });
   sharedAnimations.start();
@@ -476,12 +517,24 @@ export async function createWebRuntime({
   const unsubscribeSpatialReferences = sandbox.subscribe(
     (state, changes) => spatialReferences.applyChanges(state, changes)
   );
+  const complexityReporter = new ComplexityReporter({ limit: 512 });
+  const occurrenceResolver = new OccurrenceResolver({ sandbox });
+  const transformHierarchy = new OccurrenceTransformHierarchy({
+    occurrenceResolver
+  });
+  const unsubscribeOccurrenceResolver = sandbox.subscribe((_state, changes) => {
+    occurrenceResolver.invalidate(changes);
+    transformHierarchy.invalidate(changes);
+  });
   const selectionOperations = new SelectionOperations({
     editor,
     sandbox,
     regionId: region.descriptor.id,
     geometryRegistry,
     appearanceRuntime,
+    occurrenceResolver,
+    transformHierarchy,
+    complexityReporter,
     onRepeatableChanged: repeatable => {
       if (repeatable) toolLifecycle.remember(repeatable);
       else toolLifecycle.clearRepeatable();
@@ -504,49 +557,6 @@ export async function createWebRuntime({
     editor,
     renderer,
     geometryRegistry
-  });
-  const meshGeometryAudit = new MeshGeometryAudit({
-    captureSource: ({ objectId = null } = {}) => {
-      const meshStatus = meshEditor.status();
-      const selection = editor.selection.snapshot();
-      const resolvedId = objectId ?? meshStatus.objectId ??
-        selection.members.at(-1)?.objectId ?? null;
-      if (resolvedId === null || resolvedId === undefined) {
-        throw new Error("Selecione um objeto ou mantenha uma edição de malha ativa.");
-      }
-      const id = String(resolvedId);
-      const object = sandbox.getObject?.(id) ??
-        sandbox.getSnapshot().objects.find(candidate =>
-          String(candidate.id) === id
-        ) ?? null;
-      if (!object) throw new Error(`Objeto não encontrado: ${id}.`);
-      let canonicalDescriptor = null;
-      try {
-        canonicalDescriptor = geometryRegistry.normalize(
-          geometryRegistry.describeLegacyObject(object)
-        );
-      } catch {
-        canonicalDescriptor = null;
-      }
-      return {
-        objectId: id,
-        sandboxRevision: sandbox.revision,
-        object: structuredClone(object),
-        canonical: Object.freeze({
-          descriptor: canonicalDescriptor
-            ? structuredClone(canonicalDescriptor)
-            : null,
-          geometryKey: canonicalDescriptor
-            ? geometryRegistry.key(canonicalDescriptor)
-            : null,
-          renderProfile: canonicalDescriptor
-            ? geometryRegistry.renderProfile(canonicalDescriptor)
-            : null
-        }),
-        edit: meshEditor.geometryAuditSnapshot(),
-        renderer: renderer.getMeshGeometryAudit(id)
-      };
-    }
   });
   const editContext = new EditContextController({
     editor,
@@ -793,7 +803,9 @@ export async function createWebRuntime({
     selection: editor.selection,
     sandbox,
     appearanceRuntime,
-    registry: propertyRegistry
+    registry: propertyRegistry,
+    occurrenceResolver,
+    complexityReporter
   });
   const appearanceBindings = new AppearanceBindingService({
     sandbox,
@@ -1003,7 +1015,8 @@ export async function createWebRuntime({
   );
   commands.register(
     "selection.anchor.set",
-    ({ policy = "bounds-center", position = null, targetIds = null } = {}) => {
+    ({ policy = "bounds-center", position = null, targetIds = null,
+       referenceTargetId = null, referencePoint = [0, 0, 0], offset = [0, 0, 0] } = {}) => {
       viewerCoordinator.requireAuthority("alterar a política de âncora");
       const ids = Array.isArray(targetIds) && targetIds.length
         ? [...new Set(targetIds.map(String))]
@@ -1011,13 +1024,21 @@ export async function createWebRuntime({
             .map(member => String(member.objectId)))];
       if (!ids.length) return Object.freeze({ changed: false, reason: "selection-empty" });
       const normalizedPolicy = String(policy).trim().toLowerCase();
-      if (!["bounds-center", "origin", "custom", "pivot"].includes(normalizedPolicy)) {
+      if (!["bounds-center", "origin", "custom", "pivot", "reference"].includes(normalizedPolicy)) {
         throw new RangeError(`Política de âncora desconhecida: ${normalizedPolicy}.`);
       }
       if (normalizedPolicy === "custom" &&
           (!Array.isArray(position) || position.length !== 3 ||
             !position.every(Number.isFinite))) {
         throw new TypeError("Âncora personalizada exige position [x,y,z].");
+      }
+      if (normalizedPolicy === "reference") {
+        if (!referenceTargetId) throw new TypeError("Âncora de referência exige referenceTargetId.");
+        for (const vector of [referencePoint, offset]) {
+          if (!Array.isArray(vector) || vector.length !== 3 || !vector.every(Number.isFinite)) {
+            throw new TypeError("Âncora de referência exige vetores 3D finitos.");
+          }
+        }
       }
       const changed = sandbox.dispatch({
         type: "selection.properties.set",
@@ -1027,8 +1048,18 @@ export async function createWebRuntime({
           patch: {
             selectionAnchorPolicy: normalizedPolicy,
             ...(normalizedPolicy === "custom"
-              ? { selectionAnchorLocal: [...position] }
-              : { selectionAnchorLocal: null })
+              ? { selectionAnchorLocal: [...position], anchorRef: null }
+              : normalizedPolicy === "reference"
+                ? {
+                    selectionAnchorLocal: null,
+                    anchorRef: {
+                      mode: "reference",
+                      target: String(referenceTargetId),
+                      point: [...referencePoint],
+                      offset: [...offset]
+                    }
+                  }
+                : { selectionAnchorLocal: null, anchorRef: null })
           }
         }))
       });
@@ -1181,13 +1212,15 @@ export async function createWebRuntime({
         id,
         parameters = {},
         targetIds = null,
-        targetMode = "selection"
+        targetMode = "selection",
+        timeDomainId = "world"
       } = {}) =>
         sharedAnimations.play("preset", {
           id,
           parameters,
           targetIds,
-          targetMode
+          targetMode,
+          timeDomainId
         }),
       { category: "animation", mutates: false }
     )
@@ -1209,6 +1242,28 @@ export async function createWebRuntime({
     .register(
       "animation.stop",
       () => sharedAnimations.stop(),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.instance.pause",
+      ({ instanceId }) => animationCommands.pause({ instanceId }),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.instance.resume",
+      ({ instanceId }) => animationCommands.resume({ instanceId }),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.instance.stop",
+      ({ instanceId, reason = "user-instance" }) =>
+        animationCommands.stop({ instanceId }, reason),
+      { category: "animation", mutates: false }
+    )
+    .register(
+      "animation.stop-all",
+      ({ reason = "user-all" } = {}) =>
+        animationCommands.stopAll(reason),
       { category: "animation", mutates: false }
     )
     .register(
@@ -1375,6 +1430,35 @@ export async function createWebRuntime({
   const procedureCatalog = new ProcedureCatalog({
     storage: new BrowserProcedureCatalogStore()
   });
+  const animationProcedurePrograms = new ProgramSessionController({
+    workerFactory: () => createBrowserProgramSessionWorker(),
+    timeoutMs: 5000,
+    allowedCommands: [],
+    geometryTypes: geometryRegistry.list(),
+    maxCommands: 1
+  });
+  const animationProcedures = new AnimationProcedureService({
+    catalog: procedureCatalog,
+    programs: animationProcedurePrograms,
+    selection: () => editor.selection.snapshot()
+  });
+  commands.register(
+    "animation.procedure",
+    async args => {
+      const descriptor = await animationProcedures.resolve(args);
+      return sharedAnimations.play(descriptor.kind, descriptor.args);
+    },
+    {
+      category: "animation",
+      mutates: false,
+      asynchronous: true
+    }
+  );
+  commands.register(
+    "animation.procedures.describe",
+    () => animationProcedures.describe(),
+    { category: "animation", mutates: false }
+  );
   commands.register(
     "procedure.plan.prepare",
     ({ name, parameters = {}, seed = 0 } = {}) =>
@@ -1434,8 +1518,137 @@ export async function createWebRuntime({
   );
 
   commands.register("runtime.api.noop", ({ value = null } = {}) => value);
+  commands.register(
+    "time.domain.create",
+    args => {
+      const domain = timeDomains.create(args);
+      rescheduleTemporalRuntime(true);
+      return Object.freeze({ changed: true, domain });
+    },
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.delete",
+    ({ id }) => {
+      const changed = timeDomains.delete(id);
+      rescheduleTemporalRuntime(changed);
+      return Object.freeze({ changed });
+    },
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.rate.set",
+    ({ id = "world", rate }) =>
+      updateTemporalDomain(id, () => timeDomains.setRate(id, rate)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.pause",
+    ({ id = "world" } = {}) =>
+      updateTemporalDomain(id, () => timeDomains.pause(id)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.resume",
+    ({ id = "world" } = {}) =>
+      updateTemporalDomain(id, () => timeDomains.resume(id)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.seek",
+    ({ id = "world", localTime }) =>
+      updateTemporalDomain(id, () => timeDomains.seek(id, localTime)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.domain.parent.set",
+    ({ id, parentId = "world" }) =>
+      updateTemporalDomain(id, () => timeDomains.setParent(id, parentId)),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.target.assign",
+    ({ targetId, domainId = "world" }) => {
+      const changed = timeDomains.assignTarget(targetId, domainId);
+      rescheduleTemporalRuntime(changed);
+      return Object.freeze({
+        changed,
+        targetId: String(targetId),
+        domainId: timeDomains.domainForTarget(targetId)
+      });
+    },
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.dependency.bump",
+    ({ id }) => Object.freeze({
+      changed: true,
+      dependencyId: String(id),
+      version: temporalRuntime.bumpDependency(id)
+    }),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.operation.wake",
+    ({ id }) => Object.freeze({
+      changed: temporalRuntime.wake(id),
+      operation: temporalRuntime.describe(id)
+    }),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.operation.enable",
+    ({ id, enabled = true }) => Object.freeze({
+      changed: temporalRuntime.enable(id, enabled),
+      operation: temporalRuntime.describe(id)
+    }),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.operation.domain.set",
+    ({ id, domainId = "world" }) => Object.freeze({
+      changed: temporalRuntime.setTimeDomain(id, domainId),
+      operation: temporalRuntime.describe(id)
+    }),
+    { category: "time", mutates: false }
+  );
+  commands.register(
+    "time.execution.retry",
+    () => Object.freeze({ changed: temporalExecution?.resetFault() ?? false }),
+    { category: "time", mutates: false }
+  );
 
   const queries = new RuntimeQueryRegistry();
+  queries
+    .register("time.status", () => temporalRuntime.status())
+    .register("instance.graph.status", () =>
+      instanceGraphDiagnostics(sandbox.getSnapshot())
+    )
+    .register("instance.occurrence", ({ id } = {}) => {
+      const resolved = occurrenceResolver.resolve(id);
+      if (!resolved) return null;
+      return Object.freeze({
+        ...resolved,
+        object: occurrenceResolver.object(id)
+      });
+    })
+    .register("occurrence.runtime.status", () => occurrenceResolver.status())
+    .register("transform.hierarchy.status", () => transformHierarchy.status())
+    .register("render.replica.status", () => renderer.getReplicaDiagnostics())
+    .register("complexity.status", () => complexityReporter.status())
+    .register("time.domains", () => timeDomains.list())
+    .register("time.domain", ({ id = "world" } = {}) =>
+      timeDomains.snapshot(id)
+    )
+    .register("time.target.domain", ({ targetId }) => Object.freeze({
+      targetId: String(targetId),
+      domainId: timeDomains.domainForTarget(targetId)
+    }))
+    .register("time.operation", ({ id }) => temporalRuntime.describe(id))
+    .register("time.execution", () => temporalExecution?.status() ?? null)
+    .register("time.render-demand", () =>
+      renderer.getRenderDemandDiagnostics()
+    );
   const events = new RuntimeEvents();
   const capabilities = new RuntimeCapabilities();
   let uiDiagnosticsProvider = () => Object.freeze({
@@ -1463,6 +1676,38 @@ export async function createWebRuntime({
     events,
     capabilities
   });
+  temporalExecution = new TemporalExecutionController({
+    runtime: temporalRuntime,
+    surface: renderer,
+    snapshot: () => commandSandbox.getSnapshot(),
+    apply: cycle => {
+      let applied = 0;
+      for (const change of cycle.changes) {
+        const command = change?.command ?? change;
+        if (!command || typeof command !== "object" ||
+            typeof command.type !== "string") {
+          throw new TypeError(
+            "Mudança temporal deve ser um comando ou { command }."
+          );
+        }
+        if (dispatchRuntimeCommand(command)) applied += 1;
+      }
+      return Object.freeze({ changed: applied > 0, applied });
+    },
+    publishEvents: temporalEvents => {
+      const animationOutcome = animationRuntime.consumeTemporalEvents(
+        temporalEvents
+      );
+      for (const event of temporalEvents) {
+        const type = String(event?.type ?? "time.event");
+        if (type === "animation.overlay.frame") continue;
+        runtime.emit(type, event?.payload ?? event);
+      }
+      return temporalEvents.length;
+    },
+    onError: error => animationRuntime.fault(error)
+  });
+  runtime.onDispose(() => temporalExecution.dispose());
   const toolCapabilities = createDefaultToolCapabilityFacade({
     editContext,
     registry: toolRegistry,
@@ -1494,6 +1739,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeToolCapabilities)
     .onDispose(unsubscribeToolWorkspace)
     .onDispose(() => sharedAnimations.dispose())
+    .onDispose(() => animationProcedurePrograms.dispose())
     .onDispose(() => animationRuntime.dispose());
 
   // Painéis e HUDs podem consultar a seleção durante a própria construção.
@@ -1705,6 +1951,9 @@ export async function createWebRuntime({
     .register("animation.presets.describe", () =>
       animationCommands.presets()
     )
+    .register("animation.procedures.describe", () =>
+      animationProcedures.describe()
+    )
     .register("runtime.profile", () => profile)
     .register("viewer.camera.snapshot", () =>
       cameraController.snapshot()
@@ -1731,24 +1980,6 @@ export async function createWebRuntime({
     )
     .register("mesh.edit.status", () =>
       meshEditor.status()
-    )
-    .register("mesh.audit.clear", () =>
-      meshGeometryAudit.clear()
-    )
-    .register("mesh.audit.capture", args =>
-      meshGeometryAudit.capture(args ?? {})
-    )
-    .register("mesh.audit.list", () =>
-      meshGeometryAudit.list()
-    )
-    .register("mesh.audit.compare", args =>
-      meshGeometryAudit.compare(args ?? {})
-    )
-    .register("mesh.audit.diagnose", args =>
-      meshGeometryAudit.diagnose(args ?? {})
-    )
-    .register("mesh.audit.report", args =>
-      meshGeometryAudit.report(args ?? {})
     )
     .register("scene.objects.list", () =>
       sandbox.getSnapshot().objects
@@ -1852,6 +2083,8 @@ export async function createWebRuntime({
         pathTools: pathTools.getLocalityDiagnostics?.() ?? null,
         selectionOperations:
           selectionOperations.getLocalityDiagnostics?.() ?? null,
+        occurrenceRuntime: occurrenceResolver.status(),
+        complexity: complexityReporter.status(),
         sets: Object.freeze({
           sceneObjects: state.objects.length,
           sandboxSubscribers:
@@ -1870,7 +2103,7 @@ export async function createWebRuntime({
           gestureEnd: "O pointerup sela o capsule; preparação e despacho são fases separadas e continuam com orçamento durante gestos subsequentes.",
           undoRedo: "Deltas inversos são compactados antes da projeção; create+delete pendentes são eliminados sem construir recursos visuais.",
           toolChange: "Captura de fonte selecionada ainda constrói HierarchyIndex uma vez por revisão; previews posteriores usam cápsula S, não a cena N.",
-          selection: "Clique percorre lotes e famílias renderizadas; seleção em área reconstrói o índice de tela quando câmera ou cena invalidam o cache."
+          selection: "Clique consulta o índice espacial e faz raycast exato apenas nos candidatos; seleção em área reconstrói o índice de tela somente quando câmera ou cena invalidam o cache."
         })
       });
     })
@@ -1883,6 +2116,7 @@ export async function createWebRuntime({
     root: inspectorRoot,
     editor,
     sandbox,
+    occurrenceResolver,
     query: (id, args) => runtime.query(id, args),
     execute: (id, args) => runtime.execute(id, args)
   });
@@ -1903,7 +2137,8 @@ export async function createWebRuntime({
   const animationPanel = new AnimationPanel({
     root: animationPanelRoot,
     query: (id, args) => runtime.query(id, args),
-    execute: (id, args) => runtime.execute(id, args)
+    execute: (id, args) => runtime.execute(id, args),
+    subscribe: listener => sharedAnimations.subscribe(listener)
   });
   runtime.onDispose(() => animationPanel.dispose());
   const viewerRenderPanel = new ViewerRenderPanel({
@@ -1993,8 +2228,7 @@ export async function createWebRuntime({
     },
     geometryRegistry,
     queries: {
-      execute: (id, args) => runtime.query(id, args),
-      describe: () => runtime.capabilities().queries
+      execute: (id, args) => runtime.query(id, args)
     },
     programs: programSession,
     procedures: procedureCatalog,
@@ -2138,7 +2372,7 @@ export async function createWebRuntime({
       planarConstraints: true
     }))
     .register("animation", () => ({
-      apiVersion: ANIMATION_RUNTIME_VERSION,
+      apiVersion: TEMPORAL_ANIMATION_RUNTIME_VERSION,
       commandApiVersion: ANIMATION_COMMAND_SERVICE_VERSION,
       coordinatorApiVersion: LocalAnimationCoordinator.apiVersion,
       mode: "shared-ephemeral-render-overlay",
@@ -2203,15 +2437,32 @@ export async function createWebRuntime({
       runtime.benchmark({ iterations })
   );
 
+  const instanceGraphProjection = new InstanceGraphProjectionCache();
+  queries.register(
+    "instance.graph.projection",
+    () => instanceGraphProjection.status()
+  );
   const sceneProjection = new SceneProjectionScheduler({
-    applyIncremental: (state, changes) =>
-      renderer.applyChanges(state, changes),
-    applyFull: state => renderer.update(state),
+    applyIncremental: (state, changes) => {
+      const projection = instanceGraphProjection.update(state, changes);
+      if (projection.full) {
+        renderer.update(projection.scene);
+      } else if (projection.changes.length) {
+        renderer.applyChanges(projection.scene, projection.changes);
+      }
+    },
+    applyFull: state => {
+      const projection = instanceGraphProjection.reset(state);
+      renderer.update(projection.scene);
+    },
     interactionActive: () => Boolean(pathSketch.status().drawing)
   });
   let initialSceneProjected = false;
   const unsubscribeSandbox = sandbox.subscribe(
     (state, changes) => {
+      temporalRuntime.bumpDependencies(
+        temporalDependencyIdsForChanges(changes)
+      );
       const classification = classifyChanges(changes);
       if (!initialSceneProjected &&
           changes.some(change => change?.type === "initial")) {
@@ -2232,7 +2483,10 @@ export async function createWebRuntime({
   runtime.onDispose(() => sceneProjection.dispose());
 
   const unsubscribeSelection = editor.selection.subscribe(
-    snapshot => runtime.emit("selection.changed", snapshot)
+    snapshot => {
+      temporalRuntime.bumpDependency("selection");
+      runtime.emit("selection.changed", snapshot);
+    }
   );
   const unsubscribeMeshEdit = meshEditor.subscribe(
     snapshot => runtime.emit("mesh.edit.changed", snapshot)
@@ -2245,7 +2499,10 @@ export async function createWebRuntime({
   );
 
   const unsubscribeEditor = editor.subscribe(
-    snapshot => runtime.emit("editor.changed", snapshot)
+    snapshot => {
+      temporalRuntime.bumpDependency("editor");
+      runtime.emit("editor.changed", snapshot);
+    }
   );
   const unsubscribeViewer = viewer.subscribe(
     snapshot => runtime.emit("viewer.changed", snapshot)
@@ -2299,6 +2556,7 @@ export async function createWebRuntime({
     .onDispose(() => resourceTree.dispose?.())
     .onDispose(unsubscribeMeshEdit)
     .onDispose(unsubscribeSelection)
+    .onDispose(unsubscribeOccurrenceResolver)
     .onDispose(unsubscribeSpatialReferences)
     .onDispose(unsubscribeSandbox);
 
@@ -2314,7 +2572,11 @@ export async function createWebRuntime({
         editor,
         renderer,
         appearanceRuntime,
-        selectionOperations
+        selectionOperations,
+        timeDomains,
+        temporalDependencies,
+        temporalRuntime,
+        temporalExecution
       }
     );
   } catch (error) {
@@ -2374,6 +2636,10 @@ export async function createWebRuntime({
       experimentProgramSession,
       spatialPlanCommitService,
       cameraPlanCommitService,
+      timeDomains,
+      temporalDependencies,
+      temporalRuntime,
+      temporalExecution,
       animationRuntime,
       animationCommands,
       sharedAnimations,
@@ -2387,6 +2653,46 @@ export async function createWebRuntime({
       connectUiDiagnostics
     })
   });
+}
+
+function temporalDependencyIdsForChanges(changes = []) {
+  const ids = new Set(["world", "world:revision"]);
+  for (const change of changes ?? []) {
+    if (!change || typeof change !== "object") continue;
+    const objectId = String(
+      change.objectId ??
+      change.object?.id ??
+      change.previousObject?.id ??
+      ""
+    ).trim();
+    if (!objectId) continue;
+
+    ids.add(`object:${objectId}`);
+    const type = String(change.type ?? "");
+    if (type === "object-created" || type === "object-deleted") {
+      ids.add(`object:${objectId}:exists`);
+    }
+    if (type === "object-transform") {
+      ids.add(`object:${objectId}:transform`);
+      ids.add(`object:${objectId}:position`);
+      ids.add(`object:${objectId}:rotation`);
+      ids.add(`object:${objectId}:scale`);
+    }
+
+    const before = change.previousObject ?? null;
+    const after = change.object ?? null;
+    if (!before && !after) continue;
+    const keys = new Set([
+      ...Object.keys(before ?? {}),
+      ...Object.keys(after ?? {})
+    ]);
+    for (const key of keys) {
+      if (!Object.is(before?.[key], after?.[key])) {
+        ids.add(`object:${objectId}:${key}`);
+      }
+    }
+  }
+  return Object.freeze([...ids].sort());
 }
 
 function resourceObjectPatch(property, value) {
