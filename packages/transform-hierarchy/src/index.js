@@ -14,4 +14,4 @@ export { ToolPivotResolver, TOOL_PIVOT_VERSION } from "./ToolPivot.js?build=2026
 export {
   LOCALLY_RESOLVED_OBJECT_HIERARCHY_VERSION,
   LocallyResolvedObjectHierarchy
-} from "./LocallyResolvedObjectHierarchy.js?build=20260809-0053k";
+} from "./LocallyResolvedObjectHierarchy.js?build=20260809-0053l";

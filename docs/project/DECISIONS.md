@@ -1061,6 +1061,29 @@ revisão-base e fase e não podem escrever diretamente no estado persistente.
 
 Consulte [`CANONICAL_REGRESSIONS_0053K.md`](../CANONICAL_REGRESSIONS_0053K.md).
 
+## D-056 — Contexto editorial preserva intenção e preview local é hierárquico
+
+**Estado:** implementada no incremento 0053l.
+
+Entradas em edição de componentes e duplicações preservam a última ferramenta
+de transformação. A prévia local registra somente raízes canônicas e resolve
+recursivamente a subárvore na mesma hierarquia derivada usada por animação e
+preview compartilhado. O pivô padrão é o centro dos limites da seleção;
+políticas de âncora ou pivô diferentes exigem escolha explícita.
+
+**Motivação:** forçar `translate` durante transições fazia o primeiro gesto
+depender de uma troca manual de ferramenta. Atualizar proxies achatados durante
+o gesto separava a prévia local do contrato recursivo já usado no commit e
+falhava em grupos contendo grupos.
+
+**Consequências:** seleção de componentes é republicada depois da ativação do
+gizmo; cancelar e confirmar previews reaplica apenas a subárvore afetada;
+âncoras referenciadas consultam a matriz efetiva do alvo. A política não inclui
+um esqueleto cinemático: juntas, ciclos e avaliação temporal continuam sendo um
+incremento separado.
+
+Consulte [`MAIN_CONSOLIDATION_0053L.md`](../MAIN_CONSOLIDATION_0053L.md).
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

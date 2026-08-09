@@ -677,7 +677,7 @@ export function createEditorCommands({
 
   if (meshEditor) {
     commands
-      .register("planar.edit.begin", ({ selectAll = true } = {}) => {
+      .register("planar.edit.begin", ({ selectAll = false } = {}) => {
         cancelInteractiveAction();
         if (editContext && !editContext.status().editPlane) {
           const drawingPlane = editContext.status().drawingPlane;
@@ -696,17 +696,15 @@ export function createEditorCommands({
         if (editContext?.status().editPlane) {
           editContext.setFrame("custom-plane");
         }
-        editContext?.setTool("translate");
         return status;
       }, {
         category: "planar-edit",
         mutates: false
       })
       .register("mesh.edit.enter", (args = {}) => {
-        const selectAll = args.selectAll !== false;
+        const selectAll = args.selectAll === true;
         if (!editContext) return meshEditor.enter({ ...args, selectAll });
         editContext.setSubjectLevel("vertex", { selectAll });
-        editContext.setTool("translate");
         return meshEditor.status();
       }, {
         category: "mesh-edit",

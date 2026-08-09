@@ -295,7 +295,10 @@ for needle in [
     "listener(editContext.status())"
 ]:
     require("apps/web/bootstrap/createWebRuntime.js", needle)
-require("packages/mesh-editor-core/src/MeshEditController.js", 'setTransformMode("translate")')
+require(
+    "packages/mesh-editor-core/src/MeshEditController.js",
+    "const transformMode = this.editor.snapshot?.().tool?.transformMode;"
+)
 
 
 for path, needle in [

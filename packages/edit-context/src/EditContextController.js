@@ -175,9 +175,12 @@ export class EditContextController {
       this.meshEditor.enter({ selectAll: Boolean(selectAll) });
     }
     this.meshEditor.setComponentMode(normalized);
-    if (this.editor.snapshot().tool.mode === "navigate") {
-      this.renderer.setTransformMode("select");
-    }
+    const lastTransformMode = this.editor.snapshot().tool.transformMode;
+    this.renderer.setTransformMode(
+      ["translate", "rotate", "scale"].includes(lastTransformMode)
+        ? lastTransformMode
+        : "translate"
+    );
     this.#notify();
     return this.status();
   }

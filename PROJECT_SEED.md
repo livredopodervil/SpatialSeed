@@ -214,6 +214,14 @@ oculta atomicamente todos os recursos do lote; e a escala pode cruzar o pivô
 para produzir um espelho sem matriz singular. Consulte
 `docs/CANONICAL_REGRESSIONS_0053K.md`.
 
+O build `0053l` preserva a última transformação ao duplicar e ao entrar em
+componentes, seleciona o primeiro vértice por padrão e remove a dependência de
+uma troca manual de ferramenta. O pivô editorial padrão fica no centro dos
+limites da seleção. Previews locais passam a ser camadas hierárquicas
+recursivas, inclusive para grupos contendo grupos; âncoras referenciadas usam a
+mesma matriz efetiva de animação e preview. Consulte
+`docs/MAIN_CONSOLIDATION_0053L.md`.
+
 ## Protocolo para nova LLM
 
 1. Ler `AGENTS.md`, `PROJECT_SEED.md` e

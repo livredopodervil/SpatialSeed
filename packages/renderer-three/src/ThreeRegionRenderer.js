@@ -39,7 +39,7 @@ import {
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260801-0045a1";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260807-0052b";
-import { LocallyResolvedObjectHierarchy } from "../../transform-hierarchy/src/index.js?build=20260809-0053k";
+import { LocallyResolvedObjectHierarchy } from "../../transform-hierarchy/src/index.js?build=20260809-0053l";
 import {
   normalizeCameraProjection,
   normalizeNavigationCamera
@@ -201,6 +201,7 @@ export class ThreeRegionRenderer {
   #transformPreviewListeners = new Set();
   #sharedTransformPreviews = new Map();
   #sharedTransformObjectIds = new Set();
+  #localTransformPreviewLayers = new Map();
   #cameraVisualState = {
     activeCameraId: null,
     defaultCameraId: null,
@@ -3471,6 +3472,7 @@ export class ThreeRegionRenderer {
 
   #finishSceneUpdate() {
     this.#cancelDeferredSceneMaintenance();
+    this.#releaseCommittedLocalTransformPreviews();
     this.#flushBatchBounds({ all: true });
     const batches = this.#batchManager.batches();
     this.#incrementalDiagnostics.fullBatchVisits += batches.length;
@@ -3484,6 +3486,7 @@ export class ThreeRegionRenderer {
   }
 
   #finishLocalizedSceneUpdate() {
+    this.#releaseCommittedLocalTransformPreviews();
     let deferred = 0;
     for (const batchKey of this.#dirtyBatchKeys) {
       const batch = this.#batchManager.getBatch(batchKey);
@@ -4597,6 +4600,8 @@ export class ThreeRegionRenderer {
     this.#session = {
       kind:"selection",
       previewId: createPreviewId(),
+      previewLayerId: null,
+      previewBaseRevision: this.#resolvedRevision,
       initialAnchor,
       mode: this.transform.getMode(),
       scaleAxes: this.#boundsScale?.axes ?? this.#activeScaleAxes(),
@@ -4700,7 +4705,7 @@ export class ThreeRegionRenderer {
         this.transformAnchor.scale
       );
       const delta = current.clone().multiply(initial.clone().invert());
-
+      const rootEntries = [];
       for (const [objectId, snapshot] of this.#session.objects) {
         const mesh = this.#meshes.get(objectId);
         if (!mesh) continue;
@@ -4708,18 +4713,9 @@ export class ThreeRegionRenderer {
         this.#fastTransformOverlay.setWorldMatrix(
           this.#session.previewId, objectId, result.toArray()
         );
-        applyProjectedWorldMatrix(mesh, result.toArray());
-        if (!mesh.userData.logicalOnly) this.#updateBatchMatrix(objectId, mesh);
+        rootEntries.push({ id: objectId, worldMatrix: result.toArray() });
       }
-
-      for (const [objectId, snapshot] of this.#session.previewObjects) {
-        if (this.#session.objects.has(objectId)) continue;
-        const mesh = this.#meshes.get(objectId);
-        if (!mesh) continue;
-        const result = delta.clone().multiply(snapshot.matrixWorld);
-        applyProjectedWorldMatrix(mesh,result.toArray());
-        this.#updateBatchMatrix(objectId, mesh);
-      }
+      this.#applyLocalTransformPreview(this.#session, rootEntries);
     }
     this.#flushBatchBounds();
     this.#updateSelectionAppearance();
@@ -4825,6 +4821,9 @@ export class ThreeRegionRenderer {
         }
       }
 
+      this.#applyLocalTransformPreview(session, transforms, {
+        phase: "committing"
+      });
       this.#emitTransformPreview("commit", session);
       const changed=!transforms.length || this.dispatch({
         type: "selection.transform-world",
@@ -4862,6 +4861,7 @@ export class ThreeRegionRenderer {
 
   #restorePreviewSession(session) {
     if (session?.kind !== "selection") return;
+    this.#clearLocalTransformPreview(session);
     for (const [objectId,snapshot] of session.objects ?? []) {
       const mesh=this.#meshes.get(objectId);
       if (!mesh) continue;
@@ -4881,6 +4881,79 @@ export class ThreeRegionRenderer {
     if (session?.previewId) this.#fastTransformOverlay.clearOwner(session.previewId);
   }
 
+  #applyLocalTransformPreview(session, entries, { phase = "active" } = {}) {
+    if (session?.kind !== "selection" || !session.previewId) return 0;
+    const layerId = session.previewLayerId ??
+      `local-preview:${session.previewId}`;
+    session.previewLayerId = layerId;
+    const normalizedEntries = entries.map(entry => ({
+      id: String(entry.id),
+      worldMatrix: [...entry.worldMatrix]
+    }));
+    this.#resolvedObjects.setLayer(layerId, normalizedEntries, {
+      priority: 300,
+      baseRevision: session.previewBaseRevision,
+      phase
+    });
+    this.#localTransformPreviewLayers.set(layerId, {
+      phase,
+      rootIds: Object.freeze(normalizedEntries.map(entry => entry.id))
+    });
+    return this.#applyResolvedTransformEntries(normalizedEntries);
+  }
+
+  #clearLocalTransformPreview(session) {
+    const layerId = session?.previewLayerId;
+    if (!layerId) return false;
+    const affected = this.#resolvedObjects.clearLayer(layerId);
+    this.#localTransformPreviewLayers.delete(layerId);
+    session.previewLayerId = null;
+    this.#applyResolvedTransformIds(affected);
+    return true;
+  }
+
+  #releaseCommittedLocalTransformPreviews() {
+    for (const [layerId, layer] of [...this.#localTransformPreviewLayers]) {
+      if (layer.phase !== "committing") continue;
+      const affected = this.#resolvedObjects.clearLayer(layerId);
+      this.#localTransformPreviewLayers.delete(layerId);
+      this.#applyResolvedTransformIds(affected);
+    }
+  }
+
+  #applyResolvedTransformEntries(entries) {
+    const resolved = this.#resolvedObjects.resolveAffectedBy(entries);
+    const resolvedIds = new Set(resolved.map(entry => entry.id));
+    for (const entry of resolved) {
+      this.#applyResolvedTransformEntry(entry);
+    }
+    // Uma raiz recém-projetada pode existir visualmente antes de entrar na
+    // base hierárquica. Ela continua recebendo o preview sem bloquear as
+    // subárvores que já são resolvíveis.
+    for (const entry of entries) {
+      if (resolvedIds.has(String(entry.id))) continue;
+      this.#applyResolvedTransformEntry(entry);
+    }
+    return resolved.length;
+  }
+
+  #applyResolvedTransformIds(ids) {
+    for (const id of ids) {
+      const entry = this.#resolvedObjects.resolve(id);
+      if (entry) this.#applyResolvedTransformEntry(entry);
+    }
+  }
+
+  #applyResolvedTransformEntry(entry) {
+    const proxy = this.#meshes.get(String(entry.id));
+    if (!proxy || !Array.isArray(entry.worldMatrix)) return false;
+    applyProjectedWorldMatrix(proxy, entry.worldMatrix);
+    if (!proxy.userData.logicalOnly) {
+      this.#updateBatchMatrix(String(entry.id), proxy);
+    }
+    return true;
+  }
+
   #emitTransformPreview(phase, session) {
     if (
       session?.kind !== "selection" ||
@@ -4893,16 +4966,14 @@ export class ThreeRegionRenderer {
       previewId: session.previewId,
       phase,
       transforms: Object.freeze(
-        [...session.previewObjects.keys()]
+        [...session.objects.keys()]
           .map(id => {
-            const proxy = this.#meshes.get(id);
-            if (!proxy) return null;
-            proxy.updateMatrixWorld(true);
+            const worldMatrix = this.#resolvedObjects.worldMatrix(id) ??
+              this.#fastTransformOverlay.worldMatrix(id);
+            if (!worldMatrix) return null;
             return Object.freeze({
               id,
-              worldMatrix: Object.freeze(
-                proxy.matrixWorld.toArray()
-              )
+              worldMatrix: Object.freeze([...worldMatrix])
             });
           })
           .filter(Boolean)
@@ -4918,14 +4989,8 @@ export class ThreeRegionRenderer {
   }
 
   #applySharedPreviewTransforms(transforms) {
-    const affected = this.#resolvedObjects.affectedBy(transforms);
-    for (const id of affected) {
-      const proxy = this.#meshes.get(id);
-      if (!proxy) continue;
-      const worldMatrix = this.#resolvedObjects.worldMatrix(id);
-      if (!worldMatrix) continue;
-      applyProjectedWorldMatrix(proxy, worldMatrix);
-      this.#updateBatchMatrix(id, proxy);
+    for (const entry of this.#resolvedObjects.resolveAffectedBy(transforms)) {
+      this.#applyResolvedTransformEntry(entry);
     }
     this.#flushBatchBounds();
     this.#rebuildAnchor();
@@ -5033,6 +5098,27 @@ export class ThreeRegionRenderer {
       object?.geometry?.selectionAnchorPolicy ??
       defaultPolicy
     );
+
+    if (policy === "reference") {
+      const anchorRef = object?.anchorRef ?? object?.geometry?.anchorRef;
+      const targetId = String(anchorRef?.target ?? "");
+      const point = anchorRef?.point ?? [0, 0, 0];
+      const offset = anchorRef?.offset ?? [0, 0, 0];
+      const targetWorld = this.#resolvedObjects.worldMatrix(targetId) ??
+        (this.#hierarchy.has(targetId)
+          ? this.#hierarchy.worldMatrixOf(targetId)
+          : null);
+      if (
+        targetWorld &&
+        Array.isArray(point) && point.length === 3 &&
+        Array.isArray(offset) && offset.length === 3
+      ) {
+        return new THREE.Vector3()
+          .fromArray(point)
+          .applyMatrix4(new THREE.Matrix4().fromArray(targetWorld))
+          .add(new THREE.Vector3().fromArray(offset));
+      }
+    }
 
     if (policy === "bounds-center") {
       const bounds = this.#worldBoundsForObjectId(id, new THREE.Box3());
@@ -5403,7 +5489,7 @@ export class ThreeRegionRenderer {
     ];
     const pivotWorld = session.initialAnchor.position.toArray();
     const frameQuaternion = session.initialAnchor.quaternion.toArray();
-    const rootDeltas = new Map();
+    const rootEntries = [];
     for (const [objectId, snapshot] of session.objects) {
       const next = new THREE.Matrix4().fromArray(
         scaleWorldTrsWithoutShear({
@@ -5418,27 +5504,9 @@ export class ThreeRegionRenderer {
         objectId,
         next.toArray()
       );
-      rootDeltas.set(
-        objectId,
-        next.clone().multiply(snapshot.matrixWorld.clone().invert())
-      );
-      const rootMesh = this.#meshes.get(objectId);
-      if (rootMesh) {
-        applyProjectedWorldMatrix(rootMesh, next.toArray());
-        if (!rootMesh.userData.logicalOnly) this.#updateBatchMatrix(objectId, rootMesh);
-      }
+      rootEntries.push({ id: objectId, worldMatrix: next.toArray() });
     }
-    for (const [objectId, snapshot] of session.previewObjects) {
-      if (session.objects.has(objectId)) continue;
-      const mesh = this.#meshes.get(objectId);
-      if (!mesh) continue;
-      const rootId = session.previewRoots.get(objectId) ?? objectId;
-      const delta = rootDeltas.get(rootId);
-      if (!delta) continue;
-      const result = delta.clone().multiply(snapshot.matrixWorld);
-      applyProjectedWorldMatrix(mesh, result.toArray());
-      this.#updateBatchMatrix(objectId, mesh);
-    }
+    this.#applyLocalTransformPreview(session, rootEntries);
   }
 
   #updateVertexMarkers() {

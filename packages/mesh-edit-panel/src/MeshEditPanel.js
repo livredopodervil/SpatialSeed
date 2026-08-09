@@ -772,7 +772,7 @@ export class MeshEditPanel {
     this.refresh(state);
     if (state.active || !state.canEnter) return state;
     try {
-      const result = this.execute("mesh.edit.enter", { selectAll: true });
+      const result = this.execute("mesh.edit.enter", { selectAll: false });
       this.#text("mesh-edit-error", "");
       return result;
     } catch (error) {

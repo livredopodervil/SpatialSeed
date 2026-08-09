@@ -1,4 +1,4 @@
-import { Selection } from "./Selection.js?build=20260729-0039g2";
+import { Selection } from "./Selection.js?build=20260809-0053l";
 
 export class EditorState {
   static apiVersion = "editor-state-v2";
@@ -13,7 +13,7 @@ export class EditorState {
     this.selectionBrushRadius = 24;
     this.multiSelect = false;
     this.pivot = {
-      policy: "anchor",
+      policy: "bounds",
       editing: false,
       reference: "absolute",
       customPosition: [0, 0, 0],

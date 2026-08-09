@@ -17,14 +17,14 @@
   },
   "summary": {
     "firstPartyJavaScriptFiles": 332,
-    "productionFiles": 290,
-    "productionFirstPartyFiles": 289,
+    "productionFiles": 291,
+    "productionFirstPartyFiles": 290,
     "productionExternalFiles": 1,
-    "diagnosticFiles": 19,
-    "unreferencedFiles": 24,
+    "diagnosticFiles": 22,
+    "unreferencedFiles": 20,
     "productionComponents": 64,
-    "diagnosticComponents": 8,
-    "unreferencedComponents": 3
+    "diagnosticComponents": 9,
+    "unreferencedComponents": 2
   },
   "components": {
     "apps/web": {
@@ -379,13 +379,13 @@
       "unreferencedFiles": 0
     },
     "packages/object-picking": {
-      "status": "unreferenced",
+      "status": "diagnostics",
       "target": "viewer",
       "role": "production",
       "sourceFiles": 3,
       "productionFiles": 0,
-      "diagnosticFiles": 0,
-      "unreferencedFiles": 3
+      "diagnosticFiles": 3,
+      "unreferencedFiles": 0
     },
     "packages/object-placement": {
       "status": "production",
@@ -536,9 +536,9 @@
       "target": "renderer-three",
       "role": "production",
       "sourceFiles": 20,
-      "productionFiles": 18,
+      "productionFiles": 19,
       "diagnosticFiles": 0,
-      "unreferencedFiles": 2
+      "unreferencedFiles": 1
     },
     "packages/resource-audit": {
       "status": "diagnostics",
@@ -902,6 +902,7 @@
     "packages/renderer-three/src/ToolGestureNavigation.js",
     "packages/renderer-three/src/ViewerEnvironment.js",
     "packages/renderer-three/src/ViewerRenderSettings.js",
+    "packages/renderer-three/src/VisualCommitHandoff.js",
     "packages/renderer-three/src/WorldTransformProjection.js",
     "packages/renderer-three/src/index.js",
     "packages/resource-tree/src/ResourceTree.js",
@@ -1002,6 +1003,9 @@
     "packages/benchmarks/src/SceneFactory.js",
     "packages/benchmarks/src/index.js",
     "packages/instance-batches/src/index.js",
+    "packages/object-picking/src/ObjectPickingService.js",
+    "packages/object-picking/src/PickingIdAllocator.js",
+    "packages/object-picking/src/index.js",
     "packages/project-files/src/ProjectAppearanceAdapter.js",
     "packages/resource-audit/src/ResourceAudit.js",
     "packages/resource-audit/src/index.js",
@@ -1024,16 +1028,12 @@
     "packages/editor-transform-tools/src/TransformToolPanel.js",
     "packages/mesh-geometry-audit/src/MeshGeometryAudit.js",
     "packages/mesh-geometry-audit/src/index.js",
-    "packages/object-picking/src/ObjectPickingService.js",
-    "packages/object-picking/src/PickingIdAllocator.js",
-    "packages/object-picking/src/index.js",
     "packages/preview-contracts/src/PreviewDescriptor.js",
     "packages/preview-contracts/src/index.js",
     "packages/render-contracts/src/RenderDelta.js",
     "packages/render-contracts/src/RenderNode.js",
     "packages/render-contracts/src/index.js",
     "packages/renderer-three/src/ThreeGpuObjectPickingBackend.js",
-    "packages/renderer-three/src/VisualCommitHandoff.js",
     "packages/world-model/src/CommitEnvelope.js",
     "packages/world-model/src/Immutable.js",
     "packages/world-model/src/InstanceStore.js",

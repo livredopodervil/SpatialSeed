@@ -120,13 +120,16 @@ export class LocallyResolvedObjectHierarchy {
   clearLayer(layerIdValue) {
     const layerId = String(layerIdValue ?? "");
     const index = this.#order.indexOf(layerId);
-    if (!this.#layers.delete(layerId)) return Object.freeze([]);
+    const layer = this.#layers.get(layerId);
+    if (!layer) return Object.freeze([]);
+    const affected = this.affectedBy([...layer.entries.keys()]);
+    this.#layers.delete(layerId);
     if (index >= 0) this.#order.splice(index, 1);
     for (let cursor = Math.max(0, index); cursor < this.#order.length; cursor += 1) {
       this.#layers.get(this.#order[cursor])?.cache.clear();
     }
     this.#stats.layerClears += 1;
-    return Object.freeze([...this.#base.keys()]);
+    return affected;
   }
 
   has(idValue) {
@@ -175,6 +178,14 @@ export class LocallyResolvedObjectHierarchy {
       for (const descendant of this.descendantsOf(id)) result.add(descendant);
     }
     return Object.freeze([...result]);
+  }
+
+  resolveAffectedBy(entries = [], options = {}) {
+    return Object.freeze(
+      this.affectedBy(entries)
+        .map(id => this.resolve(id, options))
+        .filter(Boolean)
+    );
   }
 
   status() {

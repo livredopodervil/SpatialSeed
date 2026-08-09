@@ -99,7 +99,7 @@ export class MeshEditController {
 
   get active() { return this.#session !== null; }
 
-  enter({ selectAll = true } = {}) {
+  enter({ selectAll = false } = {}) {
     if (this.#session) return this.status();
     const selection = this.editor.selection.snapshot();
     if (selection.members.length !== 1) {
@@ -144,7 +144,9 @@ export class MeshEditController {
     const topology = buildMeshTopology(descriptor);
     const selectedIndices = selectAll
       ? descriptor.positions.map((_, index) => index)
-      : [];
+      : descriptor.positions.length
+        ? [0]
+        : [];
     this.#session = {
       objectId,
       objectName: object.name ?? objectId,
@@ -246,10 +248,15 @@ export class MeshEditController {
       throw error;
     }
     this.#recordHistory("Inicial", { force: true });
-    // A sessão começa com todos os vértices selecionados; mostrar o gizmo
-    // de translação torna a mudança de modo imediatamente visível. O clique
-    // nos marcadores continua selecionando vértices mesmo neste modo.
-    this.renderer.setTransformMode("translate");
+    // A edição nasce no contexto da última transformação usada. Isso mantém
+    // o fluxo entre objeto e componentes e evita depender de uma troca manual
+    // de ferramenta para sincronizar o gizmo.
+    const transformMode = this.editor.snapshot?.().tool?.transformMode;
+    this.renderer.setTransformMode(
+      ["translate", "rotate", "scale"].includes(transformMode)
+        ? transformMode
+        : "translate"
+    );
     // Re-synchronize the component selection after the tool mode is active.
     // This prevents the first gizmo drag from using the pre-entry selection
     // snapshot; previously a manual tool switch happened to perform this sync.

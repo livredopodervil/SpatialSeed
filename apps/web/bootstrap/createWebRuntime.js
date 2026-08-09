@@ -3,7 +3,7 @@ import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260808-00
 import {
   ModuleRegistry
 } from "../../../packages/plugin-api/src/index.js?build=20260808-0053f";
-import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260808-0053f";
+import { EditorState } from "../../../packages/editor-core/src/EditorState.js?build=20260809-0053l";
 import {
   VIEWER_CAMERA_COMMANDS,
   CameraObjectService,
@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260808-0053i";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260809-0053k";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260809-0053l";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -24,7 +24,7 @@ import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=2
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260808-0053f";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260808-0053f";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260808-0053f";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260808-0053f";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260809-0053l";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260808-0053f";
 import {
   InstanceGraphProjectionCache,
@@ -33,14 +33,14 @@ import {
 import {
   OccurrenceResolver
 } from "../../../packages/occurrence-runtime/src/index.js?build=20260808-0053f";
-import { OccurrenceTransformHierarchy } from "../../../packages/transform-hierarchy/src/index.js?build=20260809-0053k";
+import { OccurrenceTransformHierarchy } from "../../../packages/transform-hierarchy/src/index.js?build=20260809-0053l";
 import {
   ComplexityReporter
 } from "../../../packages/complexity-audit/src/index.js?build=20260808-0053f";
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260809-0053k";
+} from "../../../packages/platform-web/src/index.js?build=20260809-0053l";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -115,16 +115,16 @@ import {
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260808-0053f";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260809-0053l";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260808-0053f";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260809-0053l";
 import {
   EditContextController
-} from "../../../packages/edit-context/src/index.js?build=20260808-0053f";
+} from "../../../packages/edit-context/src/index.js?build=20260809-0053l";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260808-0053f";
+} from "../../../packages/edit-hud/src/index.js?build=20260809-0053l";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -1939,7 +1939,8 @@ export async function createWebRuntime({
                 : "pivot")
             ),
             position: object?.selectionAnchorLocal ??
-              object?.geometry?.selectionAnchorLocal ?? null
+              object?.geometry?.selectionAnchorLocal ?? null,
+            reference: object?.anchorRef ?? object?.geometry?.anchorRef ?? null
           });
         }))
       });

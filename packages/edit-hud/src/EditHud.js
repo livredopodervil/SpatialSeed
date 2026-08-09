@@ -850,13 +850,10 @@ export class EditHud {
     action("edit-hud-ungroup", "selection.ungroup");
     this.#element("edit-hud-duplicate").addEventListener("click", () => {
       const active = Boolean(this.query("mesh.edit.status").active);
-      const result = this.#execute(
+      this.#execute(
         active ? "mesh.topology.apply" : "selection.duplicate",
         active ? { operation: "duplicate" } : {}
       );
-      if (!active && result?.changed) {
-        this.#execute("edit.context.tool.set", { mode: "translate" });
-      }
     });
     this.#element("edit-hud-delete").addEventListener("click", () => {
       const active = Boolean(this.query("mesh.edit.status").active);

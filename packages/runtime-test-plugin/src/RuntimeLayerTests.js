@@ -1,5 +1,11 @@
-import { EditorState } from "../../editor-core/src/EditorState.js?build=20260729-0039g2";
+import { EditorState } from "../../editor-core/src/EditorState.js?build=20260809-0053l";
 import * as THREE from "three";
+import {
+  ObjectPickingService,
+  PickingIdAllocator,
+  decodePickingPixel,
+  encodePickingId
+} from "../../object-picking/src/index.js?build=20260805-0048l1";
 import {
   SpatialSeedRuntime,
   RuntimeQueryRegistry,
@@ -55,11 +61,16 @@ import {
   HeterogeneousBatchManager
 } from "../../renderer-three/src/HeterogeneousBatchManager.js?build=20260807-0051a";
 import {
+  createLocalBoundsScaleHandleSet,
+  MeshEditVisibility,
   ReplicaRenderIndex,
+  VisualCommitHandoff,
+  matricesApproximatelyEqual,
   proportionalScaleFactor2D,
   resolveEditorOrbitEnabled,
+  scaleFactorsForAxes,
   scaleWorldTrsWithoutShear
-} from "../../renderer-three/src/index.js?build=20260809-0053k";
+} from "../../renderer-three/src/index.js?build=20260809-0053l";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -169,13 +180,14 @@ import {
 } from "../../instance-graph/src/index.js?build=20260809-0053k";
 import {
   GeometryRegistry,
+  classifyBufferRenderProfile,
   BoxGeometryProvider,
   SphereGeometryProvider,
   CylinderGeometryProvider,
   PlaneGeometryProvider,
   PolygonGeometryProvider,
   createDefaultGeometryRegistry
-} from "../../geometry-registry/src/index.js?build=20260802-0047g";
+} from "../../geometry-registry/src/index.js?build=20260809-0053l";
 import {
   normalizeHexColor,
   parsePropertyInput,
@@ -220,12 +232,14 @@ import {
 } from "../../renderer-three/src/ToolGestureNavigation.js?build=20260731-0043x1";
 import {
   LocallyResolvedObjectHierarchy
-} from "../../transform-hierarchy/src/index.js?build=20260809-0053k";
+} from "../../transform-hierarchy/src/index.js?build=20260809-0053l";
 import {
   MeshEditController,
+  MeshToolRegistry,
   applyMeshTopologyOperation,
   affineDeltaWorld,
   applyMeshDeformation,
+  buildGeometricVertexIdentity,
   buildMeshTopology,
   createMeshInfluenceField,
   coincidentVertexGroups,
@@ -234,13 +248,17 @@ import {
   composeRotationFrame,
   expandCoincidentSelection,
   geodesicVertexDistances,
+  prepareMeshCommitDescriptor,
+  recomputeLocalVertexNormals,
+  recomputeVertexNormals,
+  resolveTransformVertexSelection,
   selectedVertexPivotWorld,
   snapWorldPointToFrameGrid,
   transformLocalPositions,
   transformLocalPositionsInto,
   transformLocalPositionsWithInfluenceInto,
   topologyOf
-} from "../../mesh-editor-core/src/index.js?build=20260729-0040a";
+} from "../../mesh-editor-core/src/index.js?build=20260809-0053l";
 import {
   EditContextController,
   axesFromConstraint,
@@ -249,7 +267,7 @@ import {
   planarFrameCoordinates,
   planarFrameFromPoints,
   planarFramePoint
-} from "../../edit-context/src/index.js?build=20260730-0040e";
+} from "../../edit-context/src/index.js?build=20260809-0053l";
 import {
   PlanarSketchController,
   createPlanarPrimitive
@@ -265,7 +283,7 @@ import {
 } from "../../measurement-tools/src/index.js?build=20260730-0040e";
 import {
   createEditorCommands
-} from "../../editor-commands/src/EditorCommands.js?build=20260802-0047g";
+} from "../../editor-commands/src/EditorCommands.js?build=20260809-0053l";
 import {
   LEGACY_TOOL_PREFERENCES_STORAGE_KEY,
   LEGACY_TOOL_PARAMETER_STORAGE_KEY,
@@ -283,7 +301,7 @@ import {
   geometryToolIcon,
   geometryToolPriority,
   normalizeHudDimensions
-} from "../../edit-hud/src/index.js?build=20260731-0044b";
+} from "../../edit-hud/src/index.js?build=20260809-0053l";
 import {
   PathInstancePreviewCache,
   PathSketchController,
@@ -310,6 +328,7 @@ import {
   PwaInstallController,
   formatBuildLabel,
   formatPwaBuildLabel,
+  pwaUpdateAvailable,
   isPlatformBlock,
   loadWebApplicationDefinition,
   loadWebRuntimeExtensions,
@@ -318,7 +337,7 @@ import {
   resolvePwaLocations,
   webApplicationName,
   workerBuild
-} from "../../platform-web/src/index.js?build=20260802-0047d";
+} from "../../platform-web/src/index.js?build=20260809-0053l";
 import {
   clampEditorFontSize,
   highlightProcedureSource,
@@ -386,6 +405,72 @@ export function createRuntimeLayerTests() {
   return {
     "module-v2": createModuleRegistryTests(),
     "tool-capabilities": createToolCapabilityTests(),
+    "object-picking-contract": {
+      "IDs são estáveis e o zero permanece reservado ao fundo"() {
+        const allocator = new PickingIdAllocator();
+        const first = allocator.idFor("object-a");
+        assertEqual(first, allocator.idFor("object-a"));
+        assertEqual(first > 0, true);
+        assertEqual(allocator.objectFor(0), null);
+        assertEqual(allocator.objectFor(first), "object-a");
+      },
+
+      "codificação RGB conserva os 24 bits do identificador"() {
+        const id = 0x12ABEF;
+        const color = encodePickingId(id);
+        const pixel = color.map(value => Math.round(value * 255));
+        assertEqual(decodePickingPixel(pixel), id);
+      },
+
+      "falha do backend solicita o raycast legado sem propagar exceção"() {
+        const service = new ObjectPickingService({
+          backend: {
+            supported: true,
+            pickAt() { throw new Error("context-lost"); }
+          }
+        });
+        const result = service.pickAt({ clientX: 10, clientY: 20 });
+        assertEqual(result.objectId, null);
+        assertEqual(result.fallback, true);
+        assertEqual(service.status().failures, 1);
+      },
+
+      "resultado público contém apenas identidade lógica"() {
+        const service = new ObjectPickingService({
+          backend: {
+            supported: true,
+            pickAt() {
+              return { objectId: "logical-object", source: "gpu-id" };
+            }
+          }
+        });
+        const result = service.pickAt({ clientX: 1, clientY: 2 });
+        assertEqual(result.objectId, "logical-object");
+        assertEqual(result.source, "gpu-id");
+        assertEqual(Object.hasOwn(result, "object3D"), false);
+      },
+
+      "miss de GPU permanece distinguível de falha"() {
+        const service = new ObjectPickingService({
+          backend: {
+            supported: true,
+            pickAt() {
+              return {
+                objectId: null,
+                fallback: false,
+                reason: "background",
+                source: "gpu-id"
+              };
+            }
+          }
+        });
+        const result = service.pickAt({ clientX: 1, clientY: 2 });
+        assertEqual(result.objectId, null);
+        assertEqual(result.fallback, false);
+        assertEqual(result.reason, "background");
+      }
+    },
+
     "performance-baseline": {
       "benchmark compacto mede estrutura sem tocar a cena ativa"() {
         const runner = new BenchmarkRunner({
@@ -467,6 +552,103 @@ export function createRuntimeLayerTests() {
             samples: 5
           }
         }]);
+      }
+    },
+
+    "visual-commit-handoff": {
+      "estado canônico anterior não substitui o preview confirmado"() {
+        const handoff = new VisualCommitHandoff();
+        const previous = identityMatrix();
+        const expected = translationMatrix([4, -2, 1]);
+        assertEqual(handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: previous,
+          expectedWorldMatrix: expected
+        }]), 1);
+
+        const stale = handoff.project("moving", previous);
+        assertDeepEqual(stale, expected);
+        assertEqual(handoff.status().staleSuppressed, 1);
+        assertEqual(handoff.status().pending, 1);
+
+        const acknowledged = handoff.project("moving", expected);
+        assertDeepEqual(acknowledged, expected);
+        assertEqual(handoff.status().acknowledged, 1);
+        assertEqual(handoff.releaseAcknowledged(), 1);
+        assertEqual(handoff.status().pending, 0);
+      },
+
+      "commits encadeados preservam somente o preview mais recente"() {
+        const handoff = new VisualCommitHandoff();
+        const initial = identityMatrix();
+        const first = translationMatrix([1, 0, 0]);
+        const second = translationMatrix([2, 0, 0]);
+        handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: initial,
+          expectedWorldMatrix: first
+        }]);
+        handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: first,
+          expectedWorldMatrix: second
+        }]);
+
+        const firstAcknowledgement = handoff.project("moving", first);
+        assertDeepEqual(firstAcknowledgement, second);
+        assertEqual(handoff.status().staleSuppressed, 1);
+        const secondAcknowledgement = handoff.project("moving", second);
+        assertDeepEqual(secondAcknowledgement, second);
+        assertEqual(handoff.status().acknowledged, 1);
+        assertEqual(handoff.status().chained, 1);
+      },
+
+      "estado posterior conflitante prevalece sem bloquear sincronização"() {
+        const handoff = new VisualCommitHandoff();
+        const previous = identityMatrix();
+        const expected = translationMatrix([1, 0, 0]);
+        const newer = translationMatrix([3, 0, 0]);
+        handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: previous,
+          expectedWorldMatrix: expected
+        }]);
+
+        const result = handoff.project("moving", newer);
+        assertDeepEqual(result, newer);
+        assertEqual(handoff.status().superseded, 1);
+        assertEqual(handoff.status().pending, 0);
+      },
+
+      "rollback pré-dispatch preserva um handoff anterior encadeado"() {
+        const handoff = new VisualCommitHandoff();
+        const initial = identityMatrix();
+        const first = translationMatrix([1, 0, 0]);
+        const second = translationMatrix([2, 0, 0]);
+        handoff.begin([{
+          objectId: "moving",
+          previousWorldMatrix: initial,
+          expectedWorldMatrix: first
+        }]);
+        const transaction = handoff.beginTransaction([{
+          objectId: "moving",
+          previousWorldMatrix: first,
+          expectedWorldMatrix: second
+        }]);
+
+        assertEqual(handoff.rollbackTransaction(transaction), 1);
+        assertDeepEqual(handoff.project("moving", first), first);
+        assertEqual(handoff.status().rolledBack, 1);
+        assertEqual(handoff.status().acknowledged, 1);
+      },
+
+      "reconhecimento compara uma matriz por objeto sem percorrer vértices"() {
+        const left = translationMatrix([2, 3, 4]);
+        const right = [...left];
+        right[12] += 1e-8;
+        assertEqual(matricesApproximatelyEqual(left, right), true);
+        right[12] += 1e-3;
+        assertEqual(matricesApproximatelyEqual(left, right), false);
       }
     },
 
@@ -552,6 +734,12 @@ export function createRuntimeLayerTests() {
     },
 
     "edit-context": {
+      "pivô padrão acompanha o centro dos limites da seleção"() {
+        const editor = new EditorState();
+        assertEqual(editor.snapshot().pivot.policy, "bounds");
+        assertEqual(editor.selection.snapshot().pivotPolicy, "bounds");
+      },
+
       "checkboxes de eixo produzem restrições ortogonais"() {
         assertEqual(constraintFromAxes({ x: true, y: true, z: true }), "free");
         assertEqual(constraintFromAxes({ x: true, y: false, z: true }), "xz");
@@ -573,6 +761,17 @@ export function createRuntimeLayerTests() {
         );
         fixture.meshEditor.cancel();
         assertEqual(context.status().subjectLevel, "object");
+        context.dispose();
+      },
+
+      "entrada em componentes reativa a última transformação"() {
+        const fixture = createEditContextFixture();
+        const context = new EditContextController(fixture);
+        context.setTool("rotate");
+        context.setTool("select");
+        context.setSubjectLevel("vertex");
+        assertEqual(context.status().tool, "rotate");
+        assertEqual(fixture.editor.snapshot().tool.transformMode, "rotate");
         context.dispose();
       },
 
@@ -4367,6 +4566,131 @@ export function createRuntimeLayerTests() {
         assert(matrix.determinant() < 0);
       },
 
+      "escala livre expõe oito vértices diagonais locais"() {
+        const set = createLocalBoundsScaleHandleSet({
+          min: [-1, -2, -3],
+          max: [1, 2, 3],
+          axes: { x: true, y: true, z: true }
+        });
+        assertEqual(set.dimensions, 3);
+        assertEqual(set.handles.length, 8);
+        for (const handle of set.handles) {
+          const opposite = set.handles[handle.oppositeIndex];
+          assertVectorNear(
+            opposite.signs,
+            handle.signs.map(value => -value)
+          );
+        }
+      },
+
+      "eixo bloqueado reduz a escala proporcional ao plano restante"() {
+        const set = createLocalBoundsScaleHandleSet({
+          min: [-2, -4, -6],
+          max: [2, 4, 6],
+          axes: { x: true, y: true, z: false }
+        });
+        assertEqual(set.dimensions, 2);
+        assertEqual(set.handles.length, 4);
+        assertEqual(set.axes.z, false);
+        for (const handle of set.handles) {
+          assertNear(handle.point[2], 0);
+        }
+        assertVectorNear(
+          scaleFactorsForAxes(1.5, set.axes),
+          [1.5, 1.5, 1]
+        );
+      },
+
+      "arrasto diagonal calcula escala proporcional por projeção"() {
+        assertNear(
+          proportionalScaleFactor2D({
+            fixed: [10, 20],
+            initial: [110, 120],
+            current: [160, 170]
+          }),
+          1.5
+        );
+        assertNear(
+          proportionalScaleFactor2D({
+            fixed: [0, 0],
+            initial: [100, 0],
+            current: [153, 40],
+            snap: 0.1
+          }),
+          1.5
+        );
+      },
+
+      "diagonal projetada curta mantém arrasto selecionável"() {
+        assertNear(
+          proportionalScaleFactor2D({
+            fixed: [50, 50],
+            initial: [50, 50],
+            current: [90, 50],
+            fallbackDirection: [1, 0],
+            fallbackLength: 80
+          }),
+          1.5
+        );
+      },
+
+      "escala local recompõe TRS sem introduzir shear"() {
+        const sourcePosition = new THREE.Vector3(4, 2, -1);
+        const sourceOrientation = new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(0.2, 0.7, -0.3)
+        );
+        const sourceMatrix = new THREE.Matrix4()
+          .compose(
+            sourcePosition,
+            sourceOrientation,
+            new THREE.Vector3(2, 3, 4)
+          )
+          .toArray();
+        const result = new THREE.Matrix4().fromArray(
+          scaleWorldTrsWithoutShear({
+            matrixWorld: sourceMatrix,
+            pivotWorld: [0, 0, 0],
+            frameQuaternion: [0, 0, 0, 1],
+            factors: [2, 1, 0.5]
+          })
+        );
+        const position = new THREE.Vector3();
+        const orientation = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+        result.decompose(position, orientation, scale);
+        assertVectorNear(position.toArray(), [8, 2, -0.5]);
+        assertVectorNear(scale.toArray(), [4, 3, 2]);
+        assertNear(Math.abs(orientation.dot(sourceOrientation)), 1, 1e-9);
+      },
+
+      "escala com pivô no centro preserva o centro do objeto"() {
+        const center = [4, 2, -1];
+        const source = new THREE.Matrix4()
+          .compose(
+            new THREE.Vector3(...center),
+            new THREE.Quaternion().setFromEuler(
+              new THREE.Euler(0.4, -0.2, 0.6)
+            ),
+            new THREE.Vector3(1, 2, 3)
+          )
+          .toArray();
+        const result = new THREE.Matrix4().fromArray(
+          scaleWorldTrsWithoutShear({
+            matrixWorld: source,
+            pivotWorld: center,
+            frameQuaternion: [0, 0, 0, 1],
+            factors: [1.5, 1.5, 1.5]
+          })
+        );
+        const resultPosition = new THREE.Vector3();
+        result.decompose(
+          resultPosition,
+          new THREE.Quaternion(),
+          new THREE.Vector3()
+        );
+        assertVectorNear(resultPosition.toArray(), center);
+      },
+
       "frame do viewer converte X e Y no plano congelado"() {
         const viewerQuaternion = new THREE.Quaternion()
           .setFromEuler(new THREE.Euler(0, Math.PI / 2, 0))
@@ -4606,6 +4930,61 @@ export function createRuntimeLayerTests() {
         assertVectorNear(target[1], [Math.SQRT1_2, Math.SQRT1_2, 0]);
       },
 
+      "entrada de malha seleciona o primeiro vértice e preserva a transformação"() {
+        const region = new Region(
+          { id: "mesh-entry-region", name: "Mesh entry", type: "box-region" },
+          { objects: [{
+            id: "mesh-entry-triangle",
+            kind: "buffer",
+            name: "Triângulo",
+            position: [0, 0, 0],
+            rotation: [0, 0, 0, 1],
+            scale: [1, 1, 1],
+            geometry: {
+              type: "buffer",
+              positions: [[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+              indices: [0, 1, 2],
+              normals: [],
+              uvs: []
+            },
+            material: { color: "#ffffff" }
+          }] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.setToolMode("scale");
+        editor.setToolMode("select");
+        editor.selection.replace({
+          kind: "object",
+          regionId: "mesh-entry-region",
+          objectId: "mesh-entry-triangle"
+        });
+        const modes = [];
+        let visual = null;
+        const renderer = {
+          ...createMeshEditorRendererStub(),
+          beginMeshEdit(args) { visual = args; },
+          setTransformMode(mode) {
+            modes.push(mode);
+            editor.setToolMode(mode);
+          }
+        };
+        const controller = new MeshEditController({
+          sandbox,
+          editor,
+          renderer,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        const status = controller.enter();
+        assertEqual(status.selectedCount, 1);
+        assertEqual(status.activeVertex, 0);
+        assertDeepEqual(visual.selectedIndices, [0]);
+        assertEqual(modes.at(-1), "scale");
+        assertEqual(editor.snapshot().tool.mode, "scale");
+        controller.cancel();
+        controller.dispose();
+      },
+
       "histórico interno desfaz e refaz sem tocar no sandbox"() {
         const region = new Region(
           { id: "mesh-history-region", name: "Mesh", type: "box-region" },
@@ -4648,7 +5027,7 @@ export function createRuntimeLayerTests() {
           geometryRegistry: createDefaultGeometryRegistry()
         });
         const projectUndoDepth = sandbox.getHistoryDiagnostics().undoDepth;
-        controller.enter();
+        controller.enter({ selectAll: true });
         controller.translate([1, 0, 0]);
         controller.rotate([0, 0, 15]);
         assertEqual(controller.status().undoDepth, 2);
@@ -4694,9 +5073,24 @@ export function createRuntimeLayerTests() {
           objectId: "mesh-box"
         });
         let visual = null;
+        let deferredCommits = 0;
+        let immediateEnds = 0;
+        const commitEvents = [];
+        const unsubscribeCommitOrder = sandbox.subscribe(() => {
+          commitEvents.push("sandbox-change");
+        });
         const renderer = {
           beginMeshEdit(args) { visual = args; },
-          endMeshEdit() { visual = null; },
+          endMeshEdit() { immediateEnds += 1; visual = null; },
+          deferMeshEditCommit() {
+            deferredCommits += 1;
+            commitEvents.push("defer");
+            return true;
+          },
+          cancelDeferredMeshEditCommit() {
+            commitEvents.push("cancel-defer");
+            return true;
+          },
           updateMeshEditGeometry(geometry) { visual.geometry = geometry; },
           updateMeshEditSelection() {},
           updateMeshEditOptions() {},
@@ -4720,9 +5114,16 @@ export function createRuntimeLayerTests() {
         assertEqual(controller.status().stale, false);
         const undoDepthBeforeCommit =
           sandbox.getHistoryDiagnostics().undoDepth;
+        commitEvents.length = 0;
         const result = controller.commit();
         const object = sandbox.getSnapshot().objects[0];
         assertEqual(result.changed, true);
+        assertDeepEqual(commitEvents.slice(0, 2), [
+          "defer",
+          "sandbox-change"
+        ]);
+        assertEqual(deferredCommits, 1);
+        assertEqual(immediateEnds, 0);
         assertEqual(object.geometry.type, "buffer");
         assertEqual(object.kind, "buffer");
         assertEqual(
@@ -4734,6 +5135,7 @@ export function createRuntimeLayerTests() {
           sandbox.getSnapshot().objects[0].geometry.type,
           "box"
         );
+        unsubscribeCommitOrder();
       },
 
       "frame do viewer permanece congelado após mover a câmera"() {
@@ -4789,6 +5191,70 @@ export function createRuntimeLayerTests() {
         assertEqual(sandbox.getHistoryDiagnostics().undoDepth, undoDepth);
       },
 
+      "status de seleção única não normaliza descritor buffer"() {
+        let normalizeCalls = 0;
+        const geometryRegistry = new GeometryRegistry().register({
+          type: "buffer",
+          normalize(input) {
+            normalizeCalls += 1;
+            return Object.freeze({ ...input, type: "buffer" });
+          },
+          create() {
+            return new THREE.BufferGeometry();
+          }
+        });
+        const object = {
+          id: "dense-buffer",
+          kind: "buffer",
+          name: "Malha densa",
+          position: [0, 0, 0],
+          rotation: [0, 0, 0, 1],
+          scale: [1, 1, 1],
+          geometry: {
+            type: "buffer",
+            positions: Array.from({ length: 2000 }, (_, index) =>
+              [index, 0, 0]
+            ),
+            indices: [],
+            normals: [],
+            uvs: [],
+            edges: []
+          }
+        };
+        const region = new Region(
+          {
+            id: "mesh-status-region",
+            name: "Mesh",
+            type: "box-region"
+          },
+          { objects: [object] }
+        );
+        const sandbox = new Sandbox(region, boxRegionReducer);
+        const editor = new EditorState();
+        editor.selection.replace({
+          kind: "object",
+          regionId: "mesh-status-region",
+          objectId: object.id
+        });
+        const controller = new MeshEditController({
+          sandbox,
+          editor,
+          renderer: {
+            beginMeshEdit() {},
+            endMeshEdit() {},
+            canBeginMeshEdit() {
+              return { ok: true };
+            }
+          },
+          geometryRegistry
+        });
+
+        assertEqual(geometryRegistry.supportsLegacyObject(object), true);
+        assertEqual(controller.status().canEnter, true);
+        assertEqual(normalizeCalls, 0);
+        controller.dispose?.();
+      },
+
       "entrada é recusada enquanto a malha participa de animação"() {
         const region = new Region(
           { id: "mesh-block-region", name: "Mesh", type: "box-region" },
@@ -4833,6 +5299,398 @@ export function createRuntimeLayerTests() {
         assertEqual(status.canEnter, false);
         assert(status.reason.includes("animação"));
         assertThrowsMessage(() => controller.enter(), "animação");
+      }
+    },
+    "mesh-render-profile": {
+      "recalcular normais preserva posições índices e UVs byte a byte"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [
+            [0,0,0], [1,0,0], [0,1,0],
+            [9,9,9]
+          ],
+          indices: [0,1,2],
+          normals: [
+            [0,0,1], [0,0,1], [0,0,1],
+            [1,0,0]
+          ],
+          uvs: [[0,0], [1,0], [0,1], [0.5,0.5]],
+          edges: []
+        };
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology: topologyOf(descriptor),
+          componentMode: "vertex",
+          selectedIndices: [],
+          operation: "recalculate-normals",
+          options: { removeUnused: true, manifoldOnly: true }
+        });
+        assertDeepEqual(result.descriptor.positions, descriptor.positions);
+        assertDeepEqual(result.descriptor.indices, descriptor.indices);
+        assertDeepEqual(result.descriptor.uvs, descriptor.uvs);
+        assertEqual(result.descriptor.normals.length, descriptor.positions.length);
+      },
+
+      "classificação fechada ignora duplicações de costura"() {
+        const geometry = new THREE.SphereGeometry(1, 24, 16);
+        const position = geometry.getAttribute("position");
+        const positions = Array.from({ length: position.count }, (_, index) => [
+          position.getX(index), position.getY(index), position.getZ(index)
+        ]);
+        const indices = Array.from(geometry.index.array);
+        assertDeepEqual(
+          classifyBufferRenderProfile({ positions, indices }),
+          { topology: "closed-solid", side: "front" }
+        );
+        geometry.dispose();
+      },
+
+      "buffer normalizado conserva perfil fechado no renderer"() {
+        const registry = createDefaultGeometryRegistry();
+        const descriptor = registry.normalize({
+          type: "buffer",
+          positions: [
+            [1,1,1], [-1,-1,1], [-1,1,-1], [1,-1,-1]
+          ],
+          indices: [0,2,1, 0,1,3, 0,3,2, 1,2,3],
+          normals: [],
+          uvs: [],
+          edges: []
+        });
+        assertDeepEqual(descriptor.renderProfile, {
+          topology: "closed-solid",
+          side: "front"
+        });
+        assertDeepEqual(registry.renderProfile(descriptor), {
+          topology: "closed-solid",
+          side: "front"
+        });
+      },
+
+      "superfície aberta continua dupla face"() {
+        assertDeepEqual(classifyBufferRenderProfile({
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2]
+        }), {
+          topology: "open-surface",
+          side: "double"
+        });
+      }
+    },
+
+    "mesh-attribute-policy": {
+      "no-op numérico preserva índices UVs e normais importadas"() {
+        const before = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1]],
+          uvs: [[0,0], [1,0], [0,1]],
+          edges: []
+        };
+        const after = structuredClone(before);
+        after.positions[1][0] += 1e-10;
+        const prepared = prepareMeshCommitDescriptor({
+          before,
+          after,
+          autoNormals: true,
+          normalPolicy: "recompute-local"
+        });
+        assertEqual(prepared.changed, false);
+        assertDeepEqual(prepared.descriptor.indices, before.indices);
+        assertDeepEqual(prepared.descriptor.uvs, before.uvs);
+        assertDeepEqual(prepared.descriptor.normals, before.normals);
+      },
+
+      "recalculo local preserva normais fora da vizinhança alterada"() {
+        const positions = [
+          [0,0,0], [1,0,0], [0,1,0],
+          [10,0,0], [11,0,0], [10,1,0]
+        ];
+        const sourceNormals = positions.map(() => [0,0,1]);
+        const moved = positions.map(point => [...point]);
+        moved[2] = [0,1,1];
+        const normals = recomputeLocalVertexNormals({
+          positions: moved,
+          indices: [0,1,2, 3,4,5],
+          sourceNormals,
+          changedVertexIndices: [2]
+        });
+        assertEqual(normals.length, 6);
+        assertEqual(Math.abs(normals[0][1]) > 0, true);
+        assertDeepEqual(normals.slice(3), sourceNormals.slice(3));
+      },
+
+      "seleção de face inclui cópias coincidentes da costura"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [
+            [0,0,0], [1,0,0], [0,1,0],
+            [1,0,0], [1,1,0], [0,1,0]
+          ],
+          indices: [0,1,2, 3,4,5],
+          normals: [],
+          uvs: [[0,0], [0.5,0], [0,1], [0.5,0], [1,1], [0,1]],
+          edges: []
+        };
+        const topology = topologyOf(descriptor);
+        const groups = coincidentVertexGroups(descriptor.positions);
+        const selected = resolveTransformVertexSelection({
+          topology,
+          componentMode: "face",
+          selectedComponents: [0],
+          coincidentGroups: groups,
+          policy: "transform-together"
+        });
+        assertDeepEqual(selected, [0,1,2,3,5]);
+      },
+
+      "falloff geodésico usa identidade geométrica nas costuras"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [
+            [0,0,0], [1,0,0], [2,0,0],
+            [0,0,0], [0,1,0], [0,2,0]
+          ],
+          indices: [0,1,2, 3,4,5],
+          normals: [],
+          uvs: []
+        };
+        const identity = buildGeometricVertexIdentity({
+          positions: descriptor.positions,
+          indices: descriptor.indices
+        });
+        assertEqual(identity.renderVertexCount, 6);
+        assertEqual(identity.geometricVertexCount, 5);
+        const field = createMeshInfluenceField({
+          descriptor,
+          selectedIndices: [0],
+          objectWorldMatrix: new THREE.Matrix4().toArray(),
+          radius: 2,
+          metric: "geodesic",
+          falloff: "linear",
+          geometricIdentity: identity
+        });
+        const weight = new Map(field.affectedIndices.map(
+          (index, order) => [index, field.weights[order]]
+        ));
+        assertNear(weight.get(0), 1);
+        assertNear(weight.get(3), 1);
+        assertNear(weight.get(1), 0.5);
+        assertNear(weight.get(4), 0.5);
+        assertNear(weight.get(2), 0);
+        assertNear(weight.get(5), 0);
+      },
+
+      "movimento posicional recalcula normais derivadas ao aplicar"() {
+        const before = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1]],
+          uvs: [[0,0], [1,0], [0,1]],
+          edges: []
+        };
+        const after = structuredClone(before);
+        after.positions[2] = [0,1,0.5];
+        const prepared = prepareMeshCommitDescriptor({ before, after });
+        assertEqual(prepared.changed, true);
+        assertEqual(prepared.change.normalPolicy, "recompute-local");
+        assertEqual(Math.abs(prepared.descriptor.normals[0][1]) > 0, true);
+        assertDeepEqual(prepared.descriptor.uvs, before.uvs);
+      },
+
+      "recalcular normais produz atributo persistível após deformação"() {
+        const initial = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1]],
+          uvs: [[0,0], [1,0], [0,1]],
+          edges: []
+        };
+        const deformed = structuredClone(initial);
+        deformed.positions[2] = [0,1,0.5];
+        const result = applyMeshTopologyOperation({
+          descriptor: deformed,
+          topology: topologyOf(deformed),
+          componentMode: "vertex",
+          selectedIndices: [],
+          operation: "recalculate-normals",
+          options: { manifoldOnly: true }
+        });
+        assertEqual(result.descriptor.normals.length, 3);
+        assertEqual(Math.abs(result.descriptor.normals[0][1]) > 0, true);
+        const prepared = prepareMeshCommitDescriptor({
+          before: initial,
+          after: result.descriptor,
+          normalPolicy: "recompute-local",
+          preferTargetNormals: true
+        });
+        assertDeepEqual(
+          prepared.descriptor.normals,
+          result.descriptor.normals
+        );
+      },
+
+
+
+      "movimento posterior invalida normais explicitamente recalculadas"() {
+        const initial = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1]],
+          uvs: [],
+          edges: []
+        };
+        const afterExplicit = structuredClone(initial);
+        afterExplicit.positions[2] = [0,1,0.5];
+        afterExplicit.normals = recomputeVertexNormals({
+          positions: afterExplicit.positions,
+          indices: afterExplicit.indices,
+          sourceNormals: initial.normals
+        });
+        const movedAgain = structuredClone(afterExplicit);
+        movedAgain.positions[2] = [0,1,1];
+        const prepared = prepareMeshCommitDescriptor({
+          before: initial,
+          after: movedAgain,
+          normalPolicy: "recompute-local",
+          preferTargetNormals: false
+        });
+        assertEqual(
+          Math.abs(prepared.descriptor.normals[0][1]) >
+            Math.abs(afterExplicit.normals[0][1]),
+          true
+        );
+      },
+
+      "costura suave compartilha normal sem fundir aresta dura"() {
+        const smooth = recomputeVertexNormals({
+          positions: [
+            [0,0,0], [1,0,0], [0,1,0],
+            [0,0,0], [0,1,0], [-1,0,0.5]
+          ],
+          indices: [0,1,2, 3,4,5],
+          sourceNormals: [
+            [0,0,1], [0,0,1], [0,0,1],
+            [0,0,1], [0,0,1], [0,0,1]
+          ]
+        });
+        assertVectorNear(smooth[0], smooth[3]);
+        assertVectorNear(smooth[2], smooth[4]);
+
+        const hard = recomputeVertexNormals({
+          positions: [
+            [0,0,0], [1,0,0], [0,1,0],
+            [0,0,0], [0,0,1], [1,0,0]
+          ],
+          indices: [0,1,2, 3,4,5],
+          sourceNormals: [
+            [0,0,1], [0,0,1], [0,0,1],
+            [0,1,0], [0,1,0], [0,1,0]
+          ]
+        });
+        assertEqual(Math.abs(hard[0][2]) > 0.9, true);
+        assertEqual(Math.abs(hard[3][1]) > 0.9, true);
+      },
+
+      "sanitização remapeia e preserva normais e UVs"() {
+        const descriptor = {
+          type: "buffer",
+          positions: [[0,0,0], [1,0,0], [0,1,0], [9,9,9]],
+          indices: [0,1,2],
+          normals: [[0,0,1], [0,0,1], [0,0,1], [1,0,0]],
+          uvs: [[0,0], [1,0], [0,1], [0.5,0.5]],
+          edges: []
+        };
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology: topologyOf(descriptor),
+          componentMode: "vertex",
+          selectedIndices: [],
+          operation: "cleanup",
+          options: { removeUnused: true }
+        });
+        assertEqual(result.descriptor.positions.length, 3);
+        assertDeepEqual(result.descriptor.normals, descriptor.normals.slice(0,3));
+        assertDeepEqual(result.descriptor.uvs, descriptor.uvs.slice(0,3));
+      },
+
+      "visibilidade de edição oculta o recurso real do proprietário"() {
+        const manager = new InstanceBatchManager();
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshBasicMaterial();
+        manager.add({
+          objectId: "owner",
+          resourceId: "owner:resource:0",
+          ownerId: "owner",
+          batchKey: "mesh-visibility",
+          matrix: new THREE.Matrix4().makeTranslation(4, 5, 6),
+          descriptor: { geometry, material, capacity: 4 }
+        });
+        const dirty = [];
+        const visibility = new MeshEditVisibility({
+          batchManager: manager,
+          markBatchDirty: key => dirty.push(key)
+        });
+        const hidden = visibility.setHidden(
+          "owner",
+          true,
+          new THREE.Matrix4().makeTranslation(4, 5, 6)
+        );
+        assertEqual(hidden.standardResourceCount, 1);
+        assertEqual(hidden.standardWrites, 1);
+        const location = manager.locationOf("owner:resource:0");
+        const batch = manager.getBatch(location.batchKey);
+        const matrix = new THREE.Matrix4();
+        batch.mesh.getMatrixAt(location.instanceIndex, matrix);
+        assertNear(matrix.elements[0], 0);
+        assertNear(matrix.elements[5], 0);
+        assertNear(matrix.elements[10], 0);
+        visibility.setHidden(
+          "owner",
+          false,
+          new THREE.Matrix4().makeTranslation(4, 5, 6)
+        );
+        batch.mesh.getMatrixAt(location.instanceIndex, matrix);
+        assertVectorNear(
+          new THREE.Vector3().setFromMatrixPosition(matrix).toArray(),
+          [4,5,6]
+        );
+        assert(dirty.length >= 2);
+        manager.clear({ disposeGeometry: true, disposeMaterial: true });
+      },
+
+      "registro descreve ferramentas e mantém executor legado substituível"() {
+        const calls = [];
+        const registry = new MeshToolRegistry({
+          tools: [{
+            id: "mesh.topology.example",
+            kind: "topology",
+            operation: "example",
+            label: "Exemplo",
+            modes: ["face"],
+            requiresSelection: true,
+            implementation: "test-double"
+          }],
+          executors: {
+            topology(context) {
+              calls.push(context.operation);
+              return { ok: true };
+            }
+          }
+        });
+        const listed = registry.list({ mode: "face", selectionCount: 1 });
+        assertEqual(listed[0].available.ok, true);
+        const executed = registry.execute("mesh.topology.example", {
+          mode: "face",
+          selectedIndices: [0]
+        });
+        assertDeepEqual(calls, ["example"]);
+        assertEqual(executed.result.ok, true);
+        assertEqual(executed.tool.implementation, "test-double");
       }
     },
     "mesh-topology": {
@@ -5117,6 +5975,83 @@ export function createRuntimeLayerTests() {
         assert(result.directMs >= 0);
         assert(result.facadeMs >= 0);
         assert(Number.isFinite(result.overheadPerCallUs));
+      },
+
+      "console executa consulta registrada por identificador canônico"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            execute() {
+              throw new Error("Comando inesperado.");
+            },
+            describe() {
+              return [];
+            }
+          },
+          queries: {
+            execute(id, args) {
+              calls.push({ id, args });
+              return { captured: true, label: args.label };
+            },
+            describe() {
+              return [{ id: "mesh.audit.capture", metadata: {} }];
+            }
+          }
+        });
+
+        const [entry] = console.execute(
+          'runtime query mesh.audit.capture {"label":"sphere-before"}'
+        );
+
+        assertEqual(entry.ok, true);
+        assertEqual(entry.result.captured, true);
+        assertDeepEqual(calls, [{
+          id: "mesh.audit.capture",
+          args: { label: "sphere-before" }
+        }]);
+      },
+
+      "console executa comando registrado sem regra dedicada"() {
+        const calls = [];
+        const console = new DevConsole({
+          editor: { selection: new Selection() },
+          sandbox: {},
+          region: {},
+          renderer: {},
+          getDiagnostics: () => ({}),
+          commands: {
+            execute(id, args) {
+              calls.push({ id, args });
+              return { changed: true };
+            },
+            describe() {
+              return [{ id: "diagnostic.sample.run", metadata: {} }];
+            }
+          },
+          queries: {
+            execute() {
+              throw new Error("Consulta inesperada.");
+            },
+            describe() {
+              return [];
+            }
+          }
+        });
+
+        const [entry] = console.execute(
+          'runtime command diagnostic.sample.run {"count":2}'
+        );
+
+        assertEqual(entry.ok, true);
+        assertDeepEqual(calls, [{
+          id: "diagnostic.sample.run",
+          args: { count: 2 }
+        }]);
       }
     },
 
@@ -9969,6 +10904,39 @@ assets: {
         assertNear(resolved.worldMatrix("leaf")[12], 25, 1e-12);
       },
 
+      "cache de preview enumera recursivamente a subárvore afetada"() {
+        const matrixX = x => new THREE.Matrix4()
+          .makeTranslation(x, 0, 0)
+          .toArray();
+        const resolved = new LocallyResolvedObjectHierarchy();
+        resolved.replaceBase([
+          {
+            object: { id: "outer", kind: "group", parentId: null },
+            worldMatrix: matrixX(2)
+          },
+          {
+            object: { id: "inner", kind: "group", parentId: "outer" },
+            worldMatrix: matrixX(5)
+          },
+          {
+            object: { id: "leaf", kind: "box", parentId: "inner" },
+            worldMatrix: matrixX(9)
+          }
+        ], { revision: 3 });
+        const rootOverride = [{ id: "outer", worldMatrix: matrixX(12) }];
+        resolved.setLayer("local-preview", rootOverride, {
+          priority: 300,
+          baseRevision: 3
+        });
+        const preview = resolved.resolveAffectedBy(rootOverride);
+        assertDeepEqual(preview.map(entry => entry.id), ["outer", "inner", "leaf"]);
+        assertDeepEqual(preview.map(entry => entry.worldMatrix[12]), [12, 15, 19]);
+        assertDeepEqual(
+          resolved.clearLayer("local-preview"),
+          ["outer", "inner", "leaf"]
+        );
+      },
+
       "compactação de grupo de grupos preserva override descendente"() {
         const group = (id, parentId, x) => ({
           id,
@@ -11550,6 +12518,37 @@ assets: {
           controllerBuild:"0025g",
           updatePending:false
         }),"v0.1.0 · build 0025g");
+      },
+
+      "oferece atualização somente quando publicação e controlador divergem"() {
+        assertEqual(pwaUpdateAvailable({
+          publishedBuild:"0025g",
+          controllerBuild:"0025d"
+        }),true);
+        assertEqual(pwaUpdateAvailable({
+          publishedBuild:"0025g",
+          controllerBuild:"0025g"
+        }),false);
+        assertEqual(pwaUpdateAvailable({
+          publishedBuild:"0025g",
+          controllerBuild:null
+        }),false);
+        assertEqual(pwaUpdateAvailable({
+          publishedBuild:"0025g",
+          controllerBuild:"0025g",
+          waitingBuild:"0025g"
+        }),true);
+      },
+
+      "erro de atualização aparece sem exigir reset automático"() {
+        assertEqual(formatPwaBuildLabel({
+          version:"0.1.0",
+          build:"0025g",
+          channel:"test"
+        },{
+          controllerBuild:"0025d",
+          error:"Feche e abra novamente."
+        }),"v0.1.0 · build 0025g · atualização requer atenção");
       }
     },
 
@@ -15748,6 +16747,23 @@ assets: {
         editor.setToolMode("rotate");
         editor.setToolMode("navigate");
         assertEqual(editor.snapshot().tool.transformMode, "rotate");
+      },
+
+      "troca de ferramenta é atômica e idempotente"() {
+        const editor = new EditorState();
+        let notifications = 0;
+        const unsubscribe = editor.subscribe((snapshot, event) => {
+          if (event.type !== "initial") notifications += 1;
+        });
+        editor.setPivotEditing(true);
+        notifications = 0;
+        assertEqual(editor.setToolMode("rotate"), true);
+        assertEqual(editor.snapshot().pivot.editing, false);
+        assertEqual(notifications, 1);
+        assertEqual(editor.setToolMode("rotate"), false);
+        assertEqual(notifications, 1);
+        assertEqual(editor.setPivotEditing(false), false);
+        unsubscribe();
       },
 
       "operações e gesto são explícitos"() {
