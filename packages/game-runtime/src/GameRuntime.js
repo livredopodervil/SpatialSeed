@@ -1,21 +1,23 @@
 import {
   SimulationClock
-} from "../../runtime-layers/src/index.js?build=20260809-0054a";
+} from "../../runtime-layers/src/index.js?build=20260810-0054e";
 import {
   aroundPivot,
   eulerQuaternion,
   multiplyMatrices,
   quaternionMatrix,
   translationMatrix
-} from "../../math-affine/src/index.js?build=20260809-0054a";
+} from "../../math-affine/src/index.js?build=20260810-0054e";
 import {
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
-  normalizeCollisionWorld,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260809-0054a";
+} from "./CharacterPhysics.js?build=20260810-0054e";
+import {
+  normalizeCollisionWorld
+} from "./CollisionWorld.js?build=20260810-0054e";
 
-export const GAME_RUNTIME_VERSION = "game-runtime-v1-character-aabb";
+export const GAME_RUNTIME_VERSION = "game-runtime-v2-local-box-collision";
 
 const DEFAULT_CAMERA = Object.freeze({
   distance: 6,
@@ -25,7 +27,8 @@ const DEFAULT_CAMERA = Object.freeze({
   pitch: -0.12,
   minimumPitch: -0.75,
   maximumPitch: 0.55,
-  lookSensitivity: 0.004
+  lookSensitivity: 0.004,
+  invertYaw: false
 });
 
 export class GameRuntime {
@@ -458,7 +461,8 @@ function normalizeCameraConfig(source = {}) {
     lookSensitivity: positive(
       value.lookSensitivity ?? DEFAULT_CAMERA.lookSensitivity,
       "camera.lookSensitivity"
-    )
+    ),
+    invertYaw: Boolean(value.invertYaw ?? DEFAULT_CAMERA.invertYaw)
   });
 }
 

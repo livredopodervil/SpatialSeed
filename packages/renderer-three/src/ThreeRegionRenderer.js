@@ -22,6 +22,12 @@ import {
 } from "./HeterogeneousBatchManager.js?build=20260807-0051a";
 import { MeshEditVisibility } from "./MeshEditVisibility.js?build=20260809-0053k";
 import {
+  freezeMeshPart,
+  gameCollisionShapeKind,
+  preferLocalBoxForGeometry,
+  worldSphereFromGeometry
+} from "./GameCollisionProjection.js?build=20260810-0054e";
+import {
   normalizeStrokeBundleDescriptor,
   strokeBundleChunkDescriptor,
   strokeChunkRenderResourcePath
@@ -1629,15 +1635,78 @@ export class ThreeRegionRenderer {
     for (const [objectId, object] of this.#objectsById) {
       if (excluded.has(objectId) || !isRenderableSceneNode(object)) continue;
       if (!this.hasObjectVisual(objectId)) continue;
-      const bounds = this.#worldBoundsForObjectId(objectId);
-      if (bounds.isEmpty()) continue;
+      const proxy = this.#meshes.get(objectId);
+      if (!proxy || proxy.userData.logicalOnly) continue;
+      const resources = this.#gameCollisionResourcesForObject(objectId);
+      if (!resources.length) continue;
+      const broadBounds = this.#gameCollisionBroadBounds(resources);
+      if (broadBounds.isEmpty()) continue;
+      const compound = resources.length !== 1 ||
+        Boolean(this.#familyVisuals.get(objectId)) ||
+        this.#heterogeneousBatchManager.resourcesForOwner(objectId).length > 0;
+      if (compound && resources.every(resource =>
+        preferLocalBoxForGeometry(resource.geometry)
+      )) {
+        for (let resourceIndex = 0; resourceIndex < resources.length; resourceIndex += 1) {
+          const resource = resources[resourceIndex];
+          if (!resource.geometry.boundingBox) resource.geometry.computeBoundingBox();
+          const localBounds = resource.geometry.boundingBox;
+          if (!localBounds || localBounds.isEmpty()) continue;
+          const resourceBroad = localBounds.clone().applyMatrix4(resource.worldMatrix);
+          colliders.push(Object.freeze({
+            id: `${objectId}:instance:${resourceIndex}`,
+            broadBounds: freezeBounds(resourceBroad),
+            collider: Object.freeze({
+              type: "local-box",
+              localBounds: freezeBounds(localBounds),
+              worldMatrix: Object.freeze(resource.worldMatrix.toArray())
+            })
+          }));
+        }
+        continue;
+      }
+      let shapeKind = gameCollisionShapeKind(object, { compound });
+      let collider = null;
+      const primary = resources[0];
+      if (shapeKind === "local-box") {
+        if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
+        const localBounds = primary.geometry.boundingBox;
+        if (localBounds && !localBounds.isEmpty()) {
+          collider = Object.freeze({
+            type: "local-box",
+            localBounds: freezeBounds(localBounds),
+            worldMatrix: Object.freeze(primary.worldMatrix.toArray())
+          });
+        }
+      } else if (shapeKind === "sphere") {
+        const sphere = worldSphereFromGeometry(
+          primary.geometry,
+          primary.worldMatrix
+        );
+        if (sphere) {
+          collider = Object.freeze({ type: "sphere", ...sphere });
+        } else {
+          // A non-uniformly scaled sphere is no longer a sphere. Preserve exact
+          // final tessellation instead of widening it to an analytic primitive.
+          shapeKind = "triangle-mesh";
+        }
+      }
+      if (!collider && shapeKind === "triangle-mesh") {
+        const parts = resources
+          .map(resource => freezeMeshPart(resource.geometry, resource.worldMatrix))
+          .filter(Boolean);
+        if (!parts.length) continue;
+        collider = Object.freeze({ type: "triangle-mesh", parts: Object.freeze(parts) });
+      }
+      if (!collider) continue;
       colliders.push(Object.freeze({
         id: objectId,
-        bounds: freezeBounds(bounds)
+        broadBounds: freezeBounds(broadBounds),
+        collider
       }));
     }
     return Object.freeze({
-      version: "game-collision-world-v1",
+      version: "game-collision-world-v3-final-mesh",
       revision: this.#resolvedRevision,
       character: Object.freeze({
         id,
@@ -4481,17 +4550,79 @@ export class ThreeRegionRenderer {
     return results;
   }
 
-  #worldBoundsForProxy(proxy, target = new THREE.Box3()) {
-    const localBounds=proxy.userData.localBounds;
+  #gameCollisionResourcesForObject(objectId) {
+    const id = String(objectId);
+    const resources = [];
+    const matrix = new THREE.Matrix4();
+    const family = this.#familyVisuals.get(id);
+    if (family?.resourceIds?.length) {
+      for (const resourceId of family.resourceIds) {
+        const location = this.#batchManager.locationOf(resourceId);
+        const batch = location
+          ? this.#batchManager.getBatch(location.batchKey)
+          : null;
+        if (!batch?.geometry || !Number.isInteger(location?.instanceIndex)) continue;
+        batch.mesh.getMatrixAt(location.instanceIndex, matrix);
+        resources.push({ geometry: batch.geometry, worldMatrix: matrix.clone() });
+      }
+      return resources;
+    }
+
+    const heterogeneous =
+      this.#heterogeneousBatchManager.resourcesForOwner(id);
+    if (heterogeneous.length) {
+      for (const resourceId of heterogeneous) {
+        const location = this.#heterogeneousBatchManager.locationOf(resourceId);
+        const batch = location
+          ? this.#heterogeneousBatchManager.getBatch(location.batchKey)
+          : null;
+        const geometry = this.#heterogeneousBatchManager.geometryOf(resourceId);
+        if (!batch?.mesh || !geometry ||
+            !Number.isInteger(location?.instanceId)) continue;
+        batch.mesh.getMatrixAt(location.instanceId, matrix);
+        resources.push({ geometry, worldMatrix: matrix.clone() });
+      }
+      return resources;
+    }
+
+    const location = this.#batchManager.locationOf(id);
+    const batch = location
+      ? this.#batchManager.getBatch(location.batchKey)
+      : null;
+    if (batch?.geometry && Number.isInteger(location?.instanceIndex)) {
+      batch.mesh.getMatrixAt(location.instanceIndex, matrix);
+      resources.push({ geometry: batch.geometry, worldMatrix: matrix.clone() });
+    }
+    return resources;
+  }
+
+  #gameCollisionBroadBounds(resources) {
+    const result = new THREE.Box3().makeEmpty();
+    for (const resource of resources) {
+      if (!resource.geometry.boundingBox) resource.geometry.computeBoundingBox();
+      const bounds = resource.geometry.boundingBox;
+      if (!bounds || bounds.isEmpty()) continue;
+      result.union(bounds.clone().applyMatrix4(resource.worldMatrix));
+    }
+    return result;
+  }
+
+  #localBoundsForProxy(proxy, target = new THREE.Box3()) {
+    const localBounds = proxy.userData.localBounds;
     if (localBounds) {
       target.min.fromArray(localBounds.min);
       target.max.fromArray(localBounds.max);
-    } else {
-      const size = proxy.userData.size ?? [1, 1, 1];
-      const half = new THREE.Vector3(size[0] / 2, size[1] / 2, size[2] / 2);
-      target.min.copy(half).multiplyScalar(-1);
-      target.max.copy(half);
+      return target;
     }
+    const size = proxy.userData.size ?? [1, 1, 1];
+    const half = new THREE.Vector3(size[0] / 2, size[1] / 2, size[2] / 2);
+    target.min.copy(half).multiplyScalar(-1);
+    target.max.copy(half);
+    return target;
+  }
+
+  #worldBoundsForProxy(proxy, target = new THREE.Box3()) {
+    this.#localBoundsForProxy(proxy, target);
     proxy.updateMatrixWorld(true);
     return target.applyMatrix4(proxy.matrixWorld);
   }

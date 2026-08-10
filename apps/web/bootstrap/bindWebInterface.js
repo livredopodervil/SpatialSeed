@@ -1,7 +1,7 @@
-import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260809-0054a";
+import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260810-0054e";
 import {
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260809-0054a";
+} from "../../../packages/platform-web/src/index.js?build=20260810-0054e";
 
 export function bindWebInterface({
   runtime,
@@ -1681,7 +1681,8 @@ export function bindWebInterface({
     }
   });
 
-  const gamePressed = new Set();
+  const gameKeyboardCodes = new Set();
+  const gamePointerControls = new Map();
   const gameControlListeners = [];
   const initialShortcutContext =
     documentRoot.body.dataset.shortcutContext ?? null;
@@ -1701,14 +1702,25 @@ export function bindWebInterface({
     Space: "jump"
   })[code] ?? null;
 
+  const gameControlActive = control =>
+    [...gameKeyboardCodes].some(code => gameControlForCode(code) === control) ||
+    [...gamePointerControls.values()].includes(control);
+
+  const refreshGameControlButton = control => {
+    const active = gameControlActive(control);
+    documentRoot.querySelectorAll(
+      `[data-game-control="${control}"]`
+    ).forEach(button => { button.dataset.active = active ? "true" : "false"; });
+  };
+
   function gameInputSnapshot(extra = {}) {
     return {
-      forward: (gamePressed.has("forward") ? 1 : 0) -
-        (gamePressed.has("back") ? 1 : 0),
-      strafe: (gamePressed.has("right") ? 1 : 0) -
-        (gamePressed.has("left") ? 1 : 0),
-      sprint: gamePressed.has("sprint"),
-      jump: gamePressed.has("jump"),
+      forward: (gameControlActive("forward") ? 1 : 0) -
+        (gameControlActive("back") ? 1 : 0),
+      strafe: (gameControlActive("right") ? 1 : 0) -
+        (gameControlActive("left") ? 1 : 0),
+      sprint: gameControlActive("sprint"),
+      jump: gameControlActive("jump"),
       ...extra
     };
   }
@@ -1720,7 +1732,8 @@ export function bindWebInterface({
   }
 
   function clearGameControls() {
-    gamePressed.clear();
+    gameKeyboardCodes.clear();
+    gamePointerControls.clear();
     gameLookPointer = null;
     documentRoot.querySelectorAll("[data-game-control]").forEach(button => {
       button.dataset.active = "false";
@@ -1747,6 +1760,8 @@ export function bindWebInterface({
       $("game-status").textContent =
         `${labels[snapshot.animationState] ?? snapshot.animationState} · ` +
         `${snapshot.grounded ? "no chão" : "no ar"} · ${position}`;
+      const invertYaw = $("game-invert-yaw");
+      if (invertYaw) invertYaw.checked = Boolean(snapshot.camera?.invertYaw);
     } else {
       if (initialShortcutContext === null) {
         delete documentRoot.body.dataset.shortcutContext;
@@ -1769,11 +1784,9 @@ export function bindWebInterface({
     if (!control) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (!gamePressed.has(control)) {
-      gamePressed.add(control);
-      documentRoot.querySelectorAll(
-        `[data-game-control="${control}"]`
-      ).forEach(button => { button.dataset.active = "true"; });
+    if (!gameKeyboardCodes.has(event.code)) {
+      gameKeyboardCodes.add(event.code);
+      refreshGameControlButton(control);
       publishGameInput();
     }
   };
@@ -1783,10 +1796,8 @@ export function bindWebInterface({
     if (!control) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    gamePressed.delete(control);
-    documentRoot.querySelectorAll(
-      `[data-game-control="${control}"]`
-    ).forEach(button => { button.dataset.active = "false"; });
+    gameKeyboardCodes.delete(event.code);
+    refreshGameControlButton(control);
     publishGameInput();
   };
   const onGameBlur = () => {
@@ -1803,16 +1814,18 @@ export function bindWebInterface({
     const press = event => {
       if (latestGame.state !== "running") return;
       event.preventDefault();
+      gamePointerControls.set(event.pointerId, control);
       button.setPointerCapture?.(event.pointerId);
-      gamePressed.add(control);
-      button.dataset.active = "true";
+      refreshGameControlButton(control);
       publishGameInput();
     };
     const release = event => {
       if (latestGame.state !== "running") return;
       event.preventDefault();
-      gamePressed.delete(control);
-      button.dataset.active = "false";
+      const releasedControl = gamePointerControls.get(event.pointerId);
+      if (releasedControl !== control) return;
+      gamePointerControls.delete(event.pointerId);
+      refreshGameControlButton(control);
       publishGameInput();
     };
     for (const [name, listener] of [
@@ -1848,8 +1861,9 @@ export function bindWebInterface({
     const sensitivity = Number(
       latestGame.camera?.lookSensitivity ?? 0.004
     );
+    const yawSign = latestGame.camera?.invertYaw ? 1 : -1;
     publishGameInput({
-      lookYawDelta: -dx * sensitivity,
+      lookYawDelta: yawSign * dx * sensitivity,
       lookPitchDelta: -dy * sensitivity
     });
   };
@@ -1860,6 +1874,11 @@ export function bindWebInterface({
   gameCanvas.addEventListener("pointermove", onGameLookMove);
   gameCanvas.addEventListener("pointerup", onGameLookEnd);
   gameCanvas.addEventListener("pointercancel", onGameLookEnd);
+  $("game-invert-yaw")?.addEventListener("change", event => {
+    execute("game.config.set", {
+      camera: { invertYaw: Boolean(event.currentTarget?.checked) }
+    });
+  });
   $("game-exit").addEventListener("click", () => {
     execute("game.stop", { reason: "hud-exit" });
   });

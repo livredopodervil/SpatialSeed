@@ -1,9 +1,10 @@
 import {
   GameRuntime,
   createCharacterPhysicsState,
+  intersectsCharacterBounds,
   normalizeCollisionWorld,
   stepCharacterPhysics
-} from "../../game-runtime/src/index.js?build=20260809-0054a";
+} from "../../game-runtime/src/index.js?build=20260810-0054e";
 
 const CHARACTER_BOUNDS = Object.freeze({
   min: Object.freeze([-0.5, 0.5, -0.5]),
@@ -72,6 +73,141 @@ export function createGameRuntimeTests() {
       assertEqual(sawFall, true);
       assertEqual(state.grounded, true);
       assertNear(state.position[1], 0.5, 0.002);
+    },
+
+
+    "narrow phase respeita caixa local rotacionada"() {
+      const c = Math.SQRT1_2;
+      const rotated = normalizeCollisionWorld([{
+        id: "rotated-bar",
+        broadBounds: { min: [-1.5, -0.5, -1.5], max: [1.5, 0.5, 1.5] },
+        collider: {
+          type: "local-box",
+          localBounds: { min: [-1, -0.5, -0.1], max: [1, 0.5, 0.1] },
+          worldMatrix: [
+            c, 0, -c, 0,
+            0, 1, 0, 0,
+            c, 0, c, 0,
+            0, 0, 0, 1
+          ]
+        }
+      }])[0];
+      assertEqual(intersectsCharacterBounds(
+        { min: [0.85, -0.1, 0.85], max: [0.95, 0.1, 0.95] },
+        rotated
+      ), false);
+      assertEqual(intersectsCharacterBounds(
+        { min: [0.55, -0.1, -0.75], max: [0.65, 0.1, -0.65] },
+        rotated
+      ), true);
+    },
+
+    "malha triangular rejeita vazio interno ao broad bounds"() {
+      const mesh = normalizeCollisionWorld([{
+        id: "triangle",
+        broadBounds: { min: [0, -0.1, 0], max: [2, 0.1, 2] },
+        collider: {
+          type: "triangle-mesh",
+          parts: [{
+            triangles: [
+              0, 0, 0,
+              2, 0, 0,
+              0, 0, 2
+            ],
+            worldMatrix: [
+              1, 0, 0, 0,
+              0, 1, 0, 0,
+              0, 0, 1, 0,
+              0, 0, 0, 1
+            ]
+          }]
+        }
+      }])[0];
+      assertEqual(intersectsCharacterBounds(
+        { min: [1.55, -0.05, 1.55], max: [1.65, 0.05, 1.65] },
+        mesh
+      ), false);
+      assertEqual(intersectsCharacterBounds(
+        { min: [0.35, -0.05, 0.35], max: [0.45, 0.05, 0.45] },
+        mesh
+      ), true);
+    },
+
+    "esfera analítica não usa os cantos da AABB"() {
+      const sphere = normalizeCollisionWorld([{
+        id: "sphere",
+        broadBounds: { min: [-1, -1, -1], max: [1, 1, 1] },
+        collider: { type: "sphere", center: [0, 0, 0], radius: 1 }
+      }])[0];
+      assertEqual(intersectsCharacterBounds(
+        { min: [0.85, 0.85, 0.85], max: [0.95, 0.95, 0.95] },
+        sphere
+      ), false);
+      assertEqual(intersectsCharacterBounds(
+        { min: [0.55, -0.05, -0.05], max: [0.65, 0.05, 0.05] },
+        sphere
+      ), true);
+    },
+
+    "contrato legado AABB continua aceito"() {
+      const legacy = normalizeCollisionWorld([{
+        id: "legacy",
+        bounds: { min: [0, 0, 0], max: [1, 1, 1] }
+      }])[0];
+      assertEqual(intersectsCharacterBounds(
+        { min: [0.2, 0.2, 0.2], max: [0.3, 0.3, 0.3] },
+        legacy
+      ), true);
+    },
+
+    "movimento diagonal preserva os dois eixos"() {
+      const state = characterState([0, 0.5, 0]);
+      const world = normalizeCollisionWorld([PLATFORM]);
+      simulate(state, world, 60, { worldX: 1, worldZ: -1 });
+      assertEqual(Math.abs(state.position[0]) > 0.5, true);
+      assertEqual(Math.abs(state.position[2]) > 0.5, true);
+      assertNear(
+        Math.abs(state.position[0]),
+        Math.abs(state.position[2]),
+        0.08
+      );
+    },
+
+    "runtime aceita frente e strafe simultâneos e ainda pula"() {
+      const fixture = runtimeFixture();
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({ characterId: "character" });
+      runtime.setInput({ forward: 1, strafe: 1 });
+      for (let index = 0; index < 30; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+      }
+      const moved = runtime.status();
+      assertEqual(Math.hypot(moved.position[0], moved.position[2]) > 0.2, true);
+      runtime.setInput({ forward: 1, strafe: 1, jump: true });
+      runtime.advance({ deltaSeconds: 1 / 60 });
+      const jumped = runtime.status();
+      assertEqual(jumped.velocity[1] > 0, true);
+      assertEqual(jumped.grounded, false);
+      runtime.dispose();
+    },
+
+    "configuração expõe inversão horizontal do mouse"() {
+      const fixture = runtimeFixture();
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({
+        characterId: "character",
+        camera: { invertYaw: true }
+      });
+      assertEqual(runtime.status().camera.invertYaw, true);
+      runtime.configure({ camera: { invertYaw: false } });
+      assertEqual(runtime.status().camera.invertYaw, false);
+      runtime.dispose();
     },
 
     "runtime aplica overlay local, acompanha com câmera e restaura autoria"() {

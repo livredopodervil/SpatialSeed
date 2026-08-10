@@ -1,4 +1,4 @@
-import { formatBuildLabel } from "./BuildInfo.js?build=20260809-0054a";
+import { formatBuildLabel } from "./BuildInfo.js?build=20260810-0054e";
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const UPDATE_TIMEOUT_MS = 15000;

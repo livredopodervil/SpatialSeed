@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260809-0053m";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260809-0054a";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260810-0054e";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260809-0054a";
+} from "../../../packages/platform-web/src/index.js?build=20260810-0054e";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -113,7 +113,7 @@ import {
 import {
   GAME_RUNTIME_VERSION,
   GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260809-0054a";
+} from "../../../packages/game-runtime/src/index.js?build=20260810-0054e";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";

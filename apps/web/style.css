@@ -2347,6 +2347,14 @@ body.ss-game-mode #game-hud{
   background:#17613fdd;
   transform:translateY(1px);
 }
+
+.game-look-option{
+  grid-column:1/-1;
+  justify-self:center;
+  pointer-events:auto;
+  font:500 .76rem/1.2 system-ui;
+}
+.game-look-option input{accent-color:currentColor}
 #game-hud p{
   grid-column:1/-1;
   grid-row:4;

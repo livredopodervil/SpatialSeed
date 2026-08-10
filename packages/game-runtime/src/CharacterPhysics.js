@@ -1,3 +1,8 @@
+import {
+  normalizeCollisionWorld,
+  worldIntersectsCharacterBounds
+} from "./CollisionWorld.js?build=20260810-0054e";
+
 export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   gravity: 18,
   walkSpeed: 4.5,
@@ -15,7 +20,6 @@ export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
 
 const EPSILON = 1e-9;
 const normalizedConfigs = new WeakSet();
-const normalizedWorlds = new WeakSet();
 
 export function normalizeCharacterGameConfig(source = {}) {
   if (source && typeof source === "object" && normalizedConfigs.has(source)) {
@@ -103,19 +107,6 @@ export function createCharacterPhysicsState({
     distanceTravelled: 0,
     respawns: 0
   };
-}
-
-export function normalizeCollisionWorld(colliders = []) {
-  if (!Array.isArray(colliders)) {
-    throw new TypeError("Collision world must be a list.");
-  }
-  if (normalizedWorlds.has(colliders)) return colliders;
-  const normalized = Object.freeze(colliders.map((entry, index) => Object.freeze({
-    id: String(entry?.id ?? `collider-${index}`),
-    bounds: normalizeBounds(entry?.bounds ?? entry, `colliders[${index}].bounds`)
-  })));
-  normalizedWorlds.add(normalized);
-  return normalized;
 }
 
 export function stepCharacterPhysics(
@@ -207,104 +198,138 @@ export function characterWorldBounds(state) {
 }
 
 function resolvePenetrations(state, colliders, config) {
+  if (!worldIntersectsCharacterBounds(mutableCharacterBounds(state), colliders)) {
+    return false;
+  }
   let grounded = false;
   for (let iteration = 0; iteration < 4; iteration += 1) {
     const body = mutableCharacterBounds(state);
+    if (!worldIntersectsCharacterBounds(body, colliders)) break;
     let resolution = null;
-    for (const collider of colliders) {
-      const box = collider.bounds;
-      if (!overlapsVolume(body, box)) continue;
-      const candidates = [
-        { axis: 0, delta: box.max[0] - body.min[0] + config.collisionSkin },
-        { axis: 0, delta: box.min[0] - body.max[0] - config.collisionSkin },
-        { axis: 1, delta: box.max[1] - body.min[1] + config.collisionSkin },
-        { axis: 1, delta: box.min[1] - body.max[1] - config.collisionSkin },
-        { axis: 2, delta: box.max[2] - body.min[2] + config.collisionSkin },
-        { axis: 2, delta: box.min[2] - body.max[2] - config.collisionSkin }
-      ];
-      const candidate = candidates.reduce(
-        (best, value) =>
-          !best || Math.abs(value.delta) < Math.abs(best.delta)
-            ? value
-            : best,
-        null
-      );
-      if (!resolution ||
-          Math.abs(candidate.delta) < Math.abs(resolution.delta)) {
-        resolution = candidate;
+    for (const axis of [0, 1, 2]) {
+      for (const sign of [-1, 1]) {
+        const distance = separationDistance(state, colliders, axis, sign);
+        if (distance === null) continue;
+        if (!resolution || distance < resolution.distance) {
+          resolution = { axis, sign, distance };
+        }
       }
     }
     if (!resolution) break;
-    state.position[resolution.axis] += resolution.delta;
+    const delta = resolution.sign * (resolution.distance + config.collisionSkin);
+    state.position[resolution.axis] += delta;
     state.velocity[resolution.axis] = 0;
-    if (resolution.axis === 1 && resolution.delta > 0) grounded = true;
+    if (resolution.axis === 1 && delta > 0) grounded = true;
   }
   return grounded;
 }
 
-function moveHorizontalAxis(state, colliders, config, axis, displacement) {
-  if (Math.abs(displacement) <= EPSILON) return;
-  const current = mutableCharacterBounds(state);
-  let allowed = displacement;
-  for (const collider of colliders) {
-    const box = collider.bounds;
-    if (!overlapsAxes(current, box, axis, config.collisionSkin)) continue;
-    if (displacement > 0 && current.max[axis] <= box.min[axis] + config.collisionSkin) {
-      const gap = box.min[axis] - current.max[axis];
-      if (gap < allowed) allowed = Math.max(0, gap - config.collisionSkin);
-    } else if (
-      displacement < 0 &&
-      current.min[axis] >= box.max[axis] - config.collisionSkin
-    ) {
-      const gap = box.max[axis] - current.min[axis];
-      if (gap > allowed) allowed = Math.min(0, gap + config.collisionSkin);
+function separationDistance(state, colliders, axis, sign) {
+  const original = state.position[axis];
+  const extent = Math.max(0.05, state.halfExtents[axis] * 0.5);
+  let low = 0;
+  let high = extent;
+  let separated = false;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    state.position[axis] = original + sign * high;
+    if (!worldIntersectsCharacterBounds(mutableCharacterBounds(state), colliders)) {
+      separated = true;
+      break;
+    }
+    low = high;
+    high *= 2;
+  }
+  if (!separated) {
+    state.position[axis] = original;
+    return null;
+  }
+  for (let iteration = 0; iteration < 16; iteration += 1) {
+    const middle = (low + high) * 0.5;
+    state.position[axis] = original + sign * middle;
+    if (worldIntersectsCharacterBounds(mutableCharacterBounds(state), colliders)) {
+      low = middle;
+    } else {
+      high = middle;
     }
   }
-  state.position[axis] += allowed;
+  state.position[axis] = original;
+  return high;
+}
+
+function moveHorizontalAxis(state, colliders, config, axis, displacement) {
+  const allowed = moveAxis(state, colliders, config, axis, displacement);
   if (Math.abs(allowed - displacement) > EPSILON) state.velocity[axis] = 0;
 }
 
 function moveVertical(state, colliders, config, displacement) {
-  const axis = 1;
-  const current = mutableCharacterBounds(state);
-  let allowed = displacement;
-  let grounded = false;
-  for (const collider of colliders) {
-    const box = collider.bounds;
-    if (!overlapsHorizontalAfterMove(current, box)) continue;
-    if (displacement <= 0 && current.min[axis] >= box.max[axis] - config.collisionSkin) {
-      const gap = box.max[axis] - current.min[axis];
-      if (gap >= allowed - config.collisionSkin) {
-        allowed = Math.max(allowed, gap);
-        if (current.min[axis] + displacement <= box.max[axis] + config.collisionSkin) {
-          grounded = true;
-        }
-      }
-    } else if (
-      displacement > 0 &&
-      current.max[axis] <= box.min[axis] + config.collisionSkin
-    ) {
-      const gap = box.min[axis] - current.max[axis];
-      if (gap <= allowed + config.collisionSkin) {
-        allowed = Math.min(allowed, gap);
-      }
-    }
-  }
-  state.position[axis] += allowed;
-  if (Math.abs(allowed - displacement) > EPSILON) state.velocity[axis] = 0;
-  state.grounded = grounded || isGrounded(state, colliders, config);
+  const allowed = moveAxis(state, colliders, config, 1, displacement);
+  if (Math.abs(allowed - displacement) > EPSILON) state.velocity[1] = 0;
+  const blockedDownward = displacement < 0 && allowed > displacement + EPSILON;
+  state.grounded = blockedDownward || isGrounded(state, colliders, config);
   if (state.grounded && state.velocity[1] < 0) state.velocity[1] = 0;
 }
 
-function isGrounded(state, colliders, config) {
-  const body = mutableCharacterBounds(state);
-  for (const collider of colliders) {
-    const box = collider.bounds;
-    if (!overlapsHorizontalAfterMove(body, box)) continue;
-    const gap = body.min[1] - box.max[1];
-    if (gap >= -config.collisionSkin && gap <= config.groundProbe) return true;
+function moveAxis(state, colliders, config, axis, displacement) {
+  if (Math.abs(displacement) <= EPSILON) return 0;
+  const original = state.position[axis];
+  const maxStep = Math.max(0.02, Math.min(0.1, state.halfExtents[axis] * 0.5));
+  const steps = Math.max(1, Math.ceil(Math.abs(displacement) / maxStep));
+  const increment = displacement / steps;
+  let moved = 0;
+  for (let step = 0; step < steps; step += 1) {
+    const from = moved;
+    const to = moved + increment;
+    state.position[axis] = original + to;
+    if (!worldIntersectsCharacterBounds(
+      movementCollisionBounds(state, axis, config),
+      colliders,
+      axis === 1 ? config.collisionSkin : 0
+    )) {
+      moved = to;
+      continue;
+    }
+    let safe = from;
+    let blocked = to;
+    for (let iteration = 0; iteration < 16; iteration += 1) {
+      const middle = (safe + blocked) * 0.5;
+      state.position[axis] = original + middle;
+      if (worldIntersectsCharacterBounds(
+        movementCollisionBounds(state, axis, config),
+        colliders,
+        axis === 1 ? config.collisionSkin : 0
+      )) {
+        blocked = middle;
+      } else {
+        safe = middle;
+      }
+    }
+    moved = safe;
+    break;
   }
-  return false;
+  state.position[axis] = original + moved;
+  return moved;
+}
+
+function isGrounded(state, colliders, config) {
+  const original = state.position[1];
+  state.position[1] = original - config.groundProbe;
+  const grounded = worldIntersectsCharacterBounds(
+    mutableCharacterBounds(state), colliders, config.collisionSkin
+  );
+  state.position[1] = original;
+  return grounded;
+}
+
+function movementCollisionBounds(state, axis, config) {
+  const bounds = mutableCharacterBounds(state);
+  if (axis === 0 || axis === 2) {
+    const inset = Math.max(config.collisionSkin, 1e-6);
+    if (bounds.max[1] - bounds.min[1] > inset * 2) {
+      bounds.min[1] += inset;
+      bounds.max[1] -= inset;
+    }
+  }
+  return bounds;
 }
 
 function mutableCharacterBounds(state) {
@@ -345,8 +370,12 @@ function overlapsVolume(left, right) {
 
 function normalizeMovementInput(source = {}) {
   return {
-    worldX: ranged(source.worldX ?? 0, -1, 1, "input.worldX"),
-    worldZ: ranged(source.worldZ ?? 0, -1, 1, "input.worldZ"),
+    // Camera-relative basis vectors are combined before this layer.
+    // Diagonal input can therefore produce components outside [-1, 1]
+    // even though the logical controls themselves are normalized. Accept
+    // any finite vector here; stepCharacterPhysics normalizes its length.
+    worldX: finite(source.worldX ?? 0, "input.worldX"),
+    worldZ: finite(source.worldZ ?? 0, "input.worldZ"),
     jump: Boolean(source.jump),
     sprint: Boolean(source.sprint)
   };

@@ -31,6 +31,7 @@ export class HeterogeneousBatchManager {
     this.batchesByKey = new Map();
     this.locations = new Map();
     this.resourceMetadata = new Map();
+    this.resourceGeometry = new Map();
     this.ownerResources = new Map();
     this.shards = new Map();
     this.diagnostics = {
@@ -62,6 +63,10 @@ export class HeterogeneousBatchManager {
 
   getBatch(batchKey) {
     return this.batchesByKey.get(String(batchKey)) ?? null;
+  }
+
+  geometryOf(resourceId) {
+    return this.resourceGeometry.get(String(resourceId)) ?? null;
   }
 
   add({
@@ -171,6 +176,7 @@ export class HeterogeneousBatchManager {
     batch.vertices += counts.vertices;
     batch.indices += counts.indices;
     this.locations.set(id, location);
+    this.resourceGeometry.set(id, geometry);
     this.resourceMetadata.set(id, Object.freeze({
       ownerId: owner,
       metadata
@@ -213,6 +219,7 @@ export class HeterogeneousBatchManager {
     if (!location) return Object.freeze({ removed: false });
     const batch = this.batchesByKey.get(location.batchKey);
     this.locations.delete(id);
+    this.resourceGeometry.delete(id);
     const metadata = this.resourceMetadata.get(id);
     this.resourceMetadata.delete(id);
     if (metadata?.ownerId) {
