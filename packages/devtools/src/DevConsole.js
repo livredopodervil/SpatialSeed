@@ -757,6 +757,8 @@ export class DevConsole {
         "mesh topology create-edge",
         "mesh topology create-face",
         "mesh topology extrude distance=1",
+        "mesh topology extrude pathMode=drag-line|drawn [pathSamplePixels=6 pathSimplify=0.004]",
+        "mesh topology extrude path=0,0,0;1,0,0;1,1,0",
         "mesh topology inset amount=0.2",
         "mesh topology subdivide|split|collapse|flip-edge|flip-normal|bridge|weld|delete|duplicate|fill|cleanup|recalculate-normals",
         "mesh frame world|local|viewer",
@@ -2194,8 +2196,23 @@ export class DevConsole {
         }
         const name = token.slice(0, separator);
         const raw = token.slice(separator + 1);
-        if (["distance", "amount", "parameter"].includes(name)) {
+        if (["distance", "amount", "parameter", "pathSimplify"].includes(name)) {
           options[name] = this.#number(raw);
+        } else if (name === "pathSamplePixels") {
+          options[name] = this.#integer(raw);
+        } else if (name === "pathMode") {
+          options[name] = raw;
+        } else if (name === "path") {
+          const points = raw.split(";").filter(Boolean).map((entry, index) => {
+            const values = entry.split(",").map(value => this.#number(value));
+            if (values.length !== 3) {
+              throw new Error(`path[${index}] exige x,y,z.`);
+            }
+            return values;
+          });
+          if (points.length < 2) throw new Error("path exige pelo menos dois pontos.");
+          options.path = points;
+          options.pathMode = "explicit";
         } else if (["position", "offset", "vector"].includes(name)) {
           const values = raw.split(",").map(value => this.#number(value));
           if (values.length !== 3) throw new Error(`${name} exige x,y,z.`);
@@ -2210,6 +2227,14 @@ export class DevConsole {
         } else {
           throw new Error(`Opção topológica desconhecida: ${name}.`);
         }
+      }
+      if (operation === "extrude" && ["drag-line", "drawn"].includes(
+        String(options.pathMode ?? "").toLowerCase()
+      )) {
+        return this.commands.execute("authoring.tool.execute", {
+          toolId: "mesh.extrude",
+          input: options
+        });
       }
       return this.commands.execute("mesh.topology.apply", { operation, options });
     }
@@ -2372,6 +2397,8 @@ export class DevConsole {
         "mesh topology create-edge",
         "mesh topology create-face",
         "mesh topology extrude distance=1",
+        "mesh topology extrude pathMode=drag-line|drawn [pathSamplePixels=6 pathSimplify=0.004]",
+        "mesh topology extrude path=0,0,0;1,0,0;1,1,0",
         "mesh topology inset amount=0.2",
         "mesh topology subdivide|split|collapse|flip-edge|flip-normal|bridge|weld|delete|duplicate|fill|cleanup|recalculate-normals",
         "mesh frame world|local|viewer",

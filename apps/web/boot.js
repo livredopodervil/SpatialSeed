@@ -10,7 +10,7 @@ import {
   registerPwa,
   resolvePwaLocations,
   webApplicationName
-} from "../../packages/platform-web/src/index.js?build=20260810-0054f";
+} from "../../packages/platform-web/src/index.js?build=20260812-0054g";
 
 const $ = id => document.getElementById(id);
 const pwaInstallController = new PwaInstallController({ windowRef: window });

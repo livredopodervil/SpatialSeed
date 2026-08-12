@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_BUILDS = {"20260809-0053l", "20260809-0053m", "20260810-0054f"}
+EXPECTED_BUILDS = {"20260809-0053l", "20260809-0053m", "20260810-0054f", "20260812-0054g"}
 
 
 def source(relative: str) -> str:

@@ -24,7 +24,7 @@ import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=2
 import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260808-0053f";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260808-0053f";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260809-0053m";
-import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260809-0053l";
+import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260812-0054g";
 import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260808-0053f";
 import {
   InstanceGraphProjectionCache,
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260810-0054f";
+} from "../../../packages/platform-web/src/index.js?build=20260812-0054g";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -121,16 +121,22 @@ import {
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
 import {
   MeshEditController
-} from "../../../packages/mesh-editor-core/src/index.js?build=20260809-0053l";
+} from "../../../packages/mesh-editor-core/src/index.js?build=20260812-0054g";
+import {
+  MeshPathGestureController
+} from "../../../packages/mesh-interaction/src/index.js?build=20260812-0054g";
+import {
+  listMeshOperatorContracts
+} from "../../../packages/mesh-operator-kernel/src/index.js?build=20260812-0054g";
 import {
   MeshEditPanel
-} from "../../../packages/mesh-edit-panel/src/index.js?build=20260809-0053l";
+} from "../../../packages/mesh-edit-panel/src/index.js?build=20260812-0054g";
 import {
   EditContextController
 } from "../../../packages/edit-context/src/index.js?build=20260809-0053l";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260809-0053l";
+} from "../../../packages/edit-hud/src/index.js?build=20260812-0054g";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -139,7 +145,7 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260808-0053f";
+} from "../../../packages/edit-tools/src/index.js?build=20260812-0054g";
 import {
   ObjectPlacementController
 } from "../../../packages/object-placement/src/index.js?build=20260809-0053m";
@@ -569,6 +575,25 @@ export async function createWebRuntime({
     renderer,
     geometryRegistry
   });
+  const meshPathGesture = new MeshPathGestureController({
+    renderer,
+    meshEditor,
+    onCompleted: ({ operation, path, options = {}, result }) => {
+      if (!path?.localPoints?.length) return;
+      toolLifecycle.remember({
+        id: "mesh.topology.apply",
+        args: {
+          operation,
+          options: {
+            ...options,
+            path: path.localPoints,
+            pathMode: "explicit"
+          }
+        },
+        label: result?.tool?.label ?? "Repetir operação por caminho"
+      });
+    }
+  });
   const editContext = new EditContextController({
     editor,
     renderer,
@@ -772,6 +797,7 @@ export async function createWebRuntime({
     if (gameRuntime?.state === "running") {
       gameRuntime.stop(`transient-reset:${String(operation)}`);
     }
+    if (meshPathGesture.active) meshPathGesture.cancel("project-reset");
     if (meshEditor.active) meshEditor.cancel();
     const path = pathSketch.resetForProjectChange({
       reason: `project:${String(operation)}`
@@ -840,6 +866,7 @@ export async function createWebRuntime({
     toolParameters,
     pathTools,
     pathSketch,
+    meshPathGesture,
     planarSketch,
     objectPlacement,
     measurement,
@@ -2128,6 +2155,12 @@ export async function createWebRuntime({
     .register("mesh.edit.status", () =>
       meshEditor.status()
     )
+    .register("mesh.path.status", () =>
+      meshPathGesture.status()
+    )
+    .register("mesh.operators.contracts", () =>
+      listMeshOperatorContracts()
+    )
     .register("scene.objects.list", () =>
       sandbox.getSnapshot().objects
     )
@@ -2341,6 +2374,7 @@ export async function createWebRuntime({
   runtime.onDispose(() => planarSketch.dispose());
   runtime.onDispose(() => measurement.dispose());
   runtime.onDispose(() => meshEditPanel.dispose());
+  runtime.onDispose(() => meshPathGesture.dispose());
   runtime.onDispose(() => editContext.dispose());
   runtime.onDispose(() => meshEditor.dispose());
 
@@ -2798,6 +2832,7 @@ export async function createWebRuntime({
       drawingTarget,
       pathTools,
       pathSketch,
+      meshPathGesture,
       planarSketch,
       strokeFusion,
       strokeCompaction,

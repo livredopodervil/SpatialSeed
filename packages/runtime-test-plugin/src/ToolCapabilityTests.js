@@ -359,13 +359,13 @@ export function createToolCapabilityTests() {
       fixture.facade.setParameters("mesh.extrude", { distance: 2.5 });
       const result = fixture.facade.execute("mesh.extrude");
       const topology = fixture.calls.filter(call =>
-        call.id === "mesh.topology.apply"
+        call.id === "mesh.extrude.invoke"
       );
 
       assertEqual(result.result.changed, true);
       assertEqual(topology.length, 1);
-      assertEqual(topology[0].args.operation, "extrude");
       assertNear(topology[0].args.options.distance, 2.5);
+      assertEqual(topology[0].args.options.pathMode, "drag-line");
       fixture.dispose();
     },
 

@@ -28,6 +28,7 @@ GATES = [
     ("0054b-game-collision", [PYTHON, "tools/audit_game_collision_0054b.py"]),
     ("0054d-input-collision-optimization", [PYTHON, "tools/audit_game_collision_0054c.py"]),
     ("0054f-game-runtime", [PYTHON, "tools/audit_game_runtime_0054f.py"]),
+    ("0054g-mesh-operator-path", [PYTHON, "tools/audit_mesh_operator_path_0054g.py"]),
     ("event-previews", [PYTHON, "tools/audit_event_driven_previews.py"]),
     ("animation-overlays", [PYTHON, "tools/audit_independent_animation_overlays.py"]),
     ("mesh-ui", [PYTHON, "tools/audit_mesh_edit_ui.py"]),

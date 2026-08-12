@@ -14,7 +14,7 @@ import {
 } from "../../mesh-attributes/src/index.js?build=20260804-0048h1";
 import {
   createDefaultMeshToolRegistry
-} from "../../mesh-tool-registry/src/index.js";
+} from "../../mesh-tool-registry/src/index.js?build=20260812-0054g";
 import {
   resolveTransformVertexSelection
 } from "./MeshCoincidencePolicy.js";
@@ -210,6 +210,7 @@ export class MeshEditController {
         xray: true
       },
       history: { entries: [], index: -1, limit: 100 },
+      topologyPreview: null,
       lastOperation: "Inicial",
       frameMode: "local",
       previousFrameMode: "local",
@@ -393,6 +394,9 @@ export class MeshEditController {
 
   executeTool({ toolId, options = {} } = {}) {
     const session = this.#requireSession();
+    if (session.topologyPreview) {
+      throw new Error("Finalize ou cancele o preview topológico antes de outra operação.");
+    }
     const selected = session.componentSelections[session.componentMode];
     const execution = this.toolRegistry.execute(toolId, {
       descriptor: session.descriptor,
@@ -443,6 +447,98 @@ export class MeshEditController {
       tool: execution.tool,
       diagnostics: result.diagnostics
     });
+  }
+
+  previewTopology({ operation, options = {} } = {}) {
+    const session = this.#requireSession();
+    const toolId = this.toolRegistry.idForOperation("topology", operation);
+    if (!session.topologyPreview) {
+      session.topologyPreview = captureTopologyPreviewBase(session);
+    }
+    const base = session.topologyPreview.base;
+    const selected = new Set(base.componentSelections[base.componentMode] ?? []);
+    const execution = this.toolRegistry.execute(toolId, {
+      descriptor: base.descriptor,
+      topology: base.topology,
+      mode: base.componentMode,
+      componentMode: base.componentMode,
+      selectedIndices: selected,
+      selectionCount: selected.size,
+      activeIndex: base.activeComponents[base.componentMode],
+      options: executionOptions(
+        this.toolRegistry.describe(toolId).kind,
+        session.topologyOptions,
+        options
+      )
+    });
+    const result = execution.result;
+    applyTopologyResultToSession(session, result, execution.tool.operation);
+    session.topologyPreview.result = Object.freeze({
+      tool: execution.tool,
+      diagnostics: result.diagnostics,
+      label: result.label
+    });
+    this.renderer.updateMeshEditGeometry(session.descriptor);
+    this.#syncSelection({ notify: false });
+    this.#notify();
+    return Object.freeze({
+      ...this.status(),
+      preview: true,
+      tool: execution.tool,
+      diagnostics: result.diagnostics
+    });
+  }
+
+  commitTopologyPreview() {
+    const session = this.#requireSession();
+    const preview = session.topologyPreview;
+    if (!preview?.result) {
+      return Object.freeze({ ...this.status(), changed: false, preview: false });
+    }
+    const finalState = captureTopologyPreviewBase(session).base;
+    restoreTopologyPreviewBase(session, preview.base, this.geometryRegistry);
+    this.#recordHistory(`Antes de ${preview.result.label ?? "operação por caminho"}`);
+    restoreTopologyPreviewBase(session, finalState, this.geometryRegistry);
+    this.#markGeometryChanged(session, {
+      topology: finalState.topology,
+      normalState: preview.result.tool.operation === "recalculate-normals"
+        ? "explicit"
+        : "dirty"
+    });
+    session.topologyPreview = null;
+    this.renderer.updateMeshEditGeometry(session.descriptor);
+    this.#syncSelection({ notify: false });
+    this.#recordHistory(preview.result.label ?? "Operação por caminho");
+    this.#notify();
+    return Object.freeze({
+      ...this.status(),
+      changed: true,
+      preview: false,
+      tool: preview.result.tool,
+      diagnostics: preview.result.diagnostics
+    });
+  }
+
+  cancelTopologyPreview() {
+    const session = this.#requireSession();
+    const preview = session.topologyPreview;
+    if (!preview) return Object.freeze({ ...this.status(), preview: false });
+    restoreTopologyPreviewBase(session, preview.base, this.geometryRegistry);
+    session.topologyPreview = null;
+    this.renderer.updateMeshEditGeometry(session.descriptor);
+    this.#syncSelection({ notify: false });
+    this.#notify();
+    return Object.freeze({ ...this.status(), preview: false, changed: false });
+  }
+
+  worldPointsToLocal(points) {
+    const session = this.#requireSession();
+    const inverse = new THREE.Matrix4()
+      .fromArray(session.objectWorldMatrix)
+      .invert();
+    return Object.freeze(Array.from(points ?? [], point => Object.freeze(
+      new THREE.Vector3().fromArray(point).applyMatrix4(inverse).toArray()
+    )));
   }
 
   availableTools({ kind = null } = {}) {
@@ -844,6 +940,7 @@ export class MeshEditController {
         deformation: null,
         topologyOptions: null,
         display: null,
+        topologyPreview: false,
         canUndo: false,
         canRedo: false,
         canEnter: availability.ok,
@@ -883,6 +980,7 @@ export class MeshEditController {
         elastic: Object.freeze({ ...session.deformation.elastic })
       }),
       topologyOptions: Object.freeze({ ...session.topologyOptions }),
+      topologyPreview: Boolean(session.topologyPreview),
       normalState: session.normalState,
       display: Object.freeze({ ...session.display }),
       affectedCount: rendererStatus.affectedCount ??
@@ -1379,6 +1477,58 @@ function matricesNear(left, right, epsilon = 1e-8) {
   return left.every((value, index) =>
     Math.abs(Number(value) - Number(right[index])) <= epsilon
   );
+}
+
+function captureTopologyPreviewBase(session) {
+  return {
+    base: {
+      descriptor: structuredClone(session.descriptor),
+      topology: session.topology,
+      componentMode: session.componentMode,
+      componentSelections: Object.fromEntries(
+        Object.entries(session.componentSelections).map(([mode, values]) => [
+          mode,
+          [...values]
+        ])
+      ),
+      activeComponents: { ...session.activeComponents },
+      normalState: session.normalState,
+      dirty: session.dirty
+    },
+    result: null
+  };
+}
+
+function restoreTopologyPreviewBase(session, base, geometryRegistry) {
+  session.descriptor = geometryRegistry.normalize(base.descriptor);
+  session.topology = base.topology ?? buildMeshTopology(session.descriptor);
+  session.componentMode = normalizeMeshComponentMode(base.componentMode);
+  session.componentSelections = {
+    vertex: new Set(base.componentSelections.vertex ?? []),
+    edge: new Set(base.componentSelections.edge ?? []),
+    face: new Set(base.componentSelections.face ?? [])
+  };
+  session.activeComponents = {
+    vertex: base.activeComponents.vertex ?? null,
+    edge: base.activeComponents.edge ?? null,
+    face: base.activeComponents.face ?? null
+  };
+  session.normalState = base.normalState;
+  session.dirty = Boolean(base.dirty);
+}
+
+function applyTopologyResultToSession(session, result, operation) {
+  session.descriptor = result.descriptor;
+  session.topology = result.topology;
+  session.componentMode = result.selection.mode;
+  session.componentSelections = {
+    vertex: new Set(), edge: new Set(), face: new Set()
+  };
+  session.activeComponents = { vertex: null, edge: null, face: null };
+  session.componentSelections[result.selection.mode] = new Set(result.selection.indices);
+  session.activeComponents[result.selection.mode] = result.selection.activeIndex;
+  session.normalState = operation === "recalculate-normals" ? "explicit" : "dirty";
+  session.groups = coincidentVertexGroups(session.descriptor.positions);
 }
 
 function editablePathSource(descriptor) {

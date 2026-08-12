@@ -1521,7 +1521,12 @@ export class MeshEditPanel {
     }
     this.#click("mesh-extrude", "authoring.tool.execute", () => ({
       toolId: "mesh.extrude",
-      input: { distance: this.#number("mesh-extrude-distance") }
+      input: {
+        pathMode: this.#element("mesh-extrude-path-mode").value,
+        pathSamplePixels: this.#number("mesh-extrude-path-sample"),
+        pathSimplify: this.#number("mesh-extrude-path-simplify"),
+        distance: this.#number("mesh-extrude-distance")
+      }
     }));
     this.#click("mesh-inset", "authoring.tool.execute", () => ({
       toolId: "mesh.inset",
@@ -2000,7 +2005,8 @@ export class MeshEditPanel {
       "mesh-create-x", "mesh-create-y", "mesh-create-z", "mesh-create-vertex",
       "mesh-create-edge", "mesh-create-face", "mesh-duplicate-component",
       "mesh-delete-component", "mesh-fill", "mesh-recalculate-normals",
-      "mesh-extrude-distance", "mesh-extrude", "mesh-inset-amount",
+      "mesh-extrude-path-mode", "mesh-extrude-distance",
+      "mesh-extrude-path-sample", "mesh-extrude-path-simplify", "mesh-extrude", "mesh-inset-amount",
       "mesh-inset", "mesh-split-parameter", "mesh-split",
       "mesh-subdivide", "mesh-collapse", "mesh-flip-edge",
       "mesh-weld-vertices", "mesh-flip-normal", "mesh-bridge", "mesh-cleanup",
@@ -2190,6 +2196,13 @@ function rememberedToolControls() {
       "path-from-selection-radius",
       { number: true }
     ),
+    toolControl("mesh.extrude", "pathMode", "mesh-extrude-path-mode"),
+    toolControl("mesh.extrude", "pathSamplePixels", "mesh-extrude-path-sample", {
+      integer: true
+    }),
+    toolControl("mesh.extrude", "pathSimplify", "mesh-extrude-path-simplify", {
+      number: true
+    }),
     toolControl("mesh.extrude", "distance", "mesh-extrude-distance", {
       number: true
     }),

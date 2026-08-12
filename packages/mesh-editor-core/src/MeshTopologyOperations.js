@@ -1,4 +1,8 @@
 import { recomputeVertexNormals } from "../../mesh-attributes/src/index.js?build=20260804-0048h1";
+import {
+  meshPathSegments,
+  prepareMeshPath
+} from "../../mesh-operator-kernel/src/index.js?build=20260812-0054g";
 
 const EPSILON = 1e-9;
 
@@ -143,7 +147,8 @@ export function applyMeshTopologyOperation({
       faceCount: afterTopology.faceCount,
       boundaryEdgeCount: afterTopology.boundaryEdges.length,
       looseEdgeCount: afterTopology.looseEdges.length,
-      nonManifoldEdgeCount: afterTopology.nonManifoldEdges.length
+      nonManifoldEdgeCount: afterTopology.nonManifoldEdges.length,
+      path: result.pathDiagnostics ?? null
     })
   });
 }
@@ -458,6 +463,60 @@ function deleteComponents(mesh, selected, mode, topology, options) {
 
 function extrudeComponents(mesh, selected, mode, topology, options) {
   if (!selected.length) throw new Error("Selecione componentes para extrudar.");
+  if (Array.isArray(options.path)) {
+    return extrudeComponentsAlongPath(mesh, selected, mode, topology, options);
+  }
+  return extrudeComponentsSingle(mesh, selected, mode, topology, options);
+}
+
+function extrudeComponentsAlongPath(mesh, selected, mode, topology, options) {
+  const prepared = prepareMeshPath({
+    points: options.path,
+    mode: options.pathMode ?? "explicit",
+    simplifyTolerance: 0,
+    minimumSegment: 1e-8
+  });
+  const segments = meshPathSegments(prepared.points, { minimumSegment: 1e-8 });
+  let currentMesh = mesh;
+  let currentTopology = topology;
+  let currentMode = mode;
+  let currentSelected = [...selected];
+  let result = null;
+  for (const segment of segments) {
+    result = extrudeComponentsSingle(
+      currentMesh,
+      currentSelected,
+      currentMode,
+      currentTopology,
+      { ...options, path: undefined, pathMode: undefined, vector: segment.delta }
+    );
+    currentMesh = result.mesh;
+    currentTopology = topologyOf(currentMesh);
+    const resolved = resolveSelection({
+      topology: currentTopology,
+      preferredMode: result.selectionMode ?? currentMode,
+      vertexIndices: result.selectionVertices ?? [],
+      edgeKeys: result.selectionEdgeKeys ?? [],
+      faceKeys: result.selectionFaceKeys ?? [],
+      vertexPoints: result.selectionVertexPoints ?? []
+    });
+    currentMode = resolved.mode;
+    currentSelected = resolved.indices;
+  }
+  if (!result) throw new Error("O caminho de extrusão não possui segmentos úteis.");
+  return {
+    ...result,
+    mesh: currentMesh,
+    pathDiagnostics: Object.freeze({
+      mode: prepared.mode,
+      pointCount: prepared.points.length,
+      segmentCount: segments.length,
+      length: prepared.length
+    })
+  };
+}
+
+function extrudeComponentsSingle(mesh, selected, mode, topology, options) {
   const vertices = componentVertices(topology, mode, selected);
   const offset = extrusionOffset(mesh, topology, mode, selected, options);
   const map = duplicateVertices(mesh, vertices, offset);

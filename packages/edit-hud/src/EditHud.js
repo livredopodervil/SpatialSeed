@@ -47,6 +47,7 @@ const DEFAULT_PREFERENCES = Object.freeze({
   left: 12,
   defaults: {
     extrude: 1,
+    extrudePathMode: "drag-line",
     inset: 0.2,
     pathRadius: 0.08
   },
@@ -746,6 +747,7 @@ export class EditHud {
     this.#element("edit-hud-tap-hints").checked = this.#preferences.tapHints !== false;
     this.#element("edit-hud-adaptive-order").checked = this.#preferences.adaptiveOrder !== false;
     this.#element("edit-hud-default-extrude").value = String(this.#preferences.defaults.extrude);
+    this.#element("edit-hud-extrude-path-mode").value = this.#preferences.defaults.extrudePathMode ?? "drag-line";
     this.#element("edit-hud-default-inset").value = String(this.#preferences.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(this.#preferences.defaults.pathRadius);
     for (const checkbox of this.root.querySelectorAll("[data-edit-hud-group-toggle]")) {
@@ -760,7 +762,7 @@ export class EditHud {
     for (const id of [
       "edit-hud-dock", "edit-hud-orientation", "edit-hud-size",
       "edit-hud-opacity", "edit-hud-columns", "edit-hud-rows",
-      "edit-hud-tap-hints", "edit-hud-adaptive-order", "edit-hud-default-extrude", "edit-hud-default-inset",
+      "edit-hud-tap-hints", "edit-hud-adaptive-order", "edit-hud-default-extrude", "edit-hud-extrude-path-mode", "edit-hud-default-inset",
       "edit-hud-default-path-radius"
     ]) {
       this.#element(id).addEventListener("change", () => {
@@ -778,6 +780,7 @@ export class EditHud {
         this.#preferences.adaptiveOrder = this.#element("edit-hud-adaptive-order").checked;
         this.#preferences.defaults = {
           extrude: finiteOr(this.#element("edit-hud-default-extrude").value, 1),
+          extrudePathMode: this.#element("edit-hud-extrude-path-mode").value,
           inset: clamp(finiteOr(this.#element("edit-hud-default-inset").value, 0.2), 0.001, 0.999),
           pathRadius: Math.max(0.001, finiteOr(this.#element("edit-hud-default-path-radius").value, 0.08))
         };
@@ -786,6 +789,10 @@ export class EditHud {
           "edit-hud-default-extrude": [
             "mesh.extrude",
             { distance: this.#preferences.defaults.extrude }
+          ],
+          "edit-hud-extrude-path-mode": [
+            "mesh.extrude",
+            { pathMode: this.#preferences.defaults.extrudePathMode }
           ],
           "edit-hud-default-inset": [
             "mesh.inset",
@@ -1327,6 +1334,7 @@ export class EditHud {
     this.#element("edit-hud-appearance-color-action").value =
       normalizeAppearanceColorAction(p.appearanceColorAction);
     this.#element("edit-hud-default-extrude").value = String(p.defaults.extrude);
+    this.#element("edit-hud-extrude-path-mode").value = p.defaults.extrudePathMode ?? "drag-line";
     this.#element("edit-hud-default-inset").value = String(p.defaults.inset);
     this.#element("edit-hud-default-path-radius").value = String(p.defaults.pathRadius);
     this.#applyAdaptiveLayout(this.#heuristic);
@@ -1667,6 +1675,7 @@ export class EditHud {
   #refreshParameterAliases() {
     for (const [toolId, parameterId, controlId] of [
       ["mesh.extrude", "distance", "edit-hud-default-extrude"],
+      ["mesh.extrude", "pathMode", "edit-hud-extrude-path-mode"],
       ["mesh.inset", "amount", "edit-hud-default-inset"],
       ["path.sketch", "radius", "edit-hud-default-path-radius"],
       ["path.sketch", "anchorPolicy", "edit-hud-anchor-policy"]
@@ -2090,7 +2099,7 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-create-face": ["Criar face", "Cria e triangula uma face a partir dos vértices ou arestas selecionados."],
   "edit-hud-fill": ["Preencher", "Preenche um contorno selecionado com faces trianguladas."],
   "edit-hud-weld": ["Soldar vértices", "Substitui vértices selecionados por uma posição comum e reconstrói as adjacências."],
-  "edit-hud-extrude": ["Extrudar", "Duplica a região selecionada, cria as faces laterais e desloca pela distância memorizada."],
+  "edit-hud-extrude": ["Extrudar", "Extruda interativamente: por padrão a reta do arrasto; opcionalmente o traço completo ou a normal/distância."],
   "edit-hud-inset": ["Inset", "Cria uma região interna nas faces selecionadas usando o valor memorizado."],
   "edit-hud-split": ["Dividir aresta", "Insere um vértice no meio da aresta e subdivide as faces adjacentes."],
   "edit-hud-collapse": ["Colapsar aresta", "Funde as extremidades da aresta e remove faces degeneradas compatíveis."],

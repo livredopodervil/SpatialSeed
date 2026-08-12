@@ -16,13 +16,13 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 341,
-    "productionFiles": 299,
-    "productionFirstPartyFiles": 298,
+    "firstPartyJavaScriptFiles": 346,
+    "productionFiles": 304,
+    "productionFirstPartyFiles": 303,
     "productionExternalFiles": 1,
     "diagnosticFiles": 23,
     "unreferencedFiles": 20,
-    "productionComponents": 65,
+    "productionComponents": 67,
     "diagnosticComponents": 9,
     "unreferencedComponents": 2
   },
@@ -368,6 +368,24 @@
       "productionFiles": 0,
       "diagnosticFiles": 0,
       "unreferencedFiles": 2
+    },
+    "packages/mesh-interaction": {
+      "status": "production",
+      "target": "authoring",
+      "role": "production",
+      "sourceFiles": 2,
+      "productionFiles": 2,
+      "diagnosticFiles": 0,
+      "unreferencedFiles": 0
+    },
+    "packages/mesh-operator-kernel": {
+      "status": "production",
+      "target": "authoring",
+      "role": "production",
+      "sourceFiles": 3,
+      "productionFiles": 3,
+      "diagnosticFiles": 0,
+      "unreferencedFiles": 0
     },
     "packages/mesh-tool-registry": {
       "status": "production",
@@ -849,6 +867,11 @@
     "packages/mesh-editor-core/src/index.js",
     "packages/mesh-geometric-identity/src/GeometricVertexIdentity.js",
     "packages/mesh-geometric-identity/src/index.js",
+    "packages/mesh-interaction/src/MeshPathGestureController.js",
+    "packages/mesh-interaction/src/index.js",
+    "packages/mesh-operator-kernel/src/MeshOperatorContract.js",
+    "packages/mesh-operator-kernel/src/MeshPath.js",
+    "packages/mesh-operator-kernel/src/index.js",
     "packages/mesh-tool-registry/src/MeshToolRegistry.js",
     "packages/mesh-tool-registry/src/index.js",
     "packages/object-inspector/src/ObjectInspector.js",

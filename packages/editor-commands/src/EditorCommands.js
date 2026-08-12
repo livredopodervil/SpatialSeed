@@ -12,6 +12,7 @@ export function createEditorCommands({
   toolParameters = null,
   pathTools = null,
   pathSketch = null,
+  meshPathGesture = null,
   planarSketch = null,
   objectPlacement = null,
   measurement = null,
@@ -33,6 +34,9 @@ export function createEditorCommands({
     }
     if (preserved !== "path.sketch" && pathSketch?.status?.().active) {
       pathSketch.cancel();
+    }
+    if (preserved !== "mesh.path" && meshPathGesture?.status?.().active) {
+      meshPathGesture.cancel("other-action");
     }
     if (preserved !== "planar.sketch" && planarSketch?.status?.().active) {
       planarSketch.cancel();
@@ -712,12 +716,20 @@ export function createEditorCommands({
       })
       .register("mesh.edit.commit", () => {
         canMutateProject("aplicar a edição de malha");
+        if (meshPathGesture?.status?.().active) {
+          meshPathGesture.cancel("mesh-commit");
+        }
         return meshEditor.commit();
       }, {
         category: "mesh-edit",
         mutates: true
       })
-      .register("mesh.edit.cancel", () => meshEditor.cancel(), {
+      .register("mesh.edit.cancel", () => {
+        if (meshPathGesture?.status?.().active) {
+          meshPathGesture.cancel("mesh-cancel");
+        }
+        return meshEditor.cancel();
+      }, {
         category: "mesh-edit",
         mutates: false
       })
@@ -738,6 +750,40 @@ export function createEditorCommands({
         meshEditor.selectComponents(operation, options))
       .register("mesh.tools.list", ({ kind = null } = {}) =>
         meshEditor.availableTools({ kind }), {
+          category: "mesh-edit",
+          mutates: false
+        })
+      .register("mesh.extrude.invoke", ({ options = {} } = {}) => {
+        const pathMode = String(options.pathMode ?? "drag-line").toLowerCase();
+        if (pathMode === "normal" || Array.isArray(options.path)) {
+          return meshEditor.applyTopology({
+            operation: "extrude",
+            options
+          });
+        }
+        if (!meshPathGesture) {
+          throw new Error("A interação de extrusão por caminho não está instalada.");
+        }
+        cancelInteractiveAction({ except: "mesh.path" });
+        const {
+          pathSamplePixels = 6,
+          pathSimplify = 0.004,
+          ...operatorOptions
+        } = options;
+        return meshPathGesture.begin({
+          operation: "extrude",
+          pathMode,
+          pathSamplePixels,
+          pathSimplify,
+          options: operatorOptions
+        });
+      }, {
+        category: "mesh-edit",
+        mutates: false,
+        label: "Iniciar extrusão por caminho"
+      })
+      .register("mesh.path.cancel", () =>
+        meshPathGesture?.cancel("command") ?? { active: false }, {
           category: "mesh-edit",
           mutates: false
         })

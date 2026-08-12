@@ -452,9 +452,20 @@ export function createDefaultEditToolRegistry({
       id: "mesh.extrude",
       label: "Extrudar",
       family: "topology",
-      command: "mesh.topology.apply",
+      command: "mesh.extrude.invoke",
       parameters: [
-        numberParameter("distance", "Distância", 1, { step: 0.1 })
+        enumParameter("pathMode", "Interação", [
+          { value: "drag-line", label: "Reta pelo arrasto" },
+          { value: "drawn", label: "Caminho desenhado" },
+          { value: "normal", label: "Normal / distância" }
+        ], "drag-line"),
+        numberParameter("pathSamplePixels", "Amostragem do caminho (px)", 6, {
+          integer: true, minimum: 1, maximum: 64
+        }),
+        numberParameter("pathSimplify", "Simplificação relativa", 0.004, {
+          minimum: 0, maximum: 0.2, step: 0.001
+        }),
+        numberParameter("distance", "Distância pela normal", 1, { step: 0.1 })
       ]
     })
     .register({

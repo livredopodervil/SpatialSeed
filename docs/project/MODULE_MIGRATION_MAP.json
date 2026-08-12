@@ -333,6 +333,14 @@
     "packages/world-model": {
       "target": "document",
       "disposition": "extract-invariants-then-remove-parallel-model"
+    },
+    "packages/mesh-operator-kernel": {
+      "target": "authoring",
+      "disposition": "preserve-pure-topology-and-path-contracts"
+    },
+    "packages/mesh-interaction": {
+      "target": "authoring",
+      "disposition": "retain-as-replaceable-pointer-to-mesh-path-adapter"
     }
   },
   "historicalSurfaces": {

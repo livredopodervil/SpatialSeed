@@ -236,6 +236,10 @@ import {
   LocallyResolvedObjectHierarchy
 } from "../../transform-hierarchy/src/index.js?build=20260809-0053l";
 import {
+  meshOperatorContract,
+  prepareMeshPath
+} from "../../mesh-operator-kernel/src/index.js?build=20260812-0054g";
+import {
   MeshEditController,
   MeshToolRegistry,
   applyMeshTopologyOperation,
@@ -5805,6 +5809,41 @@ export function createRuntimeLayerTests() {
       }
     },
     "mesh-topology": {
+      "contrato de extrusão declara caminho local e reta por padrão"() {
+        const contract = meshOperatorContract("extrude");
+        assertEqual(contract.interaction.kind, "path");
+        assertEqual(contract.interaction.defaultMode, "drag-line");
+        assertEqual(contract.interaction.pathSpace, "mesh-local");
+      },
+
+      "álgebra de caminho distingue reta do arrasto e traço completo"() {
+        const points = [[0,0,0], [1,1,0], [2,0,0]];
+        const line = prepareMeshPath({ points, mode: "drag-line" });
+        const drawn = prepareMeshPath({ points, mode: "drawn" });
+        assertEqual(line.points.length, 2);
+        assertEqual(drawn.points.length, 3);
+        assertDeepEqual(line.points[1], [2,0,0]);
+      },
+
+      "extrusão por polilinha compõe extrusões sem depender da interface"() {
+        const descriptor = cubeBufferDescriptor();
+        const result = applyMeshTopologyOperation({
+          descriptor,
+          topology: topologyOf(descriptor),
+          componentMode: "face",
+          selectedIndices: [0],
+          operation: "extrude",
+          options: {
+            path: [[0,0,0], [0.5,0,0], [0.5,0.5,0]],
+            pathMode: "explicit",
+            manifoldOnly: true
+          }
+        });
+        assertEqual(result.diagnostics.path.segmentCount, 2);
+        assertEqual(result.diagnostics.nonManifoldEdgeCount, 0);
+        assertEqual(result.selection.mode, "face");
+      },
+
       "meia-aresta reconstrói adjacência e manifold fechado"() {
         const descriptor = cubeBufferDescriptor();
         const topology = topologyOf(descriptor);

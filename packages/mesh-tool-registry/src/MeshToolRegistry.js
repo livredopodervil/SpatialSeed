@@ -1,3 +1,7 @@
+import {
+  meshOperatorContract
+} from "../../mesh-operator-kernel/src/index.js?build=20260812-0054g";
+
 const TOOL_KINDS = Object.freeze(["selection", "topology"]);
 
 export class MeshToolRegistry {
@@ -158,7 +162,8 @@ function topologyTool(operation, label, options = {}) {
   return toolDefinition("topology", operation, label, {
     modes: ["vertex", "edge", "face"],
     requiresSelection: true,
-    implementation: "legacy-topology-v1",
+    implementation: "mesh-operator-kernel-v1",
+    contract: meshOperatorContract(operation),
     ...options
   });
 }
@@ -172,7 +177,8 @@ function toolDefinition(kind, operation, label, options) {
     modes: Object.freeze([...(options.modes ?? [])]),
     requiresSelection: Boolean(options.requiresSelection),
     parameterSchema: Object.freeze(structuredClone(options.parameterSchema ?? {})),
-    implementation: options.implementation ?? `${kind}-query-v1`
+    implementation: options.implementation ?? `${kind}-query-v1`,
+    contract: options.contract ?? null
   });
 }
 
@@ -192,7 +198,8 @@ function normalizeTool(tool = {}) {
     modes: Object.freeze(modes),
     requiresSelection: Boolean(tool.requiresSelection),
     parameterSchema: Object.freeze(structuredClone(tool.parameterSchema ?? {})),
-    implementation: String(tool.implementation ?? "unspecified")
+    implementation: String(tool.implementation ?? "unspecified"),
+    contract: tool.contract ? Object.freeze(structuredClone(tool.contract)) : null
   });
 }
 
