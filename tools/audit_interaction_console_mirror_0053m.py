@@ -23,7 +23,7 @@ def require(relative, markers):
 
 
 build = json.loads(source("apps/web/build-info.json") or "{}")
-if build.get("build") not in {"20260809-0053m", "20260810-0054e"}:
+if build.get("build") not in {"20260809-0053m", "20260810-0054f"}:
     errors.append(f"build incorreto: {build.get('build')!r}")
 
 require("packages/renderer-three/src/MirroredGeometry.js", [

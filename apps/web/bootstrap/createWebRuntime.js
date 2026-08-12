@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260809-0053m";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260810-0054e";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260810-0054f";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260810-0054e";
+} from "../../../packages/platform-web/src/index.js?build=20260810-0054f";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -112,8 +112,10 @@ import {
 } from "../../../packages/animation-panel/src/index.js?build=20260808-0053f";
 import {
   GAME_RUNTIME_VERSION,
+  GameAudioRuntime,
+  GameEventRuntime,
   GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260810-0054e";
+} from "../../../packages/game-runtime/src/index.js?build=20260810-0054f";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
@@ -846,9 +848,40 @@ export async function createWebRuntime({
       viewerCoordinator.requireAuthority(action)
   });
   commandsRef = commands;
+  const gameAudio = new GameAudioRuntime();
+  const gameEvents = new GameEventRuntime({
+    executeAction: async (action, event) => {
+      switch (action.type) {
+        case "audio.music":
+          return gameAudio.playMusic(action.clip ?? action);
+        case "audio.music.stop":
+          return gameAudio.stopMusic();
+        case "audio.effect":
+          return gameAudio.playEffect(action.name, action.clip ?? null);
+        case "procedure": {
+          const plan = await commandsRef.execute("procedure.plan.prepare", {
+            name: action.name,
+            parameters: action.parameters ?? {},
+            seed: action.seed ?? 0
+          });
+          return action.commit === false
+            ? plan
+            : commandsRef.execute("program.plan.commit", { plan });
+        }
+        case "command":
+          return commandsRef.execute(action.command, {
+            ...(action.args ?? {}),
+            gameEvent: event
+          });
+        default:
+          throw new Error(`Unsupported game event action: ${action.type}`);
+      }
+    }
+  });
   gameRuntime = new GameRuntime({
     surface: renderer,
-    cameraController
+    cameraController,
+    events: gameEvents
   });
   commands
     .register(
@@ -898,6 +931,46 @@ export async function createWebRuntime({
       "game.status",
       () => gameRuntime.status(),
       { category: "game", mutates: false, label: "Estado do modo jogo" }
+    )
+    .register(
+      "game.audio.configure",
+      args => gameAudio.configure(args),
+      { category: "game", mutates: false, label: "Configurar áudio do jogo" }
+    )
+    .register(
+      "game.audio.music.play",
+      args => gameAudio.playMusic(args),
+      { category: "game", mutates: false, asynchronous: true }
+    )
+    .register(
+      "game.audio.music.stop",
+      () => gameAudio.stopMusic(),
+      { category: "game", mutates: false }
+    )
+    .register(
+      "game.audio.effect.play",
+      ({ name, clip = null } = {}) => gameAudio.playEffect(name, clip),
+      { category: "game", mutates: false, asynchronous: true }
+    )
+    .register(
+      "game.audio.status",
+      () => gameAudio.status(),
+      { category: "game", mutates: false }
+    )
+    .register(
+      "game.events.configure",
+      args => gameEvents.configure(args),
+      { category: "game", mutates: false, label: "Configurar eventos do jogo" }
+    )
+    .register(
+      "game.event.emit",
+      ({ type, ...payload } = {}) => gameEvents.emit(type, payload),
+      { category: "game", mutates: false, asynchronous: true }
+    )
+    .register(
+      "game.events.status",
+      () => gameEvents.status(),
+      { category: "game", mutates: false }
     );
   commands.register(
     "path.stroke.create",

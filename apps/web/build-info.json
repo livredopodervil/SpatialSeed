@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260810-0054e",
-  "channel": "feature/0054e-diagonal-input-runtime"
+  "build": "20260810-0054f",
+  "channel": "feature/0054f-game-events-recovery-jump"
 }

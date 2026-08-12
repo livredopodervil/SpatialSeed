@@ -72,7 +72,7 @@ import {
   scaleWorldTrsWithoutShear,
   mirrorGeometryXInPlace,
   positiveInstanceMatrixForMirror
-} from "../../renderer-three/src/index.js?build=20260810-0054e";
+} from "../../renderer-three/src/index.js?build=20260810-0054f";
 import {
   aroundPivot,
   composeAffineOperations,
@@ -405,7 +405,7 @@ import {
 } from "../../benchmarks/src/index.js?build=20260808-0053i";
 import {
   createGameRuntimeTests
-} from "./GameRuntimeTests.js?build=20260810-0054e";
+} from "./GameRuntimeTests.js?build=20260810-0054f";
 
 export function createRuntimeLayerTests() {
   return {

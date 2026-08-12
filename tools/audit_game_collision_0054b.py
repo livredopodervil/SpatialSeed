@@ -30,7 +30,7 @@ for forbidden in ('from "three', "ThreeRegionRenderer", "document.", "window."):
         errors.append(f"CollisionWorld acoplado a camada externa: {forbidden}")
 
 physics = require("packages/game-runtime/src/CharacterPhysics.js", (
-    'from "./CollisionWorld.js?build=20260810-0054e"',
+    'from "./CollisionWorld.js?build=20260810-0054f"',
     "worldIntersectsCharacterBounds",
     "separationDistance",
     "moveAxis",

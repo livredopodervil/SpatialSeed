@@ -1,7 +1,7 @@
 import {
   normalizeCollisionWorld,
   worldIntersectsCharacterBounds
-} from "./CollisionWorld.js?build=20260810-0054e";
+} from "./CollisionWorld.js?build=20260810-0054f";
 
 export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   gravity: 18,
@@ -311,22 +311,40 @@ function moveAxis(state, colliders, config, axis, displacement) {
 }
 
 function isGrounded(state, colliders, config) {
-  const original = state.position[1];
-  state.position[1] = original - config.groundProbe;
-  const grounded = worldIntersectsCharacterBounds(
-    mutableCharacterBounds(state), colliders, config.collisionSkin
+  return worldIntersectsCharacterBounds(
+    supportProbeBounds(state, config), colliders, 0
   );
-  state.position[1] = original;
-  return grounded;
+}
+
+function supportProbeBounds(state, config) {
+  const bounds = mutableCharacterBounds(state);
+  const foot = bounds.min[1];
+  const horizontalInset = Math.max(config.collisionSkin * 2, 1e-5);
+  for (const axis of [0, 2]) {
+    if (bounds.max[axis] - bounds.min[axis] > horizontalInset * 2) {
+      bounds.min[axis] += horizontalInset;
+      bounds.max[axis] -= horizontalInset;
+    }
+  }
+  bounds.min[1] = foot - config.groundProbe;
+  bounds.max[1] = foot + Math.max(config.collisionSkin, 1e-5);
+  return bounds;
 }
 
 function movementCollisionBounds(state, axis, config) {
   const bounds = mutableCharacterBounds(state);
+  const inset = Math.max(config.collisionSkin, 1e-6);
   if (axis === 0 || axis === 2) {
-    const inset = Math.max(config.collisionSkin, 1e-6);
     if (bounds.max[1] - bounds.min[1] > inset * 2) {
       bounds.min[1] += inset;
       bounds.max[1] -= inset;
+    }
+  } else if (axis === 1) {
+    for (const horizontalAxis of [0, 2]) {
+      if (bounds.max[horizontalAxis] - bounds.min[horizontalAxis] > inset * 2) {
+        bounds.min[horizontalAxis] += inset;
+        bounds.max[horizontalAxis] -= inset;
+      }
     }
   }
   return bounds;

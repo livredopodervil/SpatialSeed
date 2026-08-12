@@ -26,7 +26,7 @@ import {
   gameCollisionShapeKind,
   preferLocalBoxForGeometry,
   worldSphereFromGeometry
-} from "./GameCollisionProjection.js?build=20260810-0054e";
+} from "./GameCollisionProjection.js?build=20260810-0054f";
 import {
   normalizeStrokeBundleDescriptor,
   strokeBundleChunkDescriptor,

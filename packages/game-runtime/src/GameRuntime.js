@@ -1,21 +1,21 @@
 import {
   SimulationClock
-} from "../../runtime-layers/src/index.js?build=20260810-0054e";
+} from "../../runtime-layers/src/index.js?build=20260810-0054f";
 import {
   aroundPivot,
   eulerQuaternion,
   multiplyMatrices,
   quaternionMatrix,
   translationMatrix
-} from "../../math-affine/src/index.js?build=20260810-0054e";
+} from "../../math-affine/src/index.js?build=20260810-0054f";
 import {
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260810-0054e";
+} from "./CharacterPhysics.js?build=20260810-0054f";
 import {
   normalizeCollisionWorld
-} from "./CollisionWorld.js?build=20260810-0054e";
+} from "./CollisionWorld.js?build=20260810-0054f";
 
 export const GAME_RUNTIME_VERSION = "game-runtime-v2-local-box-collision";
 
@@ -52,7 +52,8 @@ export class GameRuntime {
     cameraController,
     clock = new SimulationClock(),
     config = {},
-    camera = {}
+    camera = {},
+    events = null
   } = {}) {
     validateSurface(surface);
     if (!cameraController?.snapshot || !cameraController?.execute) {
@@ -64,6 +65,7 @@ export class GameRuntime {
     this.surface = surface;
     this.cameraController = cameraController;
     this.clock = clock;
+    this.events = events;
     this.config = normalizeCharacterGameConfig(config);
     this.cameraConfig = normalizeCameraConfig(camera);
     this.state = "idle";
@@ -122,6 +124,7 @@ export class GameRuntime {
       );
       this.#applyFrame();
       this.#notify("started");
+      this.#emitEvent("game.start", { objectId: id });
       return this.status();
     } catch (error) {
       this.#releaseFrameDemand();
@@ -140,6 +143,7 @@ export class GameRuntime {
     if (this.state === "idle") return this.status();
     const targets = this.#targets;
     const initialCamera = this.#initialCamera;
+    const stoppedCharacterId = this.characterId;
     this.#releaseFrameDemand();
     try {
       if (targets) this.surface.restoreAnimationTargets(targets, {
@@ -156,6 +160,7 @@ export class GameRuntime {
       this.statistics.lastStopReason = String(reason);
       this.#resetSession();
       this.#notify("stopped");
+      this.#emitEvent("game.stop", { objectId: stoppedCharacterId, reason: String(reason) });
     }
     return this.status();
   }
@@ -203,6 +208,7 @@ export class GameRuntime {
     this.#physics.coyoteRemaining = 0;
     this.#physics.respawns += 1;
     this.#applyFrame();
+    this.#emitEvent("character.respawn", { objectId: this.characterId });
     this.#notify("respawned");
     return this.status();
   }
@@ -305,6 +311,9 @@ export class GameRuntime {
   }
 
   #step({ deltaSeconds }) {
+    const wasGrounded = Boolean(this.#physics?.grounded);
+    const previousAnimationState = this.#physics?.animationState ?? null;
+    const jumpRequested = this.#jumpQueued;
     const forward = [Math.sin(this.#cameraYaw), 0, -Math.cos(this.#cameraYaw)];
     const right = [Math.cos(this.#cameraYaw), 0, Math.sin(this.#cameraYaw)];
     const worldX = forward[0] * this.#input.forward +
@@ -324,6 +333,36 @@ export class GameRuntime {
       deltaSeconds
     );
     this.#jumpQueued = false;
+    if (jumpRequested && this.#physics.velocity[1] > 0) {
+      this.#emitEvent("character.jump", { objectId: this.characterId });
+    }
+    if (!wasGrounded && this.#physics.grounded) {
+      this.#emitEvent("character.land", { objectId: this.characterId });
+    }
+    if (previousAnimationState !== this.#physics.animationState) {
+      this.#emitEvent("character.state", {
+        objectId: this.characterId,
+        state: this.#physics.animationState,
+        previousState: previousAnimationState
+      });
+    }
+    if (this.events?.has?.("game.tick")) {
+      this.#emitEvent("game.tick", {
+        objectId: this.characterId,
+        deltaSeconds,
+        position: [...this.#physics.position],
+        velocity: [...this.#physics.velocity]
+      });
+    }
+  }
+
+  #emitEvent(type, payload) {
+    try {
+      const pending = this.events?.emit?.(type, payload);
+      pending?.catch?.(error => console.error("Game event failed", type, error));
+    } catch (error) {
+      console.error("Game event failed", type, error);
+    }
   }
 
   #applyFrame() {

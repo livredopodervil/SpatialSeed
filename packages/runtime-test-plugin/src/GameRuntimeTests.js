@@ -1,10 +1,12 @@
 import {
+  GameAudioRuntime,
+  GameEventRuntime,
   GameRuntime,
   createCharacterPhysicsState,
   intersectsCharacterBounds,
   normalizeCollisionWorld,
   stepCharacterPhysics
-} from "../../game-runtime/src/index.js?build=20260810-0054e";
+} from "../../game-runtime/src/index.js?build=20260810-0054f";
 
 const CHARACTER_BOUNDS = Object.freeze({
   min: Object.freeze([-0.5, 0.5, -0.5]),
@@ -171,6 +173,62 @@ export function createGameRuntimeTests() {
         Math.abs(state.position[2]),
         0.08
       );
+    },
+
+
+    "pulo permanece livre junto a parede lateral"() {
+      const state = characterState([0.58, 0.5, 0]);
+      const world = normalizeCollisionWorld([
+        PLATFORM,
+        { id: "wall", bounds: { min: [1, -1, -2], max: [1.5, 3, 2] } }
+      ]);
+      simulate(state, world, 2);
+      stepCharacterPhysics(state, { jump: true }, world, undefined, 1 / 60);
+      assertEqual(state.velocity[1] > 0, true);
+      assertEqual(state.position[1] > 0.5, true);
+      assertEqual(state.grounded, false);
+    },
+
+    "eventos de jogo filtram por objeto e executam ações"() {
+      const actions = [];
+      const events = new GameEventRuntime({
+        executeAction: async (action, event) => {
+          actions.push({ action, event });
+          return action.type;
+        }
+      });
+      events.configure({ bindings: [{
+        event: "character.jump",
+        objectId: "character",
+        actions: [{ type: "audio.effect", name: "jump" }]
+      }] });
+      events.emit("character.jump", { objectId: "other" });
+      events.emit("character.jump", { objectId: "character" });
+      assertEqual(events.has("character.jump"), true);
+      assertEqual(actions.length, 1);
+      assertEqual(actions[0].action.name, "jump");
+    },
+
+    "audio do jogo suporta música em loop e efeitos"() {
+      const created = [];
+      const audio = new GameAudioRuntime({
+        createAudio: src => {
+          const item = { src, volume: 1, loop: false, currentTime: 0,
+            play() { item.played = true; }, pause() { item.paused = true; } };
+          created.push(item);
+          return item;
+        }
+      });
+      audio.configure({
+        music: { src: "music.ogg", volume: 0.4 },
+        effects: { jump: { src: "jump.wav", volume: 0.8 } }
+      });
+      audio.playMusic();
+      audio.playEffect("jump");
+      assertEqual(created[0].loop, true);
+      assertEqual(created[0].volume, 0.4);
+      assertEqual(created[1].loop, false);
+      assertEqual(created[1].volume, 0.8);
     },
 
     "runtime aceita frente e strafe simultâneos e ainda pula"() {

@@ -1,7 +1,7 @@
-import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260810-0054e";
+import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260810-0054f";
 import {
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260810-0054e";
+} from "../../../packages/platform-web/src/index.js?build=20260810-0054f";
 
 export function bindWebInterface({
   runtime,
@@ -1424,7 +1424,18 @@ export function bindWebInterface({
       flushRecovery();
     }
   };
-  browserWindow.addEventListener("pagehide", flushRecovery);
+  const prepareGamePageExit = () => {
+    if (latestGame.state === "running") {
+      try {
+        execute("game.stop", { reason: "pagehide" });
+        latestGame = runtime.query("game.status");
+      } catch (error) {
+        console.error("Failed to close game session before page exit.", error);
+      }
+    }
+    flushRecovery();
+  };
+  browserWindow.addEventListener("pagehide", prepareGamePageExit);
   const releaseViewerSession = event => {
     if (event.persisted) return;
     viewerDirectory.dispose();
@@ -2065,7 +2076,7 @@ export function bindWebInterface({
       toolbarBinding.dispose();
       panelManager.dispose();
       sandboxRecovery.dispose();
-      browserWindow.removeEventListener("pagehide", flushRecovery);
+      browserWindow.removeEventListener("pagehide", prepareGamePageExit);
       browserWindow.removeEventListener(
         "pagehide",
         releaseViewerSession
