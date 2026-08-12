@@ -164,10 +164,8 @@ export class ObjectPlacementController {
     if (!resolved) return;
     event.preventDefault();
     const active = this.#active;
-    if (event.pointerType !== "touch") {
-      event.stopImmediatePropagation();
-      this.renderer.canvas.setPointerCapture?.(event.pointerId);
-    }
+    event.stopImmediatePropagation();
+    this.renderer.canvas.setPointerCapture?.(event.pointerId);
     active.pointerId = event.pointerId;
     active.pointerType = event.pointerType || "mouse";
     active.pointerStart = [event.clientX, event.clientY];
@@ -187,8 +185,8 @@ export class ObjectPlacementController {
     }
     if (event.pointerId !== active.pointerId) return;
     event.preventDefault();
-    if (event.pointerType !== "touch") {
-      event.stopImmediatePropagation();
+    event.stopImmediatePropagation();
+    if (this.renderer.canvas.hasPointerCapture?.(event.pointerId)) {
       this.renderer.canvas.releasePointerCapture?.(event.pointerId);
     }
     const resolved = this.#resolve(event);
@@ -245,7 +243,8 @@ export class ObjectPlacementController {
       active.lastPlacement !== null ||
       Boolean(this.#preview?.visible);
     if (!changed) return false;
-    if (active.pointerId !== null && active.pointerType !== "touch") {
+    if (active.pointerId !== null &&
+        this.renderer.canvas.hasPointerCapture?.(active.pointerId)) {
       this.renderer.canvas.releasePointerCapture?.(active.pointerId);
     }
     active.pointerId = null;
@@ -267,10 +266,14 @@ export class ObjectPlacementController {
 
   #resolve(event) {
     const active = this.#active;
+    const placementPlane =
+      this.renderer.getDrawingPlane?.() ??
+      this.renderer.getEditPlane?.() ??
+      null;
     const pointerPlacement = this.renderer.resolvePointerPlacement({
       clientX: event.clientX,
       clientY: event.clientY,
-      plane: this.renderer.getEditPlane?.(),
+      plane: placementPlane,
       surface: active.settings.surface
     });
     if (!pointerPlacement) return null;
@@ -280,7 +283,7 @@ export class ObjectPlacementController {
     const rotation = resolveRotation({
       settings: active.settings,
       placement: pointerPlacement,
-      frame: this.renderer.getEditPlane?.() ?? this.renderer.readViewerReferenceFrame()
+      frame: placementPlane ?? this.renderer.readViewerReferenceFrame()
     });
     return Object.freeze({
       position: Object.freeze(position),
@@ -324,7 +327,8 @@ export class ObjectPlacementController {
   #finish({ restoreTool }) {
     const active = this.#active;
     if (!active) return;
-    if (active.pointerId !== null && active.pointerType !== "touch") {
+    if (active.pointerId !== null &&
+        this.renderer.canvas.hasPointerCapture?.(active.pointerId)) {
       this.renderer.canvas.releasePointerCapture?.(active.pointerId);
     }
     if (active.navigationToken) {

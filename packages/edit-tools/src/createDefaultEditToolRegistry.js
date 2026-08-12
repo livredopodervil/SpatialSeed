@@ -458,14 +458,21 @@ export function createDefaultEditToolRegistry({
           { value: "drag-line", label: "Reta pelo arrasto" },
           { value: "drawn", label: "Caminho desenhado" },
           { value: "normal", label: "Normal / distância" }
-        ], "drag-line"),
+        ], "drag-line", {
+          description: "Reta usa apenas início e fim do gesto; Caminho preserva o traço; Normal usa a distância numérica."
+        }),
         numberParameter("pathSamplePixels", "Amostragem do caminho (px)", 6, {
-          integer: true, minimum: 1, maximum: 64
+          integer: true, minimum: 1, maximum: 64,
+          description: "Distância mínima em pixels entre amostras do gesto; valores menores preservam mais detalhes."
         }),
         numberParameter("pathSimplify", "Simplificação relativa", 0.004, {
-          minimum: 0, maximum: 0.2, step: 0.001
+          minimum: 0, maximum: 0.2, step: 0.001,
+          description: "Tolerância relativa da simplificação do traço; zero preserva todas as amostras."
         }),
-        numberParameter("distance", "Distância pela normal", 1, { step: 0.1 })
+        numberParameter("distance", "Distância pela normal", 1, {
+          step: 0.1,
+          description: "Usada somente no modo Normal / distância; valores negativos invertem o sentido."
+        })
       ]
     })
     .register({
@@ -540,7 +547,8 @@ function enumParameter(
     type: "enum",
     options,
     default: defaultValue,
-    when: configuration.when
+    when: configuration.when,
+    description: configuration.description
   };
 }
 
@@ -553,7 +561,8 @@ function numberParameter(id, label, defaultValue, options = {}) {
     minimum: options.minimum,
     maximum: options.maximum,
     step: options.step,
-    when: options.when
+    when: options.when,
+    description: options.description
   };
 }
 

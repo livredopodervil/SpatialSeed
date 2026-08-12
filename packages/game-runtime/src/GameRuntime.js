@@ -12,12 +12,13 @@ import {
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260810-0054f";
+} from "./CharacterPhysics.js?build=20260812-0054i";
 import {
+  castCollisionSegment,
   normalizeCollisionWorld
-} from "./CollisionWorld.js?build=20260810-0054f";
+} from "./CollisionWorld.js?build=20260812-0054i";
 
-export const GAME_RUNTIME_VERSION = "game-runtime-v2-local-box-collision";
+export const GAME_RUNTIME_VERSION = "game-runtime-v4-camera-collision";
 
 const DEFAULT_CAMERA = Object.freeze({
   distance: 6,
@@ -28,7 +29,10 @@ const DEFAULT_CAMERA = Object.freeze({
   minimumPitch: -0.75,
   maximumPitch: 0.55,
   lookSensitivity: 0.004,
-  invertYaw: false
+  invertYaw: false,
+  collisionEnabled: true,
+  collisionProbeRadius: 0.18,
+  collisionMinimumDistance: 0.35
 });
 
 export class GameRuntime {
@@ -411,9 +415,17 @@ export class GameRuntime {
     const alpha = 1 - Math.exp(
       -this.cameraConfig.lag * this.clock.stepSeconds
     );
-    this.#cameraPosition = this.#cameraPosition.map(
+    const candidate = this.#cameraPosition.map(
       (value, axis) => value + (desired[axis] - value) * alpha
     );
+    this.#cameraPosition = this.cameraConfig.collisionEnabled
+      ? cameraCollisionPosition(
+          target,
+          candidate,
+          this.#colliders,
+          this.cameraConfig
+        )
+      : candidate;
     this.cameraController.execute("viewer.camera.look-at", {
       position: this.#cameraPosition,
       target
@@ -501,8 +513,33 @@ function normalizeCameraConfig(source = {}) {
       value.lookSensitivity ?? DEFAULT_CAMERA.lookSensitivity,
       "camera.lookSensitivity"
     ),
-    invertYaw: Boolean(value.invertYaw ?? DEFAULT_CAMERA.invertYaw)
+    invertYaw: Boolean(value.invertYaw ?? DEFAULT_CAMERA.invertYaw),
+    collisionEnabled: value.collisionEnabled === undefined
+      ? DEFAULT_CAMERA.collisionEnabled
+      : Boolean(value.collisionEnabled),
+    collisionProbeRadius: nonNegative(
+      value.collisionProbeRadius ?? DEFAULT_CAMERA.collisionProbeRadius,
+      "camera.collisionProbeRadius"
+    ),
+    collisionMinimumDistance: nonNegative(
+      value.collisionMinimumDistance ?? DEFAULT_CAMERA.collisionMinimumDistance,
+      "camera.collisionMinimumDistance"
+    )
   });
+}
+
+function cameraCollisionPosition(target, desired, colliders, camera) {
+  const delta = desired.map((value, axis) => value - target[axis]);
+  const requestedDistance = Math.hypot(...delta);
+  if (requestedDistance <= 1e-9) return [...desired];
+  const hit = castCollisionSegment(target, desired, colliders);
+  if (!hit) return [...desired];
+  const safeDistance = Math.max(
+    camera.collisionMinimumDistance,
+    hit.distance - camera.collisionProbeRadius
+  );
+  const scale = Math.min(1, safeDistance / requestedDistance);
+  return target.map((value, axis) => value + delta[axis] * scale);
 }
 
 function normalizeInputPatch(patch, previous) {
@@ -564,6 +601,12 @@ function finite(value, label) {
 function positive(value, label) {
   const number = finite(value, label);
   if (!(number > 0)) throw new RangeError(`${label} must be positive.`);
+  return number;
+}
+
+function nonNegative(value, label) {
+  const number = finite(value, label);
+  if (number < 0) throw new RangeError(`${label} must be non-negative.`);
   return number;
 }
 

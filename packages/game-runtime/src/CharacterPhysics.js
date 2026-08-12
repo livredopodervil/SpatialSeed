@@ -1,7 +1,7 @@
 import {
   normalizeCollisionWorld,
   worldIntersectsCharacterBounds
-} from "./CollisionWorld.js?build=20260810-0054f";
+} from "./CollisionWorld.js?build=20260812-0054i";
 
 export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   gravity: 18,

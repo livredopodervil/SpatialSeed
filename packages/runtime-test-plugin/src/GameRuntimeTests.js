@@ -3,10 +3,11 @@ import {
   GameEventRuntime,
   GameRuntime,
   createCharacterPhysicsState,
+  castCollisionSegment,
   intersectsCharacterBounds,
   normalizeCollisionWorld,
   stepCharacterPhysics
-} from "../../game-runtime/src/index.js?build=20260810-0054f";
+} from "../../game-runtime/src/index.js?build=20260812-0054i";
 
 const CHARACTER_BOUNDS = Object.freeze({
   min: Object.freeze([-0.5, 0.5, -0.5]),
@@ -162,6 +163,44 @@ export function createGameRuntimeTests() {
       ), true);
     },
 
+    "plano copiado permanece válido como colisor sem volume AABB"() {
+      const world = normalizeCollisionWorld([{
+        id: "copied-plane",
+        broadBounds: { min: [-2, -2, 0], max: [2, 2, 0] },
+        collider: {
+          type: "triangle-mesh",
+          parts: [{
+            triangles: [
+              -2, -2, 0,  2, -2, 0,  2, 2, 0,
+              -2, -2, 0,  2,  2, 0, -2, 2, 0
+            ],
+            worldMatrix: [
+              1, 0, 0, 0,
+              0, 1, 0, 0,
+              0, 0, 1, 0,
+              0, 0, 0, 1
+            ]
+          }]
+        }
+      }]);
+      assertEqual(world.length, 1);
+      assertEqual(world[0].broadBounds.min[2] < 0, true);
+      assertEqual(world[0].broadBounds.max[2] > 0, true);
+      const hit = castCollisionSegment([0, 0, 2], [0, 0, -2], world);
+      assertEqual(hit?.colliderId, "copied-plane");
+      assertNear(hit?.distance ?? -1, 2, 1e-6);
+    },
+
+    "consulta de câmera retorna a primeira superfície no segmento"() {
+      const world = normalizeCollisionWorld([
+        { id: "far", bounds: { min: [-2, -2, 4], max: [2, 2, 4.2] } },
+        { id: "near", bounds: { min: [-2, -2, 2], max: [2, 2, 2.2] } }
+      ]);
+      const hit = castCollisionSegment([0, 0, 0], [0, 0, 6], world);
+      assertEqual(hit?.colliderId, "near");
+      assertNear(hit?.distance ?? -1, 2, 1e-6);
+    },
+
     "movimento diagonal preserva os dois eixos"() {
       const state = characterState([0, 0.5, 0]);
       const world = normalizeCollisionWorld([PLATFORM]);
@@ -268,6 +307,43 @@ export function createGameRuntimeTests() {
       runtime.dispose();
     },
 
+    "câmera de jogo retrai antes de atravessar parede"() {
+      const wall = {
+        id: "camera-wall",
+        bounds: { min: [-3, -2, 2], max: [3, 5, 2.2] }
+      };
+      const fixture = runtimeFixture({
+        colliders: [PLATFORM, wall],
+        cameraSnapshot: {
+          position: [0, 2, 6],
+          target: [0, 1, 0],
+          up: [0, 1, 0],
+          projection: { mode: "perspective" }
+        }
+      });
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({
+        characterId: "character",
+        camera: {
+          distance: 6,
+          height: 1,
+          pitch: 0,
+          collisionEnabled: true,
+          collisionProbeRadius: 0.18
+        }
+      });
+      const lookAt = fixture.cameraCommands.find(entry =>
+        entry.command === "viewer.camera.look-at"
+      );
+      assertEqual(Boolean(lookAt), true);
+      assertEqual(lookAt.args.position[2] < 2, true);
+      assertEqual(lookAt.args.position[2] > 0, true);
+      runtime.dispose();
+    },
+
     "runtime aplica overlay local, acompanha com câmera e restaura autoria"() {
       const fixture = runtimeFixture();
       const runtime = new GameRuntime({
@@ -336,17 +412,25 @@ function simulate(state, world, frames, input = {}) {
   }
 }
 
-function runtimeFixture() {
+function runtimeFixture({
+  colliders = [PLATFORM],
+  cameraSnapshot = {
+    position: [4, 4, 7],
+    target: [0, 1, 0],
+    up: [0, 1, 0],
+    projection: { mode: "perspective" }
+  }
+} = {}) {
   const frames = [];
   const acquired = [];
   const released = [];
   const presentation = [];
   const cameraCommands = [];
-  const cameraSnapshot = Object.freeze({
-    position: Object.freeze([4, 4, 7]),
-    target: Object.freeze([0, 1, 0]),
-    up: Object.freeze([0, 1, 0]),
-    projection: Object.freeze({ mode: "perspective" })
+  const frozenCameraSnapshot = Object.freeze({
+    position: Object.freeze([...cameraSnapshot.position]),
+    target: Object.freeze([...cameraSnapshot.target]),
+    up: Object.freeze([...cameraSnapshot.up]),
+    projection: Object.freeze({ ...cameraSnapshot.projection })
   });
   const fixture = {
     frames,
@@ -370,7 +454,7 @@ function runtimeFixture() {
     readGameCollisionWorld() {
       return {
         character: { id: "character", bounds: CHARACTER_BOUNDS },
-        colliders: [PLATFORM]
+        colliders
       };
     },
     captureAnimationTargets(ids, { overlayId }) {
@@ -389,7 +473,7 @@ function runtimeFixture() {
     setRuntimePresentationMode(mode) { presentation.push(mode); }
   };
   fixture.camera = {
-    snapshot() { return cameraSnapshot; },
+    snapshot() { return frozenCameraSnapshot; },
     execute(command, args) {
       cameraCommands.push({ command, args });
       return { changed: true };

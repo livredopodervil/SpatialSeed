@@ -1,7 +1,7 @@
-import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260810-0054f";
+import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260812-0054i";
 import {
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260812-0054g";
+} from "../../../packages/platform-web/src/index.js?build=20260812-0054i";
 
 export function bindWebInterface({
   runtime,
@@ -209,6 +209,7 @@ export function bindWebInterface({
     configuration: uiConfiguration?.shortcuts
   });
   attachScrubbableFields(documentRoot);
+  const disposeFormFieldHints = attachFormFieldHints(documentRoot);
   const marquee = new SelectionMarquee({
     canvas: $("world"),
     element: $("selection-marquee"),
@@ -1851,6 +1852,11 @@ export function bindWebInterface({
   }
 
   const gameCanvas = $("world");
+  const suppressViewportContextMenu = event => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  gameCanvas.addEventListener("contextmenu", suppressViewportContextMenu, true);
   const onGameLookStart = event => {
     if (latestGame.state !== "running" || event.button !== 0) return;
     event.preventDefault();
@@ -2073,6 +2079,8 @@ export function bindWebInterface({
       for (const [element, name, listener] of gameControlListeners) {
         element.removeEventListener(name, listener);
       }
+      gameCanvas.removeEventListener("contextmenu", suppressViewportContextMenu, true);
+      disposeFormFieldHints?.();
       toolbarBinding.dispose();
       panelManager.dispose();
       sandboxRecovery.dispose();

@@ -27,7 +27,7 @@ def require(relative: str, markers: tuple[str, ...]) -> None:
 
 
 build = json.loads(source("apps/web/build-info.json") or "{}")
-if build.get("build") not in {"20260810-0054f", "20260812-0054g"}:
+if build.get("build") not in {"20260810-0054f", "20260812-0054g", "20260812-0054i"}:
     errors.append(f"build incorreto: {build.get('build')!r}")
 
 require("packages/game-runtime/src/CharacterPhysics.js", (

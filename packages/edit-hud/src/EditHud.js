@@ -21,7 +21,7 @@ const STATIC_ACTION_ORDER = Object.freeze([
   "edit-hud-select-grow", "edit-hud-select-shrink", "edit-hud-select-linked",
   "edit-hud-select-boundary", "edit-hud-create-vertex",
   "edit-hud-create-edge", "edit-hud-create-face", "edit-hud-fill",
-  "edit-hud-weld", "edit-hud-extrude", "edit-hud-inset",
+  "edit-hud-weld", "edit-hud-extrude", "edit-hud-extrude-options", "edit-hud-inset",
   "edit-hud-split", "edit-hud-collapse", "edit-hud-flip-edge",
   "edit-hud-bridge", "edit-hud-subdivide", "edit-hud-flip-normal",
   "edit-hud-path-from-selection", "edit-hud-recalculate-normals",
@@ -520,6 +520,9 @@ export class EditHud {
       event => {
         this.#preferences.drawingTargetSource = event.target.value;
         this.#savePreferences();
+        this.#execute("drawing.target.set", this.#drawingTargetArguments({
+          source: event.target.value
+        }));
       }
     );
     this.#element("edit-hud-drawing-target-set").addEventListener(
@@ -887,6 +890,9 @@ export class EditHud {
     action("edit-hud-extrude", "authoring.tool.execute", () => ({
       toolId: "mesh.extrude"
     }));
+    this.#element("edit-hud-extrude-options").addEventListener("click", () =>
+      this.#focusFeature("mesh.extrude")
+    );
     action("edit-hud-inset", "authoring.tool.execute", () => ({
       toolId: "mesh.inset"
     }));
@@ -1388,6 +1394,7 @@ export class EditHud {
       "edit-hud-fill": selectedComponents > 0,
       "edit-hud-weld": selectedComponents >= 2,
       "edit-hud-extrude": selectedComponents > 0,
+      "edit-hud-extrude-options": selectedComponents > 0,
       "edit-hud-inset": selectedComponents > 0,
       "edit-hud-split": selectedComponents > 0,
       "edit-hud-collapse": selectedComponents > 0,
@@ -2100,6 +2107,7 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-fill": ["Preencher", "Preenche um contorno selecionado com faces trianguladas."],
   "edit-hud-weld": ["Soldar vértices", "Substitui vértices selecionados por uma posição comum e reconstrói as adjacências."],
   "edit-hud-extrude": ["Extrudar", "Extruda interativamente: por padrão a reta do arrasto; opcionalmente o traço completo ou a normal/distância."],
+  "edit-hud-extrude-options": ["Configurar extrusão", "Abre a ferramenta Extrudar no painel Editar e mostra modo de caminho, amostragem, simplificação e distância normal."],
   "edit-hud-inset": ["Inset", "Cria uma região interna nas faces selecionadas usando o valor memorizado."],
   "edit-hud-split": ["Dividir aresta", "Insere um vértice no meio da aresta e subdivide as faces adjacentes."],
   "edit-hud-collapse": ["Colapsar aresta", "Funde as extremidades da aresta e remove faces degeneradas compatíveis."],

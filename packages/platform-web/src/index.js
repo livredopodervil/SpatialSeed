@@ -6,32 +6,32 @@ export {
   loadWebRuntimeExtensions,
   normalizeWebApplicationDefinition,
   webApplicationName
-} from "./ApplicationDefinition.js?build=20260812-0054g";
+} from "./ApplicationDefinition.js?build=20260812-0054i";
 export {
   BuildInfoError,
   formatBuildLabel,
   loadBuildInfo,
   normalizeBuildInfo
-} from "./BuildInfo.js?build=20260812-0054g";
+} from "./BuildInfo.js?build=20260812-0054i";
 export {
   BrowserProjectFileGateway,
   isPlatformBlock
-} from "./BrowserProjectFileGateway.js?build=20260812-0054g";
+} from "./BrowserProjectFileGateway.js?build=20260812-0054i";
 export {
   BrowserProcedureCatalogStore,
   DEFAULT_PROCEDURE_CATALOG_STORAGE_KEY
-} from "./BrowserProcedureCatalogStore.js?build=20260812-0054g";
+} from "./BrowserProcedureCatalogStore.js?build=20260812-0054i";
 export {
   PwaInstallController,
   isStandalone
-} from "./PwaInstallController.js?build=20260812-0054g";
+} from "./PwaInstallController.js?build=20260812-0054i";
 export {
   formatPwaBuildLabel,
   pwaUpdateAvailable,
   registerPwa,
   resolvePwaLocations,
   workerBuild
-} from "./PwaRegistration.js?build=20260812-0054g";
+} from "./PwaRegistration.js?build=20260812-0054i";
 export {
   loadUiConfiguration
-} from "./UiConfigurationLoader.js?build=20260812-0054g";
+} from "./UiConfigurationLoader.js?build=20260812-0054i";

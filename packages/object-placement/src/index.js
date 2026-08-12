@@ -1,3 +1,3 @@
 export {
   ObjectPlacementController
-} from "./ObjectPlacementController.js?build=20260809-0053m";
+} from "./ObjectPlacementController.js?build=20260812-0054i";

@@ -51,16 +51,19 @@ export class MeshPathGestureController {
     if (!Array.isArray(anchor) || anchor.length !== 3) {
       throw new Error("A seleção atual não possui referência espacial para o gesto.");
     }
-    const viewerFrame = this.renderer.readViewerReferenceFrame?.();
-    const normal = Array.isArray(viewerFrame?.normal)
-      ? [...viewerFrame.normal]
+    const interactionFrame =
+      this.renderer.getDrawingPlane?.() ??
+      this.renderer.getEditPlane?.() ??
+      this.renderer.readViewerReferenceFrame?.();
+    const normal = Array.isArray(interactionFrame?.normal)
+      ? [...interactionFrame.normal]
       : [0, 0, -1];
     const navigationToken =
       this.renderer.acquireToolGestureNavigation?.("mesh-path-gesture") ?? null;
     this.#active = {
       settings,
       plane: Object.freeze({
-        ...(viewerFrame ?? {}),
+        ...(interactionFrame ?? {}),
         origin: Object.freeze([...anchor]),
         normal: Object.freeze(normal)
       }),
@@ -131,7 +134,7 @@ export class MeshPathGestureController {
     const point = this.#worldPoint(event, active.plane);
     if (!point) return;
     event.preventDefault();
-    if (event.pointerType !== "touch") event.stopImmediatePropagation();
+    event.stopImmediatePropagation();
     active.pointerId = event.pointerId;
     active.pointerType = event.pointerType || "mouse";
     active.drawing = true;
@@ -140,9 +143,7 @@ export class MeshPathGestureController {
     active.worldPoints = [point];
     active.previewed = false;
     active.lastPath = null;
-    if (active.pointerType !== "touch") {
-      this.renderer.canvas.setPointerCapture?.(event.pointerId);
-    }
+    this.renderer.canvas.setPointerCapture?.(event.pointerId);
     this.#notify();
   };
 
@@ -154,7 +155,7 @@ export class MeshPathGestureController {
       return;
     }
     event.preventDefault();
-    if (event.pointerType !== "touch") event.stopImmediatePropagation();
+    event.stopImmediatePropagation();
     this.#appendSample(event, { force: false });
   };
 
@@ -162,8 +163,8 @@ export class MeshPathGestureController {
     const active = this.#active;
     if (!active?.drawing || event.pointerId !== active.pointerId) return;
     event.preventDefault();
-    if (event.pointerType !== "touch") {
-      event.stopImmediatePropagation();
+    event.stopImmediatePropagation();
+    if (this.renderer.canvas.hasPointerCapture?.(event.pointerId)) {
       this.renderer.canvas.releasePointerCapture?.(event.pointerId);
     }
     this.#appendSample(event, { force: true });
@@ -274,7 +275,8 @@ export class MeshPathGestureController {
   }
 
   #finishInteraction(active) {
-    if (active.pointerId !== null && active.pointerType !== "touch") {
+    if (active.pointerId !== null &&
+        this.renderer.canvas.hasPointerCapture?.(active.pointerId)) {
       try { this.renderer.canvas.releasePointerCapture?.(active.pointerId); } catch {}
     }
     if (active.navigationToken) {

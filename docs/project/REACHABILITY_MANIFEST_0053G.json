@@ -16,9 +16,9 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 346,
-    "productionFiles": 304,
-    "productionFirstPartyFiles": 303,
+    "firstPartyJavaScriptFiles": 347,
+    "productionFiles": 305,
+    "productionFirstPartyFiles": 304,
     "productionExternalFiles": 1,
     "diagnosticFiles": 23,
     "unreferencedFiles": 20,
@@ -706,8 +706,8 @@
       "status": "production",
       "target": "interface",
       "role": "production",
-      "sourceFiles": 8,
-      "productionFiles": 8,
+      "sourceFiles": 9,
+      "productionFiles": 9,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -1026,6 +1026,7 @@
     "packages/ui-config/src/index.js",
     "packages/ui-widgets/src/ConsoleOutputFormatter.js",
     "packages/ui-widgets/src/FloatingPanelManager.js",
+    "packages/ui-widgets/src/FormFieldHints.js",
     "packages/ui-widgets/src/ScrubbableField.js",
     "packages/ui-widgets/src/SelectionMarquee.js",
     "packages/ui-widgets/src/ToolbarComposer.js",

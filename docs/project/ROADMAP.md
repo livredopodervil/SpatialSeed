@@ -345,6 +345,32 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - fronteira explícita para substituir AABB e animação simples por física e rigs
   futuros sem alterar o documento canônico.
 
+### 0054b–0054i — amadurecimento experimental rumo à 0055
+
+- a série 0054x permanece como faixa experimental enquanto física, câmera, áudio,
+  eventos, autoria e comportamento por objeto são consolidados;
+- 0055 é o critério de maturidade: pequenos jogos completos devem poder ser
+  construídos e executados sem alterações ad hoc nos módulos de editor/renderer;
+- a colisão evoluiu de AABB global para broad phase + primitivas/malha final, com
+  compartilhamento de geometria e suporte a superfícies planas;
+- a câmera de jogo usa consulta espacial própria e recua diante de obstáculos, sem
+  introduzir dependência física no controlador de câmera editorial;
+- música e efeitos possuem configuração inicial em `apps/web/assets/audio`, mas
+  continuam substituíveis pelo runtime de eventos;
+- eventos e procedimentos são a fronteira preferida para lógica de jogo, mantendo
+  `GameRuntime` como organizador/scheduler em vez de repositório monolítico de regras;
+- a álgebra de operadores de malha e os gestos por caminho da 0054g/0054h seguem
+  independentes do runtime de jogo e convergem pela camada pública de comandos.
+
+#### Nota de desenvolvimento — módulos ESM sob Node
+
+O runner direto `node tools/run_runtime_regressions.mjs` pode emitir o aviso
+`MODULE_TYPELESS_PACKAGE_JSON`: vários `.js` em `packages/` já são módulos ESM,
+mas o escopo não declara `type: module`. O Node reparsa os arquivos e os testes
+continuam passando; a normalização do metadata foi adiada até uma auditoria de
+CommonJS, para não alterar implicitamente scripts legados. O runtime web não
+depende dessa correção.
+
 ### Próximas extensões geométricas
 
 - receitas procedurais vinculadas para sweep, extrude e lathe, com avaliação

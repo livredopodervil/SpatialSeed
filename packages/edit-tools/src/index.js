@@ -15,7 +15,7 @@ export {
 export {
   createDefaultEditToolRegistry,
   createLegacyToolParameterMigration
-} from "./createDefaultEditToolRegistry.js?build=20260812-0054g";
+} from "./createDefaultEditToolRegistry.js?build=20260812-0054i";
 export {
   TOOL_CAPABILITY_DESCRIPTOR_VERSION,
   ToolCapabilityFacade

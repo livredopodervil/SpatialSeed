@@ -1,4 +1,9 @@
+import {
+  invertAffineMatrix
+} from "../../math-affine/src/index.js?build=20260812-0054i";
+
 const EPSILON = 1e-9;
+const MIN_BROAD_HALF_THICKNESS = 1e-6;
 const normalizedWorlds = new WeakSet();
 
 /**
@@ -54,6 +59,131 @@ export function worldIntersectsCharacterBounds(bounds, colliders, skin = 0) {
   return false;
 }
 
+
+export function castCollisionSegment(start, end, colliders, { margin = 0 } = {}) {
+  const from = vector3(start, "segment.start");
+  const to = vector3(end, "segment.end");
+  const padding = nonNegative(margin, "segment.margin");
+  const delta = subtract(to, from);
+  const length = Math.hypot(...delta);
+  if (length <= EPSILON) return null;
+  const world = normalizeCollisionWorld(colliders);
+  let nearest = null;
+  for (const entry of world) {
+    const broad = expandedBounds(entry.broadBounds, padding);
+    if (segmentAabbFraction(from, to, broad) === null) continue;
+    const fraction = segmentColliderFraction(from, to, entry.collider);
+    if (fraction === null || fraction < -EPSILON || fraction > 1 + EPSILON) continue;
+    const clamped = Math.max(0, Math.min(1, fraction));
+    if (nearest && clamped >= nearest.fraction) continue;
+    nearest = Object.freeze({
+      colliderId: entry.id,
+      fraction: clamped,
+      distance: length * clamped,
+      point: Object.freeze(from.map((value, axis) => value + delta[axis] * clamped))
+    });
+  }
+  return nearest;
+}
+
+function segmentColliderFraction(start, end, collider) {
+  switch (collider.type) {
+    case "local-box":
+      return segmentLocalBoxFraction(start, end, collider);
+    case "sphere":
+      return segmentSphereFraction(start, end, collider);
+    case "triangle-mesh":
+      return segmentTriangleMeshFraction(start, end, collider);
+    default:
+      return null;
+  }
+}
+
+function segmentLocalBoxFraction(start, end, box) {
+  let inverse;
+  try { inverse = invertAffineMatrix(box.worldMatrix); }
+  catch { return null; }
+  return segmentAabbFraction(
+    transformPoint(inverse, start),
+    transformPoint(inverse, end),
+    box.localBounds
+  );
+}
+
+function segmentSphereFraction(start, end, sphere) {
+  const direction = subtract(end, start);
+  const offset = subtract(start, sphere.center);
+  const a = dot(direction, direction);
+  const c = dot(offset, offset) - sphere.radius * sphere.radius;
+  if (c <= 0) return 0;
+  const b = 2 * dot(offset, direction);
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0 || a <= EPSILON) return null;
+  const root = Math.sqrt(discriminant);
+  const t0 = (-b - root) / (2 * a);
+  const t1 = (-b + root) / (2 * a);
+  if (t0 >= 0 && t0 <= 1) return t0;
+  if (t1 >= 0 && t1 <= 1) return t1;
+  return null;
+}
+
+function segmentTriangleMeshFraction(start, end, mesh) {
+  let nearest = null;
+  for (const part of mesh.parts) {
+    if (segmentAabbFraction(start, end, part.broadBounds) === null) continue;
+    const triangles = part.triangles;
+    for (let offset = 0; offset < triangles.length; offset += 9) {
+      const a = transformPoint(part.matrix, triangles.slice(offset, offset + 3));
+      const b = transformPoint(part.matrix, triangles.slice(offset + 3, offset + 6));
+      const c = transformPoint(part.matrix, triangles.slice(offset + 6, offset + 9));
+      const fraction = segmentTriangleFraction(start, end, a, b, c);
+      if (fraction === null) continue;
+      if (nearest === null || fraction < nearest) nearest = fraction;
+    }
+  }
+  return nearest;
+}
+
+function segmentTriangleFraction(start, end, a, b, c) {
+  const direction = subtract(end, start);
+  const edge1 = subtract(b, a);
+  const edge2 = subtract(c, a);
+  const p = cross(direction, edge2);
+  const determinant = dot(edge1, p);
+  if (Math.abs(determinant) <= EPSILON) return null;
+  const inverse = 1 / determinant;
+  const tvec = subtract(start, a);
+  const u = dot(tvec, p) * inverse;
+  if (u < -EPSILON || u > 1 + EPSILON) return null;
+  const q = cross(tvec, edge1);
+  const v = dot(direction, q) * inverse;
+  if (v < -EPSILON || u + v > 1 + EPSILON) return null;
+  const t = dot(edge2, q) * inverse;
+  return t >= -EPSILON && t <= 1 + EPSILON ? t : null;
+}
+
+function segmentAabbFraction(start, end, bounds) {
+  let minimum = 0;
+  let maximum = 1;
+  for (let axis = 0; axis < 3; axis += 1) {
+    const delta = end[axis] - start[axis];
+    if (Math.abs(delta) <= EPSILON) {
+      if (start[axis] < bounds.min[axis] - EPSILON ||
+          start[axis] > bounds.max[axis] + EPSILON) return null;
+      continue;
+    }
+    let near = (bounds.min[axis] - start[axis]) / delta;
+    let far = (bounds.max[axis] - start[axis]) / delta;
+    if (near > far) [near, far] = [far, near];
+    minimum = Math.max(minimum, near);
+    maximum = Math.min(maximum, far);
+    if (minimum > maximum + EPSILON) return null;
+  }
+  return minimum <= 1 + EPSILON && maximum >= -EPSILON
+    ? Math.max(0, minimum)
+    : null;
+}
+
 export function queryCharacterOverlaps(bounds, colliders, skin = 0) {
   const world = normalizeCollisionWorld(colliders);
   const hits = [];
@@ -67,7 +197,7 @@ function normalizeCollider(entry, index) {
   if (entry?.__normalizedGameCollider === true) return entry;
   const id = String(entry?.id ?? `collider-${index}`);
   const legacyBounds = entry?.bounds ?? null;
-  const broadBounds = normalizeBounds(
+  const broadBounds = normalizeBroadBounds(
     entry?.broadBounds ?? legacyBounds ?? entry,
     `colliders[${index}].broadBounds`
   );
@@ -138,7 +268,7 @@ function normalizeTriangleMesh(source, index) {
       );
     }
     const broadBounds = part?.broadBounds
-      ? normalizeBounds(
+      ? normalizeBroadBounds(
           part.broadBounds,
           `colliders[${index}].collider.parts[${partIndex}].broadBounds`
         )
@@ -179,8 +309,8 @@ function boundsForTransformedTriangles(triangles, matrix) {
   }
   for (let axis = 0; axis < 3; axis += 1) {
     if (maximum[axis] - minimum[axis] <= EPSILON) {
-      minimum[axis] -= EPSILON;
-      maximum[axis] += EPSILON;
+      minimum[axis] -= MIN_BROAD_HALF_THICKNESS;
+      maximum[axis] += MIN_BROAD_HALF_THICKNESS;
     }
   }
   return Object.freeze({
@@ -362,6 +492,22 @@ function cross(left, right) {
     left[2] * right[0] - left[0] * right[2],
     left[0] * right[1] - left[1] * right[0]
   ];
+}
+
+function normalizeBroadBounds(source, label) {
+  const min = vector3(source?.min, `${label}.min`);
+  const max = vector3(source?.max, `${label}.max`);
+  for (let axis = 0; axis < 3; axis += 1) {
+    if (max[axis] < min[axis]) {
+      throw new RangeError(`${label} has inverted bounds.`);
+    }
+    if (max[axis] - min[axis] <= EPSILON) {
+      const center = (min[axis] + max[axis]) * 0.5;
+      min[axis] = center - MIN_BROAD_HALF_THICKNESS;
+      max[axis] = center + MIN_BROAD_HALF_THICKNESS;
+    }
+  }
+  return Object.freeze({ min: Object.freeze(min), max: Object.freeze(max) });
 }
 
 function normalizeBounds(source, label) {

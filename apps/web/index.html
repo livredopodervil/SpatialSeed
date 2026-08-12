@@ -314,7 +314,7 @@
       <label title="Definir plano de desenho pela seleção ou viewer"><input id="edit-hud-drawing-plane" type="checkbox"><span>✎</span></label>
     </div>
     <div class="edit-hud-group edit-hud-drawing-target" data-edit-hud-group="drawing-target" aria-label="Alvo e plano de desenho">
-      <label class="edit-hud-drawing-source" title="Fonte do plano de desenho"><select id="edit-hud-drawing-target-source" aria-label="Fonte do plano de desenho"><option value="viewer">Vista</option><option value="world-xy">XY</option><option value="world-xz">XZ</option><option value="world-yz">YZ</option><option value="object">Objeto</option><option value="face">Face</option><option value="three-points">3 pontos</option><option value="edit-plane">Plano de edição</option><option value="surface-selection">Superfície</option><option value="custom" disabled>Personalizado</option></select></label>
+      <label class="edit-hud-drawing-source" data-help="A mudança é aplicada imediatamente. Este plano é usado por criação e gestos antes do plano de edição ou do viewer." title="Fonte do plano de desenho"><select id="edit-hud-drawing-target-source" aria-label="Fonte do plano de desenho"><option value="viewer">Vista</option><option value="world-xy">XY</option><option value="world-xz">XZ</option><option value="world-yz">YZ</option><option value="object">Objeto</option><option value="face">Face</option><option value="three-points">3 pontos</option><option value="edit-plane">Plano de edição</option><option value="surface-selection">Superfície</option><option value="custom" disabled>Personalizado</option></select></label>
       <button id="edit-hud-drawing-target-set" type="button" title="Definir e travar o plano de desenho">◎</button>
       <label class="edit-hud-drawing-helper-toggle" title="Mostrar helper transparente"><input id="edit-hud-drawing-target-helper" type="checkbox" checked><span>▱</span></label>
       <button id="edit-hud-drawing-target-edit" type="button" title="Editar posição e orientação do helper">✥</button>
@@ -387,6 +387,7 @@
       <button id="edit-hud-fill" type="button" data-hud-context="vertex edge" title="Preencher contorno selecionado">▰</button>
       <button id="edit-hud-weld" type="button" data-hud-context="vertex" title="Soldar vértices selecionados">⋈</button>
       <button id="edit-hud-extrude" type="button" data-hud-context="vertex edge face" title="Extrudar pelo caminho configurado">⇧</button>
+      <button id="edit-hud-extrude-options" type="button" data-hud-context="vertex edge face" title="Configurar modo e parâmetros da extrusão">⚙</button>
       <button id="edit-hud-inset" type="button" data-hud-context="face" title="Inset usando o valor memorizado">▣</button>
       <button id="edit-hud-split" type="button" data-hud-context="edge" title="Dividir aresta ao meio">÷</button>
       <button id="edit-hud-collapse" type="button" data-hud-context="edge" title="Colapsar aresta selecionada">⌁</button>
@@ -902,14 +903,14 @@
         <button id="mesh-recalculate-normals" type="button">Recalcular normais</button>
       </div>
       <div class="mesh-form-grid">
-        <label><span>Extrusão</span><select id="mesh-extrude-path-mode">
+        <label data-help="Escolhe como a extrusão recebe seu caminho: reta entre início e fim do arrasto, traço completo desenhado ou distância pela normal."><span>Extrusão</span><select id="mesh-extrude-path-mode">
           <option value="drag-line" selected>Reta pelo arrasto</option>
           <option value="drawn">Caminho desenhado</option>
           <option value="normal">Normal / distância</option>
         </select></label>
-        <label><span>Distância normal</span><input id="mesh-extrude-distance" type="number" value="1" step="0.1"></label>
-        <label><span>Amostragem (px)</span><input id="mesh-extrude-path-sample" type="number" value="6" min="1" max="64" step="1"></label>
-        <label><span>Simplificação</span><input id="mesh-extrude-path-simplify" type="number" value="0.004" min="0" max="0.2" step="0.001"></label>
+        <label data-help="Distância usada apenas no modo Normal / distância; valores negativos extrudam no sentido oposto."><span>Distância normal</span><input id="mesh-extrude-distance" type="number" value="1" step="0.1"></label>
+        <label data-help="Distância mínima em pixels entre amostras do gesto; valores menores preservam mais detalhes do traço."><span>Amostragem (px)</span><input id="mesh-extrude-path-sample" type="number" value="6" min="1" max="64" step="1"></label>
+        <label data-help="Tolerância relativa de simplificação do caminho desenhado; zero preserva todas as amostras."><span>Simplificação</span><input id="mesh-extrude-path-simplify" type="number" value="0.004" min="0" max="0.2" step="0.001"></label>
         <button id="mesh-extrude" type="button" data-component-modes="vertex edge face">Extrudar</button>
         <label><span>Inset</span><input id="mesh-inset-amount" type="number" value="0.2" min="0.001" max="0.999" step="0.05"></label>
         <button id="mesh-inset" type="button" data-component-modes="face">Inset</button>
@@ -1085,9 +1086,9 @@
       <div class="mesh-form-grid edit-navigation-locks">
         <label><span>Plano de visualização</span><select id="edit-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="drawing-plane">Plano de desenho</option><option value="edit-plane">Plano de edição</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
         <button id="edit-plane-lock" type="button">Travar/destravar visualização 2D</button>
-        <label><span>Plano de edição</span><select id="edit-work-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="drawing-plane">Copiar plano de desenho</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <label data-help="Define a fonte usada ao capturar o plano de edição; esse plano orienta edição e serve de fallback para criação."><span>Plano de edição</span><select id="edit-work-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="drawing-plane">Copiar plano de desenho</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
         <button id="edit-work-plane-lock" type="button">Definir/limpar plano de edição</button>
-        <label><span>Plano de desenho</span><select id="drawing-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="edit-plane">Copiar plano de edição</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <label data-help="Define o plano preferencial para criação, desenho e gestos por caminho. Ao existir, ele tem prioridade sobre o plano de edição e o viewer."><span>Plano de desenho</span><select id="drawing-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="edit-plane">Copiar plano de edição</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
         <button id="drawing-plane-lock" type="button">Definir/limpar plano de desenho</button>
         <label><span>Inclinação °</span><input id="edit-plane-inclination" type="number" min="-89.9" max="89.9" step="1" value="0"></label>
         <label><span>Azimute °</span><input id="edit-plane-azimuth" type="number" step="1" value="0"></label>
@@ -1398,6 +1399,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260812-0054g"></script>
+<script type="module" src="./boot.js?build=20260812-0054i"></script>
 </body>
 </html>

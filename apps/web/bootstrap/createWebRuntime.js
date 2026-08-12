@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260812-0054g";
+} from "../../../packages/platform-web/src/index.js?build=20260812-0054i";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -115,7 +115,7 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260810-0054f";
+} from "../../../packages/game-runtime/src/index.js?build=20260812-0054i";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
@@ -124,7 +124,7 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260812-0054g";
 import {
   MeshPathGestureController
-} from "../../../packages/mesh-interaction/src/index.js?build=20260812-0054g";
+} from "../../../packages/mesh-interaction/src/index.js?build=20260812-0054i";
 import {
   listMeshOperatorContracts
 } from "../../../packages/mesh-operator-kernel/src/index.js?build=20260812-0054g";
@@ -136,7 +136,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260809-0053l";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260812-0054g";
+} from "../../../packages/edit-hud/src/index.js?build=20260812-0054i";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -145,10 +145,10 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260812-0054g";
+} from "../../../packages/edit-tools/src/index.js?build=20260812-0054i";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260809-0053m";
+} from "../../../packages/object-placement/src/index.js?build=20260812-0054i";
 import {
   DrawingTargetController
 } from "../../../packages/drawing-target/src/index.js?build=20260808-0053f";
@@ -876,11 +876,20 @@ export async function createWebRuntime({
   });
   commandsRef = commands;
   const gameAudio = new GameAudioRuntime();
+  gameAudio.configure({
+    music: { src: "assets/audio/music.ogg", volume: 0.35, loop: true },
+    effects: {
+      jump: { src: "assets/audio/jump.mp3", volume: 0.8 },
+      land: { src: "assets/audio/land.mp3", volume: 0.6 }
+    }
+  });
   const gameEvents = new GameEventRuntime({
     executeAction: async (action, event) => {
       switch (action.type) {
         case "audio.music":
-          return gameAudio.playMusic(action.clip ?? action);
+          return action.clip
+            ? gameAudio.playMusic(action.clip)
+            : gameAudio.playMusic();
         case "audio.music.stop":
           return gameAudio.stopMusic();
         case "audio.effect":
@@ -904,6 +913,14 @@ export async function createWebRuntime({
           throw new Error(`Unsupported game event action: ${action.type}`);
       }
     }
+  });
+  gameEvents.configure({
+    bindings: [
+      { event: "game.start", actions: [{ type: "audio.music" }] },
+      { event: "game.stop", actions: [{ type: "audio.music.stop" }] },
+      { event: "character.jump", actions: [{ type: "audio.effect", name: "jump" }] },
+      { event: "character.land", actions: [{ type: "audio.effect", name: "land" }] }
+    ]
   });
   gameRuntime = new GameRuntime({
     surface: renderer,
@@ -966,7 +983,9 @@ export async function createWebRuntime({
     )
     .register(
       "game.audio.music.play",
-      args => gameAudio.playMusic(args),
+      args => args && Object.keys(args).length
+        ? gameAudio.playMusic(args)
+        : gameAudio.playMusic(),
       { category: "game", mutates: false, asynchronous: true }
     )
     .register(
