@@ -138,6 +138,10 @@ export class EditContextController {
         ? Object.freeze(structuredClone(navigation.point))
         : null,
       navigationMode: navigation.mode ?? "free",
+      authoringPlane: navigation.editPlane ?? navigation.drawingPlane
+        ? Object.freeze(structuredClone(navigation.editPlane ?? navigation.drawingPlane))
+        : null,
+      // Aliases legados; devem permanecer idênticos durante a migração 0054l.
       editPlane: navigation.editPlane
         ? Object.freeze(structuredClone(navigation.editPlane))
         : null,
@@ -332,34 +336,38 @@ export class EditContextController {
     return this.status();
   }
 
-  setEditPlane({ source = "viewer", frame = null, ...options } = {}) {
+  setAuthoringPlane({ source = "viewer", frame = null, ...options } = {}) {
     const resolved = frame
       ? normalizePlanarFrame(frame, { source })
       : this.#resolvePlaneFrame(source, options);
+    // Compatibilidade transitória: os dois slots antigos espelham a mesma fonte.
     this.renderer.setEditPlane?.(resolved);
-    this.#notify();
-    return this.status();
-  }
-
-  clearEditPlane() {
-    this.renderer.setEditPlane?.(null);
-    this.#notify();
-    return this.status();
-  }
-
-  setDrawingPlane({ source = "viewer", frame = null, ...options } = {}) {
-    const resolved = frame
-      ? normalizePlanarFrame(frame, { source })
-      : this.#resolvePlaneFrame(source, options);
     this.renderer.setDrawingPlane?.(resolved);
     this.#notify();
     return this.status();
   }
 
-  clearDrawingPlane() {
+  clearAuthoringPlane() {
+    this.renderer.setEditPlane?.(null);
     this.renderer.setDrawingPlane?.(null);
     this.#notify();
     return this.status();
+  }
+
+  setEditPlane(args = {}) {
+    return this.setAuthoringPlane(args);
+  }
+
+  clearEditPlane() {
+    return this.clearAuthoringPlane();
+  }
+
+  setDrawingPlane(args = {}) {
+    return this.setAuthoringPlane(args);
+  }
+
+  clearDrawingPlane() {
+    return this.clearAuthoringPlane();
   }
 
   #resolvePlaneFrame(source, {

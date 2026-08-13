@@ -3,6 +3,10 @@ import {
   pathDiagonal,
   prepareMeshPath
 } from "../../mesh-operator-kernel/src/index.js?build=20260812-0054g";
+import {
+  resolveActiveAuthoringPlane
+} from "../../edit-context/src/index.js?build=20260812-0054l";
+
 
 const DEFAULTS = Object.freeze({
   operation: "extrude",
@@ -51,10 +55,7 @@ export class MeshPathGestureController {
     if (!Array.isArray(anchor) || anchor.length !== 3) {
       throw new Error("A seleção atual não possui referência espacial para o gesto.");
     }
-    const interactionFrame =
-      this.renderer.getDrawingPlane?.() ??
-      this.renderer.getEditPlane?.() ??
-      this.renderer.readViewerReferenceFrame?.();
+    const interactionFrame = resolveActiveAuthoringPlane(this.renderer).frame;
     const normal = Array.isArray(interactionFrame?.normal)
       ? [...interactionFrame.normal]
       : [0, 0, -1];

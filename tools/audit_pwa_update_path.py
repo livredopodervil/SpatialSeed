@@ -102,6 +102,16 @@ def main() -> int:
         "O botão de atualização não aciona o handoff controlado.",
     )
     require(
+        boot,
+        'fetch(url, { cache: "no-store" })',
+        "build-info publicado ainda pode ser servido pelo cache antigo.",
+    )
+    require(
+        worker,
+        "isControlPlaneRequest(url)",
+        "O service worker não prioriza a rede para metadados de versão.",
+    )
+    require(
         pwa_registration,
         'candidate.postMessage({ type: "SKIP_WAITING" });',
         "A atualização explícita não ativa o worker aguardando.",

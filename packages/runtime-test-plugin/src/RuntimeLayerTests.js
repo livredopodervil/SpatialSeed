@@ -240,6 +240,15 @@ import {
   prepareMeshPath
 } from "../../mesh-operator-kernel/src/index.js?build=20260812-0054g";
 import {
+  MeshExchangeService,
+  decodeStl,
+  encodeAsciiStl,
+  encodeBinaryStl
+} from "../../mesh-exchange/src/index.js?build=20260812-0054md";
+import {
+  objectTriangleSoup
+} from "../../mesh-exchange-three/src/index.js?build=20260812-0054md";
+import {
   MeshEditController,
   MeshToolRegistry,
   applyMeshTopologyOperation,
@@ -409,10 +418,14 @@ import {
 } from "../../benchmarks/src/index.js?build=20260808-0053i";
 import {
   createGameRuntimeTests
-} from "./GameRuntimeTests.js?build=20260812-0054i";
+} from "./GameRuntimeTests.js?build=20260812-0054md";
+import {
+  createCharacterAnimationTests
+} from "./CharacterAnimationTests.js?build=20260812-0054md";
 
 export function createRuntimeLayerTests() {
   return {
+    "character-animation": createCharacterAnimationTests(),
     "game-runtime": createGameRuntimeTests(),
     "module-v2": createModuleRegistryTests(),
     "tool-capabilities": createToolCapabilityTests(),
@@ -851,19 +864,22 @@ export function createRuntimeLayerTests() {
         context.dispose();
       },
 
-      "visualização edição e desenho mantêm três planos independentes"() {
+      "edição e desenho compartilham um único plano ativo"() {
         const fixture = createEditContextFixture();
         const context = new EditContextController(fixture);
         context.togglePlaneLock({ source: "world-xy" });
         context.setEditPlane({ source: "world-yz" });
-        context.setDrawingPlane({ source: "world-xz" });
-        const status = context.status();
-        assertDeepEqual(status.planeLock.normal, [0, 0, 1]);
+        let status = context.status();
         assertDeepEqual(status.editPlane.normal, [1, 0, 0]);
+        assertDeepEqual(status.drawingPlane.normal, [1, 0, 0]);
+        assertDeepEqual(status.authoringPlane.normal, [1, 0, 0]);
+        context.setDrawingPlane({ source: "world-xz" });
+        status = context.status();
+        assertDeepEqual(status.editPlane.normal, [0, 1, 0]);
         assertDeepEqual(status.drawingPlane.normal, [0, 1, 0]);
         context.clearDrawingPlane();
+        assertEqual(context.status().editPlane, null);
         assertEqual(context.status().drawingPlane, null);
-        assertDeepEqual(context.status().editPlane.normal, [1, 0, 0]);
         context.dispose();
       },
 
@@ -926,10 +942,9 @@ export function createRuntimeLayerTests() {
           azimuthDegrees: 90
         });
         context.setDrawingPlane({ source: "three-points" });
-        assertVectorNear(context.status().editPlane.origin, [3, 4, 5]);
-        assertNear(context.status().editPlane.source.inclinationDegrees, 45);
+        assertVectorNear(context.status().editPlane.normal, [0, 0, 1]);
         assertVectorNear(context.status().drawingPlane.normal, [0, 0, 1]);
-        assertVectorNear(context.status().drawingPlane.origin, [0, 0, 7]);
+        assertVectorNear(context.status().authoringPlane.origin, [0, 0, 7]);
         context.dispose();
       },
 
@@ -2379,6 +2394,38 @@ export function createRuntimeLayerTests() {
     },
 
     "path-references": {
+      "caminho automático prioriza plano de edição e publica a fonte efetiva"() {
+        const previousAddEventListener = globalThis.addEventListener;
+        const previousRemoveEventListener = globalThis.removeEventListener;
+        globalThis.addEventListener = () => {};
+        globalThis.removeEventListener = () => {};
+        const fixture = createPathToolFixture();
+        const editPlane = {
+          origin: [3, 4, 5], normal: [0, 1, 0], xAxis: [1, 0, 0],
+          source: "edit-plane"
+        };
+        const drawingPlane = {
+          origin: [0, 0, 0], normal: [0, 0, 1], xAxis: [1, 0, 0],
+          source: "viewer"
+        };
+        const controller = new PathSketchController({
+          renderer: createPathSketchRendererStub({ editPlane, drawingPlane }),
+          pathTools: fixture.service,
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        try {
+          controller.begin({ mode: "tube", planeSource: "locked-or-viewer" });
+          const status = controller.status();
+          assertEqual(status.resolvedPlaneSource, "active-plane");
+          assertDeepEqual(status.frame.origin, [3, 4, 5]);
+          controller.cancel();
+        } finally {
+          controller.dispose();
+          globalThis.addEventListener = previousAddEventListener;
+          globalThis.removeEventListener = previousRemoveEventListener;
+        }
+      },
+
       "cadeias de arestas são ordenadas sem perder loops"() {
         const open = orderEdgeChain([[2, 3], [1, 2], [0, 1]]);
         assertDeepEqual(open.indices, [0, 1, 2, 3]);
@@ -5808,6 +5855,89 @@ export function createRuntimeLayerTests() {
         assertEqual(executed.tool.implementation, "test-double");
       }
     },
+    "mesh-exchange": {
+      "STL ASCII entra como malha indexada editável"() {
+        const ascii = [
+          "solid square",
+          "facet normal 0 0 1",
+          "outer loop",
+          "vertex 0 0 0",
+          "vertex 1 0 0",
+          "vertex 1 1 0",
+          "endloop",
+          "endfacet",
+          "facet normal 0 0 1",
+          "outer loop",
+          "vertex 0 0 0",
+          "vertex 1 1 0",
+          "vertex 0 1 0",
+          "endloop",
+          "endfacet",
+          "endsolid square"
+        ].join("\n");
+        const decoded = decodeStl(ascii);
+        assertEqual(decoded.encoding, "ascii");
+        assertEqual(decoded.triangleCount, 2);
+        assertEqual(decoded.geometry.positions.length, 4);
+        assertEqual(decoded.geometry.indices.length, 6);
+      },
+
+      "STL binário exportado faz round-trip"() {
+        const triangles = [0,0,0, 1,0,0, 0,1,0];
+        const binary = encodeBinaryStl([{ triangles }]);
+        const decoded = decodeStl(binary, { mergeVertices: false });
+        assertEqual(decoded.encoding, "binary");
+        assertEqual(decoded.triangleCount, 1);
+        assertDeepEqual(decoded.geometry.positions[1], [1,0,0]);
+        const ascii = encodeAsciiStl([{ triangles }], { name: "tri" });
+        assertEqual(ascii.includes("facet normal"), true);
+      },
+
+      "projeção STL aplica matriz mundial do objeto"() {
+        const registry = createDefaultGeometryRegistry();
+        const triangles = objectTriangleSoup({
+          object: { id: "box", kind: "box", size: [2,2,2] },
+          worldMatrix: [
+            1,0,0,0,
+            0,1,0,0,
+            0,0,1,0,
+            3,4,5,1
+          ],
+          geometryRegistry: registry
+        });
+        assertEqual(triangles.length > 0, true);
+        assertEqual(Math.min(...triangles.filter((_, index) => index % 3 === 0)), 2);
+        assertEqual(Math.max(...triangles.filter((_, index) => index % 3 === 0)), 4);
+      },
+
+      "serviço de intercâmbio cria objeto e exporta seleção"() {
+        let created = null;
+        const service = new MeshExchangeService({
+          selection: () => ({
+            members: [{ objectId: "obj" }],
+            activeMember: { objectId: "obj" }
+          }),
+          readObject: id => ({ id, name: "Objeto", kind: "buffer", geometry: {
+            type: "buffer", positions: [[0,0,0],[1,0,0],[0,1,0]], indices: [0,1,2], normals: [], uvs: [], edges: []
+          } }),
+          readWorldMatrix: () => [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1],
+          triangulateObject: () => [0,0,0, 1,0,0, 0,1,0],
+          createGeometry: args => { created = args; return { changed: true, id: "new" }; }
+        });
+        const imported = service.importStl({
+          filename: "triangle.stl",
+          data: encodeBinaryStl([{ triangles: [0,0,0, 1,0,0, 0,1,0] }])
+        });
+        assertEqual(imported.imported, true);
+        assertEqual(created.name, "triangle");
+        const exported = service.exportSelectionStl();
+        assertEqual(exported.prepared, true);
+        assertEqual(exported.objectCount, 1);
+        assertEqual(exported.triangleCount, 1);
+        assertEqual(exported.filename, "Objeto.stl");
+      }
+    },
+
     "mesh-topology": {
       "contrato de extrusão declara caminho local e reta por padrão"() {
         const contract = meshOperatorContract("extrude");
@@ -17752,7 +17882,7 @@ function createPathToolFixture() {
   };
 }
 
-function createPathSketchRendererStub() {
+function createPathSketchRendererStub({ editPlane = null, drawingPlane = null, navigationPlane = null } = {}) {
   const listeners = new Map();
   const activeTouches = new Set();
   const canvas = {
@@ -17813,13 +17943,13 @@ function createPathSketchRendererStub() {
       return activeTouches.size >= 2;
     },
     getEditPlane() {
-      return null;
+      return editPlane;
     },
     getDrawingPlane() {
-      return null;
+      return drawingPlane;
     },
     getNavigationLocks() {
-      return { plane: null };
+      return { plane: navigationPlane };
     },
     readViewerReferenceFrame() {
       return {

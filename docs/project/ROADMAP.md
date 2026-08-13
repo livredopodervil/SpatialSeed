@@ -348,7 +348,9 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 ### 0054b–0054i — amadurecimento experimental rumo à 0055
 
 - a série 0054x permanece como faixa experimental enquanto física, câmera, áudio,
-  eventos, autoria e comportamento por objeto são consolidados;
+  eventos, autoria e comportamento por objeto são consolidados; a partir de 0054m,
+  microversões usam o sufixo alfabético (`0054ma`, `0054mb`, ...) para permitir
+  amadurecimento incremental antes de 0055;
 - 0055 é o critério de maturidade: pequenos jogos completos devem poder ser
   construídos e executados sem alterações ad hoc nos módulos de editor/renderer;
 - a colisão evoluiu de AABB global para broad phase + primitivas/malha final, com

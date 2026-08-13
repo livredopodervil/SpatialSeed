@@ -389,14 +389,18 @@ export function createEditorCommands({
       })
       .register("edit.navigation.locks.clear", () =>
         editContext.clearNavigationLocks())
+      .register("authoring.plane.set", args =>
+        editContext.setAuthoringPlane(args))
+      .register("authoring.plane.clear", () =>
+        editContext.clearAuthoringPlane())
       .register("edit.plane.set", args =>
-        editContext.setEditPlane(args))
+        editContext.setAuthoringPlane(args))
       .register("edit.plane.clear", () =>
-        editContext.clearEditPlane())
+        editContext.clearAuthoringPlane())
       .register("drawing.plane.set", args =>
-        editContext.setDrawingPlane(args))
+        editContext.setAuthoringPlane(args))
       .register("drawing.plane.clear", () =>
-        editContext.clearDrawingPlane());
+        editContext.clearAuthoringPlane());
   }
 
   if (toolLifecycle) {

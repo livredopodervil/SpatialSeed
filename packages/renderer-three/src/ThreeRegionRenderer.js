@@ -231,6 +231,7 @@ export class ThreeRegionRenderer {
   #animationObjectOverlayIds = new Map();
   #animationOverlaySequence = 0;
   #animationBatchCulling = new Map();
+  #runtimeVisuals = new Map();
   #animationSurfaceDiagnostics = {
     captures: 0,
     frames: 0,
@@ -544,6 +545,11 @@ export class ThreeRegionRenderer {
     this.transform.addEventListener("mouseUp", () => this.#commitSession());
 
     canvas.addEventListener("pointerdown", event => {
+      if (this.#runtimePresentationMode === "game") {
+        this.#tap = null;
+        this.#inputDiagnostics.discardedReason = "game-input-owned";
+        return;
+      }
       this.#inputDiagnostics.pointerDown += 1;
       this.#inputDiagnostics.lastPointerType = event.pointerType || "mouse";
       this.#inputDiagnostics.discardedReason = null;
@@ -578,6 +584,7 @@ export class ThreeRegionRenderer {
     }, true);
 
     canvas.addEventListener("pointermove", event => {
+      if (this.#runtimePresentationMode === "game") return;
       this.#lastPointer = {
         x: event.clientX,
         y: event.clientY,
@@ -587,12 +594,20 @@ export class ThreeRegionRenderer {
     }, true);
 
     canvas.addEventListener("pointercancel", event => {
+      if (this.#runtimePresentationMode === "game") {
+        this.#tap = null;
+        return;
+      }
       this.#inputDiagnostics.pointerCancel += 1;
       this.#inputDiagnostics.discardedReason = "pointercancel";
       this.#tap = null;
       this.#finishBoundsScale(event);
     }, true);
     canvas.addEventListener("pointerup", event => {
+      if (this.#runtimePresentationMode === "game") {
+        this.#tap = null;
+        return;
+      }
       if (this.#finishBoundsScale(event)) return;
       this.#selectAt(event);
     }, true);
@@ -1619,6 +1634,24 @@ export class ThreeRegionRenderer {
         });
   }
 
+  readRuntimeVisualTargetFrame(objectId) {
+    const id = String(objectId ?? "").trim();
+    if (!id) throw new TypeError("Objeto do visual transitório não informado.");
+    const bodyFrame = this.#characterBodyFrameForObjectId(id);
+    const center = bodyFrame.centerOffset;
+    const half = bodyFrame.halfExtents;
+    return Object.freeze({
+      objectId: id,
+      bounds: Object.freeze({
+        min: Object.freeze(center.map((value, axis) => value - half[axis])),
+        max: Object.freeze(center.map((value, axis) => value + half[axis]))
+      }),
+      up: Object.freeze([0, 1, 0]),
+      forward: Object.freeze([1, 0, 0]),
+      anchor: Object.freeze([0, 0, 0])
+    });
+  }
+
   readGameCollisionWorld(characterId) {
     const id = String(characterId ?? "").trim();
     if (!id) throw new TypeError("Personagem do modo jogo não informado.");
@@ -1710,7 +1743,8 @@ export class ThreeRegionRenderer {
       revision: this.#resolvedRevision,
       character: Object.freeze({
         id,
-        bounds: freezeBounds(characterBounds)
+        bounds: freezeBounds(characterBounds),
+        bodyFrame: this.#characterBodyFrameForObjectId(id)
       }),
       colliders: Object.freeze(colliders)
     });
@@ -2262,6 +2296,92 @@ export class ThreeRegionRenderer {
     });
   }
 
+  attachRuntimeVisual(objectId, visual, {
+    layerId = "runtime",
+    replaceBase = false,
+    active = false
+  } = {}) {
+    const id = String(objectId ?? "").trim();
+    if (!id) throw new TypeError("Objeto do visual transitório não informado.");
+    if (!visual?.isObject3D) {
+      throw new TypeError("Visual transitório Three.js inválido.");
+    }
+    const proxy = this.#meshes.get(id);
+    if (!proxy || proxy.userData.logicalOnly) {
+      throw new Error(`Objeto sem proxy renderizável: ${id}.`);
+    }
+    const layer = String(layerId ?? "runtime").trim() || "runtime";
+    const key = `${layer}:${id}`;
+    if (this.#runtimeVisuals.has(key)) this.detachRuntimeVisual(key);
+    const poseRoot = new THREE.Group();
+    poseRoot.name = `SpatialSeedRuntimePose:${key}`;
+    poseRoot.add(visual);
+    this.scene.add(poseRoot);
+    const entry = {
+      key,
+      objectId: id,
+      layerId: layer,
+      poseRoot,
+      visual,
+      replaceBase: Boolean(replaceBase),
+      active: false
+    };
+    this.#runtimeVisuals.set(key, entry);
+    this.#syncRuntimeVisualPose(entry);
+    const handle = Object.freeze({ key, objectId: id, layerId: layer });
+    this.setRuntimeVisualActive(handle, active);
+    this.invalidateRender(`runtime-visual-attach:${key}`);
+    return handle;
+  }
+
+  setRuntimeVisualActive(handle, active) {
+    const entry = this.#runtimeVisualEntry(handle);
+    if (!entry) return false;
+    const next = Boolean(active);
+    entry.active = next;
+    entry.poseRoot.visible = next;
+    if (entry.replaceBase) {
+      const proxy = this.#meshes.get(entry.objectId);
+      if (proxy) {
+        this.#meshEditVisibility.setHidden(
+          entry.objectId,
+          next,
+          this.#batchMatrixForProxy(proxy),
+          { reason: entry.key }
+        );
+      }
+    }
+    this.invalidateRender(`runtime-visual-active:${entry.key}`);
+    return true;
+  }
+
+  detachRuntimeVisual(handle) {
+    const entry = this.#runtimeVisualEntry(handle);
+    if (!entry) return false;
+    if (entry.replaceBase) {
+      const proxy = this.#meshes.get(entry.objectId);
+      if (proxy) {
+        this.#meshEditVisibility.setHidden(
+          entry.objectId,
+          false,
+          this.#batchMatrixForProxy(proxy),
+          { reason: entry.key }
+        );
+      }
+    }
+    entry.poseRoot.removeFromParent?.();
+    this.#runtimeVisuals.delete(entry.key);
+    this.invalidateRender(`runtime-visual-detach:${entry.key}`);
+    return true;
+  }
+
+  #runtimeVisualEntry(handle) {
+    const key = typeof handle === "string"
+      ? handle
+      : String(handle?.key ?? "").trim();
+    return key ? this.#runtimeVisuals.get(key) ?? null : null;
+  }
+
   captureAnimationTargets(targetIds = [], {
     targetMode = "selection",
     overlayId = null
@@ -2540,6 +2660,7 @@ export class ThreeRegionRenderer {
       if (this.#applyObjectInstanceColor(id)) colorWrites = 1;
       this.#animationAppliedColors.delete(id);
     }
+    this.#syncRuntimeVisualsForObject(id);
     return Object.freeze({ matrixWrites, colorWrites });
   }
 
@@ -2992,6 +3113,10 @@ export class ThreeRegionRenderer {
     const startedAt = performance.now();
     const proxy = this.#meshes.get(id);
     if (!proxy) return false;
+
+    for (const entry of [...this.#runtimeVisuals.values()]) {
+      if (entry.objectId === String(id)) this.detachRuntimeVisual(entry.key);
+    }
 
     const overlayIds = [
       ...(this.#animationObjectOverlayIds.get(id) ?? [])
@@ -4644,6 +4769,73 @@ export class ThreeRegionRenderer {
     return target;
   }
 
+  #characterBodyFrameForObjectId(objectId) {
+    const id = String(objectId ?? "").trim();
+    const proxy = this.#meshes.get(id);
+    if (!proxy || proxy.userData.logicalOnly) {
+      throw new Error(`Objeto sem proxy renderizável: ${id}.`);
+    }
+    const localBounds = this.#localBoundsForProxy(proxy, new THREE.Box3());
+    if (localBounds.isEmpty()) {
+      throw new Error(`Objeto sem bounds locais: ${id}.`);
+    }
+    proxy.updateMatrixWorld(true);
+    const worldPosition = new THREE.Vector3();
+    const worldQuaternion = new THREE.Quaternion();
+    const worldScale = new THREE.Vector3();
+    proxy.matrixWorld.decompose(worldPosition, worldQuaternion, worldScale);
+    const localCenter = localBounds.getCenter(new THREE.Vector3());
+    const localHalf = localBounds.getSize(new THREE.Vector3()).multiplyScalar(0.5);
+    const worldCenter = localCenter.clone().applyMatrix4(proxy.matrixWorld);
+    const pivotValue = this.#hierarchy.has(id)
+      ? this.#hierarchy.worldPivotOf(id)
+      : null;
+    const pivot = Array.isArray(pivotValue) && pivotValue.length === 3
+      ? new THREE.Vector3().fromArray(pivotValue)
+      : worldPosition.clone();
+    const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(worldQuaternion);
+    const baseYaw = Math.hypot(forward.x, forward.z) > 1e-9
+      ? Math.atan2(-forward.z, forward.x)
+      : 0;
+    const worldOffset = worldCenter.sub(pivot);
+    const inverseYaw = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      -baseYaw
+    );
+    const centerOffset = worldOffset.applyQuaternion(inverseYaw);
+    return Object.freeze({
+      centerOffset: Object.freeze(centerOffset.toArray()),
+      halfExtents: Object.freeze([
+        Math.max(0.025, localHalf.x * Math.abs(worldScale.x)),
+        Math.max(0.025, localHalf.y * Math.abs(worldScale.y)),
+        Math.max(0.025, localHalf.z * Math.abs(worldScale.z))
+      ]),
+      baseYaw
+    });
+  }
+
+  #syncRuntimeVisualPose(entry) {
+    const proxy = this.#meshes.get(entry.objectId);
+    if (!proxy || proxy.userData.logicalOnly) return false;
+    proxy.updateMatrixWorld(true);
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const ignoredScale = new THREE.Vector3();
+    proxy.matrixWorld.decompose(position, quaternion, ignoredScale);
+    entry.poseRoot.position.copy(position);
+    entry.poseRoot.quaternion.copy(quaternion);
+    entry.poseRoot.scale.set(1, 1, 1);
+    entry.poseRoot.updateMatrixWorld(true);
+    return true;
+  }
+
+  #syncRuntimeVisualsForObject(objectId) {
+    const id = String(objectId);
+    for (const entry of this.#runtimeVisuals.values()) {
+      if (entry.objectId === id) this.#syncRuntimeVisualPose(entry);
+    }
+  }
+
   #storeEditedPivot(position) {
     const world = position.toArray();
 
@@ -5217,6 +5409,7 @@ export class ThreeRegionRenderer {
     if (!proxy.userData.logicalOnly) {
       this.#updateBatchMatrix(String(entry.id), proxy);
     }
+    this.#syncRuntimeVisualsForObject(String(entry.id));
     return true;
   }
 

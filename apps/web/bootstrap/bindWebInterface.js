@@ -1,7 +1,8 @@
-import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260812-0054i";
+import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260813-0054mk";
 import {
+  BrowserAssetFileGateway,
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260812-0054i";
+} from "../../../packages/platform-web/src/index.js?build=20260813-0054mk";
 
 export function bindWebInterface({
   runtime,
@@ -57,6 +58,27 @@ export function bindWebInterface({
       description: "Biblioteca de procedimentos Spatial Seed",
       accept: {
         "application/json": [".ssproc.json", ".json"]
+      }
+    }
+  });
+  const stlFiles = new BrowserAssetFileGateway({
+    windowRef: browserWindow,
+    documentRef: documentRoot,
+    fileType: {
+      description: "Malha STL",
+      accept: {
+        "model/stl": [".stl"]
+      }
+    }
+  });
+  const characterFiles = new BrowserAssetFileGateway({
+    windowRef: browserWindow,
+    documentRef: documentRoot,
+    fileType: {
+      description: "Personagem animado GLB/glTF",
+      accept: {
+        "model/gltf-binary": [".glb"],
+        "model/gltf+json": [".gltf"]
       }
     }
   });
@@ -1055,6 +1077,287 @@ export function bindWebInterface({
   $("project-save").addEventListener("click", async () => {
     await saveProjectPayload(execute("project.save"));
   });
+  async function importStlFile(file) {
+    const opened = await stlFiles.readFile(file);
+    const result = execute("mesh.import.stl", {
+      data: opened.data,
+      filename: opened.filename,
+      mergeVertices: true
+    });
+    if (result?.imported) {
+      showNotice(
+        `STL importado: ${opened.filename} · ` +
+        `${result.triangleCount} triângulos · ${result.vertexCount} vértices`
+      );
+    }
+    return result;
+  }
+
+  $("mesh-import-stl").addEventListener("click", async () => {
+    if (!stlFiles.capabilities().nativeOpen) {
+      $("mesh-stl-file-input").click();
+      return;
+    }
+    try {
+      const opened = await stlFiles.open();
+      if (opened.opened) {
+        const result = execute("mesh.import.stl", {
+          data: opened.data,
+          filename: opened.filename,
+          mergeVertices: true
+        });
+        if (result?.imported) {
+          showNotice(
+            `STL importado: ${opened.filename} · ` +
+            `${result.triangleCount} triângulos · ${result.vertexCount} vértices`
+          );
+        }
+      } else if (opened.fallbackRequired) {
+        $("mesh-stl-file-input").click();
+      }
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("mesh-stl-file-input").addEventListener("change", async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await importStlFile(file);
+    } catch (error) {
+      showError(error);
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  $("mesh-export-stl").addEventListener("click", async () => {
+    try {
+      const payload = execute("mesh.export.stl", { binary: true });
+      let result = await stlFiles.save(payload, { saveAs: true });
+      if (result.fallbackRequired) {
+        result = stlFiles.saveFallback(payload, {
+          fallbackReason: result.fallbackReason
+        });
+      }
+      if (result.saved) {
+        showNotice(
+          `STL exportado: ${result.filename} · ` +
+          `${payload.triangleCount} triângulos`
+        );
+      }
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  const characterVisualPanel = documentRoot.querySelector("[data-character-visual-panel]");
+  const characterVisualHome = characterVisualPanel
+    ? Object.freeze({
+        parent: characterVisualPanel.parentNode,
+        nextSibling: characterVisualPanel.nextSibling
+      })
+    : null;
+  const characterVisualControls = {
+    source: documentRoot.querySelector("[data-character-visual-source]"),
+    preview: documentRoot.querySelector("[data-character-visual-preview]"),
+    fit: documentRoot.querySelector("[data-character-visual-fit]"),
+    scale: documentRoot.querySelector("[data-character-visual-scale]"),
+    up: documentRoot.querySelector("[data-character-visual-up]"),
+    forward: documentRoot.querySelector("[data-character-visual-forward]"),
+    anchor: documentRoot.querySelector("[data-character-visual-anchor]"),
+    hover: documentRoot.querySelector("[data-character-visual-hover]"),
+    rx: documentRoot.querySelector("[data-character-visual-rx]"),
+    ry: documentRoot.querySelector("[data-character-visual-ry]"),
+    rz: documentRoot.querySelector("[data-character-visual-rz]"),
+    apply: documentRoot.querySelector("[data-character-visual-apply]"),
+    gltf: documentRoot.querySelector("[data-character-visual-gltf]"),
+    status: documentRoot.querySelector("[data-character-visual-status]")
+  };
+
+  const characterVisualDetails = $("game-character-visual-details");
+
+  function placeCharacterVisualPanel(inGame) {
+    if (!characterVisualPanel || !characterVisualHome?.parent) return false;
+    if (inGame) {
+      if (characterVisualDetails &&
+          characterVisualPanel.parentNode !== characterVisualDetails) {
+        characterVisualDetails.append(characterVisualPanel);
+      }
+      if (characterVisualDetails) characterVisualDetails.open = false;
+      characterVisualPanel.hidden = false;
+      characterVisualPanel.dataset.presentation = "game";
+      return true;
+    }
+    if (characterVisualPanel.parentNode !== characterVisualHome.parent) {
+      const next = characterVisualHome.nextSibling;
+      if (next?.parentNode === characterVisualHome.parent) {
+        characterVisualHome.parent.insertBefore(characterVisualPanel, next);
+      } else {
+        characterVisualHome.parent.append(characterVisualPanel);
+      }
+    }
+    if (characterVisualDetails) characterVisualDetails.open = false;
+    characterVisualPanel.hidden = false;
+    delete characterVisualPanel.dataset.presentation;
+    return true;
+  }
+
+  function characterVisualRequest() {
+    return {
+      previewInEditor: characterVisualControls.preview?.checked !== false,
+      fit: characterVisualControls.fit?.value ?? "none",
+      scale: Number(characterVisualControls.scale?.value ?? 1),
+      sourceUp: characterVisualControls.up?.value ?? "+Y",
+      sourceForward: characterVisualControls.forward?.value ?? "+Z",
+      anchor: characterVisualControls.anchor?.value ?? "feet",
+      hover: Number(characterVisualControls.hover?.value ?? 0),
+      rotationDegrees: [
+        Number(characterVisualControls.rx?.value ?? 0),
+        Number(characterVisualControls.ry?.value ?? 0),
+        Number(characterVisualControls.rz?.value ?? 0)
+      ]
+    };
+  }
+
+  function syncCharacterVisualSource(sourceStatus) {
+    if (!characterVisualControls.source || !sourceStatus?.mode) return sourceStatus;
+    if (documentRoot.activeElement !== characterVisualControls.source) {
+      characterVisualControls.source.value = sourceStatus.mode;
+    }
+    return sourceStatus;
+  }
+
+  function syncCharacterVisualForm(status) {
+    const visual = status?.visual?.options ?? status?.backend?.visual?.options ?? null;
+    const alignment = status?.visual?.alignment ?? status?.backend?.visual?.alignment ?? null;
+    if (visual) {
+      if (characterVisualControls.preview) {
+        characterVisualControls.preview.checked = visual.previewInEditor !== false;
+      }
+      if (characterVisualControls.fit) characterVisualControls.fit.value = visual.fit ?? "none";
+      if (characterVisualControls.scale && !Array.isArray(visual.scale)) {
+        characterVisualControls.scale.value = String(visual.scale ?? 1);
+      }
+      if (characterVisualControls.up) characterVisualControls.up.value = visual.sourceUp ?? "+Y";
+      if (characterVisualControls.forward) characterVisualControls.forward.value = visual.sourceForward ?? "+Z";
+      if (characterVisualControls.anchor) characterVisualControls.anchor.value = visual.anchor ?? "feet";
+      if (characterVisualControls.hover) characterVisualControls.hover.value = String(visual.hover ?? 0);
+      const rotation = visual.rotationDegrees ?? [0, 0, 0];
+      if (characterVisualControls.rx) characterVisualControls.rx.value = String(rotation[0] ?? 0);
+      if (characterVisualControls.ry) characterVisualControls.ry.value = String(rotation[1] ?? 0);
+      if (characterVisualControls.rz) characterVisualControls.rz.value = String(rotation[2] ?? 0);
+    }
+    if (characterVisualControls.status) {
+      characterVisualControls.status.textContent = alignment
+        ? `auto-fit ${Number(alignment.fitScale ?? 1).toFixed(4)} · posição ${
+            (alignment.position ?? []).map(value => Number(value).toFixed(3)).join(", ")
+          }`
+        : "Carregue um personagem GLB para ajustar o visual.";
+    }
+    return status;
+  }
+
+  const unsubscribeCharacterAnimation = runtime.subscribe(
+    "character.animation.changed",
+    ({ status, sourceStatus } = {}) => {
+      if (status) syncCharacterVisualForm(status);
+      if (sourceStatus) syncCharacterVisualSource(sourceStatus);
+    }
+  );
+
+  characterVisualControls.source?.addEventListener("change", async event => {
+    try {
+      const result = await execute("character.animation.source.set", {
+        mode: String(event.currentTarget?.value ?? "default")
+      });
+      syncCharacterVisualSource(result);
+      const status = execute("character.animation.status");
+      if (status?.characterId) syncCharacterVisualForm(status);
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  characterVisualControls.apply?.addEventListener("click", () => {
+    try {
+      syncCharacterVisualForm(execute(
+        "character.animation.visual.configure",
+        characterVisualRequest()
+      ));
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  characterVisualControls.gltf?.addEventListener("click", () => {
+    if (characterVisualControls.preview) characterVisualControls.preview.checked = true;
+    if (characterVisualControls.fit) characterVisualControls.fit.value = "none";
+    if (characterVisualControls.scale) characterVisualControls.scale.value = "1";
+    if (characterVisualControls.up) characterVisualControls.up.value = "+Y";
+    if (characterVisualControls.forward) characterVisualControls.forward.value = "+Z";
+    if (characterVisualControls.anchor) characterVisualControls.anchor.value = "feet";
+    if (characterVisualControls.hover) characterVisualControls.hover.value = "0";
+    if (characterVisualControls.rx) characterVisualControls.rx.value = "0";
+    if (characterVisualControls.ry) characterVisualControls.ry.value = "0";
+    if (characterVisualControls.rz) characterVisualControls.rz.value = "0";
+    characterVisualControls.apply?.click();
+  });
+
+  async function loadCharacterFile(file) {
+    const opened = await characterFiles.readFile(file);
+    const result = await execute("character.animation.asset.load", {
+      data: opened.data,
+      filename: opened.filename,
+      rootMotion: "in-place-horizontal"
+    });
+    syncCharacterVisualForm(result);
+    syncCharacterVisualSource(result?.sourceStatus);
+    if (result?.loaded) {
+      const names = (result.clips ?? []).map(clip => clip.name).join(", ");
+      showNotice(`Personagem animado carregado: ${opened.filename}${names ? ` · ${names}` : ""}`, 4200);
+    }
+    return result;
+  }
+
+  $("character-import-glb").addEventListener("click", async () => {
+    if (!characterFiles.capabilities().nativeOpen) {
+      $("character-glb-file-input").click();
+      return;
+    }
+    try {
+      const opened = await characterFiles.open();
+      if (opened.opened) {
+        const loaded = await execute("character.animation.asset.load", {
+          data: opened.data,
+          filename: opened.filename,
+          rootMotion: "in-place-horizontal"
+        });
+        syncCharacterVisualForm(loaded);
+        syncCharacterVisualSource(loaded?.sourceStatus);
+        const status = execute("character.animation.status");
+        const names = (status?.clips ?? []).map(clip => clip.name).join(", ");
+        showNotice(`Personagem animado carregado: ${opened.filename}${names ? ` · ${names}` : ""}`, 4200);
+      } else if (opened.fallbackRequired) {
+        $("character-glb-file-input").click();
+      }
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("character-glb-file-input").addEventListener("change", async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      await loadCharacterFile(file);
+    } catch (error) {
+      showError(error);
+    } finally {
+      event.target.value = "";
+    }
+  });
   uiActions.bindControl(
     $("viewer-new"),
     "viewer.instance.choose"
@@ -1699,6 +2002,31 @@ export function bindWebInterface({
   const initialShortcutContext =
     documentRoot.body.dataset.shortcutContext ?? null;
   let gameLookPointer = null;
+  let gamePresentationActive = false;
+  let gameAudioUnlocked = false;
+  let gameAudioUnlockPending = false;
+
+  function unlockGameAudioFromGesture() {
+    if (latestGame.state !== "running" ||
+        gameAudioUnlocked || gameAudioUnlockPending) return false;
+    gameAudioUnlockPending = true;
+    try {
+      const pending = execute("game.audio.music.play", {});
+      Promise.resolve(pending)
+        .then(result => {
+          if (result !== false) gameAudioUnlocked = true;
+        })
+        .catch(() => {
+          // Browser autoplay policy may still reject a gesture; a later gesture retries.
+          gameAudioUnlocked = false;
+        })
+        .finally(() => { gameAudioUnlockPending = false; });
+      return true;
+    } catch {
+      gameAudioUnlockPending = false;
+      return false;
+    }
+  }
 
   const gameControlForCode = code => ({
     KeyW: "forward",
@@ -1755,37 +2083,52 @@ export function bindWebInterface({
   function setGamePresentation(snapshot) {
     const active = snapshot?.state === "running";
     const hud = $("game-hud");
-    documentRoot.body.classList.toggle("ss-game-mode", active);
-    hud.hidden = !active;
-    if (active) {
-      documentRoot.body.dataset.shortcutContext = "game";
-      documentRoot.activeElement?.blur?.();
-      const labels = {
-        idle: "parado",
-        walk: "andando",
-        jump: "pulando",
-        fall: "caindo"
-      };
-      const position = snapshot.position
-        .map(value => Number(value).toFixed(2))
-        .join(", ");
-      $("game-status").textContent =
-        `${labels[snapshot.animationState] ?? snapshot.animationState} · ` +
-        `${snapshot.grounded ? "no chão" : "no ar"} · ${position}`;
-      const invertYaw = $("game-invert-yaw");
-      if (invertYaw) invertYaw.checked = Boolean(snapshot.camera?.invertYaw);
-    } else {
-      if (initialShortcutContext === null) {
-        delete documentRoot.body.dataset.shortcutContext;
+    const presentationChanged = active !== gamePresentationActive;
+    if (presentationChanged) {
+      gamePresentationActive = active;
+      documentRoot.body.classList.toggle("ss-game-mode", active);
+      hud.hidden = !active;
+      placeCharacterVisualPanel(active);
+      if (active) {
+        gameAudioUnlocked = false;
+        documentRoot.body.dataset.shortcutContext = "game";
+        documentRoot.activeElement?.blur?.();
       } else {
-        documentRoot.body.dataset.shortcutContext = initialShortcutContext;
+        gameAudioUnlocked = false;
+        if (initialShortcutContext === null) {
+          delete documentRoot.body.dataset.shortcutContext;
+        } else {
+          documentRoot.body.dataset.shortcutContext = initialShortcutContext;
+        }
+        clearGameControls();
       }
-      clearGameControls();
+    }
+    if (!active) return;
+    const labels = {
+      idle: "parado",
+      walk: "andando",
+      jump: "pulando",
+      fall: "caindo"
+    };
+    const position = snapshot.position
+      .map(value => Number(value).toFixed(2))
+      .join(", ");
+    $("game-status").textContent =
+      `${labels[snapshot.animationState] ?? snapshot.animationState} · ` +
+      `${snapshot.grounded ? "no chão" : "no ar"} · ${position}`;
+    const invertYaw = $("game-invert-yaw");
+    if (invertYaw && documentRoot.activeElement !== invertYaw) {
+      invertYaw.checked = Boolean(snapshot.camera?.invertYaw);
+    }
+    const movementReference = $("game-movement-reference");
+    if (movementReference && documentRoot.activeElement !== movementReference) {
+      movementReference.value = snapshot.controls?.movementReference ?? "camera";
     }
   }
 
   const onGameKeyDown = event => {
     if (latestGame.state !== "running") return;
+    unlockGameAudioFromGesture();
     if (event.code === "Escape") {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -1820,11 +2163,13 @@ export function bindWebInterface({
   browserWindow.addEventListener("keydown", onGameKeyDown, true);
   browserWindow.addEventListener("keyup", onGameKeyUp, true);
   browserWindow.addEventListener("blur", onGameBlur);
+  $("game-hud")?.addEventListener("pointerdown", unlockGameAudioFromGesture, true);
 
   for (const button of documentRoot.querySelectorAll("[data-game-control]")) {
     const control = button.dataset.gameControl;
     const press = event => {
       if (latestGame.state !== "running") return;
+      unlockGameAudioFromGesture();
       event.preventDefault();
       gamePointerControls.set(event.pointerId, control);
       button.setPointerCapture?.(event.pointerId);
@@ -1858,7 +2203,9 @@ export function bindWebInterface({
   };
   gameCanvas.addEventListener("contextmenu", suppressViewportContextMenu, true);
   const onGameLookStart = event => {
-    if (latestGame.state !== "running" || event.button !== 0) return;
+    if (latestGame.state !== "running" ||
+        (event.pointerType === "mouse" && event.button !== 0)) return;
+    unlockGameAudioFromGesture();
     event.preventDefault();
     gameLookPointer = {
       id: event.pointerId,
@@ -1894,6 +2241,11 @@ export function bindWebInterface({
   $("game-invert-yaw")?.addEventListener("change", event => {
     execute("game.config.set", {
       camera: { invertYaw: Boolean(event.currentTarget?.checked) }
+    });
+  });
+  $("game-movement-reference")?.addEventListener("change", event => {
+    execute("game.config.set", {
+      controls: { movementReference: String(event.currentTarget?.value ?? "camera") }
     });
   });
   $("game-exit").addEventListener("click", () => {
@@ -2053,6 +2405,7 @@ export function bindWebInterface({
       unsubscribeEditor();
       unsubscribeMeshEdit();
       unsubscribeGame();
+      unsubscribeCharacterAnimation();
       unsubscribeMeasurement();
       unsubscribeSelection();
       unsubscribeWorld();

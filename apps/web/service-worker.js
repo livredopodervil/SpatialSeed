@@ -32,7 +32,9 @@ self.addEventListener("fetch", event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || !isApplicationRequest(url)) return;
 
-  if (request.mode === "navigate" || request.cache === "no-store") {
+  if (request.mode === "navigate" ||
+      request.cache === "no-store" ||
+      isControlPlaneRequest(url)) {
     event.respondWith(networkFirst(request));
     return;
   }
@@ -116,6 +118,12 @@ async function getActiveCacheName() {
 
 function resolveFromRepository(path) {
   return new URL(path, REPOSITORY_ROOT).href;
+}
+
+function isControlPlaneRequest(url) {
+  const path = url.pathname.replace(/\/+$/, "");
+  return path.endsWith("/apps/web/build-info.json") ||
+    path.endsWith("/apps/web/pwa/precache-manifest.json");
 }
 
 function isApplicationRequest(url) {

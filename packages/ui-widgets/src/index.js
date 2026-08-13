@@ -12,4 +12,4 @@ export {
   normalizeShortcutChord
 } from "./UiActionRegistry.js";
 
-export { attachFormFieldHints } from "./FormFieldHints.js?build=20260812-0054i";
+export { attachFormFieldHints } from "./FormFieldHints.js?build=20260812-0054l";

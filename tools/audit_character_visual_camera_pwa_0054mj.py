@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+from pathlib import Path
+import json
+ROOT=Path(__file__).resolve().parents[1]
+errors=[]
+def src(rel):
+ p=ROOT/rel
+ if not p.is_file(): errors.append(f"arquivo ausente: {rel}"); return ""
+ return p.read_text(encoding="utf-8")
+def req(rel,tokens):
+ s=src(rel)
+ for token in tokens:
+  if token not in s: errors.append(f"{rel}: ausente {token}")
+ return s
+b=json.loads(src("apps/web/build-info.json") or "{}")
+current=b.get("build")
+if current not in {"20260813-0054mj", "20260813-0054mk", "20260813-0054ml"}: errors.append(f"build incorreto: {current!r}")
+if current == "20260813-0054ml":
+ req("packages/character-animation-three/src/ThreeCharacterAnimationBackend.js", ("independent-visual-projection", 'fit: "none"'))
+ req("packages/game-runtime/src/GameRuntime.js", ("game-runtime-v6-character-body-frame","desiredCameraPosition","minimumBaseClearance","#cameraFreePosition","characterWorldBounds"))
+else:
+ req("packages/character-animation-three/src/ThreeCharacterAnimationBackend.js", ("scale-isolation-wrapper","parentEffectiveScale","matrixWorld","decompose"))
+ req("packages/game-runtime/src/GameRuntime.js", ("stable-initial-camera","desiredCameraPosition","minimumBaseClearance","#cameraFreePosition"))
+req("apps/web/boot.js", ("loadPublishedBuildInfo",'cache: "no-store"'))
+req("apps/web/service-worker.js", ("isControlPlaneRequest(url)","build-info.json","precache-manifest.json"))
+req("packages/runtime-test-plugin/src/GameRuntimeTests.js", ("câmera inicia diretamente no rig configurado","câmera não orbita abaixo da base física"))
+if errors:
+ print("0054mj falhou:")
+ for e in errors: print("-",e)
+ raise SystemExit(1)
+print("0054mj ok: câmera estável e build-info fora do cache antigo; visual consolidado independente do proxy.")

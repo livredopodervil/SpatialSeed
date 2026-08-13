@@ -39,6 +39,26 @@ export async function startApplication(
   });
   await interfaceBinding.ready;
 
+  const defaultDemoLaunch = application.web?.defaultDemoLaunch ?? null;
+  if (defaultDemoLaunch?.mode === "game") {
+    try {
+      await application.runtime.execute("game.start", {
+        characterId: defaultDemoLaunch.characterId,
+        controls: defaultDemoLaunch.controls ?? {}
+      });
+      application.runtime.emit("demo.started", {
+        project: defaultDemoLaunch.project ?? null,
+        characterId: defaultDemoLaunch.characterId
+      });
+    } catch (error) {
+      console.warn("Projeto demo aberto, mas o modo jogo não pôde iniciar.", error);
+      application.runtime.emit("demo.start.failed", {
+        characterId: defaultDemoLaunch.characterId,
+        error: String(error?.message ?? error)
+      });
+    }
+  }
+
   application.runtime.onDispose(() =>
     interfaceBinding.dispose()
   );

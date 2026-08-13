@@ -38,6 +38,16 @@
   <label class="game-look-option">
     <input id="game-invert-yaw" type="checkbox"> Inverter mouse horizontal
   </label>
+  <label class="game-look-option">
+    Movimento
+    <select id="game-movement-reference" title="Câmera: W/S seguem frente/trás da câmera e A/D seguem esquerda/direita; Mundo mantém um frame fixo opcional">
+      <option value="camera" selected>Câmera (padrão)</option>
+      <option value="world">Mundo (fixo)</option>
+    </select>
+  </label>
+  <details id="game-character-visual-details" class="game-character-visual-details">
+    <summary>Visual do personagem</summary>
+  </details>
   <button id="game-exit" type="button">Sair do jogo</button>
 </aside>
 <button id="scene-exit-hotspot" type="button"
@@ -181,6 +191,9 @@
   <button id="project-save">Salvar</button>
   <button id="project-open">Abrir</button>
   <button id="project-new">Novo</button>
+  <button id="mesh-import-stl" type="button" title="Importar uma malha STL ASCII ou binária como objeto editável">Importar STL</button>
+  <button id="mesh-export-stl" type="button" title="Exportar a seleção como STL binário, aplicando as transformações mundiais">Exportar STL</button>
+  <button id="character-import-glb" type="button" title="Associar um GLB/glTF animado ao objeto selecionado; os clips são vinculados automaticamente a idle/walk/run/jump/fall/land quando os nomes permitem">Carregar personagem GLB</button>
   <button id="procedure-library-save">Exportar procedimentos</button>
   <button id="procedure-library-open">Importar procedimentos</button>
   <button id="procedure-editor">Editor de procedimentos</button>
@@ -189,6 +202,10 @@
     accept=".spatialseed,.json,application/json" hidden>
   <input id="project-file-input-new-window" type="file"
     accept=".spatialseed,.json,application/json" hidden>
+  <input id="mesh-stl-file-input" type="file"
+    accept=".stl,model/stl,application/sla" hidden>
+  <input id="character-glb-file-input" type="file"
+    accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
   <input id="procedure-library-file-input" type="file"
     accept=".spatialseed-procedures.json,.json,application/json" hidden>
   <button id="duplicate-selection">Duplicar</button>
@@ -310,18 +327,18 @@
       <label title="Política do pivô"><select id="edit-hud-pivot-policy" aria-label="Política do pivô"><option value="anchor">Âncora</option><option value="median">Mediana</option><option value="bounds">Limites</option><option value="active">Ativo</option><option value="custom">Personalizado</option></select></label>
       <label title="Referência do pivô personalizado"><select id="edit-hud-pivot-reference" aria-label="Referência do pivô"><option value="absolute">Mundo</option><option value="active-relative">Relativo ao ativo</option></select></label>
       <label title="Âncora das famílias desenhadas"><select id="edit-hud-anchor-policy" aria-label="Âncora da criação"><option value="first">Início</option><option value="bounds">Centro</option><option value="world">Mundo</option></select></label>
-      <label title="Definir plano de edição pela seleção ou viewer"><input id="edit-hud-edit-plane" type="checkbox"><span>⌗</span></label>
-      <label title="Definir plano de desenho pela seleção ou viewer"><input id="edit-hud-drawing-plane" type="checkbox"><span>✎</span></label>
+      <label hidden title="Alias legado do plano ativo"><input id="edit-hud-edit-plane" type="checkbox"><span>⌗</span></label>
+      <label hidden title="Alias legado do plano ativo"><input id="edit-hud-drawing-plane" type="checkbox"><span>✎</span></label>
     </div>
-    <div class="edit-hud-group edit-hud-drawing-target" data-edit-hud-group="drawing-target" aria-label="Alvo e plano de desenho">
-      <label class="edit-hud-drawing-source" data-help="A mudança é aplicada imediatamente. Este plano é usado por criação e gestos antes do plano de edição ou do viewer." title="Fonte do plano de desenho"><select id="edit-hud-drawing-target-source" aria-label="Fonte do plano de desenho"><option value="viewer">Vista</option><option value="world-xy">XY</option><option value="world-xz">XZ</option><option value="world-yz">YZ</option><option value="object">Objeto</option><option value="face">Face</option><option value="three-points">3 pontos</option><option value="edit-plane">Plano de edição</option><option value="surface-selection">Superfície</option><option value="custom" disabled>Personalizado</option></select></label>
-      <button id="edit-hud-drawing-target-set" type="button" title="Definir e travar o plano de desenho">◎</button>
+    <div class="edit-hud-group edit-hud-drawing-target" data-edit-hud-group="drawing-target" aria-label="Plano ativo">
+      <label class="edit-hud-drawing-source" data-help="Define o único plano ativo usado por criação, desenho, caminhos, medição e edição planar." title="Fonte do plano ativo"><select id="edit-hud-drawing-target-source" aria-label="Fonte do plano ativo"><option value="viewer">Vista</option><option value="world-xy">XY</option><option value="world-xz">XZ</option><option value="world-yz">YZ</option><option value="object">Objeto</option><option value="face">Face</option><option value="three-points">3 pontos</option><option value="edit-plane">Plano ativo atual</option><option value="surface-selection">Superfície</option><option value="custom" disabled>Personalizado</option></select></label>
+      <button id="edit-hud-drawing-target-set" type="button" title="Definir e travar o plano ativo">◎</button>
       <label class="edit-hud-drawing-helper-toggle" title="Mostrar helper transparente"><input id="edit-hud-drawing-target-helper" type="checkbox" checked><span>▱</span></label>
       <button id="edit-hud-drawing-target-edit" type="button" title="Editar posição e orientação do helper">✥</button>
       <button id="edit-hud-drawing-target-translate" type="button" title="Mover helper">↔</button>
       <button id="edit-hud-drawing-target-rotate" type="button" title="Girar helper">↻</button>
       <label class="edit-hud-drawing-offset" title="Offset ao longo da normal da superfície ou plano"><input id="edit-hud-drawing-target-offset" type="number" step="0.01" value="0" aria-label="Offset do alvo"><span>↥</span></label>
-      <button id="edit-hud-drawing-target-clear" type="button" title="Liberar alvo de desenho">×</button>
+      <button id="edit-hud-drawing-target-clear" type="button" title="Liberar plano ativo">×</button>
       <label class="edit-hud-surface-front" title="Aceitar apenas faces voltadas para a câmera"><input id="edit-hud-surface-front-faces" type="checkbox" checked><span>◐</span></label>
       <label class="edit-hud-surface-lock" title="Não saltar entre objetos durante o mesmo gesto"><input id="edit-hud-surface-lock-object" type="checkbox" checked><span>🔒</span></label>
       <label class="edit-hud-surface-jump" title="Distância máxima entre amostras; zero usa valor automático"><input id="edit-hud-surface-maximum-jump" type="number" min="0" step="0.01" value="0" aria-label="Salto máximo na superfície"><span>↯</span></label>
@@ -938,7 +955,7 @@
         </p>
         <div class="mesh-form-grid">
           <label><span>Resultado</span><select id="path-sketch-mode"><option value="tube">Tubo contínuo</option><option value="array">Pincel de geometrias</option><option value="sweep">Extrusão pelo caminho desenhado</option><option value="extrude">Perfil desenhado → extrusão</option><option value="revolve">Perfil desenhado → revolução</option></select></label>
-          <label><span>Plano do desenho</span><select id="path-sketch-plane"><option value="locked-or-viewer">Desenho → edição → visualização → viewer</option><option value="drawing">Plano de desenho</option><option value="edit">Plano de edição</option><option value="viewer">Viewer atual</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+          <label data-help="Plano ativo é o padrão único de autoria. Viewer e planos mundiais são overrides explícitos apenas para este gesto."><span>Plano do caminho</span><select id="path-sketch-plane"><option value="active">Plano ativo</option><option value="viewer">Viewer atual</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
           <label><span>Curva</span><select id="path-sketch-curve"><option value="centripetal">Spline Catmull-Rom</option><option value="chordal">Catmull-Rom chordal</option><option value="catmullrom">Catmull-Rom uniforme</option><option value="bezier">Bézier ajustada</option><option value="polyline">Polilinha</option></select></label>
           <label><span>Fluidez do gesto (px)</span><input id="path-sketch-sample" type="number" min="1" max="64" value="6" step="1"></label>
           <label><span>Suavização</span><input id="path-sketch-smoothing" type="number" min="0" max="4" value="1" step="1"></label>
@@ -1086,10 +1103,10 @@
       <div class="mesh-form-grid edit-navigation-locks">
         <label><span>Plano de visualização</span><select id="edit-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="drawing-plane">Plano de desenho</option><option value="edit-plane">Plano de edição</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
         <button id="edit-plane-lock" type="button">Travar/destravar visualização 2D</button>
-        <label data-help="Define a fonte usada ao capturar o plano de edição; esse plano orienta edição e serve de fallback para criação."><span>Plano de edição</span><select id="edit-work-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="drawing-plane">Copiar plano de desenho</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
-        <button id="edit-work-plane-lock" type="button">Definir/limpar plano de edição</button>
-        <label data-help="Define o plano preferencial para criação, desenho e gestos por caminho. Ao existir, ele tem prioridade sobre o plano de edição e o viewer."><span>Plano de desenho</span><select id="drawing-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="edit-plane">Copiar plano de edição</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
-        <button id="drawing-plane-lock" type="button">Definir/limpar plano de desenho</button>
+        <label data-help="Define o único plano ativo usado em todas as operações de autoria."><span>Plano ativo</span><select id="edit-work-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="drawing-plane">Copiar plano de desenho</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <button id="edit-work-plane-lock" type="button">Definir/limpar plano ativo</button>
+        <label hidden data-help="Alias legado do plano ativo"><span>Plano de desenho (legado)</span><select id="drawing-plane-source"><option value="viewer">Vista atual</option><option value="face">Face ativa</option><option value="object">Objeto ativo</option><option value="object-inclination">Objeto + inclinação</option><option value="three-points">Três pontos selecionados</option><option value="edit-plane">Copiar plano de edição</option><option value="world-xy">Mundo XY</option><option value="world-xz">Mundo XZ</option><option value="world-yz">Mundo YZ</option></select></label>
+        <button id="drawing-plane-lock" type="button" hidden>Alias legado do plano ativo</button>
         <label><span>Inclinação °</span><input id="edit-plane-inclination" type="number" min="-89.9" max="89.9" step="1" value="0"></label>
         <label><span>Azimute °</span><input id="edit-plane-azimuth" type="number" step="1" value="0"></label>
         <label class="mesh-form-wide"><span>Três pontos explícitos [[x,y,z],...] — opcional</span><textarea id="edit-plane-points" class="component-text" rows="2" placeholder="Usar exatamente três objetos ou vértices selecionados"></textarea></label>
@@ -1123,7 +1140,7 @@
         <button type="button" data-planar-workspace-tool="polygon">Polígono</button>
       </div>
       <div class="mesh-form-grid">
-        <label><span>Plano</span><select id="planar-sketch-plane"><option value="drawing-or-edit">Desenho → edição → viewer</option><option value="drawing">Plano de desenho</option><option value="edit">Plano de edição</option><option value="viewer">Viewer atual</option></select></label>
+        <label data-help="Todas as ferramentas 2D usam o plano ativo; Viewer é um override explícito para este gesto."><span>Plano</span><select id="planar-sketch-plane"><option value="active">Plano ativo</option><option value="viewer">Viewer atual</option></select></label>
         <label><span>Estilo</span><select id="planar-sketch-style"><option value="stroke">Contorno</option><option value="fill">Preenchimento</option></select></label>
         <label><span>Cor</span><input id="planar-sketch-color" type="color" value="#64d8c8"></label>
         <label><span>Espessura</span><input id="planar-sketch-width" type="number" min="0.001" step="0.01" value="0.08"></label>
@@ -1341,6 +1358,71 @@
       <button type="button" data-animation-resume>Continuar</button>
       <button type="button" data-animation-stop>Parar</button>
     </div>
+    <fieldset data-character-visual-panel>
+      <legend>Visual do personagem</legend>
+      <p>O ajuste altera apenas o rig visual; física e collider permanecem no objeto selecionado.</p>
+      <label>
+        <span>Visual no jogo</span>
+        <select data-character-visual-source title="Raposa padrão usa assets/characters/Fox.glb; GLB carregado usa o asset escolhido; Objeto original desativa o visual animado">
+          <option value="default" selected>Raposa padrão</option>
+          <option value="custom">GLB carregado</option>
+          <option value="original">Objeto original</option>
+        </select>
+      </label>
+      <label>
+        <input data-character-visual-preview type="checkbox">
+        <span>Mostrar visual animado no editor</span>
+      </label>
+      <label>
+        <span>Ajuste ao corpo</span>
+        <select data-character-visual-fit title="Ajusta automaticamente a altura do GLB ao objeto físico selecionado">
+          <option value="height">Altura automática</option>
+          <option value="none" selected>Sem auto-fit</option>
+        </select>
+      </label>
+      <label>
+        <span>Escala visual</span>
+        <input data-character-visual-scale type="number" value="1" step="0.01" min="0.0001" title="Multiplicador aplicado depois do auto-fit">
+      </label>
+      <label>
+        <span>Eixo para cima do asset</span>
+        <select data-character-visual-up title="Eixo local que representa para cima no asset">
+          <option value="+Y" selected>+Y</option><option value="-Y">-Y</option>
+          <option value="+Z">+Z</option><option value="-Z">-Z</option>
+          <option value="+X">+X</option><option value="-X">-X</option>
+        </select>
+      </label>
+      <label>
+        <span>Eixo para frente do asset</span>
+        <select data-character-visual-forward title="glTF usa +Z para frente; o frame canônico do jogo usa +X para frente">
+          <option value="+Z" selected>+Z (glTF)</option><option value="-Z">-Z</option>
+          <option value="+X">+X</option><option value="-X">-X</option>
+          <option value="+Y">+Y</option><option value="-Y">-Y</option>
+        </select>
+      </label>
+      <label>
+        <span>Âncora</span>
+        <select data-character-visual-anchor title="Ponto do visual alinhado ao corpo físico">
+          <option value="feet" selected>Pés / base</option>
+          <option value="center">Centro</option>
+          <option value="origin">Origem do asset</option>
+        </select>
+      </label>
+      <label>
+        <span>Hover</span>
+        <input data-character-visual-hover type="number" value="0" step="0.01" title="Deslocamento vertical adicional; use negativo para baixar o visual">
+      </label>
+      <div class="inline-fields">
+        <label><span>Pitch X°</span><input data-character-visual-rx type="number" value="0" step="1"></label>
+        <label><span>Yaw Y°</span><input data-character-visual-ry type="number" value="0" step="1"></label>
+        <label><span>Roll Z°</span><input data-character-visual-rz type="number" value="0" step="1"></label>
+      </div>
+      <div class="actions">
+        <button type="button" data-character-visual-apply>Aplicar ajuste</button>
+        <button type="button" data-character-visual-gltf>Convenção glTF</button>
+      </div>
+      <output data-character-visual-status></output>
+    </fieldset>
     <fieldset>
       <legend>Procedimento de animação</legend>
       <label>
@@ -1399,6 +1481,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260812-0054i"></script>
+<script type="module" src="./boot.js?build=20260813-0054ml"></script>
 </body>
 </html>

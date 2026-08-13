@@ -1,7 +1,12 @@
 import {
   normalizeCollisionWorld,
   worldIntersectsCharacterBounds
-} from "./CollisionWorld.js?build=20260812-0054i";
+} from "./CollisionWorld.js?build=20260812-0054l";
+import {
+  characterBodyWorldBounds,
+  characterBodyWorldHalfExtents,
+  normalizeCharacterBodyFrame
+} from "./CharacterBodyFrame.js?build=20260813-0054ml";
 
 export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   gravity: 18,
@@ -12,7 +17,7 @@ export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   groundFriction: 24,
   jumpSpeed: 7.25,
   coyoteSeconds: 0.1,
-  colliderHorizontalScale: 0.82,
+  colliderHorizontalScale: 1,
   collisionSkin: 0.001,
   groundProbe: 0.035,
   respawnBelow: -100
@@ -77,33 +82,28 @@ export function normalizeCharacterGameConfig(source = {}) {
 export function createCharacterPhysicsState({
   pivot,
   bounds,
+  bodyFrame = null,
   config = DEFAULT_CHARACTER_GAME_CONFIG
 } = {}) {
   const normalizedConfig = normalizeCharacterGameConfig(config);
-  const normalizedBounds = normalizeBounds(bounds, "character.bounds");
   const position = vector3(pivot, "character.pivot");
-  const center = normalizedBounds.min.map(
-    (minimum, axis) => (minimum + normalizedBounds.max[axis]) * 0.5
-  );
-  const size = normalizedBounds.min.map(
-    (minimum, axis) => normalizedBounds.max[axis] - minimum
-  );
-  const horizontalScale = normalizedConfig.colliderHorizontalScale;
-  const halfExtents = [
-    Math.max(size[0] * horizontalScale * 0.5, 0.025),
-    Math.max(size[1] * 0.5, 0.025),
-    Math.max(size[2] * horizontalScale * 0.5, 0.025)
-  ];
+  const body = normalizeCharacterBodyFrame({
+    pivot: position,
+    bounds,
+    bodyFrame,
+    horizontalScale: normalizedConfig.colliderHorizontalScale
+  });
   return {
     position: [...position],
     spawnPosition: [...position],
     velocity: [0, 0, 0],
-    yaw: 0,
+    yaw: body.baseYaw,
+    baseYaw: body.baseYaw,
     grounded: false,
     coyoteRemaining: 0,
     animationState: "fall",
-    centerOffset: center.map((value, axis) => value - position[axis]),
-    halfExtents,
+    centerOffset: [...body.centerOffset],
+    halfExtents: body.halfExtents.map(value => Math.max(value, 0.025)),
     distanceTravelled: 0,
     respawns: 0
   };
@@ -141,7 +141,7 @@ export function stepCharacterPhysics(
   if (length > EPSILON) {
     state.velocity[0] = approach(state.velocity[0], targetX, acceleration * dt);
     state.velocity[2] = approach(state.velocity[2], targetZ, acceleration * dt);
-    const targetYaw = Math.atan2(directionX, -directionZ);
+    const targetYaw = Math.atan2(-directionZ, directionX);
     state.yaw = approachAngle(state.yaw, targetYaw, 12 * dt);
   } else if (state.grounded) {
     state.velocity[0] = approach(state.velocity[0], 0, config.groundFriction * dt);
@@ -184,17 +184,7 @@ export function stepCharacterPhysics(
 
 export function characterWorldBounds(state) {
   validatePhysicsState(state);
-  const center = state.position.map(
-    (value, axis) => value + state.centerOffset[axis]
-  );
-  return Object.freeze({
-    min: Object.freeze(center.map(
-      (value, axis) => value - state.halfExtents[axis]
-    )),
-    max: Object.freeze(center.map(
-      (value, axis) => value + state.halfExtents[axis]
-    ))
-  });
+  return characterBodyWorldBounds(state);
 }
 
 function resolvePenetrations(state, colliders, config) {
@@ -226,7 +216,7 @@ function resolvePenetrations(state, colliders, config) {
 
 function separationDistance(state, colliders, axis, sign) {
   const original = state.position[axis];
-  const extent = Math.max(0.05, state.halfExtents[axis] * 0.5);
+  const extent = Math.max(0.05, characterBodyWorldHalfExtents(state)[axis] * 0.5);
   let low = 0;
   let high = extent;
   let separated = false;
@@ -272,7 +262,10 @@ function moveVertical(state, colliders, config, displacement) {
 function moveAxis(state, colliders, config, axis, displacement) {
   if (Math.abs(displacement) <= EPSILON) return 0;
   const original = state.position[axis];
-  const maxStep = Math.max(0.02, Math.min(0.1, state.halfExtents[axis] * 0.5));
+  const maxStep = Math.max(
+    0.02,
+    Math.min(0.1, characterBodyWorldHalfExtents(state)[axis] * 0.5)
+  );
   const steps = Math.max(1, Math.ceil(Math.abs(displacement) / maxStep));
   const increment = displacement / steps;
   let moved = 0;
@@ -351,13 +344,8 @@ function movementCollisionBounds(state, axis, config) {
 }
 
 function mutableCharacterBounds(state) {
-  const center = state.position.map(
-    (value, axis) => value + state.centerOffset[axis]
-  );
-  return {
-    min: center.map((value, axis) => value - state.halfExtents[axis]),
-    max: center.map((value, axis) => value + state.halfExtents[axis])
-  };
+  const bounds = characterBodyWorldBounds(state);
+  return { min: [...bounds.min], max: [...bounds.max] };
 }
 
 function overlapsAxes(left, right, movingAxis, skin) {
@@ -406,15 +394,8 @@ function validatePhysicsState(state) {
   for (const key of ["position", "velocity", "centerOffset", "halfExtents"]) {
     vector3(state[key], `state.${key}`);
   }
-}
-
-function normalizeBounds(source, label) {
-  const min = vector3(source?.min, `${label}.min`);
-  const max = vector3(source?.max, `${label}.max`);
-  if (min.some((value, axis) => !(max[axis] > value))) {
-    throw new RangeError(`${label} must have positive volume.`);
-  }
-  return Object.freeze({ min: Object.freeze(min), max: Object.freeze(max) });
+  finite(state.baseYaw ?? 0, "state.baseYaw");
+  finite(state.yaw ?? 0, "state.yaw");
 }
 
 function vector3(value, label) {

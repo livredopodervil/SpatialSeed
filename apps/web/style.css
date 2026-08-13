@@ -2355,6 +2355,26 @@ body.ss-game-mode #game-hud{
   font:500 .76rem/1.2 system-ui;
 }
 .game-look-option input{accent-color:currentColor}
+body.ss-game-mode #game-hud [data-character-visual-panel]{
+  position:absolute;
+  top:max(3.8rem,calc(env(safe-area-inset-top) + 3rem));
+  left:max(.8rem,env(safe-area-inset-left));
+  width:min(23rem,calc(100vw - 1.6rem));
+  max-height:calc(100vh - 10rem);
+  overflow:auto;
+  padding:.65rem;
+  border:1px solid #ffffff30;
+  border-radius:.65rem;
+  background:#06101be8;
+  backdrop-filter:blur(8px);
+  pointer-events:auto;
+}
+body.ss-game-mode #game-hud [data-character-visual-panel] p{
+  display:block;
+  position:static;
+  background:none;
+  padding:0;
+}
 #game-hud p{
   grid-column:1/-1;
   grid-row:4;

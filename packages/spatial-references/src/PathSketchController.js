@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { resolveActiveAuthoringPlane } from "../../edit-context/src/index.js?build=20260812-0054l";
 import {
   PathInstancePreviewCache
 } from "./PathInstancePreviewCache.js?build=20260730-0041b";
@@ -14,7 +15,7 @@ const EMPTY_ARRAY = Object.freeze([]);
 
 const DEFAULTS = Object.freeze({
   mode: "tube",
-  planeSource: "locked-or-viewer",
+  planeSource: "active",
   anchorPolicy: "first",
   inputSamplePixels: 6,
   simplify: 0.004,
@@ -329,6 +330,7 @@ export class PathSketchController {
       surfaceHits: active?.surfaceHits ?? 0,
       surfaceMisses: active?.surfaceMisses ?? 0,
       frame: active?.frame ?? null,
+      resolvedPlaneSource: active?.frame?.source ?? null,
       settings: active?.settings ?? DEFAULTS,
       lastResult: active?.lastResult ?? null,
       error: active?.error ?? null
@@ -1976,37 +1978,27 @@ function disposeTransientTree(root) {
 }
 
 function resolveFrame(renderer, source) {
-  const normalized = String(source ?? "locked-or-viewer").toLowerCase();
-  const drawingPlane = renderer.getDrawingPlane?.();
-  const editPlane = renderer.getEditPlane?.();
-  const navigationPlane = renderer.getNavigationLocks?.().plane;
-  if (["drawing", "drawing-plane", "draw-plane"].includes(normalized)) {
-    if (!drawingPlane) {
-      throw new Error("Defina um plano de desenho antes de iniciar o traço.");
-    }
-    return normalizeFrame(drawingPlane);
-  }
-  if (["edit", "edit-plane"].includes(normalized)) {
-    if (!editPlane) {
-      throw new Error("Defina um plano de edição antes de iniciar o traço.");
-    }
-    return normalizeFrame(editPlane);
-  }
-  const locked = drawingPlane ?? editPlane ?? navigationPlane;
-  if (["locked", "locked-or-viewer", "plane"].includes(normalized) && locked) {
-    return normalizeFrame(locked);
+  const normalized = String(source ?? "active").toLowerCase();
+  if ([
+    "active", "authoring", "automatic", "auto", "plane",
+    "locked", "locked-or-viewer", "drawing", "drawing-plane",
+    "draw-plane", "edit", "edit-plane"
+  ].includes(normalized)) {
+    const active = resolveActiveAuthoringPlane(renderer);
+    if (!active.frame) throw new Error("Não foi possível determinar o plano ativo.");
+    return normalizeFrame(active.frame, active.source);
   }
   if (["world-xy", "world-xz", "world-yz"].includes(normalized)) {
     return normalizeFrame({
       "world-xy": { origin: [0, 0, 0], normal: [0, 0, 1], xAxis: [1, 0, 0] },
       "world-xz": { origin: [0, 0, 0], normal: [0, 1, 0], xAxis: [1, 0, 0] },
       "world-yz": { origin: [0, 0, 0], normal: [1, 0, 0], xAxis: [0, 1, 0] }
-    }[normalized]);
+    }[normalized], normalized);
   }
-  return normalizeFrame(renderer.readViewerReferenceFrame());
+  return normalizeFrame(renderer.readViewerReferenceFrame(), "viewer");
 }
 
-function normalizeFrame(frame) {
+function normalizeFrame(frame, source = null) {
   const origin = vector3(frame.origin, "origin");
   const normal = new THREE.Vector3().fromArray(vector3(frame.normal, "normal")).normalize();
   let xAxis = new THREE.Vector3().fromArray(vector3(frame.xAxis ?? [1, 0, 0], "xAxis"));
@@ -2022,7 +2014,8 @@ function normalizeFrame(frame) {
     origin: Object.freeze(origin),
     normal: Object.freeze(normal.toArray()),
     xAxis: Object.freeze(xAxis.toArray()),
-    yAxis: Object.freeze(yAxis.toArray())
+    yAxis: Object.freeze(yAxis.toArray()),
+    source: source ?? frame.source?.type ?? frame.source ?? null
   });
 }
 
@@ -2133,7 +2126,7 @@ function surfaceFallbackFrame(renderer, status = null) {
   if (placement?.point && placement?.normal) {
     return frameFromSurfacePlacement(placement, renderer.camera);
   }
-  return resolveFrame(renderer, "locked-or-viewer");
+  return resolveFrame(renderer, "active");
 }
 
 function frameFromSurfacePlacement(placement, camera) {

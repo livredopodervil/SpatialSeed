@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260809-0053m";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260810-0054f";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260813-0054ml";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260812-0054i";
+} from "../../../packages/platform-web/src/index.js?build=20260813-0054mk";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -115,7 +115,14 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260812-0054i";
+} from "../../../packages/game-runtime/src/index.js?build=20260813-0054ml";
+import {
+  CHARACTER_ANIMATION_VERSION,
+  CharacterAnimationSystem
+} from "../../../packages/character-animation/src/index.js?build=20260813-0054mk";
+import {
+  ThreeCharacterAnimationBackend
+} from "../../../packages/character-animation-three/src/index.js?build=20260813-0054ml";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
@@ -123,8 +130,14 @@ import {
   MeshEditController
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260812-0054g";
 import {
+  MeshExchangeService
+} from "../../../packages/mesh-exchange/src/index.js?build=20260813-0054mk";
+import {
+  createThreeMeshTriangulator
+} from "../../../packages/mesh-exchange-three/src/index.js?build=20260813-0054mk";
+import {
   MeshPathGestureController
-} from "../../../packages/mesh-interaction/src/index.js?build=20260812-0054i";
+} from "../../../packages/mesh-interaction/src/index.js?build=20260813-0054mk";
 import {
   listMeshOperatorContracts
 } from "../../../packages/mesh-operator-kernel/src/index.js?build=20260812-0054g";
@@ -136,7 +149,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260809-0053l";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260812-0054i";
+} from "../../../packages/edit-hud/src/index.js?build=20260813-0054mk";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -145,10 +158,10 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260812-0054i";
+} from "../../../packages/edit-tools/src/index.js?build=20260813-0054mk";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260812-0054i";
+} from "../../../packages/object-placement/src/index.js?build=20260813-0054mk";
 import {
   DrawingTargetController
 } from "../../../packages/drawing-target/src/index.js?build=20260808-0053f";
@@ -371,6 +384,7 @@ export async function createWebRuntime({
   });
   const projectLaunchMode = locationParameters.get("project");
   let incomingProject = null;
+  let defaultDemoLaunch = null;
   if (projectLaunchMode === "new") {
     projectService.newProject();
   } else if (projectLaunchMode === "open") {
@@ -384,6 +398,17 @@ export async function createWebRuntime({
     } catch (error) {
       receiver.reject(error);
       throw error;
+    }
+  } else if (shouldOpenDefaultDemo(locationParameters)) {
+    try {
+      const demo = await loadDefaultDemoProject();
+      projectService.openText(demo.text);
+      defaultDemoLaunch = demo.launch;
+    } catch (error) {
+      globalThis.console?.warn?.(
+        "Não foi possível abrir o projeto de demonstração padrão.",
+        error
+      );
     }
   }
   const viewerCoordinator = new LocalViewerCoordinator({
@@ -874,6 +899,35 @@ export async function createWebRuntime({
     canMutateProject: action =>
       viewerCoordinator.requireAuthority(action)
   });
+  const meshExchange = new MeshExchangeService({
+    selection: () => editor.selection.snapshot(),
+    readObject: id => sandbox.getObject(id),
+    readWorldMatrix: id => sandbox.getObjectWorldMatrix(id),
+    triangulateObject: createThreeMeshTriangulator({ geometryRegistry }),
+    createGeometry: args => selectionOperations.createGeometry(args)
+  });
+  commands
+    .register(
+      "mesh.import.stl",
+      args => {
+        if (meshEditor.active) {
+          throw new Error("Finalize ou cancele a edição de malha antes de importar STL.");
+        }
+        viewerCoordinator.requireAuthority("importar uma malha STL");
+        return meshExchange.importStl(args);
+      },
+      { category: "mesh", mutates: true, label: "Importar STL" }
+    )
+    .register(
+      "mesh.export.stl",
+      args => {
+        if (meshEditor.active) {
+          throw new Error("Finalize ou cancele a edição de malha antes de exportar STL.");
+        }
+        return meshExchange.exportSelectionStl(args);
+      },
+      { category: "mesh", mutates: false, label: "Exportar STL" }
+    );
   commandsRef = commands;
   const gameAudio = new GameAudioRuntime();
   gameAudio.configure({
@@ -883,6 +937,178 @@ export async function createWebRuntime({
       land: { src: "assets/audio/land.mp3", volume: 0.6 }
     }
   });
+  const characterAnimation = new CharacterAnimationSystem({
+    backend: new ThreeCharacterAnimationBackend({ surface: renderer })
+  });
+  const resolveCharacterId = characterId => {
+    const explicit = String(characterId ?? "").trim();
+    if (explicit) return explicit;
+    const selection = editor.selection.snapshot();
+    return selection.activeMember?.objectId ??
+      selection.members?.[0]?.objectId ?? null;
+  };
+  const storedCharacterVisual = object =>
+    object?.characterAnimation?.visual ?? null;
+  const characterVisualMetadata = (object, visual) => Object.freeze({
+    ...(object?.characterAnimation ?? {}),
+    visual: Object.freeze(structuredClone(visual))
+  });
+  const CHARACTER_VISUAL_SOURCE_MODES = Object.freeze([
+    "default",
+    "custom",
+    "original"
+  ]);
+  const DEFAULT_CHARACTER_VISUAL_ASSET = Object.freeze({
+    src: "assets/characters/Fox.glb",
+    filename: "Fox.glb"
+  });
+  const DEFAULT_CHARACTER_VISUAL_OPTIONS = Object.freeze({
+    fit: "none",
+    scale: 0.01,
+    anchor: "feet",
+    hover: 0,
+    previewInEditor: false
+  });
+  // Policy truth is object.characterAnimation.sourceMode. These maps only cache
+  // transient resources/provenance for the current browser session.
+  const customCharacterSources = new Map();
+  const loadedCharacterSourceModes = new Map();
+  const sourceReconcileSuppressed = new Set();
+  const normalizeCharacterVisualSourceMode = value => {
+    const mode = String(value ?? "default").trim().toLowerCase();
+    if (!CHARACTER_VISUAL_SOURCE_MODES.includes(mode)) {
+      throw new RangeError(
+        "characterAnimation.sourceMode deve ser default, custom ou original."
+      );
+    }
+    return mode;
+  };
+  const storedCharacterSourceMode = object =>
+    normalizeCharacterVisualSourceMode(
+      object?.characterAnimation?.sourceMode ?? "default"
+    );
+  const characterSourceMetadata = (object, sourceMode) => Object.freeze({
+    ...(object?.characterAnimation ?? {}),
+    sourceMode: normalizeCharacterVisualSourceMode(sourceMode)
+  });
+  const characterSourceStatus = characterId => {
+    const id = String(characterId ?? "").trim();
+    const object = id ? sandbox.getObject(id) : null;
+    const animation = id ? characterAnimation.status(id) : null;
+    return Object.freeze({
+      characterId: id || null,
+      mode: storedCharacterSourceMode(object),
+      loadedMode: id ? loadedCharacterSourceModes.get(id) ?? null : null,
+      loaded: Boolean(animation?.loaded),
+      assetId: animation?.assetId ?? null,
+      defaultAsset: DEFAULT_CHARACTER_VISUAL_ASSET.src
+    });
+  };
+  const emitCharacterAnimationChanged = (characterId, reason, extra = {}) => {
+    const sourceStatus = characterSourceStatus(characterId);
+    runtime.emit("character.animation.changed", {
+      characterId,
+      status: characterAnimation.status(characterId),
+      sourceStatus,
+      reason,
+      ...extra
+    });
+    return sourceStatus;
+  };
+  const loadCharacterVisualSource = async (characterId, source, mode) => {
+    const id = String(characterId ?? "").trim();
+    const object = sandbox.getObject(id);
+    const persistedVisual = storedCharacterVisual(object) ?? {};
+    const visualDefaults = mode === "default"
+      ? DEFAULT_CHARACTER_VISUAL_OPTIONS
+      : Object.freeze({ fit: "none", previewInEditor: false });
+    const status = await characterAnimation.load(
+      id,
+      source,
+      {
+        visual: Object.freeze({ ...visualDefaults, ...persistedVisual }),
+        rootMotion: "in-place-horizontal"
+      }
+    );
+    loadedCharacterSourceModes.set(id, mode);
+    return status;
+  };
+  const ensureCharacterVisual = async characterId => {
+    const id = String(characterId ?? "").trim();
+    if (!id) throw new TypeError("Personagem obrigatório.");
+    const object = sandbox.getObject(id);
+    if (!object) throw new Error(`Personagem inexistente: ${id}.`);
+    const mode = storedCharacterSourceMode(object);
+    const current = characterAnimation.status(id);
+    const loadedMode = loadedCharacterSourceModes.get(id) ?? null;
+
+    if (mode === "original") {
+      if (current.loaded) await characterAnimation.unload(id);
+      loadedCharacterSourceModes.delete(id);
+      return emitCharacterAnimationChanged(id, "source-original");
+    }
+
+    if (mode === "custom") {
+      if (current.loaded && loadedMode === "custom") {
+        return characterSourceStatus(id);
+      }
+      const cached = customCharacterSources.get(id);
+      if (!cached) {
+        if (current.loaded) await characterAnimation.unload(id);
+        loadedCharacterSourceModes.delete(id);
+        return emitCharacterAnimationChanged(id, "custom-unavailable", {
+          fallback: "original"
+        });
+      }
+      if (current.loaded) await characterAnimation.unload(id);
+      await loadCharacterVisualSource(id, cached, "custom");
+      return emitCharacterAnimationChanged(id, "custom-loaded");
+    }
+
+    if (current.loaded && loadedMode === "default") {
+      return characterSourceStatus(id);
+    }
+    if (current.loaded) await characterAnimation.unload(id);
+    loadedCharacterSourceModes.delete(id);
+    try {
+      await loadCharacterVisualSource(
+        id,
+        DEFAULT_CHARACTER_VISUAL_ASSET,
+        "default"
+      );
+      return emitCharacterAnimationChanged(id, "default-loaded");
+    } catch (error) {
+      try {
+        await characterAnimation.unload(id);
+      } catch {}
+      loadedCharacterSourceModes.delete(id);
+      runtime.emit("character.animation.default.failed", {
+        characterId: id,
+        src: DEFAULT_CHARACTER_VISUAL_ASSET.src,
+        error: String(error?.message ?? error)
+      });
+      return emitCharacterAnimationChanged(id, "default-fallback-original", {
+        fallback: "original",
+        error: String(error?.message ?? error)
+      });
+    }
+  };
+  const unloadCharacterVisual = async characterId => {
+    const id = String(characterId ?? "").trim();
+    if (!id || !characterAnimation.status(id).loaded) return false;
+    await characterAnimation.unload(id);
+    loadedCharacterSourceModes.delete(id);
+    emitCharacterAnimationChanged(id, "session-unload");
+    return true;
+  };
+  const retainOnlyCharacterVisual = async characterId => {
+    const keepId = String(characterId ?? "").trim();
+    const loaded = characterAnimation.status().characters ?? [];
+    for (const id of loaded) {
+      if (id !== keepId) await unloadCharacterVisual(id);
+    }
+    return true;
+  };
   const gameEvents = new GameEventRuntime({
     executeAction: async (action, event) => {
       switch (action.type) {
@@ -894,6 +1120,17 @@ export async function createWebRuntime({
           return gameAudio.stopMusic();
         case "audio.effect":
           return gameAudio.playEffect(action.name, action.clip ?? null);
+        case "character.animation": {
+          const characterId = action.characterId ?? event.objectId;
+          return characterAnimation.play(characterId, {
+            state: action.state ?? null,
+            clip: action.clip ?? null,
+            loop: action.loop ?? null,
+            fadeSeconds: action.fadeSeconds ?? null,
+            speed: action.speed ?? 1,
+            reset: action.reset !== false
+          });
+        }
         case "procedure": {
           const plan = await commandsRef.execute("procedure.plan.prepare", {
             name: action.name,
@@ -925,12 +1162,207 @@ export async function createWebRuntime({
   gameRuntime = new GameRuntime({
     surface: renderer,
     cameraController,
-    events: gameEvents
+    events: gameEvents,
+    characterAnimation
   });
   commands
     .register(
+      "character.animation.asset.load",
+      async ({
+        characterId = null,
+        src = null,
+        data = null,
+        filename = null,
+        bindings = {},
+        visual = {},
+        rootMotion = "in-place-horizontal"
+      } = {}) => {
+        const id = resolveCharacterId(characterId);
+        if (!id) throw new Error("Selecione o objeto que receberá o personagem animado.");
+        const object = sandbox.getObject(id);
+        const persisted = storedCharacterVisual(object);
+        const effectiveVisual = Object.freeze({
+          ...(persisted ?? {}),
+          ...(visual ?? {})
+        });
+        const source = Object.freeze({ src, data, filename });
+        const status = await characterAnimation.load(
+          id,
+          source,
+          { bindings, visual: effectiveVisual, rootMotion }
+        );
+        customCharacterSources.set(id, source);
+        loadedCharacterSourceModes.set(id, "custom");
+        sourceReconcileSuppressed.add(id);
+        let changed;
+        try {
+          changed = sandbox.dispatch({
+            type: "object.update",
+            id,
+            patch: {
+              characterAnimation: characterSourceMetadata(
+                sandbox.getObject(id),
+                "custom"
+              )
+            },
+            source: "character-animation.source"
+          });
+        } finally {
+          sourceReconcileSuppressed.delete(id);
+        }
+        const sourceStatus = emitCharacterAnimationChanged(id, "asset-load", {
+          changed
+        });
+        return Object.freeze({ ...status, sourceStatus, changed });
+      },
+      { category: "game", mutates: true, asynchronous: true, label: "Carregar personagem GLB" }
+    )
+    .register(
+      "character.animation.configure",
+      ({ characterId = null, ...config } = {}) => {
+        const id = resolveCharacterId(characterId);
+        if (!id) throw new Error("Selecione um personagem.");
+        return characterAnimation.configure(id, config);
+      },
+      { category: "game", mutates: false, label: "Configurar animação do personagem" }
+    )
+    .register(
+      "character.animation.source.status",
+      ({ characterId = null } = {}) => {
+        const id = resolveCharacterId(characterId);
+        if (!id) throw new Error("Selecione um personagem.");
+        return characterSourceStatus(id);
+      },
+      { category: "game", mutates: false, label: "Fonte visual do personagem" }
+    )
+    .register(
+      "character.animation.source.set",
+      async ({ characterId = null, mode = "default" } = {}) => {
+        const id = resolveCharacterId(characterId);
+        if (!id) throw new Error("Selecione um personagem.");
+        const normalizedMode = normalizeCharacterVisualSourceMode(mode);
+        sourceReconcileSuppressed.add(id);
+        let changed;
+        try {
+          changed = sandbox.dispatch({
+            type: "object.update",
+            id,
+            patch: {
+              characterAnimation: characterSourceMetadata(
+                sandbox.getObject(id),
+                normalizedMode
+              )
+            },
+            source: "character-animation.source"
+          });
+        } finally {
+          sourceReconcileSuppressed.delete(id);
+        }
+        await ensureCharacterVisual(id);
+        return Object.freeze({ changed, ...characterSourceStatus(id) });
+      },
+      {
+        category: "game",
+        mutates: true,
+        asynchronous: true,
+        label: "Escolher fonte visual do personagem"
+      }
+    )
+    .register(
+      "character.animation.visual.configure",
+      ({ characterId = null, ...visual } = {}) => {
+        const id = resolveCharacterId(characterId);
+        if (!id) throw new Error("Selecione um personagem.");
+        const before = characterAnimation.status(id);
+        if (!before.loaded) throw new Error("Carregue o visual animado do personagem primeiro.");
+        const previousVisual = before.visual?.options ?? before.visualBaseline ?? {};
+        let configured;
+        try {
+          configured = characterAnimation.configure(id, { visual });
+          const canonicalVisual = configured.visual?.options ?? visual;
+          const object = sandbox.getObject(id);
+          const changed = sandbox.dispatch({
+            type: "object.update",
+            id,
+            patch: {
+              characterAnimation: characterVisualMetadata(object, canonicalVisual)
+            },
+            source: "character-animation.visual"
+          });
+          runtime.emit("character.animation.changed", {
+            characterId: id,
+            status: configured,
+            reason: "visual-configure",
+            changed
+          });
+          return Object.freeze({ ...configured, changed });
+        } catch (error) {
+          try {
+            characterAnimation.configure(id, { visual: previousVisual });
+          } catch {}
+          throw error;
+        }
+      },
+      { category: "game", mutates: true, label: "Ajustar visual do personagem" }
+    )
+    .register(
+      "character.animation.play",
+      ({ characterId = null, ...request } = {}) => {
+        const id = resolveCharacterId(characterId);
+        if (!id) throw new Error("Selecione um personagem.");
+        return characterAnimation.play(id, request);
+      },
+      { category: "game", mutates: false, label: "Tocar animação do personagem" }
+    )
+    .register(
+      "character.animation.unload",
+      async ({ characterId = null } = {}) => {
+        const id = resolveCharacterId(characterId);
+        if (!id) throw new Error("Selecione um personagem.");
+        sourceReconcileSuppressed.add(id);
+        let changed;
+        try {
+          changed = sandbox.dispatch({
+            type: "object.update",
+            id,
+            patch: {
+              characterAnimation: characterSourceMetadata(
+                sandbox.getObject(id),
+                "original"
+              )
+            },
+            source: "character-animation.source"
+          });
+        } finally {
+          sourceReconcileSuppressed.delete(id);
+        }
+        const result = await characterAnimation.unload(id);
+        loadedCharacterSourceModes.delete(id);
+        emitCharacterAnimationChanged(id, "asset-unload", { changed });
+        return Object.freeze({ ...result, changed });
+      },
+      { category: "game", mutates: true, asynchronous: true, label: "Remover personagem animado" }
+    )
+    .register(
+      "character.animation.status",
+      ({ characterId = null } = {}) => {
+        const id = characterId == null ? resolveCharacterId(null) : characterId;
+        return id ? characterAnimation.status(id) : characterAnimation.status();
+      },
+      { category: "game", mutates: false }
+    )
+    .register(
+      "character.animation.clips",
+      ({ characterId = null } = {}) => {
+        const id = resolveCharacterId(characterId);
+        if (!id) throw new Error("Selecione um personagem.");
+        return characterAnimation.clips(id);
+      },
+      { category: "game", mutates: false }
+    )
+    .register(
       "game.start",
-      ({ characterId = null, config = {}, camera = {} } = {}) => {
+      async ({ characterId = null, config = {}, camera = {}, controls = {} } = {}) => {
         const selection = editor.selection.snapshot();
         const selectedId = characterId ??
           selection.activeMember?.objectId ??
@@ -941,20 +1373,38 @@ export async function createWebRuntime({
             "Selecione a geometria que será usada como personagem."
           );
         }
+        await retainOnlyCharacterVisual(selectedId);
+        await ensureCharacterVisual(selectedId);
         resetTransientAuthoring({ operation: "game.start" });
         commands.execute("tool.set", { mode: "navigate" });
         return gameRuntime.start({
           characterId: selectedId,
           config,
-          camera
+          camera,
+          controls
         });
       },
-      { category: "game", mutates: false, label: "Iniciar modo jogo" }
+      {
+        category: "game",
+        mutates: false,
+        asynchronous: true,
+        label: "Iniciar modo jogo"
+      }
     )
     .register(
       "game.stop",
-      ({ reason = "user" } = {}) => gameRuntime.stop(reason),
-      { category: "game", mutates: false, label: "Sair do modo jogo" }
+      async ({ reason = "user" } = {}) => {
+        const activeId = gameRuntime.status().characterId;
+        const stopped = gameRuntime.stop(reason);
+        if (activeId) await unloadCharacterVisual(activeId);
+        return stopped;
+      },
+      {
+        category: "game",
+        mutates: false,
+        asynchronous: true,
+        label: "Sair do modo jogo"
+      }
     )
     .register(
       "game.input.set",
@@ -1806,6 +2256,8 @@ export async function createWebRuntime({
   const queries = new RuntimeQueryRegistry();
   queries
     .register("game.status", () => gameRuntime.status())
+    .register("character.animation.status", () => characterAnimation.status())
+    .register("character.animation.version", () => CHARACTER_ANIMATION_VERSION)
     .register("time.status", () => temporalRuntime.status())
     .register("instance.graph.status", () =>
       instanceGraphDiagnostics(sandbox.getSnapshot())
@@ -2180,6 +2632,9 @@ export async function createWebRuntime({
     .register("mesh.operators.contracts", () =>
       listMeshOperatorContracts()
     )
+    .register("mesh.exchange.formats", () =>
+      meshExchange.formats()
+    )
     .register("scene.objects.list", () =>
       sandbox.getSnapshot().objects
     )
@@ -2503,7 +2958,8 @@ export async function createWebRuntime({
       scope: "local-viewer",
       persistence: "ephemeral",
       characterSource: "selected-scene-object",
-      collisionShape: "world-aabb",
+      characterBody: "oriented-local-box-conservative-world-aabb",
+      collisionShape: "static-world-colliders",
       collisionWorld: "static-renderable-objects",
       gravity: true,
       jumping: true,
@@ -2697,9 +3153,41 @@ export async function createWebRuntime({
         changes,
         classification
       });
-      if (gameRuntime.state === "running") {
-        gameRuntime.sceneChanged(changes);
-        if (gameRuntime.state === "running") {
+      const characterProjectionChanges = (changes ?? []).filter(
+        change => [
+          "character-animation.visual",
+          "character-animation.source"
+        ].includes(change?.source)
+      );
+      for (const change of characterProjectionChanges) {
+        const id = String(change.objectId ?? "");
+        if (!id) continue;
+        if (change?.source === "character-animation.source") {
+          if (sourceReconcileSuppressed.has(id)) continue;
+          Promise.resolve(ensureCharacterVisual(id)).catch(error => {
+            runtime.emit("character.animation.source.failed", {
+              characterId: id,
+              error: String(error?.message ?? error)
+            });
+          });
+          continue;
+        }
+        const current = characterAnimation.status(id);
+        if (!current.loaded) continue;
+        const object = sandbox.getObject(id);
+        const visual = storedCharacterVisual(object) ?? current.visualBaseline ?? {};
+        const status = characterAnimation.configure(id, { visual });
+        emitCharacterAnimationChanged(id, "history-sync", { status });
+      }
+      const gameplayChanges = (changes ?? []).filter(
+        change => ![
+          "character-animation.visual",
+          "character-animation.source"
+        ].includes(change?.source)
+      );
+      if (gameRuntime.state === "running" && gameplayChanges.length) {
+        gameRuntime.sceneChanged(gameplayChanges);
+        if (gameRuntime.state === "running" && gameplayChanges.length) {
           const refreshGameWorld = () => {
             if (gameRuntime.state === "running") {
               gameRuntime.refreshCollisionWorld();
@@ -2820,6 +3308,27 @@ export async function createWebRuntime({
   }
   runtime.onDispose(() => activeWebExtensions.dispose());
 
+  if (defaultDemoLaunch?.mode === "game") {
+    const characterId = String(defaultDemoLaunch.characterId ?? "").trim();
+    if (characterId && sandbox.getObject(characterId)) {
+      editor.selection.replace({
+        kind: "object",
+        regionId: region.descriptor.id,
+        objectId: characterId
+      });
+      defaultDemoLaunch = Object.freeze({
+        ...defaultDemoLaunch,
+        characterId
+      });
+    } else {
+      globalThis.console?.warn?.(
+        "Projeto demo aberto sem personagem de inicialização válido.",
+        characterId
+      );
+      defaultDemoLaunch = null;
+    }
+  }
+
   return Object.freeze({
     buildInfo,
     runtime,
@@ -2833,6 +3342,7 @@ export async function createWebRuntime({
       cameraController,
       cameraObjects,
       renderer,
+      defaultDemoLaunch,
       outline,
       modules,
       runtimeExtensions: activeWebExtensions.manifests,
@@ -2878,6 +3388,7 @@ export async function createWebRuntime({
       temporalExecution,
       animationRuntime,
       animationCommands,
+      characterAnimation,
       gameRuntime,
       sharedAnimations,
       transformPreviews,
@@ -2888,6 +3399,53 @@ export async function createWebRuntime({
         incoming: incomingProject
       }),
       connectUiDiagnostics
+    })
+  });
+}
+
+const DEFAULT_DEMO_MANIFEST_URL = new URL(
+  "../assets/demo/default-game.manifest.json",
+  import.meta.url
+);
+
+function shouldOpenDefaultDemo(locationParameters) {
+  return !locationParameters.get("project") &&
+    !locationParameters.get("viewer") &&
+    !locationParameters.get("sandbox");
+}
+
+async function loadDefaultDemoProject() {
+  if (typeof globalThis.fetch !== "function") {
+    throw new Error("fetch indisponível para carregar o projeto demo.");
+  }
+  const manifestResponse = await globalThis.fetch(DEFAULT_DEMO_MANIFEST_URL);
+  if (!manifestResponse.ok) {
+    throw new Error(
+      `Manifesto demo indisponível: ${manifestResponse.status}.`
+    );
+  }
+  const manifest = await manifestResponse.json();
+  if (manifest?.version !== "spatialseed-default-demo-v1") {
+    throw new Error(`Versão de manifesto demo inválida: ${manifest?.version}.`);
+  }
+  const projectName = String(manifest.project ?? "").trim();
+  if (!projectName) throw new Error("Manifesto demo sem projeto.");
+  const projectUrl = new URL(projectName, DEFAULT_DEMO_MANIFEST_URL);
+  if (projectUrl.origin !== DEFAULT_DEMO_MANIFEST_URL.origin) {
+    throw new Error("O projeto demo deve permanecer na mesma origem.");
+  }
+  const projectResponse = await globalThis.fetch(projectUrl);
+  if (!projectResponse.ok) {
+    throw new Error(`Projeto demo indisponível: ${projectResponse.status}.`);
+  }
+  const launch = manifest.launch && typeof manifest.launch === "object"
+    ? structuredClone(manifest.launch)
+    : {};
+  return Object.freeze({
+    text: await projectResponse.text(),
+    launch: Object.freeze({
+      ...launch,
+      project: projectName
     })
   });
 }

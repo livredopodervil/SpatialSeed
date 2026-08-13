@@ -5,6 +5,9 @@ import {
   planarFramePoint
 } from "../../edit-context/src/PlanarFrame.js?build=20260730-0040e";
 import {
+  resolveActiveAuthoringPlane
+} from "../../edit-context/src/index.js?build=20260812-0054l";
+import {
   constrainPlanarPoint
 } from "./PlanarConstraints.js?build=20260730-0040e";
 import {
@@ -1324,23 +1327,14 @@ function normalizeSettings(value = {}) {
 
 function resolveDrawingFrame(renderer, source, explicitFrame) {
   if (explicitFrame) return normalizePlanarFrame(explicitFrame);
-  const normalized = String(source ?? "drawing-or-edit").toLowerCase();
-  const drawing = renderer.getDrawingPlane?.();
-  const edit = renderer.getEditPlane?.();
-  if (normalized === "drawing") {
-    if (!drawing) throw new Error("Defina primeiro o plano de desenho.");
-    return normalizePlanarFrame(drawing);
-  }
-  if (normalized === "edit") {
-    if (!edit) throw new Error("Defina primeiro o plano de edição.");
-    return normalizePlanarFrame(edit);
-  }
+  const normalized = String(source ?? "active").toLowerCase();
   if (normalized === "viewer") {
     return normalizePlanarFrame(renderer.readViewerReferenceFrame());
   }
-  return normalizePlanarFrame(
-    drawing ?? edit ?? renderer.readViewerReferenceFrame()
-  );
+  // drawing/edit/drawing-or-edit são aliases legados do único plano ativo.
+  const active = resolveActiveAuthoringPlane(renderer);
+  if (!active.frame) throw new Error("Não foi possível determinar o plano ativo.");
+  return normalizePlanarFrame(active.frame);
 }
 
 function resultCreatedIds(result) {

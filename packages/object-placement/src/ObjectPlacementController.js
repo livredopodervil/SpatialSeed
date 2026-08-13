@@ -1,5 +1,9 @@
 import * as THREE from "three";
 
+import {
+  resolveActiveAuthoringPlane
+} from "../../edit-context/src/index.js?build=20260812-0054l";
+
 const DEFAULTS = Object.freeze({
   color: "#6699cc",
   surface: true,
@@ -266,10 +270,9 @@ export class ObjectPlacementController {
 
   #resolve(event) {
     const active = this.#active;
-    const placementPlane =
-      this.renderer.getDrawingPlane?.() ??
-      this.renderer.getEditPlane?.() ??
-      null;
+    const placementPlane = resolveActiveAuthoringPlane(
+      this.renderer, { viewerFallback: false }
+    ).frame;
     const pointerPlacement = this.renderer.resolvePointerPlacement({
       clientX: event.clientX,
       clientY: event.clientY,

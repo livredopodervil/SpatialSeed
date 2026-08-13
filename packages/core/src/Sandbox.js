@@ -802,7 +802,8 @@ function invertObjectChanges(changes) {
           : {}),
         ...(Array.isArray(change.occurrenceChanges)
           ? { occurrenceChanges: change.occurrenceChanges }
-          : {})
+          : {}),
+        ...(change.source ? { source: change.source } : {})
       }));
       continue;
     }

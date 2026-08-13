@@ -1,7 +1,7 @@
 import {
   createRuntimeLayerTests,
   runRuntimeTests
-} from "./RuntimeLayerTests.js?build=20260812-0054i";
+} from "./RuntimeLayerTests.js?build=20260812-0054md";
 
 export const manifest = Object.freeze({
   id: "runtime-layer-tests",
@@ -37,6 +37,7 @@ export function activateRuntimeTestPlugin({ commands }) {
         "runtime test animation-tracks",
         "runtime test simulation",
         "runtime test game-runtime",
+        "runtime test character-animation",
         "runtime test runtime-profile",
         "runtime test object-inspector",
         "runtime test program-planning",

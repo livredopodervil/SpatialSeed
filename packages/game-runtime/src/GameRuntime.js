@@ -9,16 +9,24 @@ import {
   translationMatrix
 } from "../../math-affine/src/index.js?build=20260810-0054f";
 import {
+  characterWorldBounds,
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260812-0054i";
+} from "./CharacterPhysics.js?build=20260813-0054ml";
+import {
+  characterBodyHorizontalSupport
+} from "./CharacterBodyFrame.js?build=20260813-0054ml";
 import {
   castCollisionSegment,
   normalizeCollisionWorld
-} from "./CollisionWorld.js?build=20260812-0054i";
+} from "./CollisionWorld.js?build=20260812-0054l";
 
-export const GAME_RUNTIME_VERSION = "game-runtime-v4-camera-collision";
+export const GAME_RUNTIME_VERSION = "game-runtime-v6-character-body-frame";
+
+const DEFAULT_CONTROLS = Object.freeze({
+  movementReference: "camera"
+});
 
 const DEFAULT_CAMERA = Object.freeze({
   distance: 6,
@@ -32,7 +40,9 @@ const DEFAULT_CAMERA = Object.freeze({
   invertYaw: false,
   collisionEnabled: true,
   collisionProbeRadius: 0.18,
-  collisionMinimumDistance: 0.35
+  collisionMinimumDistance: 0.35,
+  collisionCharacterPadding: 0.08,
+  minimumBaseClearance: 0.25
 });
 
 export class GameRuntime {
@@ -44,6 +54,7 @@ export class GameRuntime {
   #colliders = Object.freeze([]);
   #initialCamera = null;
   #cameraPosition = null;
+  #cameraFreePosition = null;
   #cameraYaw = 0;
   #cameraPitch = DEFAULT_CAMERA.pitch;
   #input = initialInput();
@@ -57,7 +68,9 @@ export class GameRuntime {
     clock = new SimulationClock(),
     config = {},
     camera = {},
-    events = null
+    controls = {},
+    events = null,
+    characterAnimation = null
   } = {}) {
     validateSurface(surface);
     if (!cameraController?.snapshot || !cameraController?.execute) {
@@ -70,21 +83,24 @@ export class GameRuntime {
     this.cameraController = cameraController;
     this.clock = clock;
     this.events = events;
+    this.characterAnimation = characterAnimation;
     this.config = normalizeCharacterGameConfig(config);
     this.cameraConfig = normalizeCameraConfig(camera);
+    this.controlConfig = normalizeControlConfig(controls);
     this.state = "idle";
     this.characterId = null;
     this.statistics = initialStatistics();
     this.#unsubscribeFrame = surface.subscribeFrame(frame => this.advance(frame));
   }
 
-  start({ characterId, config = {}, camera = {} } = {}) {
+  start({ characterId, config = {}, camera = {}, controls = {} } = {}) {
     this.#assertActive();
     const id = String(characterId ?? "").trim();
     if (!id) throw new TypeError("Game mode requires a character object.");
     if (this.state === "running") this.stop("replaced");
     this.config = normalizeCharacterGameConfig({ ...this.config, ...config });
     this.cameraConfig = normalizeCameraConfig({ ...this.cameraConfig, ...camera });
+    this.controlConfig = normalizeControlConfig({ ...this.controlConfig, ...controls });
 
     const world = this.surface.readGameCollisionWorld(id);
     if (!world?.character?.bounds) {
@@ -108,18 +124,36 @@ export class GameRuntime {
       this.#physics = createCharacterPhysicsState({
         pivot,
         bounds: world.character.bounds,
+        bodyFrame: world.character.bodyFrame ?? null,
         config: this.config
       });
       this.characterId = id;
       this.#initialCamera = this.cameraController.snapshot();
-      this.#cameraPosition = [...this.#initialCamera.position];
       const target = characterCameraTarget(this.#physics, this.cameraConfig);
-      this.#cameraYaw = yawFromCamera(this.#cameraPosition, target);
+      this.#cameraYaw = yawFromCamera(this.#initialCamera.position, target);
       this.#cameraPitch = this.cameraConfig.pitch;
+      const initialDesired = desiredCameraPosition(
+        target,
+        this.#cameraYaw,
+        this.#cameraPitch,
+        this.cameraConfig,
+        this.#physics
+      );
+      this.#cameraFreePosition = [...initialDesired];
+      this.#cameraPosition = this.cameraConfig.collisionEnabled
+        ? cameraCollisionPosition(
+            target,
+            initialDesired,
+            this.#colliders,
+            this.cameraConfig,
+            this.#physics
+          )
+        : [...initialDesired];
       this.#input = initialInput();
       this.#jumpQueued = false;
       this.clock.reset();
       this.state = "running";
+      this.characterAnimation?.activate?.(id);
       this.statistics.starts += 1;
       this.statistics.lastStopReason = null;
       this.surface.setRuntimePresentationMode("game");
@@ -160,6 +194,7 @@ export class GameRuntime {
           camera: initialCamera
         });
       }
+      this.characterAnimation?.deactivate?.(stoppedCharacterId);
       this.statistics.stops += 1;
       this.statistics.lastStopReason = String(reason);
       this.#resetSession();
@@ -185,10 +220,11 @@ export class GameRuntime {
     return this.status();
   }
 
-  configure({ character = {}, camera = {} } = {}) {
+  configure({ character = {}, camera = {}, controls = {} } = {}) {
     const previousConfig = this.config;
     this.config = normalizeCharacterGameConfig({ ...this.config, ...character });
     this.cameraConfig = normalizeCameraConfig({ ...this.cameraConfig, ...camera });
+    this.controlConfig = normalizeControlConfig({ ...this.controlConfig, ...controls });
     if (this.#physics &&
         this.config.colliderHorizontalScale !==
           previousConfig.colliderHorizontalScale) {
@@ -278,6 +314,11 @@ export class GameRuntime {
       velocity: Object.freeze([...(physics?.velocity ?? [0, 0, 0])]),
       yaw: Number(physics?.yaw ?? 0),
       grounded: Boolean(physics?.grounded),
+      body: physics ? Object.freeze({
+        baseYaw: Number(physics.baseYaw ?? 0),
+        halfExtents: Object.freeze([...physics.halfExtents]),
+        bounds: characterWorldBounds(physics)
+      }) : null,
       colliderCount: this.#colliders.length,
       respawns: Number(physics?.respawns ?? 0),
       input: Object.freeze({
@@ -287,11 +328,15 @@ export class GameRuntime {
         jump: this.#input.jump
       }),
       config: this.config,
+      controls: this.controlConfig,
       camera: Object.freeze({
         ...this.cameraConfig,
         yaw: this.#cameraYaw,
         pitch: this.#cameraPitch
       }),
+      skeletalAnimation: this.characterId
+        ? this.characterAnimation?.status?.(this.characterId) ?? null
+        : null,
       statistics: Object.freeze({ ...this.statistics })
     });
   }
@@ -318,8 +363,10 @@ export class GameRuntime {
     const wasGrounded = Boolean(this.#physics?.grounded);
     const previousAnimationState = this.#physics?.animationState ?? null;
     const jumpRequested = this.#jumpQueued;
-    const forward = [Math.sin(this.#cameraYaw), 0, -Math.cos(this.#cameraYaw)];
-    const right = [Math.cos(this.#cameraYaw), 0, Math.sin(this.#cameraYaw)];
+    const { forward, right } = movementBasis(
+      this.controlConfig.movementReference,
+      this.#cameraYaw
+    );
     const worldX = forward[0] * this.#input.forward +
       right[0] * this.#input.strafe;
     const worldZ = forward[2] * this.#input.forward +
@@ -336,6 +383,11 @@ export class GameRuntime {
       this.config,
       deltaSeconds
     );
+    this.characterAnimation?.observeMotion?.(
+      this.characterId,
+      characterMotionSnapshot(this.#physics, this.#input)
+    );
+    this.characterAnimation?.advance?.(deltaSeconds);
     this.#jumpQueued = false;
     if (jumpRequested && this.#physics.velocity[1] > 0) {
       this.#emitEvent("character.jump", { objectId: this.characterId });
@@ -374,16 +426,20 @@ export class GameRuntime {
     const pivot = this.#targets.units[0].pivot;
     const time = this.clock.simulationTime;
     const moving = this.#physics.animationState === "walk";
-    const bob = this.#physics.animationState === "idle"
-      ? Math.sin(time * 2.5) * 0.012
-      : moving
-        ? Math.abs(Math.sin(time * 10)) * 0.045
-        : 0;
+    const skeletal = this.characterAnimation?.status?.(this.characterId);
+    const bob = skeletal?.loaded
+      ? 0
+      : this.#physics.animationState === "idle"
+        ? Math.sin(time * 2.5) * 0.012
+        : moving
+          ? Math.abs(Math.sin(time * 10)) * 0.045
+          : 0;
     const translation = this.#physics.position.map(
       (value, axis) => value - pivot[axis] + (axis === 1 ? bob : 0)
     );
+    const yawDelta = this.#physics.yaw - (this.#physics.baseYaw ?? 0);
     const rotation = aroundPivot(
-      quaternionMatrix(eulerQuaternion([0, this.#physics.yaw * 180 / Math.PI, 0])),
+      quaternionMatrix(eulerQuaternion([0, yawDelta * 180 / Math.PI, 0])),
       pivot
     );
     const matrix = multiplyMatrices(translationMatrix(translation), rotation);
@@ -405,25 +461,30 @@ export class GameRuntime {
 
   #updateCamera() {
     const target = characterCameraTarget(this.#physics, this.cameraConfig);
-    const horizontal = this.cameraConfig.distance * Math.cos(this.#cameraPitch);
-    const desired = [
-      target[0] - Math.sin(this.#cameraYaw) * horizontal,
-      target[1] + this.cameraConfig.height +
-        Math.sin(this.#cameraPitch) * this.cameraConfig.distance,
-      target[2] + Math.cos(this.#cameraYaw) * horizontal
-    ];
+    const desired = desiredCameraPosition(
+      target,
+      this.#cameraYaw,
+      this.#cameraPitch,
+      this.cameraConfig,
+      this.#physics
+    );
     const alpha = 1 - Math.exp(
       -this.cameraConfig.lag * this.clock.stepSeconds
     );
-    const candidate = this.#cameraPosition.map(
+    const freeStart = this.#cameraFreePosition ?? this.#cameraPosition ?? desired;
+    const candidate = freeStart.map(
       (value, axis) => value + (desired[axis] - value) * alpha
     );
+    // The unconstrained camera has its own state. Collision resolution never
+    // feeds back into the lag integrator, avoiding the wall push/snap cycle.
+    this.#cameraFreePosition = candidate;
     this.#cameraPosition = this.cameraConfig.collisionEnabled
       ? cameraCollisionPosition(
           target,
           candidate,
           this.#colliders,
-          this.cameraConfig
+          this.cameraConfig,
+          this.#physics
         )
       : candidate;
     this.cameraController.execute("viewer.camera.look-at", {
@@ -456,6 +517,7 @@ export class GameRuntime {
     this.#colliders = Object.freeze([]);
     this.#initialCamera = null;
     this.#cameraPosition = null;
+    this.#cameraFreePosition = null;
     this.#input = initialInput();
     this.#jumpQueued = false;
     this.#lastPublishedTick = -1;
@@ -482,6 +544,32 @@ function validateSurface(surface) {
   if (missing.length) {
     throw new TypeError(`GameRuntime surface is missing: ${missing.join(", ")}.`);
   }
+}
+
+function normalizeControlConfig(source = {}) {
+  const value = source && typeof source === "object" ? source : {};
+  const movementReference = String(
+    value.movementReference ?? DEFAULT_CONTROLS.movementReference
+  ).trim().toLowerCase();
+  if (!["world", "camera"].includes(movementReference)) {
+    throw new RangeError("controls.movementReference must be world or camera.");
+  }
+  return Object.freeze({ movementReference });
+}
+
+function movementBasis(reference, cameraYaw) {
+  if (reference === "camera") {
+    return Object.freeze({
+      forward: Object.freeze([Math.sin(cameraYaw), 0, -Math.cos(cameraYaw)]),
+      right: Object.freeze([Math.cos(cameraYaw), 0, Math.sin(cameraYaw)])
+    });
+  }
+  return Object.freeze({
+    // Character/world frame: +Y up, +X forward, +Z right.
+    // Keyboard semantics remain W/S=forward/back and A/D=left/right.
+    forward: Object.freeze([1, 0, 0]),
+    right: Object.freeze([0, 0, 1])
+  });
 }
 
 function normalizeCameraConfig(source = {}) {
@@ -524,22 +612,91 @@ function normalizeCameraConfig(source = {}) {
     collisionMinimumDistance: nonNegative(
       value.collisionMinimumDistance ?? DEFAULT_CAMERA.collisionMinimumDistance,
       "camera.collisionMinimumDistance"
+    ),
+    collisionCharacterPadding: nonNegative(
+      value.collisionCharacterPadding ?? DEFAULT_CAMERA.collisionCharacterPadding,
+      "camera.collisionCharacterPadding"
+    ),
+    minimumBaseClearance: nonNegative(
+      value.minimumBaseClearance ?? DEFAULT_CAMERA.minimumBaseClearance,
+      "camera.minimumBaseClearance"
     )
   });
 }
 
-function cameraCollisionPosition(target, desired, colliders, camera) {
+
+function desiredCameraPosition(target, yaw, pitch, camera, physics = null) {
+  const bodySupport = physics
+    ? characterBodyHorizontalSupport(
+        physics,
+        -Math.sin(yaw),
+        Math.cos(yaw)
+      )
+    : 0;
+  // `distance` is clearance from the physical body, not from its center.
+  // Scaling the authoring body therefore moves the nominal camera rig too.
+  const orbitDistance = camera.distance + bodySupport;
+  const horizontal = orbitDistance * Math.cos(pitch);
+  const desired = [
+    target[0] - Math.sin(yaw) * horizontal,
+    target[1] + camera.height + Math.sin(pitch) * orbitDistance,
+    target[2] + Math.cos(yaw) * horizontal
+  ];
+  if (physics) {
+    const body = characterWorldBounds(physics);
+    desired[1] = Math.max(
+      desired[1],
+      body.min[1] + camera.minimumBaseClearance
+    );
+  }
+  return desired;
+}
+
+function cameraCollisionPosition(target, desired, colliders, camera, physics = null) {
   const delta = desired.map((value, axis) => value - target[axis]);
   const requestedDistance = Math.hypot(...delta);
   if (requestedDistance <= 1e-9) return [...desired];
   const hit = castCollisionSegment(target, desired, colliders);
-  if (!hit) return [...desired];
-  const safeDistance = Math.max(
+  const wallDistance = hit
+    ? Math.max(0, hit.distance - camera.collisionProbeRadius)
+    : requestedDistance;
+  const characterClearance = physics
+    ? cameraCharacterClearance(
+        physics,
+        target,
+        delta,
+        camera.collisionCharacterPadding + camera.collisionProbeRadius
+      )
+    : 0;
+  const preferredMinimum = Math.max(
     camera.collisionMinimumDistance,
-    hit.distance - camera.collisionProbeRadius
+    characterClearance
   );
+  // If a wall leaves enough room, never enter the physical character volume.
+  // If there is genuinely no gap, the wall remains authoritative rather than
+  // pushing the camera through it. Enlarging the proxy enlarges this clearance.
+  const safeDistance = wallDistance >= preferredMinimum
+    ? Math.max(preferredMinimum, Math.min(requestedDistance, wallDistance))
+    : wallDistance;
   const scale = Math.min(1, safeDistance / requestedDistance);
   return target.map((value, axis) => value + delta[axis] * scale);
+}
+
+function cameraCharacterClearance(physics, _target, delta, padding = 0) {
+  const length = Math.hypot(...delta);
+  const horizontalLength = Math.hypot(delta[0], delta[2]);
+  if (length <= 1e-9 || horizontalLength <= 1e-9) return 0;
+  const support = characterBodyHorizontalSupport(
+    physics,
+    delta[0],
+    delta[2]
+  );
+  const horizontalFraction = horizontalLength / length;
+  const bodyExitDistance = support / Math.max(horizontalFraction, 1e-6);
+  return Math.max(
+    0,
+    bodyExitDistance + Math.max(0, Number(padding) || 0)
+  );
 }
 
 function normalizeInputPatch(patch, previous) {
@@ -566,11 +723,14 @@ function initialInput() {
 }
 
 function characterCameraTarget(physics, camera) {
+  const body = characterWorldBounds(physics);
+  const center = body.min.map(
+    (value, axis) => (value + body.max[axis]) * 0.5
+  );
   return [
-    physics.position[0] + physics.centerOffset[0],
-    physics.position[1] + physics.centerOffset[1] +
-      physics.halfExtents[1] * camera.targetHeightRatio,
-    physics.position[2] + physics.centerOffset[2]
+    center[0],
+    center[1] + (body.max[1] - body.min[1]) * 0.5 * camera.targetHeightRatio,
+    center[2]
   ];
 }
 
@@ -578,6 +738,18 @@ function yawFromCamera(position, target) {
   const x = target[0] - position[0];
   const z = target[2] - position[2];
   return Math.hypot(x, z) <= 1e-9 ? 0 : Math.atan2(x, -z);
+}
+
+function characterMotionSnapshot(physics, input) {
+  return Object.freeze({
+    grounded: Boolean(physics?.grounded),
+    horizontalSpeed: Math.hypot(
+      Number(physics?.velocity?.[0]) || 0,
+      Number(physics?.velocity?.[2]) || 0
+    ),
+    verticalSpeed: Number(physics?.velocity?.[1]) || 0,
+    sprint: Boolean(input?.sprint)
+  });
 }
 
 function initialStatistics() {

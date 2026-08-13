@@ -2,7 +2,6 @@ import {
   PwaInstallController,
   formatPwaBuildLabel,
   formatBuildLabel,
-  loadBuildInfo,
   loadUiConfiguration,
   loadWebApplicationDefinition,
   loadWebRuntimeExtensions,
@@ -10,13 +9,13 @@ import {
   registerPwa,
   resolvePwaLocations,
   webApplicationName
-} from "../../packages/platform-web/src/index.js?build=20260812-0054i";
+} from "../../packages/platform-web/src/index.js?build=20260813-0054ml";
 
 const $ = id => document.getElementById(id);
 const pwaInstallController = new PwaInstallController({ windowRef: window });
 
 try {
-  const buildInfo = await loadBuildInfo();
+  const buildInfo = await loadPublishedBuildInfo();
   exposeBuildInfo(buildInfo);
   const pwaRegistration = registerPwa(buildInfo, {
     applicationUrl: import.meta.url,
@@ -37,6 +36,20 @@ try {
   }
 } catch (error) {
   showFatalError(error);
+}
+
+
+async function loadPublishedBuildInfo() {
+  const url = new URL("./build-info.json", import.meta.url);
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Falha ao carregar build-info.json: ${response.status}`);
+  }
+  const buildInfo = await response.json();
+  if (!buildInfo?.build) {
+    throw new Error("build-info.json não informa build publicado.");
+  }
+  return Object.freeze(buildInfo);
 }
 
 async function startRuntime(buildInfo, pwaInstallController) {

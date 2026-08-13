@@ -2,12 +2,13 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime,
+  characterWorldBounds,
   createCharacterPhysicsState,
   castCollisionSegment,
   intersectsCharacterBounds,
   normalizeCollisionWorld,
   stepCharacterPhysics
-} from "../../game-runtime/src/index.js?build=20260812-0054i";
+} from "../../game-runtime/src/index.js?build=20260813-0054ml";
 
 const CHARACTER_BOUNDS = Object.freeze({
   min: Object.freeze([-0.5, 0.5, -0.5]),
@@ -270,6 +271,48 @@ export function createGameRuntimeTests() {
       assertEqual(created[1].volume, 0.8);
     },
 
+    "yaw segue o frame canônico +X/+Z"() {
+      const forward = characterState([0, 0.5, 0]);
+      const backward = characterState([0, 0.5, 0]);
+      const right = characterState([0, 0.5, 0]);
+      const left = characterState([0, 0.5, 0]);
+      const world = normalizeCollisionWorld([PLATFORM]);
+
+      simulate(forward, world, 60, { worldX: 1, worldZ: 0 });
+      simulate(backward, world, 60, { worldX: -1, worldZ: 0 });
+      simulate(right, world, 60, { worldX: 0, worldZ: 1 });
+      simulate(left, world, 60, { worldX: 0, worldZ: -1 });
+
+      assertEqual(forward.position[0] > 0.5, true);
+      assertEqual(backward.position[0] < -0.5, true);
+      assertEqual(right.position[2] > 0.5, true);
+      assertEqual(left.position[2] < -0.5, true);
+
+      assertNear(forward.yaw, 0, 0.03);
+      assertNear(Math.abs(backward.yaw), Math.PI, 0.03);
+      assertNear(right.yaw, -Math.PI / 2, 0.03);
+      assertNear(left.yaw, Math.PI / 2, 0.03);
+    },
+
+    "body horizontal acompanha o yaw sem perder comprimento físico"() {
+      const state = createCharacterPhysicsState({
+        pivot: [0, 0.5, 0],
+        bodyFrame: {
+          centerOffset: [0, 0, 0],
+          halfExtents: [2, 0.5, 0.5],
+          baseYaw: 0
+        }
+      });
+      let bounds = characterWorldBounds(state);
+      assertNear(bounds.max[0] - bounds.min[0], 4, 1e-9);
+      assertNear(bounds.max[2] - bounds.min[2], 1, 1e-9);
+
+      state.yaw = -Math.PI / 2;
+      bounds = characterWorldBounds(state);
+      assertNear(bounds.max[0] - bounds.min[0], 1, 1e-9);
+      assertNear(bounds.max[2] - bounds.min[2], 4, 1e-9);
+    },
+
     "runtime aceita frente e strafe simultâneos e ainda pula"() {
       const fixture = runtimeFixture();
       const runtime = new GameRuntime({
@@ -288,6 +331,91 @@ export function createGameRuntimeTests() {
       const jumped = runtime.status();
       assertEqual(jumped.velocity[1] > 0, true);
       assertEqual(jumped.grounded, false);
+      runtime.dispose();
+    },
+
+    "frame mundial preserva W/S frente e A/D lateral"() {
+      const forwardFixture = runtimeFixture();
+      const strafeFixture = runtimeFixture();
+      const forwardRuntime = new GameRuntime({
+        surface: forwardFixture.surface,
+        cameraController: forwardFixture.camera
+      });
+      const strafeRuntime = new GameRuntime({
+        surface: strafeFixture.surface,
+        cameraController: strafeFixture.camera
+      });
+      forwardRuntime.start({
+        characterId: "character",
+        controls: { movementReference: "world" }
+      });
+      strafeRuntime.start({
+        characterId: "character",
+        controls: { movementReference: "world" }
+      });
+      forwardRuntime.setInput({ forward: 1, strafe: 0 });
+      strafeRuntime.setInput({ forward: 0, strafe: 1 });
+      for (let index = 0; index < 30; index += 1) {
+        forwardRuntime.advance({ deltaSeconds: 1 / 60 });
+        strafeRuntime.advance({ deltaSeconds: 1 / 60 });
+      }
+      const forward = forwardRuntime.status().position;
+      const strafe = strafeRuntime.status().position;
+      assertEqual(forward[0] > 0.2, true);
+      assertNear(forward[2], 0, 0.08);
+      assertEqual(strafe[2] > 0.2, true);
+      assertNear(strafe[0], 0, 0.08);
+      forwardRuntime.dispose();
+      strafeRuntime.dispose();
+    },
+
+    "movimento padrão acompanha a câmera livre"() {
+      const left = runtimeFixture({
+        cameraSnapshot: {
+          position: [6, 4, 0], target: [0, 1, 0], up: [0, 1, 0],
+          projection: { mode: "perspective" }
+        }
+      });
+      const right = runtimeFixture({
+        cameraSnapshot: {
+          position: [-6, 4, 0], target: [0, 1, 0], up: [0, 1, 0],
+          projection: { mode: "perspective" }
+        }
+      });
+      const first = new GameRuntime({ surface: left.surface, cameraController: left.camera });
+      const second = new GameRuntime({ surface: right.surface, cameraController: right.camera });
+      first.start({ characterId: "character" });
+      second.start({ characterId: "character" });
+      first.setInput({ forward: 1 });
+      second.setInput({ forward: 1 });
+      for (let index = 0; index < 30; index += 1) {
+        first.advance({ deltaSeconds: 1 / 60 });
+        second.advance({ deltaSeconds: 1 / 60 });
+      }
+      const firstPosition = first.status().position;
+      const secondPosition = second.status().position;
+      assertEqual(first.status().controls.movementReference, "camera");
+      assertEqual(second.status().controls.movementReference, "camera");
+      // Câmera em +X olha para -X; câmera em -X olha para +X.
+      assertEqual(firstPosition[0] < -0.2, true);
+      assertEqual(secondPosition[0] > 0.2, true);
+      first.dispose();
+      second.dispose();
+    },
+
+    "referência mundial permanece configurável"() {
+      const fixture = runtimeFixture();
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({
+        characterId: "character",
+        controls: { movementReference: "world" }
+      });
+      assertEqual(runtime.status().controls.movementReference, "world");
+      runtime.configure({ controls: { movementReference: "camera" } });
+      assertEqual(runtime.status().controls.movementReference, "camera");
       runtime.dispose();
     },
 
@@ -341,6 +469,139 @@ export function createGameRuntimeTests() {
       assertEqual(Boolean(lookAt), true);
       assertEqual(lookAt.args.position[2] < 2, true);
       assertEqual(lookAt.args.position[2] > 0, true);
+      runtime.dispose();
+    },
+
+    "câmera mantém estado livre separado e não entra no corpo durante lag"() {
+      const fixture = runtimeFixture({
+        cameraSnapshot: {
+          position: [0, 1.2, 0.08],
+          target: [0, 1, 0],
+          up: [0, 1, 0],
+          projection: { mode: "perspective" }
+        }
+      });
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({
+        characterId: "character",
+        camera: {
+          distance: 6,
+          height: 1,
+          pitch: 0,
+          lag: 4,
+          collisionEnabled: true,
+          collisionProbeRadius: 0.18,
+          collisionCharacterPadding: 0.08
+        }
+      });
+      for (let index = 0; index < 20; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+      }
+      const lookAt = fixture.cameraCommands.filter(entry =>
+        entry.command === "viewer.camera.look-at"
+      ).at(-1);
+      const dx = lookAt.args.position[0] - lookAt.args.target[0];
+      const dy = lookAt.args.position[1] - lookAt.args.target[1];
+      const dz = lookAt.args.position[2] - lookAt.args.target[2];
+      assertEqual(Math.hypot(dx, dy, dz) > 0.5, true);
+      runtime.dispose();
+    },
+
+    "câmera inicia diretamente no rig configurado e não na posição editorial"() {
+      const fixture = runtimeFixture({
+        cameraSnapshot: {
+          position: [0, 1.2, 0.3],
+          target: [0, 1, 0],
+          up: [0, 1, 0],
+          projection: { mode: "perspective" }
+        }
+      });
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({
+        characterId: "character",
+        camera: { distance: 6, height: 2.2, pitch: -0.12 }
+      });
+      const lookAt = fixture.cameraCommands.find(entry =>
+        entry.command === "viewer.camera.look-at"
+      );
+      const dx = lookAt.args.position[0] - lookAt.args.target[0];
+      const dy = lookAt.args.position[1] - lookAt.args.target[1];
+      const dz = lookAt.args.position[2] - lookAt.args.target[2];
+      assertEqual(Math.hypot(dx, dy, dz) > 4.5, true);
+      runtime.dispose();
+    },
+
+    "distância nominal da câmera cresce com o comprimento físico do body"() {
+      const short = runtimeFixture({
+        colliders: [],
+        characterBodyFrame: {
+          centerOffset: [0, 0, 0],
+          halfExtents: [0.5, 0.5, 0.5],
+          baseYaw: 0
+        },
+        cameraSnapshot: {
+          position: [6, 2, 0], target: [0, 0.5, 0], up: [0, 1, 0],
+          projection: { mode: "perspective" }
+        }
+      });
+      const long = runtimeFixture({
+        colliders: [],
+        characterBodyFrame: {
+          centerOffset: [0, 0, 0],
+          halfExtents: [2, 0.5, 0.5],
+          baseYaw: 0
+        },
+        cameraSnapshot: {
+          position: [6, 2, 0], target: [0, 0.5, 0], up: [0, 1, 0],
+          projection: { mode: "perspective" }
+        }
+      });
+      const first = new GameRuntime({ surface: short.surface, cameraController: short.camera });
+      const second = new GameRuntime({ surface: long.surface, cameraController: long.camera });
+      first.start({ characterId: "character", camera: { distance: 4, height: 1, pitch: 0 } });
+      second.start({ characterId: "character", camera: { distance: 4, height: 1, pitch: 0 } });
+      const shortLook = short.cameraCommands.find(entry =>
+        entry.command === "viewer.camera.look-at"
+      );
+      const longLook = long.cameraCommands.find(entry =>
+        entry.command === "viewer.camera.look-at"
+      );
+      const shortDistance = Math.hypot(
+        shortLook.args.position[0] - shortLook.args.target[0],
+        shortLook.args.position[2] - shortLook.args.target[2]
+      );
+      const longDistance = Math.hypot(
+        longLook.args.position[0] - longLook.args.target[0],
+        longLook.args.position[2] - longLook.args.target[2]
+      );
+      assertEqual(longDistance > shortDistance + 1.4, true);
+      first.dispose();
+      second.dispose();
+    },
+
+    "câmera não orbita abaixo da base física do personagem"() {
+      const fixture = runtimeFixture();
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({
+        characterId: "character",
+        camera: { minimumPitch: -1.2, pitch: -1.1, minimumBaseClearance: 0.25 }
+      });
+      runtime.setInput({ lookPitchDelta: -1 });
+      runtime.advance({ deltaSeconds: 1 / 60 });
+      const lookAt = fixture.cameraCommands.filter(entry =>
+        entry.command === "viewer.camera.look-at"
+      ).at(-1);
+      // O fixture usa bounds de personagem com base em y=0.
+      assertEqual(lookAt.args.position[1] >= 0.24, true);
       runtime.dispose();
     },
 
@@ -414,6 +675,7 @@ function simulate(state, world, frames, input = {}) {
 
 function runtimeFixture({
   colliders = [PLATFORM],
+  characterBodyFrame = null,
   cameraSnapshot = {
     position: [4, 4, 7],
     target: [0, 1, 0],
@@ -453,7 +715,11 @@ function runtimeFixture({
     releaseFrameDemand(token) { released.push(token); },
     readGameCollisionWorld() {
       return {
-        character: { id: "character", bounds: CHARACTER_BOUNDS },
+        character: {
+          id: "character",
+          bounds: CHARACTER_BOUNDS,
+          bodyFrame: characterBodyFrame
+        },
         colliders
       };
     },

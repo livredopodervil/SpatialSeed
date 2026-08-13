@@ -2,13 +2,44 @@
   "schemaVersion": 1,
   "architecture": "main-proposal-v1",
   "modules": {
-    "kernel": { "dependsOn": [] },
-    "document": { "dependsOn": ["kernel"] },
-    "procedural": { "dependsOn": ["kernel", "document"] },
-    "authoring": { "dependsOn": ["kernel", "document"] },
-    "viewer": { "dependsOn": ["kernel", "document"] },
-    "renderer-three": { "dependsOn": ["kernel", "document", "viewer"] },
-    "interface": { "dependsOn": ["kernel"] },
+    "kernel": {
+      "dependsOn": []
+    },
+    "document": {
+      "dependsOn": [
+        "kernel"
+      ]
+    },
+    "procedural": {
+      "dependsOn": [
+        "kernel",
+        "document"
+      ]
+    },
+    "authoring": {
+      "dependsOn": [
+        "kernel",
+        "document"
+      ]
+    },
+    "viewer": {
+      "dependsOn": [
+        "kernel",
+        "document"
+      ]
+    },
+    "renderer-three": {
+      "dependsOn": [
+        "kernel",
+        "document",
+        "viewer"
+      ]
+    },
+    "interface": {
+      "dependsOn": [
+        "kernel"
+      ]
+    },
     "platform-web": {
       "dependsOn": [
         "kernel",
@@ -341,6 +372,22 @@
     "packages/mesh-interaction": {
       "target": "authoring",
       "disposition": "retain-as-replaceable-pointer-to-mesh-path-adapter"
+    },
+    "packages/mesh-exchange": {
+      "target": "authoring",
+      "disposition": "preserve-format-neutral-mesh-exchange-contracts"
+    },
+    "packages/mesh-exchange-three": {
+      "target": "renderer-three",
+      "disposition": "retain-as-replaceable-mesh-triangulation-adapter"
+    },
+    "packages/character-animation": {
+      "target": "viewer",
+      "disposition": "preserve-replaceable-character-animation-contracts"
+    },
+    "packages/character-animation-three": {
+      "target": "renderer-three",
+      "disposition": "retain-as-replaceable-three-animation-backend"
     }
   },
   "historicalSurfaces": {
@@ -359,7 +406,9 @@
       "disposition": "archive-with-its-cataloged-prototype"
     },
     "independent-experiments": {
-      "paths": ["apps/experiments"],
+      "paths": [
+        "apps/experiments"
+      ],
       "disposition": "retain-outside-the-maintained-runtime"
     }
   }

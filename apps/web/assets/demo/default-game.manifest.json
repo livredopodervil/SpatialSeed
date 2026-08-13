@@ -1,0 +1,11 @@
+{
+  "version": "spatialseed-default-demo-v1",
+  "project": "default-game.spatialseed",
+  "launch": {
+    "mode": "game",
+    "characterId": "45dac924-55dc-48f3-8a65-2df596912792",
+    "controls": {
+      "movementReference": "camera"
+    }
+  }
+}

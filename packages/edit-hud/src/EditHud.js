@@ -496,7 +496,7 @@ export class EditHud {
     );
     this.#element("edit-hud-edit-plane").addEventListener("change", event => {
       this.#execute(
-        event.target.checked ? "edit.plane.set" : "edit.plane.clear",
+        event.target.checked ? "authoring.plane.set" : "authoring.plane.clear",
         event.target.checked ? { source: this.#quickPlaneSource() } : {}
       );
     });
@@ -2036,16 +2036,16 @@ const HUD_HINT_DETAILS = Object.freeze({
   "edit-hud-appearance-material": ["Material", "Escolhe material automático, não iluminado, padrão ou físico sem reconstruir a geometria."],
   "edit-hud-appearance-opacity": ["Opacidade", "Altera a opacidade em uma única entrada de histórico ao soltar o controle."],
   "edit-hud-pivot-edit": ["Editar pivô", "Ativa o manipulador do pivô sem deslocar a geometria do objeto selecionado."],
-  "edit-hud-edit-plane": ["Plano de edição", "Captura um referencial independente para transformações e edição de componentes."],
-  "edit-hud-drawing-plane": ["Plano de desenho", "Captura o plano onde pontos e formas 2D serão criados; não altera a câmera nem o plano de edição."],
-  "edit-hud-drawing-target-source": ["Fonte do alvo", "Escolhe vista, plano mundial, objeto, face, três pontos ou plano de edição."],
-  "edit-hud-drawing-target-set": ["Definir alvo", "Cria e trava o plano de desenho usando a fonte escolhida."],
+  "edit-hud-edit-plane": ["Plano ativo", "Alias legado: captura o único plano de autoria."],
+  "edit-hud-drawing-plane": ["Plano ativo", "Alias legado: captura o único plano de autoria."],
+  "edit-hud-drawing-target-source": ["Fonte do plano ativo", "Escolhe vista, plano mundial, objeto, face, três pontos ou superfície."],
+  "edit-hud-drawing-target-set": ["Definir plano ativo", "Cria e trava o único plano usado por criação, desenho, caminhos e edição planar."],
   "edit-hud-drawing-target-helper": ["Mostrar helper", "Mostra ou oculta o plano transparente, grade e normal."],
   "edit-hud-drawing-target-edit": ["Editar helper", "Ativa o gizmo local do plano sem selecionar um objeto da cena."],
   "edit-hud-drawing-target-translate": ["Mover plano", "Configura o gizmo do helper para translação."],
   "edit-hud-drawing-target-rotate": ["Girar plano", "Configura o gizmo do helper para rotação local."],
   "edit-hud-drawing-target-offset": ["Offset do plano", "Desloca o plano ao longo de sua normal sem alterar a orientação."],
-  "edit-hud-drawing-target-clear": ["Liberar alvo", "Remove o plano travado e retorna o desenho ao plano implícito do viewer."],
+  "edit-hud-drawing-target-clear": ["Liberar plano ativo", "Remove o plano de autoria travado e retorna ao plano do viewer."],
   "edit-hud-planar-finish": ["Concluir polilinha", "Publica todos os pontos da polilinha como uma única geometria e uma única etapa de undo."],
   "edit-hud-planar-back": ["Remover último ponto", "Retira somente o último ponto ainda não publicado da polilinha 2D."],
   "edit-hud-planar-edit": ["Editar 2D", "Entra na edição de vértices do objeto selecionado usando o plano de edição quando definido."],

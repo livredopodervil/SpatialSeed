@@ -4,10 +4,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 checks = {
     "placement-plane": ("packages/object-placement/src/ObjectPlacementController.js", [
-        "getDrawingPlane", "getEditPlane", "placementPlane"
+        "resolveActiveAuthoringPlane", "placementPlane"
     ]),
     "mesh-path-plane": ("packages/mesh-interaction/src/MeshPathGestureController.js", [
-        "getDrawingPlane", "getEditPlane", "interactionFrame"
+        "resolveActiveAuthoringPlane", "interactionFrame"
     ]),
     "hud-extrude-options": ("packages/edit-hud/src/EditHud.js", [
         "edit-hud-extrude-options", 'this.#focusFeature("mesh.extrude")'

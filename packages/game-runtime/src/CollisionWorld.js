@@ -1,6 +1,6 @@
 import {
   invertAffineMatrix
-} from "../../math-affine/src/index.js?build=20260812-0054i";
+} from "../../math-affine/src/index.js?build=20260812-0054l";
 
 const EPSILON = 1e-9;
 const MIN_BROAD_HALF_THICKNESS = 1e-6;

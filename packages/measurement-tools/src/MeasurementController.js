@@ -3,6 +3,9 @@ import {
   normalizePlanarFrame
 } from "../../edit-context/src/PlanarFrame.js?build=20260730-0040e";
 import {
+  resolveActiveAuthoringPlane
+} from "../../edit-context/src/index.js?build=20260812-0054l";
+import {
   constrainPlanarPoint
 } from "../../planar-authoring/src/PlanarConstraints.js?build=20260730-0040e";
 
@@ -40,10 +43,7 @@ export class MeasurementController {
       throw new RangeError(`Ferramenta de medição desconhecida: ${mode}.`);
     }
     const resolvedFrame = normalizePlanarFrame(
-      frame ??
-      this.renderer.getDrawingPlane?.() ??
-      this.renderer.getEditPlane?.() ??
-      this.renderer.readViewerReferenceFrame()
+      frame ?? resolveActiveAuthoringPlane(this.renderer).frame
     );
     this.#active = {
       mode: normalizedMode,

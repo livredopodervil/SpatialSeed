@@ -183,9 +183,9 @@ export class MeshEditPanel {
     this.#element("edit-plane-lock").dataset.active =
       context.planeLock ? "true" : "false";
     this.#element("edit-work-plane-lock").dataset.active =
-      context.editPlane ? "true" : "false";
+      context.authoringPlane ? "true" : "false";
     this.#element("drawing-plane-lock").dataset.active =
-      context.drawingPlane ? "true" : "false";
+      context.authoringPlane ? "true" : "false";
     this.#element("edit-point-lock").dataset.active =
       context.pointLock ? "true" : "false";
 
@@ -319,6 +319,8 @@ export class MeshEditPanel {
     const spacing = Number.isFinite(sketch.resolvedSpacing)
       ? `; distância: ${Number(sketch.resolvedSpacing).toFixed(3)}`
       : "";
+    const plane = sketch.resolvedPlaneSource ?? sketch.frame?.source ?? null;
+    const planeText = plane ? `; plano efetivo: ${drawingPlaneSourceLabel(plane)}` : "";
     this.#text(
       "path-sketch-status",
       sketch.active
@@ -326,7 +328,7 @@ export class MeshEditPanel {
             sketch.previewCount ?? 0
           }${sketch.previewTruncated ? " (limite visual)" : ""}${
             source
-          }${spacing}; solte para confirmar uma única ação. Esc cancela.`
+          }${spacing}${planeText}; solte para confirmar uma única ação. Esc cancela.`
         : sketch.error
           ? sketch.error
           : "Desenho inativo."
@@ -1286,8 +1288,8 @@ export class MeshEditPanel {
     this.#element("edit-work-plane-lock").addEventListener("click", () => {
       const context = this.query("edit.context.status");
       this.#execute(
-        context.editPlane ? "edit.plane.clear" : "edit.plane.set",
-        context.editPlane
+        context.authoringPlane ? "authoring.plane.clear" : "authoring.plane.set",
+        context.authoringPlane
           ? {}
           : this.#planeArguments("edit-work-plane-source")
       );
@@ -1295,10 +1297,8 @@ export class MeshEditPanel {
     this.#element("drawing-plane-lock").addEventListener("click", () => {
       const context = this.query("edit.context.status");
       this.#execute(
-        context.drawingPlane
-          ? "drawing.plane.clear"
-          : "drawing.plane.set",
-        context.drawingPlane
+        context.authoringPlane ? "authoring.plane.clear" : "authoring.plane.set",
+        context.authoringPlane
           ? {}
           : this.#planeArguments("drawing-plane-source")
       );
@@ -2080,6 +2080,26 @@ export class MeshEditPanel {
   }
 
   #text(id, value) { this.#element(id).textContent = value; }
+}
+
+function drawingPlaneSourceLabel(source) {
+  const key = typeof source === "string"
+    ? source
+    : source?.type ?? "";
+  return ({
+    "edit-plane": "plano de edição",
+    edit: "plano de edição",
+    "drawing-plane": "plano de desenho",
+    drawing: "plano de desenho",
+    "navigation-plane": "plano/trava de navegação",
+    viewer: "viewer",
+    "world-xy": "mundo XY",
+    "world-xz": "mundo XZ",
+    "world-yz": "mundo YZ",
+    custom: "personalizado",
+    object: "objeto",
+    face: "face"
+  })[key] ?? String(key || "ativo");
 }
 
 function rememberedToolControls() {

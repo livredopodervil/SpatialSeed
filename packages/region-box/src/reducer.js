@@ -1188,7 +1188,8 @@ export function boxRegionReducer(state, command, context = {}) {
             object: nextRoot,
             previousObject: rootObject,
             affectedOccurrenceIds: Object.freeze([String(command.id)]),
-            occurrenceChanges: Object.freeze([{ occurrenceId: String(command.id), type: "sync" }])
+            occurrenceChanges: Object.freeze([{ occurrenceId: String(command.id), type: "sync" }]),
+            ...(command.source ? { source: String(command.source) } : {})
           }]
         };
       }
@@ -1199,7 +1200,14 @@ export function boxRegionReducer(state, command, context = {}) {
         context
       );
       if (objects === state.objects) return { state, changes: [] };
-      return { state: Object.freeze({ ...state, objects }), changes: [{ type: "object-updated", objectId: command.id }] };
+      return {
+        state: Object.freeze({ ...state, objects }),
+        changes: [{
+          type: "object-updated",
+          objectId: command.id,
+          ...(command.source ? { source: String(command.source) } : {})
+        }]
+      };
     }
 
     case "selection.properties.set": {
