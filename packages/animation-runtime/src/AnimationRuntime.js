@@ -8,6 +8,13 @@ import {
 
 export const ANIMATION_RUNTIME_VERSION = "animation-runtime-v3-event-driven";
 
+/**
+ * Legacy fixed-step animation runtime retained only for historical regression
+ * coverage. Production authoring uses TemporalAnimationRuntime.
+ *
+ * @deprecated Use TemporalAnimationRuntime for production authoring and new
+ * integrations.
+ */
 export class AnimationRuntime {
   constructor({
     surface,
