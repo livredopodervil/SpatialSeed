@@ -17,7 +17,7 @@ def require(relative, markers):
     return text
 
 build = json.loads((ROOT / "apps/web/build-info.json").read_text(encoding="utf-8"))
-if build.get("build") not in {"20260812-0054i", "20260812-0054j", "20260812-0054k", "20260812-0054l", "20260812-0054m", "20260812-0054ma", "20260812-0054mc", "20260812-0054md", "20260812-0054mh", "20260812-0054mi", "20260813-0054mj", "20260813-0054mk", "20260813-0054ml"}:
+if build.get("build") not in {"20260812-0054i", "20260812-0054j", "20260812-0054k", "20260812-0054l", "20260812-0054m", "20260812-0054ma", "20260812-0054mc", "20260812-0054md", "20260812-0054mh", "20260812-0054mi", "20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm"}:
     errors.append(f"build incorreto: {build.get('build')!r}")
 
 collision = require("packages/game-runtime/src/CollisionWorld.js", (

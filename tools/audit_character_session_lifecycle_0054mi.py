@@ -14,10 +14,10 @@ def req(rel,tokens):
  return s
 b=json.loads(src("apps/web/build-info.json") or "{}")
 current=b.get("build")
-if current not in {"20260812-0054mi", "20260813-0054mj", "20260813-0054mk", "20260813-0054ml"}: errors.append(f"build incorreto: {current!r}")
+if current not in {"20260812-0054mi", "20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm"}: errors.append(f"build incorreto: {current!r}")
 req("apps/web/bootstrap/createWebRuntime.js", ("retainOnlyCharacterVisual","unloadCharacterVisual","await retainOnlyCharacterVisual(selectedId)","if (activeId) await unloadCharacterVisual(activeId)"))
 req("apps/web/bootstrap/bindWebInterface.js", ('event.pointerType === "mouse"','event.button !== 0'))
-if current == "20260813-0054ml":
+if current in {"20260813-0054ml", "20260817-0054mm"}:
  req("packages/character-animation-three/src/ThreeCharacterAnimationBackend.js", ('previewInEditor: false','fit: "none"'))
  req("packages/renderer-three/src/ThreeRegionRenderer.js", ('discardedReason = "game-input-owned"','this.scene.add(poseRoot)'))
 else:

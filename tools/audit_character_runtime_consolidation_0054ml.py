@@ -20,9 +20,14 @@ def require(rel, tokens):
     return text
 
 build = json.loads(src("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260813-0054ml":
-    errors.append(f"build incorreto: {build.get('build')!r}")
-if build.get("channel") != "feature/0054ml-character-runtime-consolidation":
+expected_channels = {
+    "20260813-0054ml": "feature/0054ml-character-runtime-consolidation",
+    "20260817-0054mm": "release/0054mm-documentation-demo",
+}
+current_build = build.get("build")
+if current_build not in expected_channels:
+    errors.append(f"build incorreto: {current_build!r}")
+elif build.get("channel") != expected_channels[current_build]:
     errors.append(f"canal incorreto: {build.get('channel')!r}")
 
 body = require("packages/game-runtime/src/CharacterBodyFrame.js", (

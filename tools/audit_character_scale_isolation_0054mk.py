@@ -9,11 +9,11 @@ def src(rel):
  return p.read_text(encoding="utf-8")
 b=json.loads(src("apps/web/build-info.json") or "{}")
 current=b.get("build")
-if current not in {"20260813-0054mk", "20260813-0054ml"}: errors.append(f"build incorreto: {current!r}")
+if current not in {"20260813-0054mk", "20260813-0054ml", "20260817-0054mm"}: errors.append(f"build incorreto: {current!r}")
 backend=src("packages/character-animation-three/src/ThreeCharacterAnimationBackend.js")
 renderer=src("packages/renderer-three/src/ThreeRegionRenderer.js")
 tests=src("packages/runtime-test-plugin/src/CharacterAnimationTests.js")
-if current == "20260813-0054ml":
+if current in {"20260813-0054ml", "20260817-0054mm"}:
  for forbidden in ("scaleIsolationRoot", "parentEffectiveScale", "isolationScale"):
   if forbidden in backend: errors.append(f"consolidação ainda contém {forbidden}")
  for token in ("SpatialSeedRuntimePose", "this.scene.add(poseRoot)", "poseRoot.scale.set(1, 1, 1)"):
