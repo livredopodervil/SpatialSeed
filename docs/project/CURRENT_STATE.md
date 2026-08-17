@@ -1,38 +1,74 @@
-> **OBSOLETO — SNAPSHOT HISTÓRICO.** Este arquivo descreve o marco `0019g-c2`
-> e foi superado pelos marcos `0022` a `0026`. Não o use para determinar o
-> estado atual. Consulte o [`README.md`](../../README.md), o manifesto
-> [`apps/web/build-info.json`](../../apps/web/build-info.json) e execute
-> `runtime test all` no perfil `?application=diagnostics` do build efetivamente
-> carregado. O conteúdo abaixo foi
-> preservado sem alterações como registro histórico.
+# Estado atual da documentação e do produto
 
-# Estado atual confirmado
+> Documento vivo. Não copie daqui um rótulo para substituir
+> `apps/web/build-info.json`. O manifesto e o status PWA da aplicação são as
+> fontes da versão realmente publicada e carregada.
 
-Build funcional: `20260713-0019g-c2`.
+## Baseline desta revisão
 
-## Confirmado
+A revisão documental de 17 de agosto de 2026 corresponde ao build
+`20260817-0054mm`, derivado do commit base `27961f1`. O usuário confirmou 38 de
+38 gates locais depois da correção do bootstrap do demo. A publicação Git/PWA
+deve preservar essa mesma identidade de build.
 
-- seleção única e múltipla;
-- pivô e gizmo;
-- duplicação em lote;
-- duplicação afim cumulativa;
-- `repeat` por matriz delta;
-- geometria, materiais e texturas compartilhados;
-- renderer incremental;
-- `THREE.InstancedMesh`;
-- picking por `instanceId`;
-- highlight por `instanceColor`;
-- limites espaciais atualizados apenas nos lotes alterados.
+## Implementado e verificável
 
-## Testes
+- editor espacial com seleção direta e gestos de área;
+- transformações, pivôs, snap, duplicação, repeat e grupos aninhados;
+- catálogo geométrico, aparência, instancing e projeção incremental;
+- plano ativo, ferramentas 2D, caminhos, tubos, sweep e distribuição;
+- edição isolada de malha e operadores topológicos incrementais;
+- importação e exportação STL;
+- projetos `.spatialseed`, recuperação local e PWA;
+- console, linguagem afim, Worker + SES, procedimentos e planos atômicos;
+- runtime temporal e animação efêmera;
+- múltiplos viewers locais e objetos câmera;
+- modo jogo local, personagem GLB, colisão, câmera, áudio e eventos;
+- perfil diagnóstico, gates, testes do runtime e benchmarks.
 
-`49 aprovados; 0 falhas`.
+## Contratos em consolidação
 
-## Pendências
+- fachada unificada de autoria sobre adapters legados;
+- extrusão por caminho e álgebra geral de operadores de malha;
+- estabilidade de seleção/preview em hierarquias e ocorrências complexas;
+- colisão triangular e aceleração espacial;
+- proxy físico, visual GLB e mapeamento de clips;
+- runtime de eventos/procedimentos para jogos;
+- atualização PWA durante desenvolvimento em múltiplos checkouts.
 
-- expressões no console;
-- vírgula decimal;
-- tolerância de toque;
-- grupos hierárquicos;
-- distribuição pública/offline;
-- navegador e editor de arquivos.
+## Arquitetura pretendida
+
+- modificadores vinculados e regeneração procedural incremental;
+- booleanas robustas e reparo topológico geral;
+- física de corpos dinâmicos e contatos completos;
+- colaboração remota com envelope causal e conflitos geométricos explícitos;
+- backend adicional de isolamento para plugins hostis;
+- gramática de forma especializada sobre operadores maduros.
+
+## Estado documental
+
+O acervo anterior foi separado em:
+
+- `docs/MANUAL_DO_USUARIO.md` - tarefas;
+- `docs/REFERENCIA_TECNICA.md` - contratos;
+- `docs/book/` - livro e PDF consolidados;
+- `docs/project/` - decisões e planejamento;
+- documentos numerados de marco - histórico técnico.
+
+O antigo snapshot 0019g-c2 foi preservado em
+`docs/project/history/CURRENT_STATE_0019G_C2.md`.
+
+## Verificação
+
+```bash
+python3 tools/run_current_gates.py
+```
+
+No perfil diagnóstico:
+
+```text
+runtime test help
+runtime test all
+```
+
+Interação, PWA, câmera, animação e jogo também exigem teste visual.

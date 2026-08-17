@@ -1,246 +1,118 @@
-# Spatial Seed — semente de continuidade
+# SpatialSeed - semente de continuidade
 
 ## Projeto
 
-Ambiente espacial, procedural e orientado a comandos para Android + Termux +
+Ambiente espacial, procedural e orientado a comandos para Android, Termux e
 navegador. A aplicação mantida está em `apps/web/`.
 
-## Ambiente
-
-```text
-Repositório: ~/SpatialSeed-monorepo
-Cópia pública: ~/storage/shared/SpatialSeed-monorepo
-Aplicação: https://127.0.0.1:8082/apps/web/
-```
-
-Não presumir Node.js ou npm. Python, Git e curl estão disponíveis.
+Nunca presuma o checkout ativo. Confirme `pwd`, branch, HEAD, status, remoto e
+`apps/web/build-info.json` antes de fornecer comandos dependentes do estado.
 
 ## Fontes de verdade
 
-1. código e testes do branch carregado;
-2. `apps/web/build-info.json`;
-3. `runtime test help`, `help`, registros de geometrias e propriedades;
-4. `README.md` e documentos vivos em `docs/project/`;
-5. documentos de marco em `docs/`;
-6. memória de conversa, apenas como pista.
+1. código e testes do checkout;
+2. manifesto de build e status PWA exibido;
+3. `help`, `runtime test help` e registros consultáveis;
+4. `README.md`, Manual e Referência Técnica;
+5. decisões e roadmap;
+6. documentos de marco;
+7. memória de conversa, apenas como pista.
 
-Não copie para esta semente contagens de testes, hashes ou listas geráveis.
+## Estado funcional
 
-## Estado funcional até 0029f1
+O snapshot documental de 17 de agosto de 2026 corresponde ao build
+`20260817-0054mm`. Toda promoção posterior deve atualizar manifesto, tokens de
+cache, auditorias sucessoras e estado PWA como uma única alteração.
 
-- portal HTML na raiz e catálogo canônico de experimentos;
-- protótipos históricos offline, com seleção móvel, recorte configurável e
-  salvamento nomeado;
-- `near` e `far` validados como estado local do viewer principal;
-- controlador público da câmera de navegação com posição, quaternion, alvo
-  derivado, campo visual, enquadramento, órbita e interpolação;
-- painel, console e procedimentos sobre as mesmas operações locais de câmera;
-- região local, sandbox com undo/redo e planos revisáveis;
-- seleção múltipla/área, pivôs, snapping e gizmos;
-- escala uniforme pela alça central `XYZ`;
-- hierarquia de grupos aninháveis com transformações locais;
-- criação geométrica e séries afins por registros;
-- propriedades e Inspector em lote, inclusive expressões procedurais e expansão
-  explícita de grupos;
-- recursos compartilhados, instancing e projeção incremental;
-- projetos `.spatialseed`, PWA offline e transporte de arquivos;
-- identidade persistente de sandbox e recuperação IndexedDB por checkpoint mais
-  comandos confirmados;
-- múltiplos viewers locais com câmera e seleção próprias, sandbox coordenado por
-  revisão e rejeição explícita de intenções obsoletas;
-- diretório transitório de projetos ativos, escolha explícita de destino para
-  novos viewers e sucessão local da autoridade;
-- criação e abertura explícitas de projetos independentes em novas abas, com
-  transferência transitória do arquivo e handshake antes da recuperação;
-- objetos câmera persistentes e hierárquicos, câmera ativa local por viewer e
-  câmera padrão opcional do documento;
-- criação transacional de câmeras em réplicas, seleção ampliada e frustums
-  configuráveis;
-- preview efêmero de gizmos compartilhado a até 30 Hz, inclusive atualizando
-  viewers que usam uma câmera transformada;
-- sessões efêmeras de animação compartilhadas por descritor, sequência e época
-  absoluta, com cálculo de quadros local em cada viewer;
-- runtime Worker/SES, sessões, planos e procedimentos;
-- laboratório declarativo de experimentos;
-- ações e atalhos configuráveis sobre os mesmos comandos;
-- runtime de animação efêmero, presets, faixas por objeto e cor animada;
-- modo jogo local e efêmero com personagem selecionado, gravidade, colisão AABB,
-  pulo, locomoção básica e câmera de acompanhamento;
-- testes, auditorias e benchmarks consultáveis pelo perfil diagnóstico
-  explícito, sem integrar o grafo de produção.
-- catálogo ampliado de geometrias Three.js e providers declarativos;
-- configuração local de sombras, ambiente, reflexos e materiais físicos;
-- edição isolada de malha com vértices, arestas e faces, meia-arestas
-  transitórias, snap adaptativo, falloff em tempo real e undo interno;
-- operações topológicas primitivas e painel flutuante único configurável;
-- objetos resolvíveis como caminhos, perfis e pontos, com tubo, varredura e
-  distribuição hierárquica por frames de transporte paralelo.
-- ciclo persistente de ferramentas, repetição de comandos normalizados e
-  posicionamento por clique com prévia local;
-- preferências de continuidade isoladas por ferramenta, versionadas e migradas
-  sem apagar o registro local anterior;
-- duplicação coordenada com publicação tardia da seleção e `repeat count`,
-  preservando a matriz delta composta numa única transação;
-- schemas e parâmetros versionados por ferramenta, compartilhados por HUD,
-  workspace e console, com migração não destrutiva;
-- desenho livre com preview local de tubo ou distribuição de qualquer
-  geometria/grupo selecionado pelo traço, confirmado em uma única ação;
-- pincel de caminho progressivo por espaçamento, usando seleção ou qualquer
-  provider do catálogo e conservando os mesmos lotes instanciados no preview;
-- pincel causal com `u` por distância, prefixo estável, cauda reparável, cor
-  paramétrica e plano lógico preparado incrementalmente antes do commit;
-- planos independentes de visualização e edição, visualização 2D autoritativa e
-  órbita em ponto travado.
-- planos independentes de desenho, edição direta de pivô no HUD e ferramentas
-  2D fundamentais sobre planos arbitrários;
-- navegação multitoque preservada durante ferramentas, HUD sem teto artificial,
-  snap de grade/ângulo compartilhado, régua, transferidor e reset do viewer.
-- fachada canônica de capacidades de autoria sobre modos de transformação e o
-  registro atual de ferramentas, sem estado editorial ou histórico paralelo;
-  mover, girar e escalar possuem IDs estáveis e o desenho de tubo/distribuição
-  possui intenções textuais distintas sobre o mesmo capturador.
+Capacidades presentes:
+
+- edição, seleção, transformação, pivô, snap, grupos e histórico;
+- criação geométrica, aparência, instancing e renderização configurável;
+- plano ativo, formas 2D, caminhos, sweep, distribuição e medição;
+- edição de malha e operações topológicas incrementais;
+- STL, projetos, recuperação local e PWA;
+- console, linguagem afim, scripts SES, procedimentos e planos;
+- runtime temporal e animação efêmera;
+- viewers locais e objetos câmera;
+- modo jogo, personagem GLB, colisão, câmera, áudio e eventos;
+- gates, diagnóstico, testes e benchmarks.
 
 ## Invariantes
 
-1. Three.js e o Viewer não são estado autoritativo.
-2. Seleção, pivô, gizmos e previews pertencem ao nível editorial.
-3. A região não conhece manipulações intermediárias do editor.
-4. Interface, Inspector, console e agentes executam comandos canônicos.
-5. Undo/redo pertence ao sandbox, não à região.
-6. Editar pivô não altera o objeto.
-7. Operações persistentes produzem mudanças ou deltas identificáveis.
-8. Snapshots compartilhados são imutáveis.
-9. Objetos idênticos compartilham protótipos sempre que possível.
-10. Edição individual de instância compartilhada usa copy-on-write.
-11. Atualizações são pequenas, auditáveis e reversíveis.
-12. Diagnosticar e medir antes de otimizar.
-13. Não pedir grandes edições manuais no celular.
-14. Quando etapas dependem entre si, fornecer uma etapa por vez.
-15. Sincronizar, verificar hashes, reiniciar e abrir o navegador antes de testar.
-16. Toda otimização mantém ou amplia os testes automatizados.
-17. Não introduzir dependência obrigatória de Node.js ou npm.
-18. Experimentos e programas produzem planos; não recebem DOM ou sandbox.
-19. Animação efêmera não altera cena canônica, histórico ou arquivo.
-20. Grupos só são expandidos em descendentes quando o escopo declarar isso.
-21. Preservar manifesto, preferências e múltiplos painéis ao mudar a interface.
-22. Somente o viewer autoritativo substitui projeto, recuperação ou base
-    regional; réplicas enviam comandos pela coordenação local.
-23. Reprodução compartilhada transmite intenção e tempo, nunca matrizes por
-    quadro, e continua fora do documento e da recuperação.
-24. A câmera de navegação continua local; objetos câmera são entidades
-    persistentes e só a ativação deles pertence ao viewer.
-25. Um viewer que entra numa sessão existente aguarda o primeiro snapshot antes
-    de disputar autoridade ou iniciar recuperação.
-26. Previews de gestos manuais podem transmitir matrizes temporárias limitadas;
-    somente o comando final entra no documento, histórico e recuperação.
-27. A reorganização converge para oito módulos, usa um único mapa de migração e
-    aceita somente redução monotônica da dívida arquitetural medida.
-28. HUD, console, procedures e agentes devem consumir a mesma capacidade
-    canônica; adapters legados encaminham para as autoridades existentes e
-    nunca descobrem ferramentas percorrendo o DOM.
+1. Three.js e DOM não são autoridades do estado lógico.
+2. Toda mutação persistente passa por comando público.
+3. Preview, seleção, câmera, painéis, animação e física por quadro não entram no
+   documento.
+4. Undo/redo pertence ao sandbox.
+5. Operações em lote validam tudo antes da primeira mutação.
+6. Grupos preservam transformações locais.
+7. Programas recebem capabilities mínimas e produzem planos revisáveis.
+8. Recursos equivalentes permanecem compartilhados enquanto possível.
+9. Viewers locais compartilham estado editorial por revisão, não câmera ou
+   seleção.
+10. Sessões temporais distribuem definição e época, não matrizes por quadro.
+11. Modo jogo é estado efêmero restaurável do viewer.
+12. PWA, recuperação e arquivo de projeto são mecanismos distintos.
+13. Alterações são pequenas, testáveis, reversíveis e documentadas.
+14. Não pedir grandes edições manuais no celular; entregar patch verificável.
 
-## Fluxo
+## Uso local
 
 ```bash
-cd ~/SpatialSeed-monorepo
-git status --short
-git diff
-bash tools/seedctl test
+cd <checkout-confirmado>
+python3 tools/no_cache_server.py --port 8082
 ```
 
-`bash tools/seedctl test` sincroniza, verifica hashes, reinicia o servidor sem cache e abre a aplicação.
+Em outra sessão:
 
-## Console
+```bash
+termux-open-url 'https://127.0.0.1:8082/apps/web/'
+```
 
-Na aplicação normal, consulte `help`, `help create`, `help animate` e
-`procedure help`. Para `runtime test`, `runtime resources` e benchmarks, abra
-`https://127.0.0.1:8082/apps/web/?application=diagnostics`. Exemplos:
+## Testes
+
+```bash
+python3 tools/run_current_gates.py
+```
+
+No perfil `?application=diagnostics`:
 
 ```text
-help
 runtime test help
 runtime test all
-runtime resources
-animate status
-help tool
-tool list
-tool show transform.translate
 ```
+
+Mudanças visuais exigem teste visual. Mudanças de desempenho exigem benchmark
+comparável.
+
+## Documentação
+
+- `docs/MANUAL_DO_USUARIO.md` - tarefas;
+- `docs/REFERENCIA_TECNICA.md` - contratos;
+- `docs/book/` - livro e PDF;
+- `docs/project/CURRENT_STATE.md` - estado;
+- `docs/project/DECISIONS.md` - invariantes;
+- `docs/project/ROADMAP.md` - planejamento.
+
+Documentos numerados de build são históricos. Não copiar contagens, hashes ou
+listas geráveis para esta semente.
 
 ## Próxima prioridade
 
-O objetivo imediato é tornar as muitas capacidades já existentes acessíveis de
-forma fluida para pessoas, procedures, agentes e colaboração. Preservar PWA,
-desempenho e comportamento existente é requisito de cada incremento, não o
-objetivo que deve consumir a maior parte do trabalho.
-
-O build `0047g` acrescenta entradas semânticas à fachada `authoring.tool.*`.
-Círculo, retângulo, polígono e demais formas planares preservam um esboço
-independente da malha usada para exibi-los. `feature.sweep`,
-`feature.extrude` e `feature.revolve` recebem perfil, caminho e eixo por slots
-explícitos; seleção, HUD, painel, console e procedures usam os mesmos
-descritores e parâmetros. A ferramenta em foco é estado local de apresentação,
-sem copiar documento, histórico ou controller gestual. Trocar o projeto também
-encerra sessões transitórias antes de substituir a cena, e falhas operacionais
-deixam de ocupar a superfície persistente reservada a erros fatais.
-
-O próximo incremento deve tornar sweep, extrude e lathe receitas procedurais
-vinculadas, com avaliação/cache incremental e conversão explícita para malha.
-Depois dele, a consolidação deve avançar para protocolos CAD 2D, projeção sobre
-superfícies, restrições gerais do gizmo e modificadores compartilhados. Um
-recorte/inset por `boundary` desenhado só deve aparecer quando existir um
-operador topológico real, não como alias do inset escalar atual.
-
-Referência: `docs/project/ROADMAP.md`, `docs/MESH_TOPOLOGY_0035A.md`,
-`docs/PATH_REFERENCES_0037A.md`,
-`docs/PATH_BRUSH_AUTHORING_0039E.md`,
-`docs/AFFINE_PATH_BRUSH_0039F.md`,
-`docs/INCREMENTAL_PATH_BRUSH_0039G.md`,
-`docs/SELECTION_GESTURES_0039G2.md`,
-`docs/PLANAR_AUTHORING_0040A.md`,
-`docs/MEASUREMENT_INPUT_0040B.md`,
-`docs/TOOL_PARAMETERS_PATH_DRAW_0039D.md` e
-`docs/EDIT_INTERACTION_0038B.md`. Para a reorganização atual, consulte
-`docs/project/MAIN_PROPOSAL_ARCHITECTURE.md`,
-`docs/project/WEB_APPLICATION_PROFILES.md` e
-`docs/project/BASELINE_GATES.md`. O contrato transitório de ferramentas está em
-`docs/AUTHORING_TOOL_CAPABILITIES_0047E.md` e
-`docs/DRAWN_AUTHORING_0047F.md`; esboços e slots explícitos estão em
-`docs/SEMANTIC_SKETCH_INPUTS_0047G.md`.
-
-O build `0053k` introduz uma hierarquia derivada de objetos localmente
-resolvidos para compor base canônica, animação e preview por precedência
-recursiva. Grupos de grupos preservam overrides internos por caminho; o commit
-mantém uma barreira visual até a projeção canônica; a primeira edição de malha
-oculta atomicamente todos os recursos do lote; e a escala pode cruzar o pivô
-para produzir um espelho sem matriz singular. Consulte
-`docs/CANONICAL_REGRESSIONS_0053K.md`.
-
-O build `0053l` preserva a última transformação ao duplicar e ao entrar em
-componentes, seleciona o primeiro vértice por padrão e remove a dependência de
-uma troca manual de ferramenta. O pivô editorial padrão fica no centro dos
-limites da seleção. Previews locais passam a ser camadas hierárquicas
-recursivas, inclusive para grupos contendo grupos; âncoras referenciadas usam a
-mesma matriz efetiva de animação e preview. Consulte
-`docs/MAIN_CONSOLIDATION_0053L.md`.
-
-O build `0054a` acrescenta um loop jogável local ao viewer. O objeto selecionado
-recebe gravidade, colisão AABB, locomoção, pulo e estados visuais básicos por
-overlay, enquanto a câmera acompanha o personagem e a interface editorial fica
-oculta. A sessão não grava quadros no documento ou no undo e é restaurada ao
-sair. Consulte `docs/GAME_MODE_0054A.md`.
+Consolidar documentação e acessibilidade das capacidades atuais antes de
+expandir arquitetura. Depois, priorizar contratos de maior retorno: ferramentas
+procedurais vinculadas, topologia robusta, jogo por eventos e estabilização da
+experiência móvel. Colaboração remota e novas VMs dependem de critérios e
+benchmarks explícitos.
 
 ## Protocolo para nova LLM
 
-1. Ler `AGENTS.md`, `PROJECT_SEED.md` e
-   `docs/project/CHATGPT_PROJECT_INSTRUCTIONS.md`.
-2. Confirmar `pwd`, branch, HEAD, status, remoto e build.
-3. Ler o código e os testes da área antes de propor alteração.
-4. Preservar funcionalidades existentes e mudanças do usuário.
-5. Reutilizar comandos, registros, manifesto e gerenciadores atuais.
-6. Não misturar estado editorial, especulativo, autoritativo, visual e temporal.
-7. Preferir patch mínimo, testável e reversível.
-8. Executar a suíte específica e `runtime test all` no perfil diagnóstico, além
-   do teste visual aplicável.
-9. Repetir benchmarks equivalentes após otimizações.
-10. Atualizar documentação viva, decisão e ponto de retomada.
+1. ler `AGENTS.md`, este arquivo e
+   `docs/project/CHATGPT_PROJECT_INSTRUCTIONS.md`;
+2. confirmar checkout e build;
+3. ler código e testes da área;
+4. preservar mudanças do usuário;
+5. reutilizar comandos, registros e serviços existentes;
+6. diferenciar implementado, testado, em consolidação e pretendido;
+7. entregar patch, testes e roteiro manual;
+8. não fazer push ou merge sem autorização.

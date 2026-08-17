@@ -42,10 +42,10 @@ from reportlab.lib.utils import ImageReader
 
 
 ROOT = Path(__file__).resolve().parent.parent
-MANUSCRIPT = ROOT / "docs" / "book" / "SpatialSeed_Livro_Manual_v0.6.md"
+MANUSCRIPT = ROOT / "docs" / "book" / "SpatialSeed_Livro_Manual_v1.0.md"
 TMP = ROOT / "tmp" / "pdfs"
-OUT = ROOT / "docs" / "book" / "SpatialSeed_Livro_Manual_e_Atlas_Procedural_v0.6.pdf"
-BASE_PDF = TMP / "SpatialSeed_v0.6_base.pdf"
+OUT = ROOT / "docs" / "book" / "SpatialSeed_Livro_Manual_e_Atlas_Procedural_v1.0.pdf"
+BASE_PDF = TMP / "SpatialSeed_v1.0_base.pdf"
 TMP.mkdir(parents=True, exist_ok=True)
 OUT.parent.mkdir(parents=True, exist_ok=True)
 
@@ -80,44 +80,34 @@ LIGHT = HexColor("#EEF1F3")
 WHITE = colors.white
 
 PART_META = {
-    "PARTE I — POR QUE UM MUNDO PRECISA DE CONTRATOS": (
+    "PARTE I - O SPATIALSEED COMO SISTEMA": (
         "Fundamentos",
-        "Identidade, autoridade, memória e a disciplina categorial que mantém interfaces diferentes sobre o mesmo mundo.",
+        "Identidade, autoridade e estados distintos para manter interfaces diferentes sobre o mesmo mundo.",
         BLUE,
     ),
-    "PARTE II — ARQUITETURA, SUBSISTEMAS E PAINÉIS": (
-        "Arquitetura",
-        "Camadas locais hoje, regiões distribuídas amanhã — sem confundir viewer, editor, sandbox e autoridade.",
+    "PARTE II - MANUAL DO USUÁRIO": (
+        "Manual",
+        "Percursos concretos para instalar, criar, editar, programar, animar, jogar, salvar e diagnosticar.",
         CORAL,
     ),
-    "PARTE III — MANUAL DA LINGUAGEM E DA INTERFACE": (
-        "Manual",
-        "Comandos, gramática matemática, semântica indexada, AST, cor, projetos, diagnósticos e testes.",
+    "PARTE III - REFERÊNCIA TÉCNICA": (
+        "Referência",
+        "Camadas, comandos, registros, formatos, runtime temporal, jogo, PWA, testes e limites.",
         GOLD,
     ),
-    "PARTE IV — GERAÇÃO PROCEDURAL: DA REGRA À CIDADE": (
+    "PARTE IV - ATLAS PROCEDURAL": (
         "Atlas procedural",
-        "Quatro novos programas graduais e a Trindade Orbital: fórmulas, código, variações e validação.",
+        "Onda, hélice, roseta, cidade e Trindade Orbital como evidência histórica da linguagem afim.",
         GREEN,
     ),
-    "PARTE V — PERFORMANCE, TESTES E HONESTIDADE EXPERIMENTAL": (
+    "PARTE V - EVIDÊNCIA, LIMITES E ROTEIRO": (
         "Evidência",
-        "O que foi medido, o que falta medir e como separar custo lógico, fachada, recursos e experiência móvel.",
+        "Como testar, medir e planejar sem transformar possibilidades em recursos prometidos.",
         TEAL,
-    ),
-    "PARTE VI — POSSIBILIDADES E ROTEIRO": (
-        "Horizonte",
-        "Assets procedurais, parâmetros, aparência, protótipos, regiões, diffs semânticos e múltiplos viewers.",
-        VIOLET,
-    ),
-    "PARTE VII — TEMPO, EXPERIMENTOS E COLABORAÇÃO": (
-        "Continuidade",
-        "Laboratórios declarativos, animação efêmera, ações configuráveis e um método verificável de colaboração com LLMs.",
-        CORAL,
     ),
     "APÊNDICES": (
         "Referência",
-        "Comandos, matemática, programas executáveis, fontes, limites e checklist de reprodução.",
+        "Entradas de ajuda, símbolos matemáticos, fontes anexadas e nota editorial.",
         BLUE,
     ),
 }
@@ -366,7 +356,7 @@ def draw_page(canvas, doc):
         canvas.line(MARGIN, PAGE_H - 0.48 * inch, PAGE_W - MARGIN, PAGE_H - 0.48 * inch)
         canvas.setFont(FONT_BOLD, 6.8)
         canvas.setFillColor(MUTED)
-        canvas.drawString(MARGIN, PAGE_H - 0.39 * inch, "SPATIALSEED · LIVRO, MANUAL E ATLAS PROCEDURAL · V0.6")
+        canvas.drawString(MARGIN, PAGE_H - 0.39 * inch, "SPATIALSEED - LIVRO, MANUAL E REFERÊNCIA - V1.0")
         canvas.setFont(FONT_REGULAR, 7.2)
         canvas.drawRightString(PAGE_W - MARGIN, 0.39 * inch, str(doc.page))
     canvas.restoreState()
@@ -404,22 +394,22 @@ class CoverPage(Flowable):
         c.roundRect(-MARGIN + 0.72 * inch, PAGE_H * 0.31 - MARGIN, 1.55 * inch, 0.28 * inch, 0.14 * inch, fill=1, stroke=0)
         c.setFillColor(NAVY)
         c.setFont(FONT_BOLD, 8.6)
-        c.drawCentredString(-MARGIN + 1.495 * inch, PAGE_H * 0.31 - MARGIN + 0.09 * inch, "EDIÇÃO 0.6")
+        c.drawCentredString(-MARGIN + 1.495 * inch, PAGE_H * 0.31 - MARGIN + 0.09 * inch, "EDIÇÃO 1.0")
         c.setFillColor(WHITE)
         c.setFont(FONT_BOLD, 29)
         c.drawString(-MARGIN + 0.72 * inch, PAGE_H * 0.25 - MARGIN, "SPATIALSEED")
         c.setFont(FONT_REGULAR, 14)
         c.setFillColor(HexColor("#C6D8E6"))
-        c.drawString(-MARGIN + 0.73 * inch, PAGE_H * 0.205 - MARGIN, "Livro, manual da linguagem e atlas procedural")
+        c.drawString(-MARGIN + 0.73 * inch, PAGE_H * 0.205 - MARGIN, "Manual do usuário, referência técnica e atlas procedural")
         c.setFont(FONT_REGULAR, 9.4)
         c.setFillColor(HexColor("#8FA8BA"))
-        c.drawString(-MARGIN + 0.73 * inch, PAGE_H * 0.155 - MARGIN, "Arquitetura · categorias · AST · cores · cidade · obras reproduzíveis")
+        c.drawString(-MARGIN + 0.73 * inch, PAGE_H * 0.155 - MARGIN, "Arquitetura - autoria - animação - jogo - PWA - obras reproduzíveis")
         c.setFont(FONT_BOLD, 10)
         c.setFillColor(WHITE)
         c.drawString(-MARGIN + 0.73 * inch, PAGE_H * 0.09 - MARGIN, "Rogério Duarte")
         c.setFont(FONT_REGULAR, 7.8)
         c.setFillColor(HexColor("#8FA8BA"))
-        c.drawRightString(PAGE_W - MARGIN - 0.02 * inch, PAGE_H * 0.09 - MARGIN, "24 de julho de 2026 · commit b4043c6")
+        c.drawRightString(PAGE_W - MARGIN - 0.02 * inch, PAGE_H * 0.09 - MARGIN, "17 de agosto de 2026 - baseline 0054")
         c.restoreState()
 
 
@@ -460,7 +450,7 @@ class PartDivider(Flowable):
         c.setFillColor(NAVY)
         c.setFont(FONT_BOLD, 8.4)
         c.drawCentredString(0.675 * inch, self.height * 0.77 + 0.09 * inch, self.kicker.upper())
-        clean = self.title.split("—", 1)[-1].strip() if "—" in self.title else self.title
+        clean = self.title.split(" - ", 1)[-1].strip() if " - " in self.title else self.title
         p = Paragraph(
             inline_markup(clean),
             ParagraphStyle(
@@ -488,7 +478,7 @@ class PartDivider(Flowable):
         sp.drawOn(c, 0, self.height * 0.39)
         c.setFillColor(HexColor("#8FA8BA"))
         c.setFont(FONT_MONO, 7.5)
-        c.drawString(0, 0.14 * inch, "main · b4043c6 · build 20260720-0028e")
+        c.drawString(0, 0.14 * inch, "snapshot 17-08-2026 - build 20260817-0054mm")
         c.restoreState()
 
 
@@ -551,7 +541,7 @@ def inline_markup(text: str) -> str:
 
 def add_chapter_title(title):
     # Colored eyebrow plus title keeps chapter openings visually consistent.
-    number_match = re.match(r"([^—]+)—\s*(.+)", title)
+    number_match = re.match(r"([^\-]+)\s+-\s+(.+)", title)
     if number_match:
         prefix, clean = number_match.groups()
         eyebrow = Paragraph(
@@ -648,7 +638,7 @@ def pretty_code(text: str, width=92):
         wrapped = textwrap.wrap(
             expanded,
             width=width,
-            subsequent_indent="    ↳ ",
+            subsequent_indent="    -> ",
             break_long_words=False,
             break_on_hyphens=False,
         ) or [""]
@@ -703,7 +693,7 @@ def program_listing(path, title):
             commands.append(("BACKGROUND", (0,row), (-1,row), HexColor("#0E2435")))
     table.setStyle(TableStyle(commands))
     note = Paragraph(
-        "Listagem integral. As setas ↳ indicam apenas quebra visual da linha; para executar, use o arquivo textual anexado ao PDF.",
+        "Listagem integral. As setas -> indicam apenas quebra visual da linha; para executar, use o arquivo textual anexado ao PDF.",
         STYLES["Small"],
     )
     return [Paragraph(inline_markup(title), STYLES["CodeCaption"]), note, table, Spacer(1, 10)]
@@ -756,14 +746,36 @@ def make_toc():
     toc.levelStyles = [STYLES["TOC0"], STYLES["TOC1"]]
     title = Paragraph("Sumário", STYLES["Chapter"])
     lead = Paragraph(
-        "O livro alterna fundamentos, manual operacional, atlas procedural e evidência. Os arquivos de código estão anexados ao PDF.",
+        "Esta edição integra fundamentos, manual do usuário, referência técnica, atlas procedural e critérios de evidência. As fontes editoriais e os exemplos estão anexados ao PDF.",
         STYLES["Lead"],
     )
     return [title, lead, toc, PageBreak()]
 
 
+def expanded_manuscript(path, stack=()):
+    path = path.resolve()
+    root = ROOT.resolve()
+    if path in stack:
+        chain = " -> ".join(item.name for item in (*stack, path))
+        raise ValueError(f"Inclusão editorial circular: {chain}")
+    if not path.is_file() or (path != root and root not in path.parents):
+        raise ValueError(f"Fonte editorial inválida: {path}")
+
+    result = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = re.fullmatch(r"\{\{INCLUDE:([^}]+)\}\}", line.strip())
+        if not match:
+            result.append(line)
+            continue
+        included = (ROOT / match.group(1).strip()).resolve()
+        if not included.is_file() or root not in included.parents:
+            raise ValueError(f"Fonte editorial incluída inválida: {included}")
+        result.extend(expanded_manuscript(included, (*stack, path)))
+    return result
+
+
 def parse_manuscript():
-    lines = MANUSCRIPT.read_text(encoding="utf-8").splitlines()
+    lines = expanded_manuscript(MANUSCRIPT)
     story = [CoverPage(ROOT / "docs/book/assets/scene_roseta-tricromatica.png"), PageBreak()]
     story.extend(make_toc())
     i = 0
@@ -831,6 +843,10 @@ def parse_manuscript():
             story.append(PageBreak())
             i += 1
             continue
+        if stripped == "<!-- PDF_PAGE_BREAK -->":
+            story.append(PageBreak())
+            i += 1
+            continue
         if stripped.startswith("```"):
             caption = None
             i += 1
@@ -838,7 +854,8 @@ def parse_manuscript():
             while i < len(lines) and not lines[i].strip().startswith("```"):
                 code_lines.append(lines[i])
                 i += 1
-            i += 1
+            if i < len(lines):
+                i += 1
             story.extend(code_block("\n".join(code_lines), caption))
             first_body_paragraph = False
             continue
@@ -914,16 +931,21 @@ def attach_sources(base_pdf, final_pdf):
     reader = PdfReader(str(base_pdf))
     writer = PdfWriter()
     writer.clone_document_from_reader(reader)
-    attachments = sorted((ROOT / "docs" / "book" / "examples").iterdir())
+    attachments = [
+        ROOT / "docs" / "MANUAL_DO_USUARIO.md",
+        ROOT / "docs" / "REFERENCIA_TECNICA.md",
+        MANUSCRIPT,
+        *sorted((ROOT / "docs" / "book" / "examples").iterdir()),
+    ]
     for path in attachments:
         writer.add_attachment(path.name, path.read_bytes())
     writer.add_metadata({
-        "/Title": "SpatialSeed — Livro, Manual da Linguagem e Atlas Procedural v0.6",
+        "/Title": "SpatialSeed - Livro, Manual do Usuário e Referência Técnica v1.0",
         "/Author": "Rogério Duarte; colaboração editorial e técnica: OpenAI Codex",
-        "/Subject": "Arquitetura, teoria categorial, manual, geração procedural, exemplos e benchmarks",
-        "/Keywords": "SpatialSeed, procedural, AST, affine, category theory, city, GitHub Pages, manual",
-        "/CreationDate": "D:20260724000000-03'00'",
-        "/ModDate": "D:20260724000000-03'00'",
+        "/Subject": "Manual, arquitetura, referência técnica, geração procedural, animação, jogo e PWA",
+        "/Keywords": "SpatialSeed, manual, referência técnica, procedural, animação, jogo, PWA, arquitetura",
+        "/CreationDate": "D:20260817000000-03'00'",
+        "/ModDate": "D:20260817000000-03'00'",
     })
     with final_pdf.open("wb") as handle:
         writer.write(handle)
@@ -938,9 +960,9 @@ def build():
         rightMargin=MARGIN,
         topMargin=MARGIN,
         bottomMargin=MARGIN,
-        title="SpatialSeed — Livro, Manual da Linguagem e Atlas Procedural v0.6",
+        title="SpatialSeed - Livro, Manual do Usuário e Referência Técnica v1.0",
         author="Rogério Duarte",
-        subject="Arquitetura verificável, manual da linguagem e obras procedurais reproduzíveis",
+        subject="Arquitetura verificável, manual do usuário, referência técnica e obras procedurais reproduzíveis",
         invariant=1,
     )
     doc.multiBuild(story)
