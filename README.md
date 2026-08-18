@@ -13,7 +13,7 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260818-0054mu`, preparado em 18 de
+> documentação viva corresponde ao build `20260818-0054mv`, preparado em 18 de
 > agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 acompanha
 > esta edição consolidada.
 
@@ -125,6 +125,8 @@ Para começar vazio, abra `?project=new`. Para diagnóstico, abra
 
 - catálogo declarativo de geometrias Three.js;
 - parâmetros dos providers geométricos projetados no registro comum de propriedades;
+- transferência de propriedades com presets declarativos, prévia de valores e
+  confirmação explícita antes de uma mutação atômica;
 - ponto, linha, polilinha, retângulo, círculo, arco e polígono sobre plano
   arbitrário;
 - caminhos, tubos, varreduras e distribuição de objetos;

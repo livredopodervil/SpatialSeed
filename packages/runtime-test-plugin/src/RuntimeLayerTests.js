@@ -195,14 +195,15 @@ import {
   parsePropertyInput,
   createDefaultPropertyRegistry,
   resolveSelectionTargetIds,
+  SelectionPropertyClipboard,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260818-0054mu";
+} from "../../property-registry/src/index.js?build=20260818-0054mv";
 import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260806-0050b";
 import {
   ObjectInspector
-} from "../../object-inspector/src/ObjectInspector.js?build=20260818-0054mu";
+} from "../../object-inspector/src/ObjectInspector.js?build=20260818-0054mv";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -427,13 +428,13 @@ import {
 } from "./CharacterAnimationTests.js?build=20260812-0054md";
 import {
   createGameCollisionDebugOverlayTests
-} from "./GameCollisionDebugOverlayTests.js?build=20260818-0054mu";
+} from "./GameCollisionDebugOverlayTests.js?build=20260818-0054mv";
 import {
   createDefaultDemoLaunchPolicyTests
-} from "./DefaultDemoLaunchPolicyTests.js?build=20260818-0054mu";
+} from "./DefaultDemoLaunchPolicyTests.js?build=20260818-0054mv";
 import {
   createSelectionPropertyClipboardTests
-} from "./SelectionPropertyClipboardTests.js?build=20260818-0054mu";
+} from "./SelectionPropertyClipboardTests.js?build=20260818-0054mv";
 
 export function createRuntimeLayerTests() {
   return {
@@ -14836,6 +14837,32 @@ assets: {
         );
       },
 
+      "cor-base regra matiz e cor efetiva permanecem camadas explícitas"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "a"
+        });
+
+        const result = fixture.service.setSelection({
+          "appearance.color": "#00ff00",
+          "appearance.uniformColor": "#ff0000",
+          "appearance.tint": "#ffffff"
+        });
+        const object = fixture.sandbox.getObject("a");
+        const inspection = fixture.service.inspectSelection();
+
+        assertEqual(result.changed, true);
+        assertEqual(object.appearanceBinding.colorMode, "uniform");
+        assertEqual(object.appearanceBinding.uniformColor, "#ff0000");
+        assertEqual(inspection.properties["appearance.color"].value, "#00ff00");
+        assertEqual(
+          inspection.properties["appearance.effectiveColor"].value,
+          "#ff0000"
+        );
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+      },
+
       "textura e transformação compartilham a mesma via de propriedades"() {
         const fixture = createPropertyFixture();
         fixture.selection.replaceMany([
@@ -15028,6 +15055,32 @@ assets: {
           fixture.sandbox.getHistoryDiagnostics().commandCount,
           1
         );
+      },
+
+      "console lista prevê e aplica somente propriedades confirmadas"() {
+        const fixture = createPropertyFixture();
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "a"
+        });
+        fixture.service.setSelection({ "transform.scale": [2, 3, 4] });
+        const console = createPropertyConsole(fixture);
+
+        assertEqual(console.execute("property copy transform")[0].ok, true);
+        fixture.selection.replace({
+          regionId: "region-properties",
+          objectId: "b"
+        });
+        const preview = console.execute("property clipboard")[0];
+        const pasted = console.execute("property paste all")[0];
+
+        assertEqual(preview.ok, true);
+        assertDeepEqual(preview.result.compatiblePropertyIds, [
+          "transform.scale"
+        ]);
+        assertEqual(pasted.ok, true);
+        assertDeepEqual(fixture.sandbox.getObject("b").scale, [2, 3, 4]);
+        assertDeepEqual(fixture.sandbox.getObject("b").position, [0, 1, 0]);
       },
 
       "console traduz lote procedural e escopo de grupo"() {
@@ -17864,13 +17917,18 @@ function createPropertyFixture({
     appearanceRuntime,
     registry
   });
+  const clipboard = new SelectionPropertyClipboard({
+    propertyService: service,
+    registry
+  });
 
   return {
     appearanceRuntime,
     sandbox,
     selection,
     registry,
-    service
+    service,
+    clipboard
   };
 }
 
@@ -17897,6 +17955,18 @@ function createPropertyConsole(fixture) {
         if (id === "selection.properties.applyExpression") {
           return fixture.service.setSelectionProcedural(args);
         }
+        if (id === "selection.properties.copyPreset") {
+          return fixture.clipboard.copyPreset(args);
+        }
+        if (id === "selection.properties.copy") {
+          return fixture.clipboard.copy(args);
+        }
+        if (id === "selection.properties.paste") {
+          return fixture.clipboard.paste(args);
+        }
+        if (id === "selection.properties.clipboard.clear") {
+          return fixture.clipboard.clear();
+        }
         throw new Error(`Comando inesperado: ${id}.`);
       }
     },
@@ -17907,6 +17977,12 @@ function createPropertyConsole(fixture) {
         }
         if (id === "selection.properties.inspect") {
           return fixture.service.inspectSelection(args);
+        }
+        if (id === "selection.properties.transfer.describe") {
+          return fixture.clipboard.describe();
+        }
+        if (id === "selection.properties.clipboard.preview") {
+          return fixture.clipboard.preview(args);
         }
         throw new Error(`Consulta inesperada: ${id}.`);
       }

@@ -24,14 +24,18 @@ def require(relative: str, *tokens: str) -> None:
 
 
 build = json.loads(read("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260818-0054mu":
+if build.get("build") not in {"20260818-0054mu", "20260818-0054mv"}:
     errors.append(f"build incorreto: {build.get('build')!r}")
-if build.get("channel") != "feature/0054mu-property-clipboard":
+expected_channels = {
+    "20260818-0054mu": "feature/0054mu-property-clipboard",
+    "20260818-0054mv": "feature/0054mv-property-transfer-preview",
+}
+if build.get("channel") != expected_channels.get(build.get("build")):
     errors.append(f"canal incorreto: {build.get('channel')!r}")
 
 require(
     "packages/property-registry/src/SelectionPropertyClipboard.js",
-    "selection-property-clipboard-v1-session-local",
+    "selection-property-clipboard-v2-explicit-preview",
     "copyTransform",
     "copyAppearance",
     "not-editable-many",
@@ -52,9 +56,9 @@ require(
 )
 require(
     "packages/runtime-test-plugin/src/SelectionPropertyClipboardTests.js",
-    "cópia geral preserva valores e exclui identidade por padrão",
+    "preset padrão seguro não substitui posição nem identidade",
     "colar em lote ignora propriedade não editável em muitos",
-    "colar filtra propriedades incompatíveis com o destino",
+    "colar exige propriedades explicitamente confirmadas",
 )
 
 if errors:

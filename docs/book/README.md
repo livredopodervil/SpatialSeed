@@ -41,6 +41,6 @@ A edição 1.0 separa explicitamente:
 - arquitetura pretendida.
 
 Os exemplos do 0021d são apresentados apenas como evidência histórica do atlas.
-O baseline técnico geral desta edição é o build `20260818-0054mu`, preparado em
+O baseline técnico geral desta edição é o build `20260818-0054mv`, preparado em
 18 de agosto de 2026. Alterações posteriores devem atualizar a referência sem
 reescrever a história dos exemplos.

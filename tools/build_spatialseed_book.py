@@ -412,7 +412,7 @@ class CoverPage(Flowable):
         c.drawRightString(
             CONTENT_W - 0.02 * inch,
             PAGE_H * 0.09 - MARGIN,
-            "18 de agosto de 2026 - baseline 0054mu",
+            "18 de agosto de 2026 - baseline 0054mv",
         )
         c.restoreState()
 
@@ -482,7 +482,7 @@ class PartDivider(Flowable):
         sp.drawOn(c, 0, self.height * 0.39)
         c.setFillColor(HexColor("#8FA8BA"))
         c.setFont(FONT_MONO, 7.5)
-        c.drawString(0, 0.14 * inch, "snapshot 18-08-2026 - build 20260818-0054mu")
+        c.drawString(0, 0.14 * inch, "snapshot 18-08-2026 - build 20260818-0054mv")
         c.restoreState()
 
 

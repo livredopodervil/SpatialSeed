@@ -4,7 +4,7 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 18 de agosto de 2026, derivado do
-build `20260818-0054mu`. A árvore recebida passou pelos gates locais depois da
+build `20260818-0054mv`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
@@ -87,7 +87,7 @@ descartado.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260818-0054mu`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260818-0054mv`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -492,23 +492,37 @@ property batch transform.scale "1; 0.5 + u; 1"
 O programa é compilado antes da mutação. Se qualquer alvo falhar, o lote inteiro
 é rejeitado.
 
-### Materiais compartilhados e cor por instância
+### Camadas de cor
 
-Objetos equivalentes podem compartilhar material e geometria. Para muitas cores
-em objetos instanciáveis, prefira `instance.color`; isso evita separar lotes sem
-necessidade. Alterações estruturais podem recorrer a copy-on-write.
+O Inspector distingue **Cor-base do material**, **Fonte da cor**, **Cor
+uniforme**, **Matiz final**, **Cor própria da instância** e **Cor efetiva**. A
+cor-base pertence ao material compartilhável. A fonte escolhe entre herdar essa
+base, usar uma cor uniforme ou obter cor por instância. O matiz é multiplicado
+ao resultado; a cor efetiva é somente leitura e mostra a composição vigente.
+
+A cor exibida no HUD pode atuar sobre a ferramenta, a seleção ou ambas, conforme
+o campo **Aplicar em**. A cor da ferramenta vale para objetos criados em
+seguida; ela não é uma quarta cor persistente do objeto.
 
 ### Copiar e colar propriedades
 
-No Inspector, escolha **Todas as propriedades**, **Transformação** ou
-**Aparência e material** e pressione **Copiar**. Selecione outro objeto e use
-**Colar**. A cópia permanece apenas na sessão atual e não depende de permissão
-do clipboard do sistema.
+No Inspector, escolha um preset e pressione **Copiar**. **Rotação e escala** é o
+preset inicial e não move o destino. **Posição absoluta** fica separado e avisa
+que os objetos podem ficar coincidentes. Material e cor-base, textura, regra e
+matiz de cor, cor própria da instância e aparência completa também são presets
+distintos.
 
-O nome do objeto não faz parte da cópia geral. Propriedades incompatíveis com o
-destino são ignoradas e informadas no Inspector. Em seleção múltipla, somente
-propriedades declaradas como editáveis em lote são aplicadas. A colagem passa
-pelo mesmo comando do Inspector e produz uma única entrada de undo/redo.
+Depois de selecionar o destino, abra **Confirmar propriedades**. Cada linha
+mostra o valor da origem, o valor atual do destino e uma caixa de seleção.
+Propriedades incompatíveis, não editáveis em lote ou já iguais ficam
+desativadas. Marque apenas o que deseja substituir e pressione **Aplicar
+propriedades marcadas**. A aplicação confirmada produz uma única entrada de
+undo/redo.
+
+No console, use `property presets`, `property copy transform`, `property
+clipboard` e `property paste all`. Para restringir a colagem, informe IDs, por
+exemplo `property paste transform.rotationDeg transform.scale`. A cópia é local
+à sessão e não depende de permissão do clipboard do sistema.
 
 ## 14 - Salvar, abrir e recuperar
 

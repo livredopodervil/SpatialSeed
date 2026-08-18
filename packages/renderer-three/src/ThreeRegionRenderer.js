@@ -45,7 +45,7 @@ import {
 } from "./ViewerEnvironment.js?build=20260726-0032a";
 import {
   GameCollisionDebugOverlay
-} from "./GameCollisionDebugOverlay.js?build=20260818-0054mu";
+} from "./GameCollisionDebugOverlay.js?build=20260818-0054mv";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260801-0045a1";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260807-0052b";

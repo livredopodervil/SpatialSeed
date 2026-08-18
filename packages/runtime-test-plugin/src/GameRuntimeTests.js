@@ -11,7 +11,7 @@ import {
   normalizeCollisionWorld,
   normalizeGameDirectionalInput,
   stepCharacterPhysics
-} from "../../game-runtime/src/index.js?build=20260818-0054mu";
+} from "../../game-runtime/src/index.js?build=20260818-0054mv";
 
 const CHARACTER_BOUNDS = Object.freeze({
   min: Object.freeze([-0.5, 0.5, -0.5]),

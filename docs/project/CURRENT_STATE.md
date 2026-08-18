@@ -7,7 +7,7 @@
 ## Baseline desta revisão
 
 A documentação viva de 18 de agosto de 2026 corresponde ao build
-`20260818-0054mu`, sucessor do marco publicado `0054mm`.
+`20260818-0054mv`, sucessor do marco publicado `0054mm`.
 
 O incremento `0054mo` conecta os parâmetros já declarados pelos providers de
 geometria ao registro comum de propriedades. Inspector e Console passam a
@@ -38,6 +38,13 @@ O incremento `0054mu` adiciona um clipboard tipado e local à sessão sobre o
 registro universal de propriedades. Inspector, Console e paleta podem copiar
 todas as propriedades compatíveis, transformação ou aparência, e colá-las por
 uma única mutação com undo/redo.
+
+O incremento `0054mv` corrige a semântica dessa transferência: posição absoluta
+deixa de fazer parte do preset de transformação, cada propriedade e seus valores
+de origem/destino aparecem antes da confirmação, e material, textura, regra de
+cor e cor própria da instância passam a ser presets distintos. O catálogo de
+presets é declarativo e extensível; a mutação continua pertencendo ao comando
+público e ao serviço universal de propriedades.
 
 ## Implementado e verificável
 

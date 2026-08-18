@@ -859,6 +859,14 @@ export function createEditorCommands({
 
   if (propertyClipboard) {
     commands
+      .register("selection.properties.copyPreset", args => {
+        requireObjectMode("copiar propriedades por preset");
+        return propertyClipboard.copyPreset(args);
+      }, {
+        category: "properties",
+        mutates: false,
+        label: "Copiar preset de propriedades"
+      })
       .register("selection.properties.copy", args => {
         requireObjectMode("copiar propriedades");
         return propertyClipboard.copy(args);
@@ -876,12 +884,12 @@ export function createEditorCommands({
         label: "Copiar transformação"
       })
       .register("selection.properties.copyAppearance", args => {
-        requireObjectMode("copiar aparência");
+        requireObjectMode("copiar material");
         return propertyClipboard.copyAppearance(args);
       }, {
         category: "properties",
         mutates: false,
-        label: "Copiar aparência e material"
+        label: "Copiar material e cor-base"
       })
       .register("selection.properties.paste", args => {
         requireObjectMode("colar propriedades");

@@ -1,5 +1,9 @@
 import { normalizeHexColor } from "./ColorCodec.js";
 import { PropertyRegistry } from "./PropertyRegistry.js";
+import {
+  appearanceBindingForObject,
+  effectiveAppearanceColor
+} from "../../appearance-binding/src/index.js?build=20260818-0054mv";
 
 export function createDefaultPropertyRegistry({ geometryRegistry = null } = {}) {
   const registry = new PropertyRegistry()
@@ -312,7 +316,7 @@ export function createDefaultPropertyRegistry({ geometryRegistry = null } = {}) 
     }))
     .register(property({
       id: "appearance.color",
-      label: "Cor",
+      label: "Cor-base do material",
       group: "appearance",
       scope: "appearance",
       path: ["color"],
@@ -398,8 +402,64 @@ export function createDefaultPropertyRegistry({ geometryRegistry = null } = {}) 
       read: (object, context) => context.textureTransform(object).wrap
     }))
     .register(property({
+      id: "appearance.colorMode",
+      label: "Fonte da cor",
+      group: "appearance-binding",
+      scope: "appearance-binding",
+      path: ["colorMode"],
+      valueType: "enum",
+      values: ["inherit", "uniform", "per-instance"],
+      normalize: value => enumValue(
+        value,
+        ["inherit", "uniform", "per-instance"]
+      ),
+      read: object => appearanceBindingForObject(object).colorMode
+    }))
+    .register(property({
+      id: "appearance.uniformColor",
+      label: "Cor uniforme",
+      group: "appearance-binding",
+      scope: "appearance-binding",
+      path: ["uniformColor"],
+      valueType: "color",
+      normalize: normalizeHexColor,
+      write: (patch, value) => {
+        patch.uniformColor = value;
+        patch.colorMode = "uniform";
+      },
+      read: object => appearanceBindingForObject(object).uniformColor ?? null
+    }))
+    .register(property({
+      id: "appearance.tint",
+      label: "Matiz final",
+      group: "appearance-binding",
+      scope: "appearance-binding",
+      path: ["tint"],
+      valueType: "color",
+      procedural: true,
+      normalize: normalizeHexColor,
+      read: object => appearanceBindingForObject(object).tint
+    }))
+    .register(property({
+      id: "appearance.effectiveColor",
+      label: "Cor efetiva",
+      group: "appearance-binding",
+      scope: "derived",
+      path: [],
+      valueType: "color",
+      writable: false,
+      normalize: normalizeHexColor,
+      read: (object, context) => effectiveAppearanceColor(
+        appearanceBindingForObject(object),
+        {
+          baseColor: context.material(object)?.color ?? "#ffffff",
+          instanceColor: object.instanceState?.color ?? null
+        }
+      )
+    }))
+    .register(property({
       id: "instance.color",
-      label: "Cor da instância",
+      label: "Cor própria da instância",
       group: "instance",
       scope: "instance",
       path: ["color"],
@@ -536,7 +596,7 @@ function boundedGeometryNumber(parameter, value) {
 function property(input) {
   return {
     editableMany: true,
-    supports: ["appearance", "instance"].includes(input.scope)
+    supports: ["appearance", "appearance-binding", "derived", "instance"].includes(input.scope)
       ? object => Boolean(object?.id) &&
           !["group", "camera", "light"].includes(object.kind)
       : object => Boolean(object?.id),

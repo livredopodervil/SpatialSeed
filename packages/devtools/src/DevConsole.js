@@ -1705,10 +1705,61 @@ export class DevConsole {
           "property inspect [id]",
           "property set id valor [...]",
           "property batch id \"expressão\" [scope=selection|renderables]",
-          "property unset id"
+          "property unset id",
+          "property presets",
+          "property copy [preset|id ...]",
+          "property clipboard",
+          "property paste all|id ...",
+          "property clear"
         ],
         ...description
       };
+    }
+
+    if (action === "presets") {
+      this.#expectMaximum(tokens, 0, "property presets");
+      return this.#query("selection.properties.transfer.describe");
+    }
+
+    if (action === "clipboard") {
+      this.#expectMaximum(tokens, 0, "property clipboard");
+      return this.#query("selection.properties.clipboard.preview");
+    }
+
+    if (action === "clear") {
+      this.#expectMaximum(tokens, 0, "property clear");
+      return this.commands.execute("selection.properties.clipboard.clear");
+    }
+
+    if (action === "copy") {
+      const requested = tokens.length ? [...tokens] : ["safe"];
+      const presets = this.#query(
+        "selection.properties.transfer.describe"
+      ).presets;
+      const preset = requested.length === 1 && presets.some(item =>
+        item.id === requested[0]
+      );
+      if (preset) {
+        return this.commands.execute("selection.properties.copyPreset", {
+          presetId: requested[0]
+        });
+      }
+      requested.forEach(id => this.#propertyDescriptor(description, id));
+      return this.commands.execute("selection.properties.copy", {
+        properties: requested
+      });
+    }
+
+    if (action === "paste") {
+      if (!tokens.length) {
+        throw new Error("Uso: property paste all|id [...]. Consulte property clipboard.");
+      }
+      const preview = this.#query("selection.properties.clipboard.preview");
+      const properties = tokens.length === 1 && tokens[0] === "all"
+        ? preview.compatiblePropertyIds
+        : tokens;
+      properties.forEach(id => this.#propertyDescriptor(description, id));
+      return this.commands.execute("selection.properties.paste", { properties });
     }
 
     if (action === "inspect") {
@@ -1759,7 +1810,7 @@ export class DevConsole {
 
     if (action !== "set") {
       throw new Error(
-        "Uso: property list|inspect|set|batch|unset."
+        "Uso: property list|inspect|set|batch|unset|presets|copy|clipboard|paste|clear."
       );
     }
 

@@ -14,14 +14,14 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260809-0053m";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054mu";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054mv";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
   parseResourcePath
 } from "../../../packages/resource-tree/src/index.js?build=20260808-0053f";
 import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260808-0053f";
-import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260818-0054mu";
+import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260818-0054mv";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260808-0053f";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260809-0053m";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260812-0054g";
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260818-0054mu";
+} from "../../../packages/platform-web/src/index.js?build=20260818-0054mv";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -50,10 +50,11 @@ import {
   SceneProjectionScheduler
 } from "../../../packages/incremental-runtime/src/index.js?build=20260808-0053f";
 import {
+  createDefaultPropertyTransferPresetCatalog,
   createDefaultPropertyRegistry,
   SelectionPropertyClipboard,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260818-0054mu";
+} from "../../../packages/property-registry/src/index.js?build=20260818-0054mv";
 import {
   createDefaultGeometryRegistry
 } from "../../../packages/geometry-registry/src/index.js?build=20260808-0053f";
@@ -116,14 +117,14 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mu";
+} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mv";
 import {
   CHARACTER_ANIMATION_VERSION,
   CharacterAnimationSystem
-} from "../../../packages/character-animation/src/index.js?build=20260818-0054mu";
+} from "../../../packages/character-animation/src/index.js?build=20260818-0054mv";
 import {
   ThreeCharacterAnimationBackend
-} from "../../../packages/character-animation-three/src/index.js?build=20260818-0054mu";
+} from "../../../packages/character-animation-three/src/index.js?build=20260818-0054mv";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
@@ -132,13 +133,13 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260812-0054g";
 import {
   MeshExchangeService
-} from "../../../packages/mesh-exchange/src/index.js?build=20260818-0054mu";
+} from "../../../packages/mesh-exchange/src/index.js?build=20260818-0054mv";
 import {
   createThreeMeshTriangulator
-} from "../../../packages/mesh-exchange-three/src/index.js?build=20260818-0054mu";
+} from "../../../packages/mesh-exchange-three/src/index.js?build=20260818-0054mv";
 import {
   MeshPathGestureController
-} from "../../../packages/mesh-interaction/src/index.js?build=20260818-0054mu";
+} from "../../../packages/mesh-interaction/src/index.js?build=20260818-0054mv";
 import {
   listMeshOperatorContracts
 } from "../../../packages/mesh-operator-kernel/src/index.js?build=20260812-0054g";
@@ -150,7 +151,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260809-0053l";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260818-0054mu";
+} from "../../../packages/edit-hud/src/index.js?build=20260818-0054mv";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -159,10 +160,10 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260818-0054mu";
+} from "../../../packages/edit-tools/src/index.js?build=20260818-0054mv";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260818-0054mu";
+} from "../../../packages/object-placement/src/index.js?build=20260818-0054mv";
 import {
   DrawingTargetController
 } from "../../../packages/drawing-target/src/index.js?build=20260808-0053f";
@@ -866,6 +867,7 @@ export async function createWebRuntime({
       });
 
   const propertyRegistry = createDefaultPropertyRegistry({ geometryRegistry });
+  const propertyTransferPresets = createDefaultPropertyTransferPresetCatalog();
   const propertyService = new SelectionPropertyService({
     selection: editor.selection,
     sandbox,
@@ -876,7 +878,8 @@ export async function createWebRuntime({
   });
   const propertyClipboard = new SelectionPropertyClipboard({
     propertyService,
-    registry: propertyRegistry
+    registry: propertyRegistry,
+    presets: propertyTransferPresets
   });
   const appearanceBindings = new AppearanceBindingService({
     sandbox,
@@ -2540,6 +2543,13 @@ export async function createWebRuntime({
     .register("selection.properties.clipboard.inspect", () =>
       propertyClipboard.inspect()
     )
+    .register("selection.properties.clipboard.preview", ({
+      properties = null,
+      targetScope = "selection"
+    } = {}) => propertyClipboard.preview({ properties, targetScope }))
+    .register("selection.properties.transfer.describe", () =>
+      propertyClipboard.describe()
+    )
     .register("selection.appearance.inspect", ({
       targetIds = null
     } = {}) =>
@@ -3310,6 +3320,7 @@ export async function createWebRuntime({
         editor,
         renderer,
         appearanceRuntime,
+        propertyTransferPresets,
         selectionOperations,
         timeDomains,
         temporalDependencies,

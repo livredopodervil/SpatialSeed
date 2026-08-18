@@ -13,15 +13,15 @@ import {
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260818-0054mu";
+} from "./CharacterPhysics.js?build=20260818-0054mv";
 import {
   characterBodyHorizontalSupport,
   characterBodyWorldObb
-} from "./CharacterBodyFrame.js?build=20260818-0054mu";
+} from "./CharacterBodyFrame.js?build=20260818-0054mv";
 import {
   castCollisionSegment,
   normalizeCollisionWorld
-} from "./CollisionWorld.js?build=20260818-0054mu";
+} from "./CollisionWorld.js?build=20260818-0054mv";
 
 export const GAME_RUNTIME_VERSION = "game-runtime-v7-independent-visual-facing";
 

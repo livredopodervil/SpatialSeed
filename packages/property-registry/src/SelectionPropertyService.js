@@ -4,6 +4,10 @@ import {
   evaluatePropertyBatchProgram
 } from "./PropertyBatchProgram.js";
 import { ComplexityScope } from "../../complexity-audit/src/index.js?build=20260808-0053f";
+import {
+  appearanceBindingForObject,
+  patchAppearanceBinding
+} from "../../appearance-binding/src/index.js?build=20260818-0054mv";
 
 export class SelectionPropertyService {
   static apiVersion = "selection-properties-v2-occurrence-resolver";
@@ -202,6 +206,7 @@ export class SelectionPropertyService {
   #buildObjectPatch(object, propertyPatch, appearanceCache = new Map()) {
     const patch = {};
     const appearanceValues = [];
+    const bindingValues = [];
 
     for (const [id, value] of Object.entries(propertyPatch)) {
       const descriptor = this.registry.require(id);
@@ -217,7 +222,29 @@ export class SelectionPropertyService {
         setPath(patch.instanceState, descriptor.path, value);
       } else if (descriptor.scope === "appearance") {
         appearanceValues.push({ descriptor, value });
+      } else if (descriptor.scope === "appearance-binding") {
+        bindingValues.push({ descriptor, value });
       }
+    }
+
+    if (bindingValues.length) {
+      const bindingPatch = {};
+      for (const { descriptor, value } of bindingValues) {
+        if (descriptor.write) {
+          descriptor.write(bindingPatch, value, { object });
+        } else {
+          setPath(bindingPatch, descriptor.path, value);
+        }
+      }
+      patch.appearanceBinding = patchAppearanceBinding(
+        appearanceBindingForObject(object),
+        bindingPatch,
+        {
+          family: object.family,
+          fallbackColor: this.#editableMaterial(object)?.color ?? "#ffffff",
+          instanceColor: object.instanceState?.color ?? null
+        }
+      );
     }
 
     if (appearanceValues.length) {

@@ -3,13 +3,13 @@ import {
   normalizeCollisionWorld,
   queryCharacterBodyOverlaps,
   worldIntersectsCharacterBody
-} from "./CollisionWorld.js?build=20260818-0054mu";
+} from "./CollisionWorld.js?build=20260818-0054mv";
 import {
   characterBodyWorldBounds,
   characterBodyWorldHalfExtents,
   characterBodyWorldObb,
   normalizeCharacterBodyFrame
-} from "./CharacterBodyFrame.js?build=20260818-0054mu";
+} from "./CharacterBodyFrame.js?build=20260818-0054mv";
 
 export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   gravity: 18,

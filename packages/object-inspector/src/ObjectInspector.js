@@ -10,6 +10,7 @@ const GROUP_LABELS = Object.freeze({
   transform: "Transformação",
   geometry: "Geometria",
   appearance: "Aparência compartilhada",
+  "appearance-binding": "Composição de cor",
   light: "Luz",
   instance: "Instância",
   texture: "Textura"
@@ -39,6 +40,8 @@ export class ObjectInspector {
     this.dirty = new Set();
     this.unset = new Set();
     this.pendingFiles = new Map();
+    this.clipboardKey = "";
+    this.transferPresetKey = "";
     this.targetScope = root.querySelector("#inspector-target-scope")?.value ??
       "selection";
     this.selectionKey = "";
@@ -70,7 +73,11 @@ export class ObjectInspector {
     };
 
     this.description = this.query("properties.describe");
+    this.transferDescription = this.query(
+      "selection.properties.transfer.describe"
+    );
     this.#buildPropertyFields();
+    this.#buildTransferPresets();
     this.#buildProceduralEditor();
     this.#bind();
 
@@ -105,6 +112,7 @@ export class ObjectInspector {
       return { refreshed: false, reason: "applying" };
     }
 
+    this.#buildTransferPresets();
     const inspection = this.query("selection.properties.inspect", {
       targetScope: this.targetScope
     });
@@ -140,6 +148,8 @@ export class ObjectInspector {
       if (!control || !property) continue;
       this.#renderControl(control, property);
     }
+
+    this.#refreshClipboardPreview();
 
     return { refreshed: true, count: inspection.count };
   }
@@ -296,25 +306,32 @@ export class ObjectInspector {
   }
 
   copyProperties() {
-    const mode = this.root.querySelector("#inspector-property-copy-mode")?.value ??
-      "all";
-    const command = mode === "transform"
-      ? "selection.properties.copyTransform"
-      : mode === "appearance"
-        ? "selection.properties.copyAppearance"
-        : "selection.properties.copy";
-    const result = this.execute(command, { targetScope: this.targetScope });
-    this.#refreshClipboardStatus(result);
+    const presetId = this.root.querySelector(
+      "#inspector-property-copy-mode"
+    )?.value ?? "safe";
+    const result = this.execute("selection.properties.copyPreset", {
+      presetId,
+      targetScope: this.targetScope
+    });
+    this.clipboardKey = "";
+    this.#refreshClipboardPreview(result);
     return result;
   }
 
   pasteProperties() {
+    const properties = [...this.root.querySelectorAll(
+      "#inspector-property-clipboard-entries input[type=checkbox]:checked"
+    )].map(input => input.value);
+    if (!properties.length) {
+      throw new Error("Marque ao menos uma propriedade compatível.");
+    }
     this.applying = true;
     try {
       const result = this.execute("selection.properties.paste", {
+        properties,
         targetScope: this.targetScope
       });
-      this.#refreshClipboardStatus(result);
+      this.#refreshClipboardPreview(result);
       return result;
     } finally {
       this.applying = false;
@@ -373,6 +390,27 @@ export class ObjectInspector {
       if (descriptor.id === "texture.src") {
         group.append(this.#createTextureFileControl(control));
       }
+    }
+  }
+
+  #buildTransferPresets() {
+    const select = this.root.querySelector("#inspector-property-copy-mode");
+    if (!select) return;
+    const description = this.query("selection.properties.transfer.describe");
+    const key = description.presets.map(preset =>
+      `${preset.id}\u0000${preset.label}`
+    ).join("\u0001");
+    if (key === this.transferPresetKey) return;
+    const previous = select.value;
+    this.transferDescription = description;
+    this.transferPresetKey = key;
+    select.replaceChildren(...this.transferDescription.presets.map(preset =>
+      option(this.document, preset.id, preset.label)
+    ));
+    if (this.transferDescription.presets.some(item => item.id === previous)) {
+      select.value = previous;
+    } else if (this.transferDescription.presets.some(item => item.id === "transform")) {
+      select.value = "transform";
     }
   }
 
@@ -684,25 +722,110 @@ export class ObjectInspector {
           this.#showValidation(error);
         }
       });
-    this.#refreshClipboardStatus();
+    this.root
+      .querySelector("#inspector-properties-clear")
+      ?.addEventListener("click", () => {
+        this.execute("selection.properties.clipboard.clear");
+        this.clipboardKey = "";
+        this.#refreshClipboardPreview();
+      });
+    this.#refreshClipboardPreview();
   }
 
-  #refreshClipboardStatus(status = null) {
+  #refreshClipboardPreview(status = null) {
     const output = this.root.querySelector("#inspector-property-clipboard-status");
     const paste = this.root.querySelector("#inspector-properties-paste");
-    if (!output && !paste) return null;
-    const snapshot = status?.apiVersion
-      ? status
-      : this.query("selection.properties.clipboard.inspect");
-    if (paste) paste.disabled = !snapshot.available;
-    if (!output) return snapshot;
-    output.textContent = Array.isArray(status?.appliedProperties)
-      ? `${status.appliedProperties.length} propriedade(s) colada(s); ` +
-        `${status.skipped?.length ?? 0} ignorada(s).`
-      : snapshot.available
-        ? `${snapshot.count} propriedade(s) copiada(s) de ${snapshot.sourceId}.`
-        : "Nenhuma propriedade copiada nesta sessão.";
-    return snapshot;
+    const details = this.root.querySelector(
+      "#inspector-property-clipboard-preview"
+    );
+    const container = this.root.querySelector(
+      "#inspector-property-clipboard-entries"
+    );
+    if (!output && !paste && !details && !container) return null;
+    const snapshot = this.query("selection.properties.clipboard.inspect");
+    if (!snapshot.available) {
+      if (paste) paste.disabled = true;
+      if (details) details.hidden = true;
+      if (container) container.replaceChildren();
+      if (output) output.textContent = "Nenhuma propriedade copiada nesta sessão.";
+      return snapshot;
+    }
+
+    const preview = this.query("selection.properties.clipboard.preview", {
+      targetScope: this.targetScope
+    });
+    const key = `${snapshot.sourceId}\u0000${snapshot.presetId}\u0000${
+      snapshot.propertyIds.join("\u0000")
+    }\u0000${preview.targetIds.join("\u0000")}`;
+    const preserveChoices = key === this.clipboardKey;
+    const selected = preserveChoices
+      ? new Set([...container.querySelectorAll("input:checked")].map(input => input.value))
+      : null;
+    this.clipboardKey = key;
+    const descriptors = new Map(
+      this.description.properties.map(descriptor => [descriptor.id, descriptor])
+    );
+    const rows = preview.entries.map(entry => {
+      const row = this.document.createElement("label");
+      row.className = "ins-property-transfer-entry";
+      row.dataset.compatible = String(entry.compatible);
+      row.dataset.changed = String(entry.changed);
+      const checkbox = this.document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = entry.id;
+      checkbox.disabled = !entry.compatible || !entry.changed;
+      checkbox.checked = !checkbox.disabled && (
+        selected ? selected.has(entry.id) : true
+      );
+      const name = this.document.createElement("span");
+      name.className = "ins-property-transfer-name";
+      name.textContent = entry.label;
+      const values = this.document.createElement("span");
+      values.className = "ins-property-transfer-values";
+      const descriptor = descriptors.get(entry.id) ?? {};
+      values.textContent = `origem: ${formatPropertyValue(
+        descriptor,
+        entry.sourceValue
+      )} · destino atual: ${entry.compatible ? formatPropertyValue(
+        descriptor,
+        entry.targetValue
+      ) : transferReason(entry.reason)}`;
+      row.append(checkbox, name, values);
+      return row;
+    });
+    container.replaceChildren(...rows);
+    const updatePaste = () => {
+      if (paste) paste.disabled = !container.querySelector(
+        "input[type=checkbox]:checked:not(:disabled)"
+      );
+    };
+    container.querySelectorAll("input[type=checkbox]").forEach(input =>
+      input.addEventListener("change", updatePaste)
+    );
+    updatePaste();
+    if (details) details.hidden = false;
+
+    const preset = this.transferDescription.presets.find(item =>
+      item.id === snapshot.presetId
+    );
+    const description = this.root.querySelector(
+      "#inspector-property-clipboard-description"
+    );
+    if (description) {
+      description.textContent = [preset?.description, preset?.warning]
+        .filter(Boolean)
+        .join(" ");
+    }
+    if (output) {
+      output.textContent = Array.isArray(status?.appliedProperties)
+        ? `${status.appliedProperties.length} aplicada(s): ${
+            status.appliedProperties.join(", ") || "nenhuma"
+          }; ${status.skipped?.length ?? 0} ignorada(s).`
+        : `${snapshot.count} copiada(s) de ${snapshot.sourceId}: ${
+            snapshot.entries.map(entry => entry.label).join(", ")
+          }.`;
+    }
+    return preview;
   }
 
   #clearValidation() {
@@ -757,6 +880,16 @@ function statusText(property, descriptor) {
   }
   if (property.value === null) return "Sem valor próprio";
   return property.editable ? "" : "Somente leitura";
+}
+
+function transferReason(reason) {
+  return ({
+    unknown: "propriedade desconhecida",
+    "read-only": "somente leitura",
+    "not-editable-many": "não aplicável em vários alvos",
+    "not-editable": "não editável",
+    unsupported: "não suportado pelo destino"
+  })[reason] ?? "incompatível";
 }
 
 function embeddedTextureLabel(source) {

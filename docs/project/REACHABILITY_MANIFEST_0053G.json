@@ -16,9 +16,9 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 368,
-    "productionFiles": 322,
-    "productionFirstPartyFiles": 321,
+    "firstPartyJavaScriptFiles": 369,
+    "productionFiles": 323,
+    "productionFirstPartyFiles": 322,
     "productionExternalFiles": 1,
     "diagnosticFiles": 27,
     "unreferencedFiles": 20,
@@ -553,8 +553,8 @@
       "status": "production",
       "target": "document",
       "role": "production",
-      "sourceFiles": 9,
-      "productionFiles": 9,
+      "sourceFiles": 10,
+      "productionFiles": 10,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -963,6 +963,7 @@
     "packages/property-registry/src/PropertyBatchProgram.js",
     "packages/property-registry/src/PropertyInputCodec.js",
     "packages/property-registry/src/PropertyRegistry.js",
+    "packages/property-registry/src/PropertyTransferPresetCatalog.js",
     "packages/property-registry/src/SelectionPropertyClipboard.js",
     "packages/property-registry/src/SelectionPropertyService.js",
     "packages/property-registry/src/SelectionTargetResolver.js",

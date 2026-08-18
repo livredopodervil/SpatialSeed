@@ -17,7 +17,7 @@ Ordem de autoridade:
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
 18 de agosto validadas pelos gates locais e identificadas como build
-`20260818-0054mu`.
+`20260818-0054mv`.
 
 ## 2 - Modelo de maturidade
 
@@ -162,12 +162,26 @@ entradas e ciclo. Adapters legados encaminham para controllers atuais.
 ### Clipboard de propriedades
 
 `SelectionPropertyClipboard` armazena, na sessão, valores acompanhados pelos
-IDs estáveis do `PropertyRegistry`. Os comandos
-`selection.properties.copy`, `copyTransform`, `copyAppearance` e `paste`
-convergem com o Inspector. A colagem filtra suporte, escrita e
-`editableMany`, então delega a mutação atômica a
-`SelectionPropertyService.setSelection`. Identidade (`object.name`) é excluída
-da cópia geral, mas continua acessível por propriedades explicitamente pedidas.
+IDs estáveis do `PropertyRegistry`. `PropertyTransferPresetCatalog` descreve
+presets serializáveis e aceita registros adicionais sem mudar o clipboard. Os
+presets padrão separam transformação segura, posição absoluta, material,
+textura, binding de cor e cor própria da instância.
+
+`selection.properties.copyPreset` e `selection.properties.copy` apenas capturam
+valores. A query `selection.properties.clipboard.preview` resolve o destino e
+publica valor de origem, valor atual, compatibilidade e mudança para cada ID.
+`selection.properties.paste` exige a lista explícita de IDs confirmados, filtra
+`writable`, `editableMany` e suporte e então delega uma única mutação a
+`SelectionPropertyService.setSelection`.
+
+As propriedades `appearance.color`, `appearance.colorMode`,
+`appearance.uniformColor`, `appearance.tint`, `instance.color` e a propriedade
+derivada somente leitura `appearance.effectiveColor` tornam observáveis as
+camadas que o HUD já compunha. Mudanças no binding entram no mesmo patch
+editorial e no mesmo item de undo/redo que material e transformação.
+
+Superfícies de console correspondentes: `property presets`, `property copy`,
+`property clipboard`, `property paste` e `property clear`.
 
 ## 8 - Documento, projeto e arquivos
 
