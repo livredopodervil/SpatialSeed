@@ -1,6 +1,6 @@
 import {
   GameCollisionDebugOverlay
-} from "../../renderer-three/src/index.js?build=20260817-0054mq";
+} from "../../renderer-three/src/index.js?build=20260818-0054mr";
 
 export function createGameCollisionDebugOverlayTests() {
   return {
@@ -9,6 +9,11 @@ export function createGameCollisionDebugOverlayTests() {
       const updated = overlay.update({
         enabled: true,
         grounded: true,
+        characterBody: {
+          center: [0, 0.5, 0],
+          halfExtents: [1, 0.5, 0.25],
+          axes: [[0, 0, -1], [0, 1, 0], [1, 0, 0]]
+        },
         characterBounds: { min: [-0.5, 0, -0.5], max: [0.5, 1, 0.5] },
         contacts: [{ point: [0, 0, 0], normal: [0, 1, 0] }],
         colliders: [
@@ -36,6 +41,11 @@ export function createGameCollisionDebugOverlayTests() {
         ),
         true
       );
+      const character = overlay.object.children.find(child =>
+        child.name === "collision-debug:character"
+      );
+      assertNear(character.matrix.elements[2], -2, 1e-9);
+      assertNear(character.matrix.elements[8], 0.5, 1e-9);
       assertEqual(
         overlay.object.children.some(child =>
           child.name === "collision-debug:floor"
@@ -53,6 +63,14 @@ function assertEqual(actual, expected) {
   if (!Object.is(actual, expected)) {
     throw new Error(
       `Expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}.`
+    );
+  }
+}
+
+function assertNear(actual, expected, tolerance) {
+  if (Math.abs(actual - expected) > tolerance) {
+    throw new Error(
+      `Expected ${actual} to be within ${tolerance} of ${expected}.`
     );
   }
 }

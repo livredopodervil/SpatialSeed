@@ -1,13 +1,15 @@
 import {
+  castCollisionSegment,
   normalizeCollisionWorld,
-  queryCharacterOverlaps,
-  worldIntersectsCharacterBounds
-} from "./CollisionWorld.js?build=20260812-0054l";
+  queryCharacterBodyOverlaps,
+  worldIntersectsCharacterBody
+} from "./CollisionWorld.js?build=20260818-0054mr";
 import {
   characterBodyWorldBounds,
   characterBodyWorldHalfExtents,
+  characterBodyWorldObb,
   normalizeCharacterBodyFrame
-} from "./CharacterBodyFrame.js?build=20260813-0054ml";
+} from "./CharacterBodyFrame.js?build=20260818-0054mr";
 
 export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   gravity: 18,
@@ -21,6 +23,9 @@ export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   colliderHorizontalScale: 1,
   collisionSkin: 0.001,
   groundProbe: 0.035,
+  stepHeight: 0.35,
+  groundSnapDistance: 0.3,
+  maximumSlopeDegrees: 50,
   respawnBelow: -100
 });
 
@@ -70,6 +75,20 @@ export function normalizeCharacterGameConfig(source = {}) {
     groundProbe: positive(
       value.groundProbe ?? DEFAULT_CHARACTER_GAME_CONFIG.groundProbe,
       "groundProbe"
+    ),
+    stepHeight: nonNegative(
+      value.stepHeight ?? DEFAULT_CHARACTER_GAME_CONFIG.stepHeight,
+      "stepHeight"
+    ),
+    groundSnapDistance: nonNegative(
+      value.groundSnapDistance ?? DEFAULT_CHARACTER_GAME_CONFIG.groundSnapDistance,
+      "groundSnapDistance"
+    ),
+    maximumSlopeDegrees: ranged(
+      value.maximumSlopeDegrees ?? DEFAULT_CHARACTER_GAME_CONFIG.maximumSlopeDegrees,
+      0,
+      89,
+      "maximumSlopeDegrees"
     ),
     respawnBelow: finite(
       value.respawnBelow ?? DEFAULT_CHARACTER_GAME_CONFIG.respawnBelow,
@@ -145,7 +164,12 @@ export function stepCharacterPhysics(
     state.velocity[0] = approach(state.velocity[0], targetX, acceleration * dt);
     state.velocity[2] = approach(state.velocity[2], targetZ, acceleration * dt);
     const targetYaw = Math.atan2(-directionZ, directionX);
+    const previousYaw = state.yaw;
     state.yaw = approachAngle(state.yaw, targetYaw, 12 * dt);
+    if (worldIntersectsCharacterBody(
+      movementCollisionBody(state, 0, config),
+      world
+    )) state.yaw = previousYaw;
   } else if (state.grounded) {
     state.velocity[0] = approach(state.velocity[0], 0, config.groundFriction * dt);
     state.velocity[2] = approach(state.velocity[2], 0, config.groundFriction * dt);
@@ -162,14 +186,22 @@ export function stepCharacterPhysics(
   state.velocity[1] -= config.gravity * dt;
 
   const before = [...state.position];
-  moveHorizontalAxis(state, world, config, 0, state.velocity[0] * dt);
-  moveHorizontalAxis(state, world, config, 2, state.velocity[2] * dt);
+  const canFollowGround = state.grounded && state.velocity[1] <= 0;
+  moveHorizontalAxis(
+    state, world, config, 0, state.velocity[0] * dt, canFollowGround
+  );
+  moveHorizontalAxis(
+    state, world, config, 2, state.velocity[2] * dt, canFollowGround
+  );
+  if (canFollowGround && followGroundSurface(state, world, config)) {
+    state.velocity[1] = 0;
+  }
   moveVertical(state, world, config, state.velocity[1] * dt);
   if (state.grounded && !state.contacts.some(contact => contact.kind === "support")) {
     recordAxisContacts(
       state,
       world,
-      supportProbeBounds(state, config),
+      supportProbeBody(state, config),
       1,
       1,
       "support"
@@ -201,13 +233,13 @@ export function characterWorldBounds(state) {
 }
 
 function resolvePenetrations(state, colliders, config) {
-  if (!worldIntersectsCharacterBounds(mutableCharacterBounds(state), colliders)) {
+  if (!worldIntersectsCharacterBody(mutableCharacterBody(state), colliders)) {
     return false;
   }
   let grounded = false;
   for (let iteration = 0; iteration < 4; iteration += 1) {
-    const body = mutableCharacterBounds(state);
-    if (!worldIntersectsCharacterBounds(body, colliders)) break;
+    const body = mutableCharacterBody(state);
+    if (!worldIntersectsCharacterBody(body, colliders)) break;
     let resolution = null;
     for (const axis of [0, 1, 2]) {
       for (const sign of [-1, 1]) {
@@ -243,7 +275,7 @@ function separationDistance(state, colliders, axis, sign) {
   let separated = false;
   for (let attempt = 0; attempt < 12; attempt += 1) {
     state.position[axis] = original + sign * high;
-    if (!worldIntersectsCharacterBounds(mutableCharacterBounds(state), colliders)) {
+    if (!worldIntersectsCharacterBody(mutableCharacterBody(state), colliders)) {
       separated = true;
       break;
     }
@@ -257,7 +289,7 @@ function separationDistance(state, colliders, axis, sign) {
   for (let iteration = 0; iteration < 16; iteration += 1) {
     const middle = (low + high) * 0.5;
     state.position[axis] = original + sign * middle;
-    if (worldIntersectsCharacterBounds(mutableCharacterBounds(state), colliders)) {
+    if (worldIntersectsCharacterBody(mutableCharacterBody(state), colliders)) {
       low = middle;
     } else {
       high = middle;
@@ -267,9 +299,34 @@ function separationDistance(state, colliders, axis, sign) {
   return high;
 }
 
-function moveHorizontalAxis(state, colliders, config, axis, displacement) {
+function moveHorizontalAxis(
+  state,
+  colliders,
+  config,
+  axis,
+  displacement,
+  canStep = false
+) {
+  const before = [...state.position];
   const allowed = moveAxis(state, colliders, config, axis, displacement);
-  if (Math.abs(allowed - displacement) > EPSILON) state.velocity[axis] = 0;
+  if (Math.abs(allowed - displacement) <= EPSILON) return;
+  const safePosition = [...state.position];
+  if (canStep && config.stepHeight > EPSILON) {
+    state.position = [...before];
+    state.position[1] += config.stepHeight + config.collisionSkin;
+    if (!worldIntersectsCharacterBody(mutableCharacterBody(state), colliders)) {
+      const stepped = moveAxis(state, colliders, config, axis, displacement);
+      const improved = Math.abs(stepped) > Math.abs(allowed) + EPSILON;
+      if (improved && followGroundSurface(
+        state,
+        colliders,
+        config,
+        config.stepHeight + config.groundSnapDistance
+      )) return;
+    }
+    state.position = safePosition;
+  }
+  state.velocity[axis] = 0;
 }
 
 function moveVertical(state, colliders, config, displacement) {
@@ -294,8 +351,8 @@ function moveAxis(state, colliders, config, axis, displacement) {
     const from = moved;
     const to = moved + increment;
     state.position[axis] = original + to;
-    if (!worldIntersectsCharacterBounds(
-      movementCollisionBounds(state, axis, config),
+    if (!worldIntersectsCharacterBody(
+      movementCollisionBody(state, axis, config),
       colliders,
       axis === 1 ? config.collisionSkin : 0
     )) {
@@ -305,7 +362,7 @@ function moveAxis(state, colliders, config, axis, displacement) {
     recordAxisContacts(
       state,
       colliders,
-      movementCollisionBounds(state, axis, config),
+      movementCollisionBody(state, axis, config),
       axis,
       displacement > 0 ? -1 : 1,
       "blocked"
@@ -315,8 +372,8 @@ function moveAxis(state, colliders, config, axis, displacement) {
     for (let iteration = 0; iteration < 16; iteration += 1) {
       const middle = (safe + blocked) * 0.5;
       state.position[axis] = original + middle;
-      if (worldIntersectsCharacterBounds(
-        movementCollisionBounds(state, axis, config),
+      if (worldIntersectsCharacterBody(
+        movementCollisionBody(state, axis, config),
         colliders,
         axis === 1 ? config.collisionSkin : 0
       )) {
@@ -333,9 +390,65 @@ function moveAxis(state, colliders, config, axis, displacement) {
 }
 
 function isGrounded(state, colliders, config) {
-  return worldIntersectsCharacterBounds(
-    supportProbeBounds(state, config), colliders, 0
+  return worldIntersectsCharacterBody(
+    supportProbeBody(state, config), colliders, 0
   );
+}
+
+function followGroundSurface(
+  state,
+  colliders,
+  config,
+  maximumDrop = config.groundSnapDistance
+) {
+  const body = mutableCharacterBody(state);
+  const foot = body.center[1] - body.halfExtents[1];
+  const insetX = body.halfExtents[0];
+  const insetZ = body.halfExtents[2];
+  const offsets = [
+    [0, 0],
+    [-insetX, -insetZ],
+    [-insetX, insetZ],
+    [insetX, -insetZ],
+    [insetX, insetZ]
+  ];
+  const rise = config.stepHeight + config.collisionSkin * 2;
+  const minimumNormalY = Math.cos(config.maximumSlopeDegrees * Math.PI / 180);
+  let surface = null;
+  for (const [localX, localZ] of offsets) {
+    const x = body.center[0] +
+      body.axes[0][0] * localX + body.axes[2][0] * localZ;
+    const z = body.center[2] +
+      body.axes[0][2] * localX + body.axes[2][2] * localZ;
+    const hit = castCollisionSegment(
+      [x, foot + rise, z],
+      [x, foot - maximumDrop, z],
+      colliders
+    );
+    if (!hit || hit.normal[1] < minimumNormalY) continue;
+    if (!surface || hit.point[1] > surface.point[1]) surface = hit;
+  }
+  if (!surface) return false;
+  const adjustment = surface.point[1] - foot + config.collisionSkin;
+  if (adjustment > config.stepHeight + config.collisionSkin * 3 ||
+      adjustment < -maximumDrop - config.collisionSkin) return false;
+  state.position[1] += adjustment;
+  state.grounded = true;
+  recordSurfaceContact(state, surface);
+  return true;
+}
+
+function recordSurfaceContact(state, hit) {
+  const key = `${hit.colliderId}:surface:support`;
+  if (state.contacts.some(contact => contact.key === key)) return;
+  state.contacts.push(Object.freeze({
+    key,
+    colliderId: hit.colliderId,
+    kind: "support",
+    axis: 1,
+    point: Object.freeze([...hit.point]),
+    normal: Object.freeze([...hit.normal])
+  }));
 }
 
 function recordAxisContacts(state, colliders, probeBounds, axis, normalSign, kind) {
@@ -346,7 +459,7 @@ function recordAxisContacts(state, colliders, probeBounds, axis, normalSign, kin
   point[axis] = normalSign > 0 ? body.min[axis] : body.max[axis];
   const normal = [0, 0, 0];
   normal[axis] = normalSign;
-  for (const collider of queryCharacterOverlaps(probeBounds, colliders)) {
+  for (const collider of queryCharacterBodyOverlaps(probeBounds, colliders)) {
     const key = `${collider.id}:${axis}:${normalSign}:${kind}`;
     if (state.contacts.some(contact => contact.key === key)) continue;
     state.contacts.push(Object.freeze({
@@ -360,38 +473,38 @@ function recordAxisContacts(state, colliders, probeBounds, axis, normalSign, kin
   }
 }
 
-function supportProbeBounds(state, config) {
-  const bounds = mutableCharacterBounds(state);
-  const foot = bounds.min[1];
+function supportProbeBody(state, config) {
+  const body = mutableCharacterBody(state);
+  const foot = body.center[1] - body.halfExtents[1];
   const horizontalInset = Math.max(config.collisionSkin * 2, 1e-5);
-  for (const axis of [0, 2]) {
-    if (bounds.max[axis] - bounds.min[axis] > horizontalInset * 2) {
-      bounds.min[axis] += horizontalInset;
-      bounds.max[axis] -= horizontalInset;
-    }
-  }
-  bounds.min[1] = foot - config.groundProbe;
-  bounds.max[1] = foot + Math.max(config.collisionSkin, 1e-5);
-  return bounds;
+  body.halfExtents[0] = Math.max(1e-5, body.halfExtents[0] - horizontalInset);
+  body.halfExtents[2] = Math.max(1e-5, body.halfExtents[2] - horizontalInset);
+  const top = foot + Math.max(config.collisionSkin, 1e-5);
+  const bottom = foot - config.groundProbe;
+  body.center[1] = (top + bottom) * 0.5;
+  body.halfExtents[1] = (top - bottom) * 0.5;
+  return body;
 }
 
-function movementCollisionBounds(state, axis, config) {
-  const bounds = mutableCharacterBounds(state);
+function movementCollisionBody(state, axis, config) {
+  const body = mutableCharacterBody(state);
   const inset = Math.max(config.collisionSkin, 1e-6);
   if (axis === 0 || axis === 2) {
-    if (bounds.max[1] - bounds.min[1] > inset * 2) {
-      bounds.min[1] += inset;
-      bounds.max[1] -= inset;
-    }
+    body.halfExtents[1] = Math.max(1e-5, body.halfExtents[1] - inset);
   } else if (axis === 1) {
-    for (const horizontalAxis of [0, 2]) {
-      if (bounds.max[horizontalAxis] - bounds.min[horizontalAxis] > inset * 2) {
-        bounds.min[horizontalAxis] += inset;
-        bounds.max[horizontalAxis] -= inset;
-      }
-    }
+    body.halfExtents[0] = Math.max(1e-5, body.halfExtents[0] - inset);
+    body.halfExtents[2] = Math.max(1e-5, body.halfExtents[2] - inset);
   }
-  return bounds;
+  return body;
+}
+
+function mutableCharacterBody(state) {
+  const body = characterBodyWorldObb(state);
+  return {
+    center: [...body.center],
+    halfExtents: [...body.halfExtents],
+    axes: body.axes.map(axis => [...axis])
+  };
 }
 
 function mutableCharacterBounds(state) {

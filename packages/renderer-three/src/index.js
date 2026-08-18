@@ -2,7 +2,7 @@ export { ThreeRegionRenderer } from "./ThreeRegionRenderer.js?build=20260813-005
 export {
   GAME_COLLISION_DEBUG_OVERLAY_VERSION,
   GameCollisionDebugOverlay
-} from "./GameCollisionDebugOverlay.js?build=20260817-0054mq";
+} from "./GameCollisionDebugOverlay.js?build=20260818-0054mr";
 export {
   EDITOR_ORBIT_POLICY_VERSION,
   resolveEditorOrbitEnabled

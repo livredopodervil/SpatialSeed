@@ -427,7 +427,7 @@ import {
 } from "./CharacterAnimationTests.js?build=20260812-0054md";
 import {
   createGameCollisionDebugOverlayTests
-} from "./GameCollisionDebugOverlayTests.js?build=20260817-0054mq";
+} from "./GameCollisionDebugOverlayTests.js?build=20260818-0054mr";
 
 export function createRuntimeLayerTests() {
   return {

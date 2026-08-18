@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 export const GAME_COLLISION_DEBUG_OVERLAY_VERSION =
-  "game-collision-debug-overlay-v1";
+  "game-collision-debug-overlay-v2-obb";
 
 const COLORS = Object.freeze({
   characterGrounded: 0x55ef8b,
@@ -37,7 +37,11 @@ export class GameCollisionDebugOverlay {
     if (snapshot.colliders !== this.#worldSource) {
       this.#rebuildWorld(snapshot.colliders ?? [], snapshot.characterBounds);
     }
-    this.#updateCharacter(snapshot.characterBounds, snapshot.grounded);
+    this.#updateCharacter(
+      snapshot.characterBody,
+      snapshot.characterBounds,
+      snapshot.grounded
+    );
     this.#updateContacts(snapshot.contacts ?? []);
     return true;
   }
@@ -71,20 +75,23 @@ export class GameCollisionDebugOverlay {
     }
   }
 
-  #updateCharacter(bounds, grounded) {
-    const box = threeBox(bounds);
-    if (!box) return;
+  #updateCharacter(body, bounds, grounded) {
     if (!this.#characterHelper) {
-      this.#characterHelper = new THREE.Box3Helper(
-        box,
-        COLORS.characterAirborne
+      const sourceGeometry = new THREE.BoxGeometry(1, 1, 1);
+      const edgeGeometry = new THREE.EdgesGeometry(sourceGeometry);
+      sourceGeometry.dispose();
+      this.#characterHelper = new THREE.LineSegments(
+        edgeGeometry,
+        new THREE.LineBasicMaterial({ color: COLORS.characterAirborne })
       );
       this.#characterHelper.name = "collision-debug:character";
       this.#characterHelper.material.depthTest = false;
+      this.#characterHelper.matrixAutoUpdate = false;
       this.object.add(this.#characterHelper);
-    } else {
-      this.#characterHelper.box.copy(box);
     }
+    const matrix = characterBodyMatrix(body) ?? boundsMatrix(bounds);
+    if (!matrix) return;
+    this.#characterHelper.matrix.fromArray(matrix);
     this.#characterHelper.material.color.setHex(
       grounded ? COLORS.characterGrounded : COLORS.characterAirborne
     );
@@ -211,6 +218,31 @@ function threeBox(bounds) {
     new THREE.Vector3().fromArray(bounds.min),
     new THREE.Vector3().fromArray(bounds.max)
   );
+}
+
+function characterBodyMatrix(body) {
+  if (!Array.isArray(body?.center) || !Array.isArray(body?.halfExtents) ||
+      !Array.isArray(body?.axes) || body.axes.length !== 3) return null;
+  const sizes = body.halfExtents.map(value => Number(value) * 2);
+  const axes = body.axes;
+  if (sizes.some(value => !Number.isFinite(value)) ||
+      axes.some(axis => !Array.isArray(axis) || axis.length !== 3)) return null;
+  return [
+    axes[0][0] * sizes[0], axes[0][1] * sizes[0], axes[0][2] * sizes[0], 0,
+    axes[1][0] * sizes[1], axes[1][1] * sizes[1], axes[1][2] * sizes[1], 0,
+    axes[2][0] * sizes[2], axes[2][1] * sizes[2], axes[2][2] * sizes[2], 0,
+    body.center[0], body.center[1], body.center[2], 1
+  ];
+}
+
+function boundsMatrix(bounds) {
+  const box = threeBox(bounds);
+  if (!box) return null;
+  return new THREE.Matrix4().compose(
+    box.getCenter(new THREE.Vector3()),
+    new THREE.Quaternion(),
+    box.getSize(new THREE.Vector3())
+  ).toArray();
 }
 
 function vector3(value) {

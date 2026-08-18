@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260809-0053m";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260817-0054mq";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054mr";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260817-0054mq";
+} from "../../../packages/platform-web/src/index.js?build=20260818-0054mr";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -115,14 +115,14 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260817-0054mq";
+} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mr";
 import {
   CHARACTER_ANIMATION_VERSION,
   CharacterAnimationSystem
-} from "../../../packages/character-animation/src/index.js?build=20260817-0054mq";
+} from "../../../packages/character-animation/src/index.js?build=20260818-0054mr";
 import {
   ThreeCharacterAnimationBackend
-} from "../../../packages/character-animation-three/src/index.js?build=20260817-0054mq";
+} from "../../../packages/character-animation-three/src/index.js?build=20260818-0054mr";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
@@ -131,13 +131,13 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260812-0054g";
 import {
   MeshExchangeService
-} from "../../../packages/mesh-exchange/src/index.js?build=20260817-0054mq";
+} from "../../../packages/mesh-exchange/src/index.js?build=20260818-0054mr";
 import {
   createThreeMeshTriangulator
-} from "../../../packages/mesh-exchange-three/src/index.js?build=20260817-0054mq";
+} from "../../../packages/mesh-exchange-three/src/index.js?build=20260818-0054mr";
 import {
   MeshPathGestureController
-} from "../../../packages/mesh-interaction/src/index.js?build=20260817-0054mq";
+} from "../../../packages/mesh-interaction/src/index.js?build=20260818-0054mr";
 import {
   listMeshOperatorContracts
 } from "../../../packages/mesh-operator-kernel/src/index.js?build=20260812-0054g";
@@ -149,7 +149,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260809-0053l";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260817-0054mq";
+} from "../../../packages/edit-hud/src/index.js?build=20260818-0054mr";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -158,10 +158,10 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260817-0054mq";
+} from "../../../packages/edit-tools/src/index.js?build=20260818-0054mr";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260817-0054mq";
+} from "../../../packages/object-placement/src/index.js?build=20260818-0054mr";
 import {
   DrawingTargetController
 } from "../../../packages/drawing-target/src/index.js?build=20260808-0053f";

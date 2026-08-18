@@ -2,7 +2,7 @@
 
 ## 1 - Escopo e autoridade
 
-Esta referência descreve as fronteiras públicas observáveis no snapshot de 17
+Esta referência descreve as fronteiras públicas observáveis no snapshot de 18
 de agosto de 2026. Ela não congela toda assinatura interna. Para listas
 exaustivas, consulte registros e ajuda do build carregado.
 
@@ -16,8 +16,8 @@ Ordem de autoridade:
 5. documentos de marco.
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
-17 de agosto validadas pelos gates locais e identificadas como build
-`20260817-0054mq`.
+18 de agosto validadas pelos gates locais e identificadas como build
+`20260818-0054mr`.
 
 ## 2 - Modelo de maturidade
 
@@ -371,8 +371,8 @@ serviços ou procedimentos, não dentro de um monólito.
 ### CharacterBodyFrame
 
 Autoridade física do personagem. Armazena `centerOffset`, `halfExtents` e
-`baseYaw` em espaço local. O corpo orientado é projetado numa AABB conservadora
-para as consultas atuais.
+`baseYaw` em espaço local. A OBB orientada participa da narrow phase; sua AABB
+conservadora serve apenas à busca ampla e a contratos legados.
 
 ### Visual
 
@@ -397,12 +397,18 @@ O `CollisionWorld` é independente de Three.js. Recebe formas numéricas:
 - `sphere`;
 - `triangle-mesh`.
 
-Broad phase localiza candidatos. A narrow phase consulta a forma normalizada.
-A câmera usa `castCollisionSegment()` para impedir atravessamento de
-obstáculos.
+Broad phase localiza candidatos com envelopes AABB. A narrow phase compara a
+OBB orientada do personagem com a forma normalizada. A câmera e as sondas de
+solo usam `castCollisionSegment()`, que também retorna a normal da superfície.
+
+`CharacterPhysics` conserva um solver cinemático barato: separação por eixos
+para deslizamento tangencial, tentativa limitada de subida, sondas sob a base
+para aderência a rampas e limite angular para superfícies transitáveis. Esse
+contrato não introduz corpos rígidos nem estado físico persistente.
 
 `CharacterPhysics` publica telemetria efêmera de `support`, `blocked` e
-`penetration`, com ID do colisor, ponto e normal axial. Essa telemetria não
+`penetration`, com ID do colisor, ponto e normal. Apoio em superfície preserva a
+normal geométrica; bloqueios por eixo ainda usam normal axial. Essa telemetria não
 participa da decisão física. `GameCollisionDebugOverlay` a projeta junto das
 formas de colisão, limita o mundo aos colisores mais próximos e reutiliza os
 marcadores de contato entre frames.
@@ -529,7 +535,7 @@ regressão observada continua sendo regressão mesmo quando gates passam.
 
 ### Pretendido
 
-- cápsula/OBB e contatos tangenciais completos;
+- cápsula opcional e contatos tangenciais completos;
 - corpos dinâmicos e física geral;
 - modificadores vinculados e avaliação incremental universal;
 - booleanas robustas em backend substituível;

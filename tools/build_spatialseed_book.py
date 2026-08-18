@@ -412,7 +412,7 @@ class CoverPage(Flowable):
         c.drawRightString(
             CONTENT_W - 0.02 * inch,
             PAGE_H * 0.09 - MARGIN,
-            "17 de agosto de 2026 - baseline 0054",
+            "18 de agosto de 2026 - baseline 0054mr",
         )
         c.restoreState()
 
@@ -482,7 +482,7 @@ class PartDivider(Flowable):
         sp.drawOn(c, 0, self.height * 0.39)
         c.setFillColor(HexColor("#8FA8BA"))
         c.setFont(FONT_MONO, 7.5)
-        c.drawString(0, 0.14 * inch, "snapshot 17-08-2026 - build 20260817-0054mm")
+        c.drawString(0, 0.14 * inch, "snapshot 18-08-2026 - build 20260818-0054mr")
         c.restoreState()
 
 
@@ -948,8 +948,8 @@ def attach_sources(base_pdf, final_pdf):
         "/Author": "Rogério Duarte; colaboração editorial e técnica: OpenAI Codex",
         "/Subject": "Manual, arquitetura, referência técnica, geração procedural, animação, jogo e PWA",
         "/Keywords": "SpatialSeed, manual, referência técnica, procedural, animação, jogo, PWA, arquitetura",
-        "/CreationDate": "D:20260817000000-03'00'",
-        "/ModDate": "D:20260817000000-03'00'",
+        "/CreationDate": "D:20260818000000-03'00'",
+        "/ModDate": "D:20260818000000-03'00'",
     })
     with final_pdf.open("wb") as handle:
         writer.write(handle)

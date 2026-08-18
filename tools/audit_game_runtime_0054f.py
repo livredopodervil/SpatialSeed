@@ -4,7 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 checks = {
     "events": (ROOT / "packages/game-runtime/src/GameEventRuntime.js", "class GameEventRuntime"),
     "audio": (ROOT / "packages/game-runtime/src/GameAudioRuntime.js", "class GameAudioRuntime"),
-    "wall-jump": (ROOT / "packages/game-runtime/src/CharacterPhysics.js", "supportProbeBounds"),
+    "wall-jump": (ROOT / "packages/game-runtime/src/CharacterPhysics.js", "supportProbeBody"),
     "pagehide": (ROOT / "apps/web/bootstrap/bindWebInterface.js", "prepareGamePageExit"),
     "event-command": (ROOT / "apps/web/bootstrap/createWebRuntime.js", '"game.events.configure"'),
 }

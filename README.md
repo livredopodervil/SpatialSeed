@@ -13,9 +13,9 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260817-0054mq`, preparado em 17 de
-> agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 preserva
-> a edição consolidada do marco `0054mm`.
+> documentação viva corresponde ao build `20260818-0054mr`, preparado em 18 de
+> agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 acompanha
+> esta edição consolidada.
 
 ## O que o SpatialSeed é
 

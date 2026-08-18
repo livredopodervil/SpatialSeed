@@ -30,6 +30,7 @@ expected_channels = {
     "20260817-0054mo": "feature/0054mo-property-schema-consolidation",
     "20260817-0054mp": "feature/0054mp-analog-game-controls-shadow",
     "20260817-0054mq": "feature/0054mq-collision-debug-overlay",
+    "20260818-0054mr": "feature/0054mr-obb-slope-kinematics",
 }
 current_build = build.get("build")
 if current_build not in expected_channels:

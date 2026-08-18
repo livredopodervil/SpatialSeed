@@ -354,7 +354,9 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - 0055 é o critério de maturidade: pequenos jogos completos devem poder ser
   construídos e executados sem alterações ad hoc nos módulos de editor/renderer;
 - a colisão evoluiu de AABB global para broad phase + primitivas/malha final, com
-  compartilhamento de geometria e suporte a superfícies planas;
+  compartilhamento de geometria e suporte a superfícies planas; em 0054mr o
+  personagem passou a usar OBB na narrow phase, aderência a rampas transitáveis
+  e preservação do movimento tangencial em paredes;
 - a câmera de jogo usa consulta espacial própria e recua diante de obstáculos, sem
   introduzir dependência física no controlador de câmera editorial;
 - música e efeitos possuem configuração inicial em `apps/web/assets/audio`, mas
@@ -363,6 +365,25 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
   `GameRuntime` como organizador/scheduler em vez de repositório monolítico de regras;
 - a álgebra de operadores de malha e os gestos por caminho da 0054g/0054h seguem
   independentes do runtime de jogo e convergem pela camada pública de comandos.
+
+#### Sequência incremental até jogos simples
+
+1. medir inicialização, construção do mundo de colisão e custo por frame; só
+   então introduzir cache e índice/BVH onde os dados mostrarem gargalo;
+2. consolidar janelas: colapso individual, conjunto reduzido no modo cena e um
+   único painel contextual para os parâmetros da ferramenta ativa;
+3. completar a superfície universal `Resource + Property + Command`, estendendo
+   o trabalho de 0054mo para transformações, aparência, luzes, câmeras e jogo;
+4. adicionar fontes de propriedade (`constant`, `keyframes`, `expression` e
+   `binding`) sobre o runtime temporal já existente;
+5. expor no Inspector uma lista `event -> action/procedure` por objeto, usando
+   `GameEventRuntime` e o runtime de scripts atuais, sem criar segunda autoridade;
+6. amadurecer a fronteira física: controlador cinemático continua apropriado ao
+   personagem; corpos dinâmicos entram por backend separado, passo fixo,
+   colisores explícitos e estado efêmero.
+
+Cada item deve permanecer um incremento testável. Física geral não bloqueia
+propriedades, eventos ou autoria de jogos simples.
 
 #### Nota de desenvolvimento — módulos ESM sob Node
 

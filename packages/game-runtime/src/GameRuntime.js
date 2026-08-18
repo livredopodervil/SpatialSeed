@@ -13,14 +13,15 @@ import {
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260813-0054ml";
+} from "./CharacterPhysics.js?build=20260818-0054mr";
 import {
-  characterBodyHorizontalSupport
-} from "./CharacterBodyFrame.js?build=20260813-0054ml";
+  characterBodyHorizontalSupport,
+  characterBodyWorldObb
+} from "./CharacterBodyFrame.js?build=20260818-0054mr";
 import {
   castCollisionSegment,
   normalizeCollisionWorld
-} from "./CollisionWorld.js?build=20260812-0054l";
+} from "./CollisionWorld.js?build=20260818-0054mr";
 
 export const GAME_RUNTIME_VERSION = "game-runtime-v6-character-body-frame";
 
@@ -486,6 +487,7 @@ export class GameRuntime {
       enabled: true,
       revision: this.statistics.worldRefreshes,
       grounded: Boolean(this.#physics.grounded),
+      characterBody: characterBodyWorldObb(this.#physics),
       characterBounds: characterWorldBounds(this.#physics),
       contacts: this.#physics.contacts ?? [],
       colliders: this.#colliders

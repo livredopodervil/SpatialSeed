@@ -1,11 +1,11 @@
-import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260817-0054mq";
+import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260818-0054mr";
 import {
   BrowserAssetFileGateway,
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260817-0054mq";
+} from "../../../packages/platform-web/src/index.js?build=20260818-0054mr";
 import {
   normalizeGameDirectionalInput
-} from "../../../packages/game-runtime/src/index.js?build=20260817-0054mq";
+} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mr";
 
 export function bindWebInterface({
   runtime,

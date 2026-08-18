@@ -24,14 +24,18 @@ def require(relative: str, *tokens: str) -> None:
 
 
 build = json.loads(read("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260817-0054mq":
+if build.get("build") not in {"20260817-0054mq", "20260818-0054mr"}:
     errors.append(f"build incorreto: {build.get('build')!r}")
-if build.get("channel") != "feature/0054mq-collision-debug-overlay":
+expected_channel = {
+    "20260817-0054mq": "feature/0054mq-collision-debug-overlay",
+    "20260818-0054mr": "feature/0054mr-obb-slope-kinematics",
+}.get(build.get("build"))
+if build.get("channel") != expected_channel:
     errors.append(f"canal incorreto: {build.get('channel')!r}")
 
 require(
     "packages/game-runtime/src/CharacterPhysics.js",
-    "queryCharacterOverlaps",
+    "queryCharacterBodyOverlaps",
     "state.contacts = []",
     "recordAxisContacts",
     '"penetration"',
@@ -46,7 +50,7 @@ require(
 )
 require(
     "packages/renderer-three/src/GameCollisionDebugOverlay.js",
-    "game-collision-debug-overlay-v1",
+    "game-collision-debug-overlay-v2-obb",
     "maximumColliders",
     "characterGrounded",
     "triangleMesh",

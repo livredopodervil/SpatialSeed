@@ -59,6 +59,52 @@ export function worldIntersectsCharacterBounds(bounds, colliders, skin = 0) {
   return false;
 }
 
+export function intersectsCharacterBody(body, collider, skin = 0) {
+  const oriented = normalizeCharacterBody(body);
+  const normalized = normalizeCollider(collider, 0);
+  const padding = nonNegative(skin, "skin");
+  return intersectsNormalizedCharacterBody(oriented, normalized, padding);
+}
+
+function intersectsNormalizedCharacterBody(oriented, normalized, padding) {
+  if (!aabbOverlap(oriented.broadBounds, normalized.broadBounds, padding)) {
+    return false;
+  }
+  switch (normalized.collider.type) {
+    case "local-box":
+      return intersectsObbLocalBox(oriented, normalized.collider, padding);
+    case "sphere":
+      return intersectsObbSphere(oriented, normalized.collider, padding);
+    case "triangle-mesh":
+      return intersectsObbTriangleMesh(oriented, normalized.collider, padding);
+    default:
+      return false;
+  }
+}
+
+export function worldIntersectsCharacterBody(body, colliders, skin = 0) {
+  const world = normalizeCollisionWorld(colliders);
+  const oriented = normalizeCharacterBody(body);
+  const padding = nonNegative(skin, "skin");
+  for (const collider of world) {
+    if (intersectsNormalizedCharacterBody(oriented, collider, padding)) return true;
+  }
+  return false;
+}
+
+export function queryCharacterBodyOverlaps(body, colliders, skin = 0) {
+  const world = normalizeCollisionWorld(colliders);
+  const oriented = normalizeCharacterBody(body);
+  const padding = nonNegative(skin, "skin");
+  const hits = [];
+  for (const collider of world) {
+    if (intersectsNormalizedCharacterBody(oriented, collider, padding)) {
+      hits.push(collider);
+    }
+  }
+  return hits;
+}
+
 
 export function castCollisionSegment(start, end, colliders, { margin = 0 } = {}) {
   const from = vector3(start, "segment.start");
@@ -72,63 +118,105 @@ export function castCollisionSegment(start, end, colliders, { margin = 0 } = {})
   for (const entry of world) {
     const broad = expandedBounds(entry.broadBounds, padding);
     if (segmentAabbFraction(from, to, broad) === null) continue;
-    const fraction = segmentColliderFraction(from, to, entry.collider);
-    if (fraction === null || fraction < -EPSILON || fraction > 1 + EPSILON) continue;
-    const clamped = Math.max(0, Math.min(1, fraction));
+    const hit = segmentColliderHit(from, to, entry.collider);
+    if (!hit || hit.fraction < -EPSILON || hit.fraction > 1 + EPSILON) continue;
+    const clamped = Math.max(0, Math.min(1, hit.fraction));
     if (nearest && clamped >= nearest.fraction) continue;
     nearest = Object.freeze({
       colliderId: entry.id,
       fraction: clamped,
       distance: length * clamped,
-      point: Object.freeze(from.map((value, axis) => value + delta[axis] * clamped))
+      point: Object.freeze(from.map((value, axis) => value + delta[axis] * clamped)),
+      normal: Object.freeze([...hit.normal])
     });
   }
   return nearest;
 }
 
-function segmentColliderFraction(start, end, collider) {
+function segmentColliderHit(start, end, collider) {
   switch (collider.type) {
     case "local-box":
-      return segmentLocalBoxFraction(start, end, collider);
+      return segmentLocalBoxHit(start, end, collider);
     case "sphere":
-      return segmentSphereFraction(start, end, collider);
+      return segmentSphereHit(start, end, collider);
     case "triangle-mesh":
-      return segmentTriangleMeshFraction(start, end, collider);
+      return segmentTriangleMeshHit(start, end, collider);
     default:
       return null;
   }
 }
 
-function segmentLocalBoxFraction(start, end, box) {
+function segmentLocalBoxHit(start, end, box) {
   let inverse;
   try { inverse = invertAffineMatrix(box.worldMatrix); }
   catch { return null; }
-  return segmentAabbFraction(
-    transformPoint(inverse, start),
-    transformPoint(inverse, end),
-    box.localBounds
+  const localStart = transformPoint(inverse, start);
+  const localEnd = transformPoint(inverse, end);
+  const fraction = segmentAabbFraction(localStart, localEnd, box.localBounds);
+  if (fraction === null) return null;
+  const localPoint = localStart.map(
+    (value, axis) => value + (localEnd[axis] - value) * fraction
   );
+  let face = { distance: Infinity, axis: 1, sign: 1 };
+  for (let axis = 0; axis < 3; axis += 1) {
+    for (const sign of [-1, 1]) {
+      const plane = sign < 0
+        ? box.localBounds.min[axis]
+        : box.localBounds.max[axis];
+      const distance = Math.abs(localPoint[axis] - plane);
+      if (distance < face.distance) face = { distance, axis, sign };
+    }
+  }
+  const localNormal = [0, 0, 0];
+  localNormal[face.axis] = face.sign;
+  return Object.freeze({
+    fraction,
+    normal: Object.freeze(orientNormalAgainst(
+      transformNormal(box.worldMatrix, localNormal),
+      subtract(end, start)
+    ))
+  });
 }
 
-function segmentSphereFraction(start, end, sphere) {
+function segmentSphereHit(start, end, sphere) {
   const direction = subtract(end, start);
   const offset = subtract(start, sphere.center);
   const a = dot(direction, direction);
   const c = dot(offset, offset) - sphere.radius * sphere.radius;
-  if (c <= 0) return 0;
+  if (c <= 0) {
+    return Object.freeze({
+      fraction: 0,
+      normal: Object.freeze(orientNormalAgainst(
+        normalized(offset, [0, 1, 0]),
+        direction
+      ))
+    });
+  }
   const b = 2 * dot(offset, direction);
   const discriminant = b * b - 4 * a * c;
   if (discriminant < 0 || a <= EPSILON) return null;
   const root = Math.sqrt(discriminant);
   const t0 = (-b - root) / (2 * a);
   const t1 = (-b + root) / (2 * a);
-  if (t0 >= 0 && t0 <= 1) return t0;
-  if (t1 >= 0 && t1 <= 1) return t1;
-  return null;
+  const fraction = t0 >= 0 && t0 <= 1
+    ? t0
+    : t1 >= 0 && t1 <= 1 ? t1 : null;
+  if (fraction === null) return null;
+  const point = start.map(
+    (value, axis) => value + direction[axis] * fraction
+  );
+  return Object.freeze({
+    fraction,
+    normal: Object.freeze(orientNormalAgainst(
+      normalized(subtract(point, sphere.center), [0, 1, 0]),
+      direction
+    ))
+  });
 }
 
-function segmentTriangleMeshFraction(start, end, mesh) {
+function segmentTriangleMeshHit(start, end, mesh) {
   let nearest = null;
+  const direction = subtract(end, start);
   for (const part of mesh.parts) {
     if (segmentAabbFraction(start, end, part.broadBounds) === null) continue;
     const triangles = part.triangles;
@@ -138,7 +226,15 @@ function segmentTriangleMeshFraction(start, end, mesh) {
       const c = transformPoint(part.matrix, triangles.slice(offset + 6, offset + 9));
       const fraction = segmentTriangleFraction(start, end, a, b, c);
       if (fraction === null) continue;
-      if (nearest === null || fraction < nearest) nearest = fraction;
+      if (nearest === null || fraction < nearest.fraction) {
+        nearest = Object.freeze({
+          fraction,
+          normal: Object.freeze(orientNormalAgainst(
+            normalized(cross(subtract(b, a), subtract(c, a)), [0, 1, 0]),
+            direction
+          ))
+        });
+      }
     }
   }
   return nearest;
@@ -246,6 +342,41 @@ function normalizeCollider(entry, index) {
   });
 }
 
+function normalizeCharacterBody(source) {
+  const center = vector3(source?.center, "character.body.center");
+  const halfExtents = vector3(
+    source?.halfExtents,
+    "character.body.halfExtents"
+  ).map((value, axis) => positive(value, `character.body.halfExtents[${axis}]`));
+  if (!Array.isArray(source?.axes) || source.axes.length !== 3) {
+    throw new TypeError("character.body.axes must contain three axes.");
+  }
+  const axes = source.axes.map((axis, index) => {
+    const value = vector3(axis, `character.body.axes[${index}]`);
+    const length = Math.hypot(...value);
+    if (length <= EPSILON) {
+      throw new RangeError(`character.body.axes[${index}] cannot be null.`);
+    }
+    return value.map(component => component / length);
+  });
+  const broadHalf = [0, 1, 2].map(worldAxis =>
+    axes.reduce(
+      (sum, axis, localAxis) =>
+        sum + Math.abs(axis[worldAxis]) * halfExtents[localAxis],
+      0
+    )
+  );
+  return {
+    center,
+    halfExtents,
+    axes,
+    broadBounds: {
+      min: center.map((value, axis) => value - broadHalf[axis]),
+      max: center.map((value, axis) => value + broadHalf[axis])
+    }
+  };
+}
+
 function normalizeTriangleMesh(source, index) {
   if (!Array.isArray(source.parts) || source.parts.length === 0) {
     throw new TypeError(
@@ -292,6 +423,35 @@ function intersectsAabbTriangleMesh(aabb, mesh, padding) {
       const c = transformPoint(part.matrix, triangles.slice(offset + 6, offset + 9));
       if (!triangleBroadOverlap(expanded, a, b, c)) continue;
       if (triangleIntersectsAabb(expanded, a, b, c)) return true;
+    }
+  }
+  return false;
+}
+
+function intersectsObbTriangleMesh(body, mesh, padding) {
+  const half = body.halfExtents.map(value => value + padding);
+  const localBounds = {
+    min: half.map(value => -value),
+    max: half
+  };
+  for (const part of mesh.parts) {
+    if (!aabbOverlap(body.broadBounds, part.broadBounds, padding)) continue;
+    const triangles = part.triangles;
+    for (let offset = 0; offset < triangles.length; offset += 9) {
+      const a = worldPointToBodyLocal(
+        body,
+        transformPoint(part.matrix, triangles.slice(offset, offset + 3))
+      );
+      const b = worldPointToBodyLocal(
+        body,
+        transformPoint(part.matrix, triangles.slice(offset + 3, offset + 6))
+      );
+      const c = worldPointToBodyLocal(
+        body,
+        transformPoint(part.matrix, triangles.slice(offset + 6, offset + 9))
+      );
+      if (!triangleBroadOverlap(localBounds, a, b, c)) continue;
+      if (triangleIntersectsAabb(localBounds, a, b, c)) return true;
     }
   }
   return false;
@@ -379,6 +539,91 @@ function intersectsAabbSphere(aabb, sphere, padding) {
   }
   const radius = sphere.radius + padding;
   return distanceSquared <= radius * radius + EPSILON;
+}
+
+function intersectsObbSphere(body, sphere, padding) {
+  const local = worldPointToBodyLocal(body, sphere.center);
+  let distanceSquared = 0;
+  for (let axis = 0; axis < 3; axis += 1) {
+    const half = body.halfExtents[axis] + padding;
+    const nearest = Math.max(-half, Math.min(half, local[axis]));
+    const delta = local[axis] - nearest;
+    distanceSquared += delta * delta;
+  }
+  const radius = sphere.radius + padding;
+  return distanceSquared <= radius * radius + EPSILON;
+}
+
+function intersectsObbLocalBox(body, localBox, padding) {
+  const localCenter = [0, 1, 2].map(axis =>
+    (localBox.localBounds.min[axis] + localBox.localBounds.max[axis]) * 0.5
+  );
+  const localHalf = [0, 1, 2].map(axis =>
+    (localBox.localBounds.max[axis] - localBox.localBounds.min[axis]) * 0.5
+  );
+  const matrix = localBox.worldMatrix;
+  const columns = [
+    [matrix[0], matrix[1], matrix[2]],
+    [matrix[4], matrix[5], matrix[6]],
+    [matrix[8], matrix[9], matrix[10]]
+  ];
+  const axes = [];
+  const halfExtents = [];
+  for (let axis = 0; axis < 3; axis += 1) {
+    const scale = Math.hypot(...columns[axis]);
+    if (scale <= EPSILON) return false;
+    axes.push(columns[axis].map(value => value / scale));
+    halfExtents.push(localHalf[axis] * scale);
+  }
+  return intersectsObbs(body, {
+    center: transformPoint(matrix, localCenter),
+    halfExtents,
+    axes
+  }, padding);
+}
+
+function intersectsObbs(left, right, padding) {
+  const rotation = left.axes.map(leftAxis =>
+    right.axes.map(rightAxis => dot(leftAxis, rightAxis))
+  );
+  const absolute = rotation.map(row =>
+    row.map(value => Math.abs(value) + 1e-12)
+  );
+  const translationWorld = subtract(right.center, left.center);
+  const translation = left.axes.map(axis => dot(translationWorld, axis));
+  const leftHalf = left.halfExtents.map(value => value + padding);
+  const rightHalf = right.halfExtents.map(value => value + padding);
+
+  for (let i = 0; i < 3; i += 1) {
+    const rb = rightHalf[0] * absolute[i][0] +
+      rightHalf[1] * absolute[i][1] + rightHalf[2] * absolute[i][2];
+    if (Math.abs(translation[i]) > leftHalf[i] + rb) return false;
+  }
+  for (let j = 0; j < 3; j += 1) {
+    const projected = translation[0] * rotation[0][j] +
+      translation[1] * rotation[1][j] + translation[2] * rotation[2][j];
+    const ra = leftHalf[0] * absolute[0][j] +
+      leftHalf[1] * absolute[1][j] + leftHalf[2] * absolute[2][j];
+    if (Math.abs(projected) > ra + rightHalf[j]) return false;
+  }
+  for (let i = 0; i < 3; i += 1) {
+    const i1 = (i + 1) % 3;
+    const i2 = (i + 2) % 3;
+    for (let j = 0; j < 3; j += 1) {
+      const j1 = (j + 1) % 3;
+      const j2 = (j + 2) % 3;
+      const ra = leftHalf[i1] * absolute[i2][j] +
+        leftHalf[i2] * absolute[i1][j];
+      const rb = rightHalf[j1] * absolute[i][j2] +
+        rightHalf[j2] * absolute[i][j1];
+      const separation = Math.abs(
+        translation[i2] * rotation[i1][j] -
+        translation[i1] * rotation[i2][j]
+      );
+      if (separation > ra + rb) return false;
+    }
+  }
+  return true;
 }
 
 function intersectsAabbLocalBox(aabb, localBox, padding) {
@@ -476,6 +721,34 @@ function transformPoint(matrix, point) {
     (matrix[1] * x + matrix[5] * y + matrix[9] * z + matrix[13]) / denominator,
     (matrix[2] * x + matrix[6] * y + matrix[10] * z + matrix[14]) / denominator
   ];
+}
+
+function transformNormal(matrix, normal) {
+  let inverse;
+  try { inverse = invertAffineMatrix(matrix); }
+  catch { return normalized(normal, [0, 1, 0]); }
+  return normalized([
+    inverse[0] * normal[0] + inverse[1] * normal[1] + inverse[2] * normal[2],
+    inverse[4] * normal[0] + inverse[5] * normal[1] + inverse[6] * normal[2],
+    inverse[8] * normal[0] + inverse[9] * normal[1] + inverse[10] * normal[2]
+  ], [0, 1, 0]);
+}
+
+function normalized(vector, fallback) {
+  const length = Math.hypot(...vector);
+  if (length <= EPSILON) return [...fallback];
+  return vector.map(component => component / length);
+}
+
+function orientNormalAgainst(normal, direction) {
+  return dot(normal, direction) > 0
+    ? normal.map(component => -component)
+    : [...normal];
+}
+
+function worldPointToBodyLocal(body, point) {
+  const delta = subtract(point, body.center);
+  return body.axes.map(axis => dot(delta, axis));
 }
 
 function subtract(left, right) {

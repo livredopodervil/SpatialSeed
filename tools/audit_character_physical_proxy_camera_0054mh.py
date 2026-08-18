@@ -14,8 +14,8 @@ def req(rel,tokens):
  return s
 build=json.loads(src("apps/web/build-info.json") or "{}")
 current=build.get("build")
-if current not in {"20260812-0054mh", "20260812-0054mi", "20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo", "20260817-0054mp", "20260817-0054mq"}: errors.append(f"build incorreto: {current!r}")
-if current in {"20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo", "20260817-0054mp", "20260817-0054mq"}:
+if current not in {"20260812-0054mh", "20260812-0054mi", "20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo", "20260817-0054mp", "20260817-0054mq", "20260818-0054mr"}: errors.append(f"build incorreto: {current!r}")
+if current in {"20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo", "20260817-0054mp", "20260817-0054mq", "20260818-0054mr"}:
  backend=req("packages/character-animation-three/src/ThreeCharacterAnimationBackend.js", (
   "independent-visual-projection", 'fit: "none"', "attachRuntimeVisual"
  ))

@@ -3,8 +3,8 @@
 ## 1 - Sobre este manual
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
-Ele foi reescrito a partir do snapshot de 17 de agosto de 2026, derivado do
-build `20260817-0054mq`. A árvore recebida passou pelos gates locais depois da
+Ele foi reescrito a partir do snapshot de 18 de agosto de 2026, derivado do
+build `20260818-0054mr`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
@@ -84,7 +84,7 @@ do índice visual do personagem.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260817-0054mq`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260818-0054mr`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -752,13 +752,15 @@ O mundo estático usa broad phase espacial. A narrow phase pode representar:
 - esfera analítica válida;
 - malha triangular final.
 
-O personagem usa um corpo cinemático conservador. A física inclui gravidade,
-aceleração, atrito, pulo, tolerância de borda, apoio e respawn. Ela não é um
-motor geral de corpos rígidos e não resolve todas as rampas ou contatos
-dinâmicos.
+O personagem usa OBB orientada pelo próprio yaw, enquanto a AABB conservadora
+fica restrita à busca ampla. A cinemática inclui gravidade, aceleração, atrito,
+pulo, tolerância de borda, apoio, subida curta, aderência a rampas transitáveis,
+deslizamento em paredes e respawn. Ela ainda não é um motor geral de corpos
+rígidos: rampas acima do limite configurado e contatos dinâmicos não são
+resolvidos como física completa.
 
-Toque em **Colisão** no HUD de jogo para ativar o diagnóstico. O body do
-personagem fica verde quando `grounded` e vermelho no ar. Caixas locais são
+Toque em **Colisão** no HUD de jogo para ativar o diagnóstico. O body OBB real
+do personagem fica verde quando `grounded` e vermelho no ar. Caixas locais são
 azuis, esferas são violetas e envelopes de broad phase de malhas triangulares
 são laranja. Pontos amarelos e setas vermelhas mostram contatos e suas normais.
 O contador no topo indica quantos contatos foram publicados no frame. O overlay
@@ -778,7 +780,10 @@ game start
 game stop
 game respawn
 game collision debug set {"enabled":true}
-game config {"controls":{"movementReference":"camera"}}
+game config set {"controls":{"movementReference":"camera"}}
+game config set {"character":{"stepHeight":0.35}}
+game config set {"character":{"groundSnapDistance":0.3}}
+game config set {"character":{"maximumSlopeDegrees":50}}
 ```
 
 O estado físico é efêmero: sair do jogo restaura autoria, câmera e projeção.

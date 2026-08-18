@@ -1,4 +1,4 @@
-export const CHARACTER_BODY_FRAME_VERSION = "character-body-frame-v1-oriented-aabb";
+export const CHARACTER_BODY_FRAME_VERSION = "character-body-frame-v2-obb";
 
 const EPSILON = 1e-9;
 
@@ -65,6 +65,21 @@ export function characterBodyWorldBounds(state) {
   return Object.freeze({
     min: Object.freeze(center.map((value, axis) => value - halfExtents[axis])),
     max: Object.freeze(center.map((value, axis) => value + halfExtents[axis]))
+  });
+}
+
+export function characterBodyWorldObb(state) {
+  const cosine = Math.cos(state.yaw);
+  const sine = Math.sin(state.yaw);
+  return Object.freeze({
+    center: characterBodyWorldCenter(state),
+    halfExtents: Object.freeze([...state.halfExtents]),
+    axes: Object.freeze([
+      Object.freeze([cosine, 0, -sine]),
+      Object.freeze([0, 1, 0]),
+      Object.freeze([sine, 0, cosine])
+    ]),
+    broadBounds: characterBodyWorldBounds(state)
   });
 }
 

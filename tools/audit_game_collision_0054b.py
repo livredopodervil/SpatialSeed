@@ -31,7 +31,7 @@ for forbidden in ('from "three', "ThreeRegionRenderer", "document.", "window."):
 
 physics = require("packages/game-runtime/src/CharacterPhysics.js", (
     'from "./CollisionWorld.js?build=',
-    "worldIntersectsCharacterBounds",
+    "worldIntersectsCharacterBody",
     "separationDistance",
     "moveAxis",
 ))

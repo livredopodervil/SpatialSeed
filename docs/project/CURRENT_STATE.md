@@ -6,8 +6,8 @@
 
 ## Baseline desta revisão
 
-A documentação viva de 17 de agosto de 2026 corresponde ao build
-`20260817-0054mq`, sucessor do marco publicado `0054mm`.
+A documentação viva de 18 de agosto de 2026 corresponde ao build
+`20260818-0054mr`, sucessor do marco publicado `0054mm`.
 
 O incremento `0054mo` conecta os parâmetros já declarados pelos providers de
 geometria ao registro comum de propriedades. Inspector e Console passam a
@@ -20,6 +20,10 @@ existente no renderer.
 O incremento `0054mq` torna colisores e contatos observáveis sem alterar a
 resposta física: body, formas do mundo, apoio, bloqueios e recuperação de
 penetração alimentam um overlay Three separado e desligado por padrão.
+
+O incremento `0054mr` usa a OBB orientada do personagem também na narrow phase,
+adiciona normais aos casts e estabiliza rampas e paredes com subida limitada,
+aderência ao solo e preservação da componente tangencial do movimento.
 
 ## Implementado e verificável
 

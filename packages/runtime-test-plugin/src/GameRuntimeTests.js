@@ -2,14 +2,16 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime,
+  characterBodyWorldObb,
   characterWorldBounds,
   createCharacterPhysicsState,
   castCollisionSegment,
+  intersectsCharacterBody,
   intersectsCharacterBounds,
   normalizeCollisionWorld,
   normalizeGameDirectionalInput,
   stepCharacterPhysics
-} from "../../game-runtime/src/index.js?build=20260813-0054ml";
+} from "../../game-runtime/src/index.js?build=20260818-0054mr";
 
 const CHARACTER_BOUNDS = Object.freeze({
   min: Object.freeze([-0.5, 0.5, -0.5]),
@@ -141,6 +143,23 @@ export function createGameRuntimeTests() {
       ), true);
     },
 
+    "corpo OBB rejeita falso positivo da AABB conservadora"() {
+      const state = createCharacterPhysicsState({
+        pivot: [0, 0, 0],
+        bodyFrame: {
+          centerOffset: [0, 0, 0],
+          halfExtents: [1.5, 0.5, 0.2],
+          baseYaw: Math.PI / 4
+        }
+      });
+      const obstacle = normalizeCollisionWorld([{
+        id: "corner-outside-obb",
+        bounds: { min: [0.9, -0.1, 0.9], max: [1.1, 0.1, 1.1] }
+      }])[0];
+      assertEqual(intersectsCharacterBounds(characterWorldBounds(state), obstacle), true);
+      assertEqual(intersectsCharacterBody(characterBodyWorldObb(state), obstacle), false);
+    },
+
     "malha triangular rejeita vazio interno ao broad bounds"() {
       const mesh = normalizeCollisionWorld([{
         id: "triangle",
@@ -248,6 +267,60 @@ export function createGameRuntimeTests() {
         Math.abs(state.position[2]),
         0.08
       );
+    },
+
+    "rampa sobe e desce aderida sem converter inclinação em degraus"() {
+      const world = rampWorld();
+      const ascending = characterState([-0.6, 0.5, 0]);
+      let airborneAscent = 0;
+      let maximumAscentStep = 0;
+      let previousY = ascending.position[1];
+      for (let index = 0; index < 48; index += 1) {
+        stepCharacterPhysics(ascending, { worldX: 1 }, world, undefined, 1 / 60);
+        if (index > 4 && !ascending.grounded) airborneAscent += 1;
+        if (index > 4) {
+          maximumAscentStep = Math.max(
+            maximumAscentStep,
+            Math.abs(ascending.position[1] - previousY)
+          );
+        }
+        previousY = ascending.position[1];
+      }
+      assertEqual(airborneAscent, 0);
+      assertEqual(ascending.position[1] > 1.2, true);
+      assertEqual(ascending.velocity[0] > 4, true);
+      assertEqual(maximumAscentStep < 0.08, true);
+
+      const descending = characterState([3.4, 2.56, 0]);
+      let airborneDescent = 0;
+      let maximumDescentStep = 0;
+      previousY = descending.position[1];
+      for (let index = 0; index < 36; index += 1) {
+        stepCharacterPhysics(descending, { worldX: -1 }, world, undefined, 1 / 60);
+        if (index > 2 && !descending.grounded) airborneDescent += 1;
+        if (index > 2) {
+          maximumDescentStep = Math.max(
+            maximumDescentStep,
+            Math.abs(descending.position[1] - previousY)
+          );
+        }
+        previousY = descending.position[1];
+      }
+      assertEqual(airborneDescent, 0);
+      assertEqual(maximumDescentStep < 0.08, true);
+    },
+
+    "parede bloqueia a normal e preserva o movimento tangencial"() {
+      const state = characterState([0, 0.5, -2]);
+      const world = normalizeCollisionWorld([
+        PLATFORM,
+        { id: "wall", bounds: { min: [1, -1, -8], max: [1.5, 3, 8] } }
+      ]);
+      simulate(state, world, 90, { worldX: 1, worldZ: 1 });
+      assertEqual(state.position[0] < 0.6, true);
+      assertEqual(state.position[2] > 1, true);
+      assertEqual(state.grounded, true);
+      assertNear(state.position[1], 0.501, 0.004);
     },
 
 
@@ -382,6 +455,7 @@ export function createGameRuntimeTests() {
       assertEqual(fixture.collisionDebug.at(-1).enabled, true);
       runtime.advance({ deltaSeconds: 1 / 60 });
       assertEqual(Array.isArray(fixture.collisionDebug.at(-1).contacts), true);
+      assertEqual(Array.isArray(fixture.collisionDebug.at(-1).characterBody.axes), true);
       runtime.setCollisionDebug({ enabled: false });
       assertEqual(fixture.collisionDebug.at(-1), null);
       runtime.dispose();
@@ -724,6 +798,36 @@ function simulate(state, world, frames, input = {}) {
   for (let index = 0; index < frames; index += 1) {
     stepCharacterPhysics(state, input, world, undefined, 1 / 60);
   }
+}
+
+function rampWorld() {
+  const angle = Math.atan2(2, 4);
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  const halfLength = Math.sqrt(5);
+  return normalizeCollisionWorld([
+    {
+      id: "ramp-entry",
+      bounds: { min: [-8, -1, -8], max: [0, 0, 8] }
+    },
+    {
+      id: "ramp",
+      broadBounds: { min: [-0.2, -0.2, -2], max: [4.2, 2.2, 2] },
+      collider: {
+        type: "local-box",
+        localBounds: {
+          min: [-halfLength, -0.1, -2],
+          max: [halfLength, 0.1, 2]
+        },
+        worldMatrix: [
+          cosine, sine, 0, 0,
+          -sine, cosine, 0, 0,
+          0, 0, 1, 0,
+          2, 1, 0, 1
+        ]
+      }
+    }
+  ]);
 }
 
 function runtimeFixture({
