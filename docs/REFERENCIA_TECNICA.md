@@ -16,7 +16,7 @@ Ordem de autoridade:
 5. documentos de marco.
 
 O snapshot documentado contém as alterações de 18 de agosto validadas pelos
-gates locais e identificadas como build `20260818-0054mx`. Commit, árvore e
+gates locais e identificadas como build `20260818-0054my`. Commit, árvore e
 branch devem ser consultados no checkout; não são constantes deste documento.
 
 ## 2 - Modelo de maturidade
@@ -533,6 +533,40 @@ participa da decisão física. `GameCollisionDebugOverlay` a projeta junto das
 formas de colisão, limita o mundo aos colisores mais próximos e reutiliza os
 marcadores de contato entre frames.
 
+### Mundo cinemático revisionado
+
+`CollisionWorld` v4 associa cada forma a `ownerId`, identidade lógica do objeto
+que a produz. A base estática continua sendo uma lista normalizada de números;
+Three.js não atravessa essa fronteira.
+
+Quando há alvos de animação ativos, `ThreeRegionRenderer` oferece
+`readGameKinematicCollisionFrame(characterId, { sinceRevision })`. Revisão igual
+retorna `changed: false` sem reprojetar a cena. Uma revisão nova contém somente:
+
+```text
+revision
+activeOwnerIds[]
+colliders[]
+```
+
+`mergeKinematicCollisionWorld()` substitui na base apenas os proprietários
+ativos. Antes de avançar o relógio de passo fixo,
+`applyKinematicSupportMotion()` localiza `supportColliderId`, calcula
+`nextMatrix * inverse(previousMatrix)` e aplica esse delta à posição do
+personagem. O body permanece vertical; apenas o yaw horizontal do apoio é
+herdado. Velocidade e `distanceTravelled` não recebem o deslocamento da
+plataforma.
+
+`game status` publica `supportColliderId`, `kinematics.revision`,
+`kinematics.activeOwnerIds`, `kinematics.activeColliderCount` e métricas
+`kinematicRefreshes`, `platformCarries`, `lastKinematicRefreshMs` e
+`maximumKinematicRefreshMs`. Esses valores são diagnóstico efêmero.
+
+O contrato cobre sólidos cinemáticos e plataformas de apoio. Não inclui massa,
+impulso, torque, corpos empurráveis, pilhas, joints nem eventos de trigger. Um
+backend dinâmico futuro deve consumir as mesmas formas e o mesmo passo fixo sem
+converter estado por frame em documento.
+
 ### Áudio e eventos
 
 `GameEventRuntime` conserva a fachada pública de compatibilidade sobre o
@@ -647,6 +681,13 @@ node --import ./tools/register_node_vendor_loader.mjs \
   tools/test_interaction_bindings_0054mx.mjs
 ```
 
+Plataformas cinemáticas:
+
+```bash
+node --import ./tools/register_node_vendor_loader.mjs \
+  tools/test_kinematic_platforms_0054my.mjs
+```
+
 ### Qualidade visual
 
 Mudanças de UI, PWA, câmera, gizmo, animação e jogo exigem roteiro manual. Uma
@@ -658,6 +699,7 @@ regressão observada continua sendo regressão mesmo quando gates passam.
 
 - runtime de jogo e personagem;
 - colisão triangular sem aceleração universal;
+- plataformas cinemáticas derivadas da animação temporal;
 - ferramentas por caminho e extrusão interativa;
 - autoria unificada sobre adapters legados;
 - catálogo inicial de eventos e ações por objeto;
@@ -667,7 +709,9 @@ regressão observada continua sendo regressão mesmo quando gates passam.
 ### Pretendido
 
 - cápsula opcional e contatos tangenciais completos;
-- corpos dinâmicos e física geral;
+- papéis `solid | trigger | none` e eventos de contato `enter | stay | exit`;
+- corpos dinâmicos, objetos empurráveis e física geral;
+- recursos lógicos tipados para registros, texto e referências de assets;
 - modificadores vinculados e avaliação incremental universal;
 - bindings reativos entre propriedades, prefabs e exportação de applets;
 - gatilhos autorais de ponteiro, colisão e mudança de propriedade;
@@ -695,7 +739,7 @@ verdade devem ser rejeitadas ou explicitamente migradas.
 | Programação | `script-runtime`, `experiment-runtime` |
 | Tempo | `temporal-runtime`, `animation-runtime` |
 | Interações | `interaction-runtime`, contrato portátil em `core` |
-| Jogo | `game-runtime`, `character-animation`, `character-animation-three` |
+| Jogo | `game-runtime` (`CollisionWorld`, `KinematicCollisionWorld`), `character-animation`, `character-animation-three` |
 | Diagnóstico | `runtime-test-plugin`, ferramentas em `tools/` |
 
 Consulte `docs/project/MODULE_MIGRATION_MAP.json` e auditorias de arquitetura

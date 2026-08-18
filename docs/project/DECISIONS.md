@@ -1132,6 +1132,33 @@ nova fronteira, nunca armazenar closures, elementos DOM ou referências Three.js
 como comportamento canônico. Termux e Linux podem hospedar ferramentas de
 desenvolvimento, mas não integram o contrato de execução distribuível.
 
+## D-059 — Colisor animado é corpo cinemático efêmero identificado pelo proprietário
+
+**Estado:** implementada inicialmente no incremento 0054my.
+
+Um objeto cuja pose efetiva vem do runtime temporal conserva seus colisores no
+mundo do jogo. A projeção publica uma fotografia numérica revisionada por
+`ownerId`; o `GameRuntime` substitui somente os proprietários cinemáticos ativos
+e aplica ao personagem apoiado o delta afim entre a pose anterior e a seguinte
+antes do passo fixo. A plataforma pode traduzir e girar horizontalmente, mas não
+transfere sua mudança para a velocidade de locomoção do personagem.
+
+**Motivação:** reconstruir toda a cena a cada frame desperdiçaria a projeção
+incremental, enquanto gravar matrizes animadas no documento criaria comandos e
+undo por frame. Ignorar a animação no mundo físico faria plataformas atravessarem
+o personagem ou deixaria o apoio para trás.
+
+**Consequências:** o renderer continua sem autoridade física: ele fornece
+formas numéricas derivadas da pose que já projeta; o solver decide apoio e
+resposta; nenhum frame entra no sandbox, recuperação ou arquivo. Alterar o
+conjunto de proprietários ativos pode reconstruir a base estática uma vez;
+revisões iguais encerram a leitura sem reprojetar colisores. Corpos empurráveis,
+impulsos, massa e constraints exigem um backend dinâmico separado. Gatilhos e
+coletáveis podem reutilizar identidade e contatos, mas precisam de papéis de
+colisão e eventos `enter/stay/exit` próprios.
+
+Consulte [`KINEMATIC_PLATFORMS_0054MY.md`](../KINEMATIC_PLATFORMS_0054MY.md).
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

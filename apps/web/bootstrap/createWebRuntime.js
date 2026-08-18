@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260809-0053m";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054mx";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054my";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -41,7 +41,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260818-0054mx";
+} from "../../../packages/platform-web/src/index.js?build=20260818-0054my";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260818-0054mx";
 import {
   AppearanceBindingService
@@ -118,7 +118,7 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mx";
+} from "../../../packages/game-runtime/src/index.js?build=20260818-0054my";
 import {
   SelectionInteractionService
 } from "../../../packages/interaction-runtime/src/index.js?build=20260818-0054mx";

@@ -2,16 +2,18 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime,
+  applyKinematicSupportMotion,
   characterBodyWorldObb,
   characterWorldBounds,
   createCharacterPhysicsState,
   castCollisionSegment,
   intersectsCharacterBody,
   intersectsCharacterBounds,
+  mergeKinematicCollisionWorld,
   normalizeCollisionWorld,
   normalizeGameDirectionalInput,
   stepCharacterPhysics
-} from "../../game-runtime/src/index.js?build=20260818-0054mv";
+} from "../../game-runtime/src/index.js?build=20260818-0054my";
 
 const CHARACTER_BOUNDS = Object.freeze({
   min: Object.freeze([-0.5, 0.5, -0.5]),
@@ -63,6 +65,98 @@ export function createGameRuntimeTests() {
       assertEqual(Boolean(support), true);
       assertEqual(support.colliderId, "platform");
       assertEqual(support.normal[1], 1);
+    },
+
+    "delta afim do apoio transporta o personagem sem virar locomoção"() {
+      const previous = normalizeCollisionWorld([
+        movingBoxCollider("platform", [0, -0.5, 0])
+      ]);
+      const next = normalizeCollisionWorld([
+        movingBoxCollider("platform", [1.25, 0.5, -0.75])
+      ]);
+      const state = characterState([0, 0.5, 0]);
+      simulate(state, previous, 2);
+      assertEqual(state.supportColliderId, "platform");
+      const distanceBefore = state.distanceTravelled;
+      const carried = applyKinematicSupportMotion(state, previous, next);
+      assertEqual(carried.changed, true);
+      assertNear(state.position[0], 1.25, 1e-9);
+      assertNear(state.position[1], 1.5, 0.003);
+      assertNear(state.position[2], -0.75, 1e-9);
+      assertNear(state.distanceTravelled, distanceBefore, 1e-12);
+      stepCharacterPhysics(state, {}, next, undefined, 1 / 60);
+      assertEqual(state.grounded, true);
+      assertEqual(state.supportColliderId, "platform");
+
+      const rotatingState = characterState([1, 0.5, 0]);
+      const rotationStart = normalizeCollisionWorld([
+        movingBoxCollider("turntable", [0, -0.5, 0])
+      ]);
+      simulate(rotatingState, rotationStart, 2);
+      const rotationEnd = normalizeCollisionWorld([
+        movingBoxCollider("turntable", [0, -0.5, 0], [4, 0.5, 4], Math.PI / 2)
+      ]);
+      applyKinematicSupportMotion(rotatingState, rotationStart, rotationEnd);
+      assertNear(rotatingState.position[0], 0, 1e-9);
+      assertNear(rotatingState.position[2], -1, 1e-9);
+      assertNear(rotatingState.yaw, Math.PI / 2, 1e-9);
+      assertNear(rotatingState.facingYaw, Math.PI / 2, 1e-9);
+    },
+
+    "mundo cinemático substitui somente o proprietário animado"() {
+      const staticPlatform = movingBoxCollider("platform", [0, -0.5, 0]);
+      const wall = movingBoxCollider("wall", [4, 1, 0], [0.5, 2, 2]);
+      const animatedPlatform = movingBoxCollider("platform", [0, 0.5, 0]);
+      const merged = mergeKinematicCollisionWorld(
+        [staticPlatform, wall],
+        {
+          activeOwnerIds: ["platform"],
+          colliders: [animatedPlatform]
+        }
+      );
+      assertEqual(merged.length, 2);
+      assertEqual(merged.find(entry => entry.id === "wall")?.ownerId, "wall");
+      assertNear(
+        merged.find(entry => entry.id === "platform")
+          ?.collider.worldMatrix[13],
+        0.5,
+        1e-9
+      );
+    },
+
+    "runtime acompanha plataforma animada e conserva apoio"() {
+      const initial = movingBoxCollider("platform", [0, -0.5, 0], [4, 0.5, 4]);
+      const fixture = runtimeFixture({ colliders: [initial] });
+      fixture.setKinematicFrame({
+        revision: "platform:1",
+        activeOwnerIds: ["platform"],
+        colliders: [initial]
+      });
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({ characterId: "character" });
+      for (let index = 0; index < 60; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+      }
+      assertEqual(runtime.status().supportColliderId, "platform");
+
+      const moved = movingBoxCollider("platform", [1, 0.5, 0], [4, 0.5, 4]);
+      fixture.setKinematicFrame({
+        revision: "platform:2",
+        activeOwnerIds: ["platform"],
+        colliders: [moved]
+      });
+      runtime.advance({ deltaSeconds: 1 / 60 });
+      const status = runtime.status();
+      assertNear(status.position[0], 1, 0.003);
+      assertNear(status.position[1], 1.5, 0.004);
+      assertEqual(status.grounded, true);
+      assertEqual(status.supportColliderId, "platform");
+      assertEqual(status.statistics.platformCarries > 0, true);
+      assertEqual(status.kinematics.activeOwnerIds[0], "platform");
+      runtime.dispose();
     },
 
     "colisão lateral impede atravessar uma parede"() {
@@ -864,6 +958,46 @@ function rampWorld() {
   ]);
 }
 
+function movingBoxCollider(
+  id,
+  position,
+  halfExtents = [4, 0.5, 4],
+  yaw = 0
+) {
+  const cosine = Math.cos(yaw);
+  const sine = Math.sin(yaw);
+  const broadHalfExtents = [
+    Math.abs(cosine) * halfExtents[0] + Math.abs(sine) * halfExtents[2],
+    halfExtents[1],
+    Math.abs(sine) * halfExtents[0] + Math.abs(cosine) * halfExtents[2]
+  ];
+  return Object.freeze({
+    id,
+    ownerId: id,
+    broadBounds: Object.freeze({
+      min: Object.freeze(position.map(
+        (value, axis) => value - broadHalfExtents[axis]
+      )),
+      max: Object.freeze(position.map(
+        (value, axis) => value + broadHalfExtents[axis]
+      ))
+    }),
+    collider: Object.freeze({
+      type: "local-box",
+      localBounds: Object.freeze({
+        min: Object.freeze(halfExtents.map(value => -value)),
+        max: Object.freeze([...halfExtents])
+      }),
+      worldMatrix: Object.freeze([
+        cosine, 0, -sine, 0,
+        0, 1, 0, 0,
+        sine, 0, cosine, 0,
+        ...position, 1
+      ])
+    })
+  });
+}
+
 function runtimeFixture({
   colliders = [PLATFORM],
   characterBodyFrame = null,
@@ -880,6 +1014,11 @@ function runtimeFixture({
   const presentation = [];
   const collisionDebug = [];
   const cameraCommands = [];
+  let kinematicFrame = Object.freeze({
+    revision: "",
+    activeOwnerIds: Object.freeze([]),
+    colliders: Object.freeze([])
+  });
   const frozenCameraSnapshot = Object.freeze({
     position: Object.freeze([...cameraSnapshot.position]),
     target: Object.freeze([...cameraSnapshot.target]),
@@ -893,6 +1032,13 @@ function runtimeFixture({
     presentation,
     collisionDebug,
     cameraCommands,
+    setKinematicFrame(frame) {
+      kinematicFrame = Object.freeze({
+        revision: String(frame?.revision ?? ""),
+        activeOwnerIds: Object.freeze([...(frame?.activeOwnerIds ?? [])]),
+        colliders: Object.freeze([...(frame?.colliders ?? [])])
+      });
+    },
     restored: 0
   };
   fixture.surface = {
@@ -914,6 +1060,21 @@ function runtimeFixture({
           bodyFrame: characterBodyFrame
         },
         colliders
+      };
+    },
+    readGameKinematicCollisionFrame(_characterId, {
+      sinceRevision = null
+    } = {}) {
+      if (sinceRevision !== null &&
+          String(sinceRevision) === kinematicFrame.revision) {
+        return {
+          revision: kinematicFrame.revision,
+          changed: false
+        };
+      }
+      return {
+        ...kinematicFrame,
+        changed: true
       };
     },
     captureAnimationTargets(ids, { overlayId }) {

@@ -45,7 +45,7 @@ import {
 } from "./ViewerEnvironment.js?build=20260726-0032a";
 import {
   GameCollisionDebugOverlay
-} from "./GameCollisionDebugOverlay.js?build=20260818-0054mv";
+} from "./GameCollisionDebugOverlay.js?build=20260818-0054my";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260801-0045a1";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260807-0052b";
@@ -233,6 +233,8 @@ export class ThreeRegionRenderer {
   #animationOverlays = new Map();
   #animationObjectOverlayIds = new Map();
   #animationOverlaySequence = 0;
+  #gameCollisionPoseSequence = 0;
+  #gameCollisionPoseRevisions = new Map();
   #animationBatchCulling = new Map();
   #runtimeVisuals = new Map();
   #animationSurfaceDiagnostics = {
@@ -1672,86 +1674,60 @@ export class ThreeRegionRenderer {
     const excluded = new Set([id, ...this.#hierarchy.descendantsOf(id)]);
     const colliders = [];
     for (const [objectId, object] of this.#objectsById) {
-      if (excluded.has(objectId) || !isRenderableSceneNode(object)) continue;
-      if (!this.hasObjectVisual(objectId)) continue;
-      const proxy = this.#meshes.get(objectId);
-      if (!proxy || proxy.userData.logicalOnly) continue;
-      const resources = this.#gameCollisionResourcesForObject(objectId);
-      if (!resources.length) continue;
-      const broadBounds = this.#gameCollisionBroadBounds(resources);
-      if (broadBounds.isEmpty()) continue;
-      const compound = resources.length !== 1 ||
-        Boolean(this.#familyVisuals.get(objectId)) ||
-        this.#heterogeneousBatchManager.resourcesForOwner(objectId).length > 0;
-      if (compound && resources.every(resource =>
-        preferLocalBoxForGeometry(resource.geometry)
-      )) {
-        for (let resourceIndex = 0; resourceIndex < resources.length; resourceIndex += 1) {
-          const resource = resources[resourceIndex];
-          if (!resource.geometry.boundingBox) resource.geometry.computeBoundingBox();
-          const localBounds = resource.geometry.boundingBox;
-          if (!localBounds || localBounds.isEmpty()) continue;
-          const resourceBroad = localBounds.clone().applyMatrix4(resource.worldMatrix);
-          colliders.push(Object.freeze({
-            id: `${objectId}:instance:${resourceIndex}`,
-            broadBounds: freezeBounds(resourceBroad),
-            collider: Object.freeze({
-              type: "local-box",
-              localBounds: freezeBounds(localBounds),
-              worldMatrix: Object.freeze(resource.worldMatrix.toArray())
-            })
-          }));
-        }
-        continue;
-      }
-      let shapeKind = gameCollisionShapeKind(object, { compound });
-      let collider = null;
-      const primary = resources[0];
-      if (shapeKind === "local-box") {
-        if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
-        const localBounds = primary.geometry.boundingBox;
-        if (localBounds && !localBounds.isEmpty()) {
-          collider = Object.freeze({
-            type: "local-box",
-            localBounds: freezeBounds(localBounds),
-            worldMatrix: Object.freeze(primary.worldMatrix.toArray())
-          });
-        }
-      } else if (shapeKind === "sphere") {
-        const sphere = worldSphereFromGeometry(
-          primary.geometry,
-          primary.worldMatrix
-        );
-        if (sphere) {
-          collider = Object.freeze({ type: "sphere", ...sphere });
-        } else {
-          // A non-uniformly scaled sphere is no longer a sphere. Preserve exact
-          // final tessellation instead of widening it to an analytic primitive.
-          shapeKind = "triangle-mesh";
-        }
-      }
-      if (!collider && shapeKind === "triangle-mesh") {
-        const parts = resources
-          .map(resource => freezeMeshPart(resource.geometry, resource.worldMatrix))
-          .filter(Boolean);
-        if (!parts.length) continue;
-        collider = Object.freeze({ type: "triangle-mesh", parts: Object.freeze(parts) });
-      }
-      if (!collider) continue;
-      colliders.push(Object.freeze({
-        id: objectId,
-        broadBounds: freezeBounds(broadBounds),
-        collider
-      }));
+      if (excluded.has(objectId)) continue;
+      colliders.push(...this.#gameCollidersForObject(objectId, object));
     }
     return Object.freeze({
-      version: "game-collision-world-v3-final-mesh",
+      version: "game-collision-world-v4-kinematic-owners",
       revision: this.#resolvedRevision,
       character: Object.freeze({
         id,
         bounds: freezeBounds(characterBounds),
         bodyFrame: this.#characterBodyFrameForObjectId(id)
       }),
+      colliders: Object.freeze(colliders)
+    });
+  }
+
+  readGameKinematicCollisionFrame(characterId, {
+    sinceRevision = null
+  } = {}) {
+    const id = String(characterId ?? "").trim();
+    if (!id) throw new TypeError("Personagem do modo jogo não informado.");
+    this.#refreshHierarchyForTargets([id]);
+    if (!this.#hierarchy.has(id)) {
+      throw new Error(`Objeto de personagem inexistente: ${id}.`);
+    }
+    const excluded = new Set([id, ...this.#hierarchy.descendantsOf(id)]);
+    const activeOwnerIds = [...this.#animationTargetIds]
+      .map(String)
+      .filter(objectId => !excluded.has(objectId))
+      .filter(objectId => this.#objectsById.has(objectId))
+      .sort();
+    const revision = activeOwnerIds.map(objectId =>
+      `${objectId}:${this.#gameCollisionPoseRevisions.get(objectId) ?? 0}`
+    ).join("|");
+    if (sinceRevision !== null && String(sinceRevision) === revision) {
+      return Object.freeze({
+        version: "game-kinematic-collision-frame-v1",
+        revision,
+        changed: false
+      });
+    }
+    const colliders = [];
+    const projectedOwnerIds = [];
+    for (const objectId of activeOwnerIds) {
+      const object = this.#objectsById.get(objectId);
+      const entries = this.#gameCollidersForObject(objectId, object);
+      if (!entries.length) continue;
+      projectedOwnerIds.push(objectId);
+      colliders.push(...entries);
+    }
+    return Object.freeze({
+      version: "game-kinematic-collision-frame-v1",
+      revision,
+      changed: true,
+      activeOwnerIds: Object.freeze(projectedOwnerIds),
       colliders: Object.freeze(colliders)
     });
   }
@@ -2476,6 +2452,7 @@ export class ThreeRegionRenderer {
       if (!ids) this.#animationObjectOverlayIds.set(objectId, ids = new Set());
       ids.add(resolvedOverlayId);
       this.#animationTargetIds.add(objectId);
+      this.#markGameCollisionPose(objectId);
       this.#acquireAnimationBatchCulling(objectId);
     }
 
@@ -2532,6 +2509,7 @@ export class ThreeRegionRenderer {
     let colorWrites = 0;
     for (const objectId of overlay.objectIds) {
       const result = this.#applyAnimationObjectLayers(objectId);
+      if (result.matrixChanged) this.#markGameCollisionPose(objectId);
       matrixWrites += result.matrixWrites;
       colorWrites += result.colorWrites;
     }
@@ -2597,6 +2575,11 @@ export class ThreeRegionRenderer {
     let colorWrites = 0;
     for (const objectId of overlay.objectIds) {
       const result = this.#applyAnimationObjectLayers(objectId);
+      if (this.#animationTargetIds.has(objectId)) {
+        this.#markGameCollisionPose(objectId);
+      } else {
+        this.#gameCollisionPoseRevisions.delete(String(objectId));
+      }
       matrixWrites += result.matrixWrites;
       colorWrites += result.colorWrites;
     }
@@ -2629,17 +2612,33 @@ export class ThreeRegionRenderer {
     });
   }
 
+  #markGameCollisionPose(objectId) {
+    this.#gameCollisionPoseSequence += 1;
+    this.#gameCollisionPoseRevisions.set(
+      String(objectId),
+      this.#gameCollisionPoseSequence
+    );
+  }
+
   #applyAnimationObjectLayers(objectId) {
     const id = String(objectId);
     const proxy = this.#meshes.get(id);
     if (!proxy || proxy.userData.logicalOnly) {
       this.#animationAppliedMatrices.delete(id);
       this.#animationAppliedColors.delete(id);
-      return Object.freeze({ matrixWrites: 0, colorWrites: 0 });
+      return Object.freeze({
+        matrixWrites: 0,
+        colorWrites: 0,
+        matrixChanged: false
+      });
     }
     const canonical = proxy.userData.canonicalWorldMatrix;
     if (!Array.isArray(canonical) || canonical.length !== 16) {
-      return Object.freeze({ matrixWrites: 0, colorWrites: 0 });
+      return Object.freeze({
+        matrixWrites: 0,
+        colorWrites: 0,
+        matrixChanged: false
+      });
     }
 
     const overlayIds = [...(this.#animationObjectOverlayIds.get(id) ?? [])]
@@ -2653,7 +2652,9 @@ export class ThreeRegionRenderer {
 
     const matrix = this.#resolvedObjects.worldMatrix(id) ?? canonical;
     let matrixWrites = 0;
+    let matrixChanged = false;
     if (!numericArrayEqual(this.#animationAppliedMatrices.get(id), matrix)) {
+      matrixChanged = true;
       applyProjectedWorldMatrix(proxy, matrix);
       if (this.#updateBatchMatrix(id, proxy)) matrixWrites = 1;
       if (overlayIds.length) {
@@ -2675,7 +2676,7 @@ export class ThreeRegionRenderer {
       this.#animationAppliedColors.delete(id);
     }
     this.#syncRuntimeVisualsForObject(id);
-    return Object.freeze({ matrixWrites, colorWrites });
+    return Object.freeze({ matrixWrites, colorWrites, matrixChanged });
   }
 
   #syncAnimationResolvedLayer() {
@@ -4687,6 +4688,85 @@ export class ThreeRegionRenderer {
 
     results.sort((left, right) => left.distance - right.distance);
     return results;
+  }
+
+  #gameCollidersForObject(objectId, object = this.#objectsById.get(String(objectId))) {
+    const id = String(objectId);
+    if (!object || !isRenderableSceneNode(object)) return Object.freeze([]);
+    if (!this.hasObjectVisual(id)) return Object.freeze([]);
+    const proxy = this.#meshes.get(id);
+    if (!proxy || proxy.userData.logicalOnly) return Object.freeze([]);
+    const resources = this.#gameCollisionResourcesForObject(id);
+    if (!resources.length) return Object.freeze([]);
+    const broadBounds = this.#gameCollisionBroadBounds(resources);
+    if (broadBounds.isEmpty()) return Object.freeze([]);
+    const compound = resources.length !== 1 ||
+      Boolean(this.#familyVisuals.get(id)) ||
+      this.#heterogeneousBatchManager.resourcesForOwner(id).length > 0;
+    const colliders = [];
+    if (compound && resources.every(resource =>
+      preferLocalBoxForGeometry(resource.geometry)
+    )) {
+      for (let resourceIndex = 0; resourceIndex < resources.length; resourceIndex += 1) {
+        const resource = resources[resourceIndex];
+        if (!resource.geometry.boundingBox) resource.geometry.computeBoundingBox();
+        const localBounds = resource.geometry.boundingBox;
+        if (!localBounds || localBounds.isEmpty()) continue;
+        const resourceBroad = localBounds.clone().applyMatrix4(resource.worldMatrix);
+        colliders.push(Object.freeze({
+          id: `${id}:instance:${resourceIndex}`,
+          ownerId: id,
+          broadBounds: freezeBounds(resourceBroad),
+          collider: Object.freeze({
+            type: "local-box",
+            localBounds: freezeBounds(localBounds),
+            worldMatrix: Object.freeze(resource.worldMatrix.toArray())
+          })
+        }));
+      }
+      return Object.freeze(colliders);
+    }
+
+    let shapeKind = gameCollisionShapeKind(object, { compound });
+    let collider = null;
+    const primary = resources[0];
+    if (shapeKind === "local-box") {
+      if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
+      const localBounds = primary.geometry.boundingBox;
+      if (localBounds && !localBounds.isEmpty()) {
+        collider = Object.freeze({
+          type: "local-box",
+          localBounds: freezeBounds(localBounds),
+          worldMatrix: Object.freeze(primary.worldMatrix.toArray())
+        });
+      }
+    } else if (shapeKind === "sphere") {
+      const sphere = worldSphereFromGeometry(primary.geometry, primary.worldMatrix);
+      if (sphere) {
+        collider = Object.freeze({ type: "sphere", ...sphere });
+      } else {
+        // Escala não uniforme deixa de representar esfera analítica.
+        shapeKind = "triangle-mesh";
+      }
+    }
+    if (!collider && shapeKind === "triangle-mesh") {
+      const parts = resources
+        .map(resource => freezeMeshPart(resource.geometry, resource.worldMatrix))
+        .filter(Boolean);
+      if (parts.length) {
+        collider = Object.freeze({
+          type: "triangle-mesh",
+          parts: Object.freeze(parts)
+        });
+      }
+    }
+    if (!collider) return Object.freeze([]);
+    return Object.freeze([Object.freeze({
+      id,
+      ownerId: id,
+      broadBounds: freezeBounds(broadBounds),
+      collider
+    })]);
   }
 
   #gameCollisionResourcesForObject(objectId) {

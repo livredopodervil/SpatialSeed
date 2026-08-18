@@ -21,7 +21,7 @@ Nunca presuma o checkout ativo. Confirme `pwd`, branch, HEAD, status, remoto e
 ## Estado funcional
 
 O snapshot documental vivo de 18 de agosto de 2026 corresponde ao build
-`20260818-0054mx`. Toda promoção posterior deve atualizar manifesto, tokens de
+`20260818-0054my`. Toda promoção posterior deve atualizar manifesto, tokens de
 cache, auditorias sucessoras e estado PWA como uma única alteração.
 
 Capacidades presentes:
@@ -35,6 +35,7 @@ Capacidades presentes:
 - runtime temporal e animação efêmera;
 - viewers locais e objetos câmera;
 - modo jogo, personagem GLB, colisão, câmera, áudio e eventos;
+- plataformas animadas sólidas com transporte cinemático do personagem apoiado;
 - comportamentos por objeto no contrato portátil evento → comando autorizado;
 - gates, diagnóstico, testes e benchmarks.
 
@@ -60,6 +61,8 @@ Capacidades presentes:
     por si e scripts livres não entram no objeto como atalho.
 16. Termux e Linux são ambientes de desenvolvimento, nunca dependências do
     documento, do runtime publicado ou de um applet exportado.
+17. Colisores animados são projeções cinemáticas efêmeras: a pose vem do
+    runtime temporal, a resposta pertence ao jogo e nenhum frame vira comando.
 
 ## Uso local
 
@@ -105,13 +108,15 @@ listas geráveis para esta semente.
 ## Próxima prioridade
 
 Usar o contrato `Resource + Property + Command + Event` como núcleo
-multiplicador. O passo imediato é ampliar gatilhos e endereçamento de
-propriedades sem introduzir scripts livres; em seguida vêm bindings reativos,
-prefabs com overrides e um perfil de exportação web autônomo. O artefato
-exportado deve abrir em navegador comum, ser incorporável ou compartilhável e
-não depender de Termux, Linux ou instalação do editor. Geometrias implícitas,
-texto e painéis interativos entram como recursos/plugins sobre essas fronteiras,
-sem criar autoridades paralelas.
+multiplicador. Depois das plataformas cinemáticas, o passo imediato é publicar
+papéis de colisão e gatilhos `enter/stay/exit` para coletáveis e áreas de ação.
+Em seguida, recursos lógicos tipados (`record`, `text` e `asset-reference`)
+devem oferecer estado e conteúdo sem geometria nem dependência do renderer.
+Bindings reativos, prefabs com overrides e o perfil de exportação web autônomo
+compõem os passos seguintes. O artefato exportado deve abrir em navegador
+comum, ser incorporável ou compartilhável e não depender de Termux, Linux ou
+instalação do editor. Geometrias implícitas e painéis interativos entram como
+providers/plugins sobre essas fronteiras, sem criar autoridades paralelas.
 
 ## Protocolo para nova LLM
 

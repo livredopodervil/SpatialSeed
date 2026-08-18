@@ -57,6 +57,7 @@ GATES = [
     ("0054mv-property-transfer-preview", [PYTHON, "tools/audit_property_transfer_preview_0054mv.py"]),
     ("0054mw-universal-resource-search", [PYTHON, "tools/audit_universal_resource_search_0054mw.py"]),
     ("0054mx-interaction-bindings", [PYTHON, "tools/audit_interaction_bindings_0054mx.py"]),
+    ("0054my-kinematic-platforms", [PYTHON, "tools/audit_kinematic_platforms_0054my.py"]),
     ("event-previews", [PYTHON, "tools/audit_event_driven_previews.py"]),
     ("animation-overlays", [PYTHON, "tools/audit_independent_animation_overlays.py"]),
     ("mesh-ui", [PYTHON, "tools/audit_mesh_edit_ui.py"]),

@@ -423,7 +423,7 @@ import {
 } from "../../benchmarks/src/index.js?build=20260808-0053i";
 import {
   createGameRuntimeTests
-} from "./GameRuntimeTests.js?build=20260812-0054md";
+} from "./GameRuntimeTests.js?build=20260818-0054my";
 import {
   createCharacterAnimationTests
 } from "./CharacterAnimationTests.js?build=20260812-0054md";

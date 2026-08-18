@@ -4,9 +4,10 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 18 de agosto de 2026, derivado do
-build `20260818-0054mx`. A árvore recebida passou pelos gates locais depois da
+build `20260818-0054my`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do demo, da inclusão das paletas e da primeira
-superfície persistente de comportamento por objeto.
+superfície persistente de comportamento por objeto. Esta revisão também inclui
+plataformas animadas sólidas no modo jogo.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
 realmente carregada. Uma fonte modificada no disco não prova que o navegador ou
@@ -88,7 +89,7 @@ descartado.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260818-0054mx`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260818-0054my`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -867,6 +868,29 @@ deslizamento em paredes e respawn. Ela ainda não é um motor geral de corpos
 rígidos: rampas acima do limite configurado e contatos dinâmicos não são
 resolvidos como física completa.
 
+### Plataformas móveis
+
+Um objeto transformado pelo runtime de animação conserva sua forma de colisão.
+Se o personagem estiver apoiado nele, a transformação entre dois frames leva o
+personagem junto antes do passo de gravidade e locomoção. Translação e rotação
+horizontal do apoio são acompanhadas; a velocidade própria do personagem não é
+alterada pelo deslocamento da plataforma.
+
+Teste sem teclado físico no telefone:
+
+1. Saia do modo jogo e crie ou escolha uma caixa larga em posição alcançável.
+2. No **Inspector → Comportamento**, adicione **Ao iniciar o jogo → Animar este objeto com preset**.
+3. Informe preset `float` e parâmetros `{"axis":"y","amplitude":1,"frequency":0.15}`.
+4. Selecione novamente o objeto usado como personagem e toque em **Jogar**.
+5. Suba na caixa e deixe o círculo direcional no centro; o personagem deve acompanhar a subida e a descida sem ficar suspenso no ponto anterior.
+6. Abra **Colisão** para conferir que o colisor acompanha a caixa; em `game status`, `supportColliderId`, `kinematics.activeOwnerIds` e `statistics.platformCarries` ajudam no diagnóstico.
+
+A plataforma é cinemática: segue a animação e não recebe impulso do personagem.
+Objetos empurráveis, massa, torque, pilhas de corpos e constraints ainda exigem
+um backend de corpos dinâmicos. Coletáveis também não são um tipo especial
+entregue nesta revisão; o próximo contrato deve combinar papéis de colisão e
+eventos `enter/stay/exit` com comandos autorizados.
+
 Toque em **Colisão** no HUD de jogo para ativar o diagnóstico. O body OBB real
 do personagem fica verde quando `grounded` e vermelho no ar. Caixas locais são
 azuis, esferas são violetas e envelopes de broad phase de malhas triangulares
@@ -1023,7 +1047,8 @@ Esta edição não afirma que o SpatialSeed já oferece:
 - modificadores procedurais vinculados e regeneração universal;
 - bindings reativos entre propriedades, prefabs e exportação autônoma de applets;
 - gatilhos autorais gerais de clique, colisão e mudança de propriedade;
-- texto, painéis interativos e geometrias implícitas como famílias concluídas;
+- recursos lógicos tipados para registros, texto e referências de assets;
+- painéis interativos e geometrias implícitas como famílias concluídas;
 - compatibilidade rica completa com glTF, Collada e todos os formatos 3D;
 - segurança auditada para executar plugins hostis;
 - estabilidade comercial do formato de projeto.

@@ -13,17 +13,21 @@ import {
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260818-0054mv";
+} from "./CharacterPhysics.js?build=20260818-0054my";
 import {
   characterBodyHorizontalSupport,
   characterBodyWorldObb
-} from "./CharacterBodyFrame.js?build=20260818-0054mv";
+} from "./CharacterBodyFrame.js?build=20260818-0054my";
 import {
   castCollisionSegment,
   normalizeCollisionWorld
-} from "./CollisionWorld.js?build=20260818-0054mv";
+} from "./CollisionWorld.js?build=20260818-0054my";
+import {
+  applyKinematicSupportMotion,
+  mergeKinematicCollisionWorld
+} from "./KinematicCollisionWorld.js?build=20260818-0054my";
 
-export const GAME_RUNTIME_VERSION = "game-runtime-v7-independent-visual-facing";
+export const GAME_RUNTIME_VERSION = "game-runtime-v8-kinematic-platforms";
 
 const DEFAULT_CONTROLS = Object.freeze({
   movementReference: "camera"
@@ -52,7 +56,10 @@ export class GameRuntime {
   #frameDemandToken = null;
   #targets = null;
   #physics = null;
+  #baseColliders = Object.freeze([]);
   #colliders = Object.freeze([]);
+  #kinematicRevision = null;
+  #kinematicOwnerIds = Object.freeze([]);
   #initialCamera = null;
   #cameraPosition = null;
   #cameraFreePosition = null;
@@ -122,7 +129,10 @@ export class GameRuntime {
     try {
       const pivot = targets.units[0].pivot;
       this.#targets = targets;
-      this.#colliders = normalizeCollisionWorld(world.colliders);
+      this.#baseColliders = normalizeCollisionWorld(world.colliders);
+      this.#colliders = this.#baseColliders;
+      this.#kinematicRevision = null;
+      this.#kinematicOwnerIds = Object.freeze([]);
       this.#physics = createCharacterPhysicsState({
         pivot,
         bounds: world.character.bounds,
@@ -259,6 +269,7 @@ export class GameRuntime {
     this.#physics.position = [...this.#physics.spawnPosition];
     this.#physics.velocity = [0, 0, 0];
     this.#physics.grounded = false;
+    this.#physics.supportColliderId = null;
     this.#physics.contacts = [];
     this.#physics.coyoteRemaining = 0;
     this.#physics.respawns += 1;
@@ -271,7 +282,9 @@ export class GameRuntime {
   refreshCollisionWorld() {
     if (!this.characterId || this.state !== "running") return this.status();
     const world = this.surface.readGameCollisionWorld(this.characterId);
-    this.#colliders = normalizeCollisionWorld(world.colliders);
+    this.#baseColliders = normalizeCollisionWorld(world.colliders);
+    this.#replaceCollisionWorld(this.#baseColliders);
+    this.#refreshKinematicCollisionFrame({ force: true, rebuildBase: false });
     this.statistics.worldRefreshes += 1;
     this.#notify("world-refreshed");
     return this.status();
@@ -300,6 +313,7 @@ export class GameRuntime {
     if (this.#disposed || this.state !== "running" || !this.#physics) {
       return Object.freeze({ changed: false, continue: false });
     }
+    this.#refreshKinematicCollisionFrame();
     const result = this.clock.advance(deltaSeconds, step => this.#step(step));
     this.statistics.steps += result.executed;
     this.statistics.droppedSteps += result.dropped;
@@ -330,6 +344,7 @@ export class GameRuntime {
       yaw: Number(physics?.yaw ?? 0),
       visualYaw: Number(physics?.facingYaw ?? physics?.yaw ?? 0),
       grounded: Boolean(physics?.grounded),
+      supportColliderId: physics?.supportColliderId ?? null,
       debug: Object.freeze({
         collision: this.#collisionDebugEnabled,
         contacts: Object.freeze((physics?.contacts ?? []).map(contact =>
@@ -342,6 +357,13 @@ export class GameRuntime {
         bounds: characterWorldBounds(physics)
       }) : null,
       colliderCount: this.#colliders.length,
+      kinematics: Object.freeze({
+        revision: this.#kinematicRevision,
+        activeOwnerIds: this.#kinematicOwnerIds,
+        activeColliderCount: this.#colliders.filter(entry =>
+          this.#kinematicOwnerIds.includes(entry.ownerId)
+        ).length
+      }),
       respawns: Number(physics?.respawns ?? 0),
       input: Object.freeze({
         forward: this.#input.forward,
@@ -432,6 +454,54 @@ export class GameRuntime {
         velocity: [...this.#physics.velocity]
       });
     }
+  }
+
+  #refreshKinematicCollisionFrame({
+    force = false,
+    rebuildBase = true
+  } = {}) {
+    if (typeof this.surface.readGameKinematicCollisionFrame !== "function" ||
+        !this.characterId || !this.#physics) return false;
+    const startedAt = nowMilliseconds();
+    const frame = this.surface.readGameKinematicCollisionFrame(
+      this.characterId,
+      { sinceRevision: force ? null : this.#kinematicRevision }
+    );
+    if (!frame || (!force && frame.changed === false)) return false;
+    const ownerIds = Object.freeze([
+      ...new Set((frame.activeOwnerIds ?? []).map(String).filter(Boolean))
+    ].sort());
+    const ownerSignature = ownerIds.join("\u0000");
+    const previousSignature = this.#kinematicOwnerIds.join("\u0000");
+    if (rebuildBase && ownerSignature !== previousSignature) {
+      const world = this.surface.readGameCollisionWorld(this.characterId);
+      this.#baseColliders = normalizeCollisionWorld(world.colliders);
+      this.statistics.worldRefreshes += 1;
+    }
+    const next = mergeKinematicCollisionWorld(this.#baseColliders, frame);
+    const carried = this.#replaceCollisionWorld(next);
+    this.#kinematicRevision = frame.revision ?? null;
+    this.#kinematicOwnerIds = ownerIds;
+    this.statistics.kinematicRefreshes += 1;
+    if (carried.changed) this.statistics.platformCarries += 1;
+    const elapsed = nowMilliseconds() - startedAt;
+    this.statistics.lastKinematicRefreshMs = elapsed;
+    this.statistics.maximumKinematicRefreshMs = Math.max(
+      this.statistics.maximumKinematicRefreshMs,
+      elapsed
+    );
+    return true;
+  }
+
+  #replaceCollisionWorld(nextColliders) {
+    const next = normalizeCollisionWorld(nextColliders);
+    const carried = applyKinematicSupportMotion(
+      this.#physics,
+      this.#colliders,
+      next
+    );
+    this.#colliders = next;
+    return carried;
   }
 
   #emitEvent(type, payload) {
@@ -551,7 +621,10 @@ export class GameRuntime {
     this.characterId = null;
     this.#targets = null;
     this.#physics = null;
+    this.#baseColliders = Object.freeze([]);
     this.#colliders = Object.freeze([]);
+    this.#kinematicRevision = null;
+    this.#kinematicOwnerIds = Object.freeze([]);
     this.#initialCamera = null;
     this.#cameraPosition = null;
     this.#cameraFreePosition = null;
@@ -797,8 +870,16 @@ function initialStatistics() {
     steps: 0,
     droppedSteps: 0,
     worldRefreshes: 0,
+    kinematicRefreshes: 0,
+    platformCarries: 0,
+    lastKinematicRefreshMs: 0,
+    maximumKinematicRefreshMs: 0,
     lastStopReason: null
   };
+}
+
+function nowMilliseconds() {
+  return globalThis.performance?.now?.() ?? Date.now();
 }
 
 function finite(value, label) {

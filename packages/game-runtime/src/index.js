@@ -6,7 +6,7 @@ export {
   characterBodyWorldHalfExtents,
   characterBodyWorldObb,
   normalizeCharacterBodyFrame
-} from "./CharacterBodyFrame.js?build=20260818-0054mv";
+} from "./CharacterBodyFrame.js?build=20260818-0054my";
 export {
   COLLISION_WORLD_VERSION,
   castCollisionSegment,
@@ -17,22 +17,28 @@ export {
   queryCharacterBodyOverlaps,
   worldIntersectsCharacterBody,
   worldIntersectsCharacterBounds
-} from "./CollisionWorld.js?build=20260818-0054mv";
+} from "./CollisionWorld.js?build=20260818-0054my";
+export {
+  KINEMATIC_COLLISION_WORLD_VERSION,
+  applyKinematicSupportMotion,
+  collisionPoseMatrix,
+  mergeKinematicCollisionWorld
+} from "./KinematicCollisionWorld.js?build=20260818-0054my";
 export {
   DEFAULT_CHARACTER_GAME_CONFIG,
   characterWorldBounds,
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260818-0054mv";
+} from "./CharacterPhysics.js?build=20260818-0054my";
 export {
   GAME_RUNTIME_VERSION,
   GameRuntime
-} from "./GameRuntime.js?build=20260818-0054mv";
+} from "./GameRuntime.js?build=20260818-0054my";
 export {
   GAME_DIRECTIONAL_INPUT_VERSION,
   normalizeGameDirectionalInput
-} from "./GameDirectionalInput.js?build=20260818-0054mv";
+} from "./GameDirectionalInput.js?build=20260818-0054my";
 
 export { GAME_EVENT_RUNTIME_VERSION, GameEventRuntime } from "./GameEventRuntime.js?build=20260818-0054mx";
 export { GAME_AUDIO_RUNTIME_VERSION, GameAudioRuntime } from "./GameAudioRuntime.js?build=20260813-0054mj";

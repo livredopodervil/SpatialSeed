@@ -120,6 +120,12 @@ evento informa; o binding escolhe uma reação; o comando continua sendo a
 fronteira que valida a ação. Essa pequena linguagem é o primeiro elo prático
 entre cenas editáveis e applets distribuíveis.
 
+O incremento 0054my aplica a mesma disciplina ao contato com objetos animados.
+A pose temporal continua efêmera, mas o proprietário conserva um colisor
+numérico revisionado; o jogo transporta o personagem apoiado sem promover o
+renderer a autoridade nem criar comandos por frame. Plataformas móveis passam a
+ser composição de animação e colisão, não um subsistema especial.
+
 ```text
 recurso.propriedade <- binding(fonte)
 evento              -> comando autorizado(argumentos)
@@ -347,7 +353,10 @@ booleanas substituível.
 ### Jogo
 
 Ampliar o contrato entregue de evento → comando com gatilhos de ponteiro,
-colisão e propriedade, preservando `GameRuntime` como scheduler.
+colisão e propriedade, preservando `GameRuntime` como scheduler. Plataformas
+cinemáticas já mantêm objetos animados sólidos; papéis de colisor e eventos de
+contato devem transformar essa base em coletáveis e áreas de ação antes de um
+backend geral de corpos dinâmicos.
 
 ### Composição e distribuição
 
@@ -356,10 +365,11 @@ prefabs como grafos parametrizáveis e exportar um perfil mínimo de applet. O
 resultado deve abrir em navegador comum, funcionar em hospedagem estática e ser
 incorporável numa página sem instalar SpatialSeed, Termux, Linux ou Node.
 
-Texto, painéis interativos e geometrias implícitas são candidatos naturais a
-providers/plugins dessa linguagem comum. Entram depois das fronteiras de
-propriedade, evento e recurso para não se tornarem subsistemas verticais
-isolados.
+Registros, texto e referências de assets devem primeiro existir como recursos
+lógicos sem geometria, com identidade, propriedade, comando e persistência
+comuns. Painéis interativos e geometrias implícitas são candidatos naturais a
+providers/plugins dessa linguagem. Entram sobre essas fronteiras para não se
+tornarem subsistemas verticais isolados.
 
 ### Colaboração
 

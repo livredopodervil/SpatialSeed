@@ -7,7 +7,7 @@
       "id": "spatialseed.diagnostics.runtime-tests",
       "apiVersion": "spatial-seed-web-runtime-extension-v1",
       "role": "diagnostics",
-      "entry": "../../../packages/runtime-test-plugin/src/index.js?build=20260818-0054mx"
+      "entry": "../../../packages/runtime-test-plugin/src/index.js?build=20260818-0054my"
     }
   ]
 }

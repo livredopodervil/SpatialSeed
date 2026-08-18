@@ -20,7 +20,7 @@ def require(relative, markers):
     return text
 
 collision = require("packages/game-runtime/src/CollisionWorld.js", (
-    'COLLISION_WORLD_VERSION = "game-collision-world-v3-final-mesh"',
+    '"game-collision-world-v4-kinematic-owners"',
     'case "local-box"',
     'case "sphere"',
     'case "triangle-mesh"',
@@ -38,7 +38,7 @@ projection = require("packages/renderer-three/src/GameCollisionProjection.js", (
     "freezeMeshPart",
 ))
 renderer = require("packages/renderer-three/src/ThreeRegionRenderer.js", (
-    'version: "game-collision-world-v3-final-mesh"',
+    'version: "game-collision-world-v4-kinematic-owners"',
     "#gameCollisionResourcesForObject",
     "#gameCollisionBroadBounds",
     'type: "triangle-mesh"',

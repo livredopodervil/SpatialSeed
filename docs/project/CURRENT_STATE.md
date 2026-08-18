@@ -7,7 +7,7 @@
 ## Baseline desta revisão
 
 A documentação viva de 18 de agosto de 2026 corresponde ao build
-`20260818-0054mx`, sucessor do marco publicado `0054mm`.
+`20260818-0054my`, sucessor do marco publicado `0054mm`.
 
 O incremento `0054mo` conecta os parâmetros já declarados pelos providers de
 geometria ao registro comum de propriedades. Inspector e Console passam a
@@ -60,6 +60,12 @@ o runtime combina fontes de sistema, documento e sessão sem dar autoridade ao
 DOM ou ao renderer. Grupos de propriedades do Inspector ficam recolhidos por
 padrão e abrem quando um valor do grupo é editado.
 
+O incremento `0054my` mantém sólidos os objetos cuja transformação é animada.
+O renderer publica uma fotografia revisionada apenas dos proprietários
+cinemáticos ativos; o jogo substitui seus colisores estáticos e transporta o
+personagem pela transformação afim do apoio antes do passo fixo. O frame físico
+continua efêmero e não produz comandos, checkpoints ou undo.
+
 ## Implementado e verificável
 
 - editor espacial com seleção direta e gestos de área;
@@ -73,6 +79,7 @@ padrão e abrem quando um valor do grupo é editado.
 - runtime temporal e animação efêmera;
 - múltiplos viewers locais e objetos câmera;
 - modo jogo local, personagem GLB, colisão, câmera, áudio e eventos;
+- plataformas animadas sólidas e transporte cinemático do personagem apoiado;
 - perfil diagnóstico, gates, testes do runtime e benchmarks.
 - busca de recursos por nome, ID, tipo, visibilidade e categoria.
 - comportamento persistente por objeto no formato evento → comando autorizado,
@@ -84,6 +91,7 @@ padrão e abrem quando um valor do grupo é editado.
 - extrusão por caminho e álgebra geral de operadores de malha;
 - estabilidade de seleção/preview em hierarquias e ocorrências complexas;
 - colisão triangular e aceleração espacial;
+- papéis explícitos de colisor, gatilhos e corpos dinâmicos;
 - proxy físico, visual GLB e mapeamento de clips;
 - ampliação do catálogo de eventos e ações para ponteiro, colisão e propriedades;
 - atualização PWA durante desenvolvimento em múltiplos checkouts.
@@ -93,7 +101,8 @@ padrão e abrem quando um valor do grupo é editado.
 - modificadores vinculados e regeneração procedural incremental;
 - bindings reativos entre propriedades e grafo de dependências;
 - prefabs parametrizáveis e exportação de applets web autônomos;
-- texto, painéis interativos e geometrias implícitas como recursos extensíveis;
+- recursos lógicos tipados para registros, texto e referências de assets;
+- painéis interativos e geometrias implícitas como recursos extensíveis;
 - booleanas robustas e reparo topológico geral;
 - física de corpos dinâmicos e contatos completos;
 - colaboração remota com envelope causal e conflitos geométricos explícitos;

@@ -13,7 +13,7 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260818-0054mx`, preparado em 18 de
+> documentação viva corresponde ao build `20260818-0054my`, preparado em 18 de
 > agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 acompanha
 > esta edição consolidada.
 
@@ -42,12 +42,17 @@ No build `0054mx`, objetos ganham comportamentos portáteis no formato
 tem superfície equivalente no Console, participa de salvar/abrir e undo/redo e
 é executada sem transformar DOM, renderer ou scripts livres em autoridade.
 
+No build `0054my`, objetos animados continuam sólidos no mundo de colisão e
+podem transportar um personagem apoiado. O runtime consome somente as poses
+cinemáticas revisionadas dos proprietários animados; posição física por quadro
+permanece efêmera e não entra no projeto nem no histórico.
+
 ## Três níveis de maturidade
 
 | Nível | Significado | Exemplos nesta edição |
 | --- | --- | --- |
-| Implementado e verificável | Existe no código atual e possui caminho de uso ou teste | seleção, transformações, projetos, malha, STL, animação efêmera, jogo local e comportamentos evento → comando |
-| Contrato em consolidação | A superfície pública existe, mas interação, desempenho ou semântica ainda evoluem | ferramentas por caminho, colisão por malha, personagem GLB, catálogo de eventos e autoria unificada |
+| Implementado e verificável | Existe no código atual e possui caminho de uso ou teste | seleção, transformações, projetos, malha, STL, animação efêmera, jogo local, plataformas cinemáticas e comportamentos evento → comando |
+| Contrato em consolidação | A superfície pública existe, mas interação, desempenho ou semântica ainda evoluem | ferramentas por caminho, colisão por malha, plataformas animadas, personagem GLB, catálogo de eventos e autoria unificada |
 | Arquitetura pretendida | Direção de projeto; não deve ser apresentada como recurso entregue | bindings de propriedades, prefabs, exportação autônoma, física geral, colaboração remota e modificadores vinculados |
 
 Os documentos históricos preservam decisões e marcos. Eles não substituem o
@@ -171,6 +176,8 @@ Para começar vazio, abra `?project=new`. Para diagnóstico, abra
 - movimento combinável, corrida, salto, gravidade e respawn;
 - locomoção relativa à câmera ou ao mundo;
 - broad phase espacial e colisores de caixa, esfera e malha triangular;
+- colisores cinemáticos derivados de objetos animados e transporte do
+  personagem por uma plataforma de apoio móvel;
 - câmera de terceira pessoa com prevenção de atravessamento;
 - visual GLB independente do proxy físico;
 - música, efeitos e eventos básicos de jogo;
@@ -256,7 +263,8 @@ Não use apenas a aparência da página para concluir qual versão foi carregada
 - o projeto é experimental e ainda não possui compatibilidade estável de
   formato entre todas as branches;
 - jogo, câmera e animação são locais ao viewer e não constituem estado de rede;
-- a física não é um motor geral de corpos rígidos;
+- a física não é um motor geral de corpos rígidos: plataformas animadas são
+  cinemáticas, mas objetos empurráveis e resposta por impulso ainda não existem;
 - malhas triangulares ainda não usam um backend BVH universal;
 - ferramentas topológicas avançadas, booleanas robustas e modificadores
   vinculados permanecem em consolidação ou no roadmap;

@@ -20,7 +20,8 @@ const normalizedWorlds = new WeakSet();
  * later replace the linear triangle walk without changing CharacterPhysics or
  * GameRuntime.
  */
-export const COLLISION_WORLD_VERSION = "game-collision-world-v3-final-mesh";
+export const COLLISION_WORLD_VERSION =
+  "game-collision-world-v4-kinematic-owners";
 
 export function normalizeCollisionWorld(colliders = []) {
   if (!Array.isArray(colliders)) {
@@ -292,6 +293,7 @@ export function queryCharacterOverlaps(bounds, colliders, skin = 0) {
 function normalizeCollider(entry, index) {
   if (entry?.__normalizedGameCollider === true) return entry;
   const id = String(entry?.id ?? `collider-${index}`);
+  const ownerId = String(entry?.ownerId ?? id);
   const legacyBounds = entry?.bounds ?? null;
   const broadBounds = normalizeBroadBounds(
     entry?.broadBounds ?? legacyBounds ?? entry,
@@ -337,6 +339,7 @@ function normalizeCollider(entry, index) {
   return Object.freeze({
     __normalizedGameCollider: true,
     id,
+    ownerId,
     broadBounds,
     collider
   });

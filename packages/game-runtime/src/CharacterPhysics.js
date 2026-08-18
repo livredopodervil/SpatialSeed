@@ -3,13 +3,13 @@ import {
   normalizeCollisionWorld,
   queryCharacterBodyOverlaps,
   worldIntersectsCharacterBody
-} from "./CollisionWorld.js?build=20260818-0054mv";
+} from "./CollisionWorld.js?build=20260818-0054my";
 import {
   characterBodyWorldBounds,
   characterBodyWorldHalfExtents,
   characterBodyWorldObb,
   normalizeCharacterBodyFrame
-} from "./CharacterBodyFrame.js?build=20260818-0054mv";
+} from "./CharacterBodyFrame.js?build=20260818-0054my";
 
 export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   gravity: 18,
@@ -121,6 +121,7 @@ export function createCharacterPhysicsState({
     facingYaw: body.baseYaw,
     baseYaw: body.baseYaw,
     grounded: false,
+    supportColliderId: null,
     contacts: [],
     coyoteRemaining: 0,
     animationState: "fall",
@@ -213,11 +214,16 @@ export function stepCharacterPhysics(
       "support"
     );
   }
+  state.supportColliderId = state.grounded
+    ? state.contacts.find(contact => contact.kind === "support")?.colliderId ?? null
+    : null;
 
   if (state.position[1] < config.respawnBelow) {
     state.position = [...state.spawnPosition];
     state.velocity = [0, 0, 0];
     state.grounded = false;
+    state.supportColliderId = null;
+    state.contacts = [];
     state.coyoteRemaining = 0;
     state.respawns += 1;
   }

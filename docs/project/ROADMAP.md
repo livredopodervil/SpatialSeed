@@ -356,7 +356,9 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 - a colisão evoluiu de AABB global para broad phase + primitivas/malha final, com
   compartilhamento de geometria e suporte a superfícies planas; em 0054mr o
   personagem passou a usar OBB na narrow phase, aderência a rampas transitáveis
-  e preservação do movimento tangencial em paredes;
+  e preservação do movimento tangencial em paredes; em 0054my, colisores de
+  proprietários animados passaram a acompanhar a pose temporal e transportar o
+  personagem apoiado sem persistir o frame;
 - a câmera de jogo usa consulta espacial própria e recua diante de obstáculos, sem
   introduzir dependência física no controlador de câmera editorial;
 - música e efeitos possuem configuração inicial em `apps/web/assets/audio`, mas
@@ -379,35 +381,49 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
 5. **entregue em 0054mx:** expor no Inspector e Console uma lista persistente
    `event -> comando autorizado` por objeto, generalizando `GameEventRuntime`
    sem criar segunda autoridade nem armazenar scripts livres;
-6. amadurecer a fronteira física: controlador cinemático continua apropriado ao
+6. **entregue em 0054my:** manter sólidos os proprietários animados, substituir
+   somente seus colisores revisionados e transportar o personagem apoiado pelo
+   delta afim da plataforma;
+7. amadurecer a fronteira física: controlador cinemático continua apropriado ao
    personagem; corpos dinâmicos entram por backend separado, passo fixo,
    colisores explícitos e estado efêmero.
 
 Cada item deve permanecer um incremento testável. Física geral não bloqueia
 propriedades, eventos ou autoria de jogos simples.
 
-#### Sequência de composição e distribuição após 0054mx
+#### Sequência de composição e distribuição após 0054my
 
-1. publicar gatilhos de ponteiro, colisão e mudança de propriedade por adapters
-   pequenos, com payload portátil e sem tornar renderer ou física autoridades;
-2. estabilizar endereços universais de propriedade e avaliação reativa
+1. publicar papéis de colisão (`solid`, `trigger`, `none`) e eventos portáteis
+   `collision.enter`, `collision.stay` e `collision.exit`; coletáveis devem ser
+   composição de trigger + comando, não uma exceção no `GameRuntime`;
+2. introduzir recursos lógicos sem geometria, inicialmente `record`, `text` e
+   `asset-reference`, com identidade, propriedades, comandos, undo, arquivo e
+   busca comuns, mas sem exigir projeção Three.js;
+3. estabilizar endereços universais de propriedade e avaliação reativa
    `constant | keyframes | expression | binding`, incluindo detecção de ciclos;
-3. representar prefab como recurso de grafo instanciável, com identidade
+4. representar prefab como recurso de grafo instanciável, com identidade
    compartilhada, overrides explícitos e comandos **Make Instance/Make Unique**;
-4. criar um perfil de applet que selecione projeto, assets, runtime e catálogo
+5. criar um perfil de applet que selecione projeto, assets, runtime e catálogo
    mínimo de capabilities e gere um pacote estático versionado;
-5. validar o pacote aberto diretamente num navegador comum, servido por
+6. validar o pacote aberto diretamente num navegador comum, servido por
    hospedagem estática e incorporado por `iframe`, sem Termux, Linux, Node ou o
    editor completo como dependências de execução;
-6. acrescentar texto, painéis interativos e geometrias implícitas como providers
-   ou plugins declarativos que reutilizam Property, Command, Event e Binding.
+7. acrescentar painéis interativos e geometrias implícitas como providers ou
+   plugins declarativos que reutilizam Resource, Property, Command, Event e
+   Binding;
+8. introduzir corpos dinâmicos empurráveis por backend substituível somente
+   depois de medir o controlador atual e estabilizar formas, papéis e eventos de
+   contato.
 
-Essa ordem não privilegia uma UI predeterminada. Ela reduz primeiro o custo de
-compor comportamento, depois preserva essa composição num recurso reutilizável
-e só então congela uma fronteira de exportação. Um exportador antecipado
-copiaria acoplamentos atuais; prefabs antes de propriedades endereçáveis teriam
-overrides ad hoc; bindings antes de um catálogo de comandos e eventos seriam um
-grafo reativo sem maneira segura de causar ações.
+Essa ordem não privilegia uma UI predeterminada. Ela torna primeiro o contato
+observável e componível, oferece em seguida um lugar canônico para dados que não
+são malhas, endereça relações reativas, preserva a composição num recurso
+reutilizável e só então congela uma fronteira de exportação. Um exportador
+antecipado copiaria acoplamentos atuais; prefabs antes de propriedades
+endereçáveis teriam overrides ad hoc; bindings antes de um catálogo de comandos
+e eventos seriam um grafo reativo sem maneira segura de causar ações. Física
+dinâmica antes de papéis e eventos produziria corpos móveis sem linguagem
+portátil para dizer o que significam.
 
 #### Nota de desenvolvimento — módulos ESM sob Node
 

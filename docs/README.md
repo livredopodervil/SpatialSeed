@@ -88,6 +88,11 @@ Uma mudança pública deve revisar, conforme o impacto:
 O livro não deve ser a única fonte. Ele consolida documentos vivos por inclusão
 e adiciona narrativa, fundamentos e atlas.
 
+O contrato de plataformas móveis do build 0054my está registrado em
+[`KINEMATIC_PLATFORMS_0054MY.md`](KINEMATIC_PLATFORMS_0054MY.md). Como documento
+de marco, ele complementa o Manual e a Referência sem substituir as fontes
+vivas.
+
 ## Compilação do livro
 
 Na raiz:

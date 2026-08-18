@@ -16,9 +16,9 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 376,
-    "productionFiles": 329,
-    "productionFirstPartyFiles": 328,
+    "firstPartyJavaScriptFiles": 377,
+    "productionFiles": 330,
+    "productionFirstPartyFiles": 329,
     "productionExternalFiles": 1,
     "diagnosticFiles": 28,
     "unreferencedFiles": 20,
@@ -265,8 +265,8 @@
       "status": "production",
       "target": "viewer",
       "role": "production",
-      "sourceFiles": 8,
-      "productionFiles": 8,
+      "sourceFiles": 9,
+      "productionFiles": 9,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -863,6 +863,7 @@
     "packages/game-runtime/src/GameDirectionalInput.js",
     "packages/game-runtime/src/GameEventRuntime.js",
     "packages/game-runtime/src/GameRuntime.js",
+    "packages/game-runtime/src/KinematicCollisionWorld.js",
     "packages/game-runtime/src/index.js",
     "packages/geometry-creation-panel/src/GeometryCreationPanel.js",
     "packages/geometry-creation-panel/src/index.js",

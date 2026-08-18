@@ -2,10 +2,10 @@ import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistr
 import {
   BrowserAssetFileGateway,
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260818-0054mx";
+} from "../../../packages/platform-web/src/index.js?build=20260818-0054my";
 import {
   normalizeGameDirectionalInput
-} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mx";
+} from "../../../packages/game-runtime/src/index.js?build=20260818-0054my";
 
 export function bindWebInterface({
   runtime,

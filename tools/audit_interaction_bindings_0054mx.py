@@ -25,9 +25,13 @@ def require(relative: str, *tokens: str) -> None:
 
 
 build = json.loads(read("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260818-0054mx":
+expected_channels = {
+    "20260818-0054mx": "feature/0054mx-interaction-bindings",
+    "20260818-0054my": "feature/0054my-kinematic-platforms",
+}
+if build.get("build") not in expected_channels:
     errors.append(f"build incorreto: {build.get('build')!r}")
-if build.get("channel") != "feature/0054mx-interaction-bindings":
+if build.get("channel") != expected_channels.get(build.get("build")):
     errors.append(f"canal incorreto: {build.get('channel')!r}")
 
 require(

@@ -37,6 +37,7 @@ expected_channels = {
     "20260818-0054mv": "feature/0054mv-property-transfer-preview",
     "20260818-0054mw": "feature/0054mw-universal-resource-search",
     "20260818-0054mx": "feature/0054mx-interaction-bindings",
+    "20260818-0054my": "feature/0054my-kinematic-platforms",
 }
 current_build = build.get("build")
 if current_build not in expected_channels:
