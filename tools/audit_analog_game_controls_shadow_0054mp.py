@@ -24,9 +24,13 @@ def require(relative: str, *tokens: str) -> None:
 
 
 build = json.loads(read("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260817-0054mp":
+if build.get("build") not in {"20260817-0054mp", "20260817-0054mq"}:
     errors.append(f"build incorreto: {build.get('build')!r}")
-if build.get("channel") != "feature/0054mp-analog-game-controls-shadow":
+expected_channels = {
+    "20260817-0054mp": "feature/0054mp-analog-game-controls-shadow",
+    "20260817-0054mq": "feature/0054mq-collision-debug-overlay",
+}
+if build.get("channel") != expected_channels.get(build.get("build")):
     errors.append(f"canal incorreto: {build.get('channel')!r}")
 
 require(

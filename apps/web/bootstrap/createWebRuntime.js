@@ -14,7 +14,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260809-0053m";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260817-0054mp";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260817-0054mq";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -40,7 +40,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260817-0054mp";
+} from "../../../packages/platform-web/src/index.js?build=20260817-0054mq";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260808-0053f";
 import {
   AppearanceBindingService
@@ -115,14 +115,14 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260817-0054mp";
+} from "../../../packages/game-runtime/src/index.js?build=20260817-0054mq";
 import {
   CHARACTER_ANIMATION_VERSION,
   CharacterAnimationSystem
-} from "../../../packages/character-animation/src/index.js?build=20260817-0054mp";
+} from "../../../packages/character-animation/src/index.js?build=20260817-0054mq";
 import {
   ThreeCharacterAnimationBackend
-} from "../../../packages/character-animation-three/src/index.js?build=20260817-0054mp";
+} from "../../../packages/character-animation-three/src/index.js?build=20260817-0054mq";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
@@ -131,13 +131,13 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260812-0054g";
 import {
   MeshExchangeService
-} from "../../../packages/mesh-exchange/src/index.js?build=20260817-0054mp";
+} from "../../../packages/mesh-exchange/src/index.js?build=20260817-0054mq";
 import {
   createThreeMeshTriangulator
-} from "../../../packages/mesh-exchange-three/src/index.js?build=20260817-0054mp";
+} from "../../../packages/mesh-exchange-three/src/index.js?build=20260817-0054mq";
 import {
   MeshPathGestureController
-} from "../../../packages/mesh-interaction/src/index.js?build=20260817-0054mp";
+} from "../../../packages/mesh-interaction/src/index.js?build=20260817-0054mq";
 import {
   listMeshOperatorContracts
 } from "../../../packages/mesh-operator-kernel/src/index.js?build=20260812-0054g";
@@ -149,7 +149,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260809-0053l";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260817-0054mp";
+} from "../../../packages/edit-hud/src/index.js?build=20260817-0054mq";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -158,10 +158,10 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260817-0054mp";
+} from "../../../packages/edit-tools/src/index.js?build=20260817-0054mq";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260817-0054mp";
+} from "../../../packages/object-placement/src/index.js?build=20260817-0054mq";
 import {
   DrawingTargetController
 } from "../../../packages/drawing-target/src/index.js?build=20260808-0053f";
@@ -1420,6 +1420,11 @@ export async function createWebRuntime({
       "game.config.set",
       args => gameRuntime.configure(args),
       { category: "game", mutates: false, label: "Configurar modo jogo" }
+    )
+    .register(
+      "game.collision.debug.set",
+      args => gameRuntime.setCollisionDebug(args),
+      { category: "game", mutates: false, label: "Mostrar colisores" }
     )
     .register(
       "game.status",
@@ -2837,6 +2842,7 @@ export async function createWebRuntime({
     subscribeTools: listener => toolCapabilities.subscribe(listener)
   });
   runtime.onDispose(() => renderer.disposeToolGestureNavigation());
+  runtime.onDispose(() => renderer.disposeGameCollisionDebug());
   runtime.onDispose(() => editHud.dispose());
   runtime.onDispose(unsubscribeDrawingTargetTools);
   runtime.onDispose(() => drawingTarget.dispose());

@@ -59,6 +59,7 @@ export class GameRuntime {
   #cameraPitch = DEFAULT_CAMERA.pitch;
   #input = initialInput();
   #jumpQueued = false;
+  #collisionDebugEnabled = false;
   #disposed = false;
   #lastPublishedTick = -1;
 
@@ -188,6 +189,7 @@ export class GameRuntime {
         overlayId: targets.overlayId
       });
     } finally {
+      this.surface.setGameCollisionDebug?.(null);
       this.surface.setRuntimePresentationMode("authoring");
       if (restoreCamera && initialCamera) {
         this.cameraController.execute("viewer.camera.restore", {
@@ -240,11 +242,23 @@ export class GameRuntime {
     return this.status();
   }
 
+  setCollisionDebug({ enabled = true } = {}) {
+    this.#collisionDebugEnabled = Boolean(enabled);
+    if (this.#collisionDebugEnabled && this.state === "running") {
+      this.#publishCollisionDebug();
+    } else {
+      this.surface.setGameCollisionDebug?.(null);
+    }
+    this.#notify("collision-debug");
+    return this.status();
+  }
+
   respawn() {
     if (!this.#physics) return this.status();
     this.#physics.position = [...this.#physics.spawnPosition];
     this.#physics.velocity = [0, 0, 0];
     this.#physics.grounded = false;
+    this.#physics.contacts = [];
     this.#physics.coyoteRemaining = 0;
     this.#physics.respawns += 1;
     this.#applyFrame();
@@ -314,6 +328,12 @@ export class GameRuntime {
       velocity: Object.freeze([...(physics?.velocity ?? [0, 0, 0])]),
       yaw: Number(physics?.yaw ?? 0),
       grounded: Boolean(physics?.grounded),
+      debug: Object.freeze({
+        collision: this.#collisionDebugEnabled,
+        contacts: Object.freeze((physics?.contacts ?? []).map(contact =>
+          Object.freeze({ ...contact })
+        ))
+      }),
       body: physics ? Object.freeze({
         baseYaw: Number(physics.baseYaw ?? 0),
         halfExtents: Object.freeze([...physics.halfExtents]),
@@ -456,7 +476,20 @@ export class GameRuntime {
       { overlayId: this.#targets.overlayId }
     );
     this.#updateCamera();
+    this.#publishCollisionDebug();
     return Boolean(applied?.changed);
+  }
+
+  #publishCollisionDebug() {
+    if (!this.#collisionDebugEnabled || !this.#physics) return false;
+    return Boolean(this.surface.setGameCollisionDebug?.({
+      enabled: true,
+      revision: this.statistics.worldRefreshes,
+      grounded: Boolean(this.#physics.grounded),
+      characterBounds: characterWorldBounds(this.#physics),
+      contacts: this.#physics.contacts ?? [],
+      colliders: this.#colliders
+    }));
   }
 
   #updateCamera() {

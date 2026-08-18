@@ -17,7 +17,7 @@ Ordem de autoridade:
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
 17 de agosto validadas pelos gates locais e identificadas como build
-`20260817-0054mp`.
+`20260817-0054mq`.
 
 ## 2 - Modelo de maturidade
 
@@ -400,6 +400,12 @@ O `CollisionWorld` é independente de Three.js. Recebe formas numéricas:
 Broad phase localiza candidatos. A narrow phase consulta a forma normalizada.
 A câmera usa `castCollisionSegment()` para impedir atravessamento de
 obstáculos.
+
+`CharacterPhysics` publica telemetria efêmera de `support`, `blocked` e
+`penetration`, com ID do colisor, ponto e normal axial. Essa telemetria não
+participa da decisão física. `GameCollisionDebugOverlay` a projeta junto das
+formas de colisão, limita o mundo aos colisores mais próximos e reutiliza os
+marcadores de contato entre frames.
 
 ### Áudio e eventos
 

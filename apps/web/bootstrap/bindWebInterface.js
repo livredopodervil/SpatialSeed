@@ -1,11 +1,11 @@
-import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260817-0054mp";
+import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260817-0054mq";
 import {
   BrowserAssetFileGateway,
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260817-0054mp";
+} from "../../../packages/platform-web/src/index.js?build=20260817-0054mq";
 import {
   normalizeGameDirectionalInput
-} from "../../../packages/game-runtime/src/index.js?build=20260817-0054mp";
+} from "../../../packages/game-runtime/src/index.js?build=20260817-0054mq";
 
 export function bindWebInterface({
   runtime,
@@ -2171,7 +2171,16 @@ export function bindWebInterface({
       .join(", ");
     $("game-status").textContent =
       `${labels[snapshot.animationState] ?? snapshot.animationState} · ` +
-      `${snapshot.grounded ? "no chão" : "no ar"} · ${position}`;
+      `${snapshot.grounded ? "no chão" : "no ar"} · ${position}` +
+      (snapshot.debug?.collision
+        ? ` · contatos ${snapshot.debug.contacts?.length ?? 0}`
+        : "");
+    const collisionDebug = $("game-collision-debug");
+    if (collisionDebug) {
+      const enabled = Boolean(snapshot.debug?.collision);
+      collisionDebug.dataset.active = enabled ? "true" : "false";
+      collisionDebug.setAttribute("aria-pressed", enabled ? "true" : "false");
+    }
     const invertYaw = $("game-invert-yaw");
     if (invertYaw && documentRoot.activeElement !== invertYaw) {
       invertYaw.checked = Boolean(snapshot.camera?.invertYaw);
@@ -2367,6 +2376,11 @@ export function bindWebInterface({
   });
   $("game-exit").addEventListener("click", () => {
     execute("game.stop", { reason: "hud-exit" });
+  });
+  $("game-collision-debug")?.addEventListener("click", () => {
+    execute("game.collision.debug.set", {
+      enabled: !Boolean(latestGame.debug?.collision)
+    });
   });
 
   let sceneOnly = false;

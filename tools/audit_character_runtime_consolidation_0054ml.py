@@ -27,6 +27,7 @@ expected_channels = {
     "20260817-0054mn1": "fix/0054mn1-command-palette-console-bridge",
     "20260817-0054mo": "feature/0054mo-property-schema-consolidation",
     "20260817-0054mp": "feature/0054mp-analog-game-controls-shadow",
+    "20260817-0054mq": "feature/0054mq-collision-debug-overlay",
 }
 current_build = build.get("build")
 if current_build not in expected_channels:

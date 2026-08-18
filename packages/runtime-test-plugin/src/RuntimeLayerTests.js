@@ -425,10 +425,14 @@ import {
 import {
   createCharacterAnimationTests
 } from "./CharacterAnimationTests.js?build=20260812-0054md";
+import {
+  createGameCollisionDebugOverlayTests
+} from "./GameCollisionDebugOverlayTests.js?build=20260817-0054mq";
 
 export function createRuntimeLayerTests() {
   return {
     "character-animation": createCharacterAnimationTests(),
+    "game-collision-debug-overlay": createGameCollisionDebugOverlayTests(),
     "game-runtime": createGameRuntimeTests(),
     "module-v2": createModuleRegistryTests(),
     "tool-capabilities": createToolCapabilityTests(),

@@ -57,6 +57,10 @@ export function createGameRuntimeTests() {
       assertEqual(state.grounded, true);
       assertNear(state.position[1], 0.5, 0.002);
       assertEqual(state.animationState, "idle");
+      const support = state.contacts.find(contact => contact.kind === "support");
+      assertEqual(Boolean(support), true);
+      assertEqual(support.colliderId, "platform");
+      assertEqual(support.normal[1], 1);
     },
 
     "colisão lateral impede atravessar uma parede"() {
@@ -71,6 +75,11 @@ export function createGameRuntimeTests() {
       simulate(state, world, 120, { worldX: 1 });
       assertEqual(state.position[0] < 0.6, true);
       assertEqual(state.grounded, true);
+      const wall = state.contacts.find(contact =>
+        contact.kind === "blocked" && contact.colliderId === "wall"
+      );
+      assertEqual(Boolean(wall), true);
+      assertEqual(wall.normal[0], -1);
     },
 
     "interpenetração inicial é resolvida sem atravessar a plataforma"() {
@@ -357,6 +366,24 @@ export function createGameRuntimeTests() {
       const jumped = runtime.status();
       assertEqual(jumped.velocity[1] > 0, true);
       assertEqual(jumped.grounded, false);
+      runtime.dispose();
+    },
+
+    "diagnóstico de colisão publica overlay somente quando ativado"() {
+      const fixture = runtimeFixture();
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({ characterId: "character" });
+      assertEqual(runtime.status().debug.collision, false);
+      runtime.setCollisionDebug({ enabled: true });
+      assertEqual(runtime.status().debug.collision, true);
+      assertEqual(fixture.collisionDebug.at(-1).enabled, true);
+      runtime.advance({ deltaSeconds: 1 / 60 });
+      assertEqual(Array.isArray(fixture.collisionDebug.at(-1).contacts), true);
+      runtime.setCollisionDebug({ enabled: false });
+      assertEqual(fixture.collisionDebug.at(-1), null);
       runtime.dispose();
     },
 
@@ -713,6 +740,7 @@ function runtimeFixture({
   const acquired = [];
   const released = [];
   const presentation = [];
+  const collisionDebug = [];
   const cameraCommands = [];
   const frozenCameraSnapshot = Object.freeze({
     position: Object.freeze([...cameraSnapshot.position]),
@@ -725,6 +753,7 @@ function runtimeFixture({
     acquired,
     released,
     presentation,
+    collisionDebug,
     cameraCommands,
     restored: 0
   };
@@ -762,7 +791,8 @@ function runtimeFixture({
       return { changed: true };
     },
     restoreAnimationTargets() { fixture.restored += 1; },
-    setRuntimePresentationMode(mode) { presentation.push(mode); }
+    setRuntimePresentationMode(mode) { presentation.push(mode); },
+    setGameCollisionDebug(snapshot) { collisionDebug.push(snapshot); return true; }
   };
   fixture.camera = {
     snapshot() { return frozenCameraSnapshot; },

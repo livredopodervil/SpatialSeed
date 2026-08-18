@@ -4,7 +4,7 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 17 de agosto de 2026, derivado do
-build `20260817-0054mp`. A árvore recebida passou pelos gates locais depois da
+build `20260817-0054mq`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
@@ -84,7 +84,7 @@ do índice visual do personagem.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260817-0054mp`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260817-0054mq`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -757,6 +757,13 @@ aceleração, atrito, pulo, tolerância de borda, apoio e respawn. Ela não é u
 motor geral de corpos rígidos e não resolve todas as rampas ou contatos
 dinâmicos.
 
+Toque em **Colisão** no HUD de jogo para ativar o diagnóstico. O body do
+personagem fica verde quando `grounded` e vermelho no ar. Caixas locais são
+azuis, esferas são violetas e envelopes de broad phase de malhas triangulares
+são laranja. Pontos amarelos e setas vermelhas mostram contatos e suas normais.
+O contador no topo indica quantos contatos foram publicados no frame. O overlay
+é efêmero, limitado aos 160 colisores mais próximos e não é salvo no projeto.
+
 ### Áudio e eventos
 
 `game.start` dispara semanticamente a música. Como navegadores podem bloquear
@@ -770,6 +777,7 @@ game status
 game start
 game stop
 game respawn
+game collision debug set {"enabled":true}
 game config {"controls":{"movementReference":"camera"}}
 ```
 

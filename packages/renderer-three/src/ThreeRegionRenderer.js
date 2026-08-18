@@ -43,6 +43,9 @@ import {
 import {
   createViewerEnvironmentTexture
 } from "./ViewerEnvironment.js?build=20260726-0032a";
+import {
+  GameCollisionDebugOverlay
+} from "./GameCollisionDebugOverlay.js?build=20260817-0054mq";
 import { ThreeResourceCache } from "../../renderer-resource-cache/src/index.js?build=20260731-0044b";
 import { createDefaultGeometryRegistry } from "../../geometry-registry/src/index.js?build=20260801-0045a1";
 import { HierarchyIndex } from "../../scene-hierarchy/src/index.js?build=20260807-0052b";
@@ -322,6 +325,7 @@ export class ThreeRegionRenderer {
     lastNdc: null,
     selectionAction: null
   };
+  #gameCollisionDebug = null;
 
   constructor(
     canvas,
@@ -371,6 +375,8 @@ export class ThreeRegionRenderer {
     this.scene.background = new THREE.Color(0x08101a);
     this.#selectionOutlines = new SelectionOutlineBatch();
     this.scene.add(this.#selectionOutlines.object);
+    this.#gameCollisionDebug = new GameCollisionDebugOverlay();
+    this.scene.add(this.#gameCollisionDebug.object);
 
     this.#batchManager = new InstanceBatchManager({
       createBatch: descriptor => {
@@ -1768,6 +1774,14 @@ export class ThreeRegionRenderer {
     this.#updateVertexMarkers();
     this.#updateCameraVisualAppearance();
     return Object.freeze({ changed: true, mode: next });
+  }
+
+  setGameCollisionDebug(snapshot = null) {
+    return this.#gameCollisionDebug.update(snapshot);
+  }
+
+  disposeGameCollisionDebug() {
+    this.#gameCollisionDebug?.dispose();
   }
 
   setCameraProjection({

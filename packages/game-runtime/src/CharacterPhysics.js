@@ -1,5 +1,6 @@
 import {
   normalizeCollisionWorld,
+  queryCharacterOverlaps,
   worldIntersectsCharacterBounds
 } from "./CollisionWorld.js?build=20260812-0054l";
 import {
@@ -100,6 +101,7 @@ export function createCharacterPhysicsState({
     yaw: body.baseYaw,
     baseYaw: body.baseYaw,
     grounded: false,
+    contacts: [],
     coyoteRemaining: 0,
     animationState: "fall",
     centerOffset: [...body.centerOffset],
@@ -121,6 +123,7 @@ export function stepCharacterPhysics(
   const world = normalizeCollisionWorld(colliders);
   const dt = ranged(deltaSeconds, 0, 0.25, "deltaSeconds");
   if (dt <= EPSILON) return state;
+  state.contacts = [];
   const recoveredGround = resolvePenetrations(state, world, config);
   if (recoveredGround || isGrounded(state, world, config)) {
     state.grounded = true;
@@ -162,6 +165,16 @@ export function stepCharacterPhysics(
   moveHorizontalAxis(state, world, config, 0, state.velocity[0] * dt);
   moveHorizontalAxis(state, world, config, 2, state.velocity[2] * dt);
   moveVertical(state, world, config, state.velocity[1] * dt);
+  if (state.grounded && !state.contacts.some(contact => contact.kind === "support")) {
+    recordAxisContacts(
+      state,
+      world,
+      supportProbeBounds(state, config),
+      1,
+      1,
+      "support"
+    );
+  }
 
   if (state.position[1] < config.respawnBelow) {
     state.position = [...state.spawnPosition];
@@ -206,6 +219,14 @@ function resolvePenetrations(state, colliders, config) {
       }
     }
     if (!resolution) break;
+    recordAxisContacts(
+      state,
+      colliders,
+      body,
+      resolution.axis,
+      resolution.sign,
+      "penetration"
+    );
     const delta = resolution.sign * (resolution.distance + config.collisionSkin);
     state.position[resolution.axis] += delta;
     state.velocity[resolution.axis] = 0;
@@ -281,6 +302,14 @@ function moveAxis(state, colliders, config, axis, displacement) {
       moved = to;
       continue;
     }
+    recordAxisContacts(
+      state,
+      colliders,
+      movementCollisionBounds(state, axis, config),
+      axis,
+      displacement > 0 ? -1 : 1,
+      "blocked"
+    );
     let safe = from;
     let blocked = to;
     for (let iteration = 0; iteration < 16; iteration += 1) {
@@ -307,6 +336,28 @@ function isGrounded(state, colliders, config) {
   return worldIntersectsCharacterBounds(
     supportProbeBounds(state, config), colliders, 0
   );
+}
+
+function recordAxisContacts(state, colliders, probeBounds, axis, normalSign, kind) {
+  const body = mutableCharacterBounds(state);
+  const point = body.min.map(
+    (value, currentAxis) => (value + body.max[currentAxis]) * 0.5
+  );
+  point[axis] = normalSign > 0 ? body.min[axis] : body.max[axis];
+  const normal = [0, 0, 0];
+  normal[axis] = normalSign;
+  for (const collider of queryCharacterOverlaps(probeBounds, colliders)) {
+    const key = `${collider.id}:${axis}:${normalSign}:${kind}`;
+    if (state.contacts.some(contact => contact.key === key)) continue;
+    state.contacts.push(Object.freeze({
+      key,
+      colliderId: collider.id,
+      kind,
+      axis,
+      point: Object.freeze([...point]),
+      normal: Object.freeze([...normal])
+    }));
+  }
 }
 
 function supportProbeBounds(state, config) {
