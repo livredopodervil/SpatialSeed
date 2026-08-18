@@ -196,13 +196,13 @@ import {
   createDefaultPropertyRegistry,
   resolveSelectionTargetIds,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260727-0037c";
+} from "../../property-registry/src/index.js?build=20260818-0054mu";
 import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260806-0050b";
 import {
   ObjectInspector
-} from "../../object-inspector/src/ObjectInspector.js?build=20260807-0051a";
+} from "../../object-inspector/src/ObjectInspector.js?build=20260818-0054mu";
 import {
   cloneHierarchySubtrees,
   hierarchySubtreeIds,
@@ -427,13 +427,17 @@ import {
 } from "./CharacterAnimationTests.js?build=20260812-0054md";
 import {
   createGameCollisionDebugOverlayTests
-} from "./GameCollisionDebugOverlayTests.js?build=20260818-0054mt";
+} from "./GameCollisionDebugOverlayTests.js?build=20260818-0054mu";
 import {
   createDefaultDemoLaunchPolicyTests
-} from "./DefaultDemoLaunchPolicyTests.js?build=20260818-0054mt";
+} from "./DefaultDemoLaunchPolicyTests.js?build=20260818-0054mu";
+import {
+  createSelectionPropertyClipboardTests
+} from "./SelectionPropertyClipboardTests.js?build=20260818-0054mu";
 
 export function createRuntimeLayerTests() {
   return {
+    "selection-property-clipboard": createSelectionPropertyClipboardTests(),
     "default-demo-launch-policy": createDefaultDemoLaunchPolicyTests(),
     "character-animation": createCharacterAnimationTests(),
     "game-collision-debug-overlay": createGameCollisionDebugOverlayTests(),

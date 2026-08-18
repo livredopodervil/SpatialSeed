@@ -225,6 +225,7 @@
     "packages/property-registry/src/PropertyBatchProgram.js",
     "packages/property-registry/src/PropertyInputCodec.js",
     "packages/property-registry/src/PropertyRegistry.js",
+    "packages/property-registry/src/SelectionPropertyClipboard.js",
     "packages/property-registry/src/SelectionPropertyService.js",
     "packages/property-registry/src/SelectionTargetResolver.js",
     "packages/property-registry/src/createDefaultPropertyRegistry.js",

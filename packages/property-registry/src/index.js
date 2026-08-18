@@ -8,6 +8,10 @@ export {
 export { createDefaultPropertyRegistry } from "./createDefaultPropertyRegistry.js?build=20260807-0051a";
 export { SelectionPropertyService } from "./SelectionPropertyService.js?build=20260807-0051a";
 export {
+  SELECTION_PROPERTY_CLIPBOARD_VERSION,
+  SelectionPropertyClipboard
+} from "./SelectionPropertyClipboard.js?build=20260818-0054mu";
+export {
   PROPERTY_TARGET_SCOPES,
   resolveSelectionTargetIds
 } from "./SelectionTargetResolver.js?build=20260727-0037c";

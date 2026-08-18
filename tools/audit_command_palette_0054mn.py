@@ -33,6 +33,7 @@ expected_channels = {
     "20260818-0054mr": "feature/0054mr-obb-slope-kinematics",
     "20260818-0054ms": "fix/0054ms-recovery-before-demo-launch",
     "20260818-0054mt": "fix/0054mt-visual-facing-on-slopes",
+    "20260818-0054mu": "feature/0054mu-property-clipboard",
 }
 current_build = build.get("build")
 if current_build not in expected_channels:

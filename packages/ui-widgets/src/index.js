@@ -4,7 +4,7 @@ export {
   createCommandPaletteEntries,
   formatRuntimeCommandForConsole,
   rankCommandPaletteEntries
-} from "./CommandPalette.js?build=20260818-0054mt";
+} from "./CommandPalette.js?build=20260818-0054mu";
 export { ScrubbableField, attachScrubbableFields } from "./ScrubbableField.js";
 export { SelectionMarquee } from "./SelectionMarquee.js?build=20260730-0040e";
 export { composeToolbar } from "./ToolbarComposer.js";

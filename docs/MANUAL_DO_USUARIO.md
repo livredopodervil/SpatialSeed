@@ -4,7 +4,7 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 18 de agosto de 2026, derivado do
-build `20260818-0054mt`. A árvore recebida passou pelos gates locais depois da
+build `20260818-0054mu`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
@@ -87,7 +87,7 @@ descartado.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260818-0054mt`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260818-0054mu`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -497,6 +497,18 @@ O programa é compilado antes da mutação. Se qualquer alvo falhar, o lote inte
 Objetos equivalentes podem compartilhar material e geometria. Para muitas cores
 em objetos instanciáveis, prefira `instance.color`; isso evita separar lotes sem
 necessidade. Alterações estruturais podem recorrer a copy-on-write.
+
+### Copiar e colar propriedades
+
+No Inspector, escolha **Todas as propriedades**, **Transformação** ou
+**Aparência e material** e pressione **Copiar**. Selecione outro objeto e use
+**Colar**. A cópia permanece apenas na sessão atual e não depende de permissão
+do clipboard do sistema.
+
+O nome do objeto não faz parte da cópia geral. Propriedades incompatíveis com o
+destino são ignoradas e informadas no Inspector. Em seleção múltipla, somente
+propriedades declaradas como editáveis em lote são aplicadas. A colagem passa
+pelo mesmo comando do Inspector e produz uma única entrada de undo/redo.
 
 ## 14 - Salvar, abrir e recuperar
 

@@ -6,6 +6,7 @@ export function createEditorCommands({
   selectionOperations,
   projectService,
   propertyService = null,
+  propertyClipboard = null,
   meshEditor = null,
   editContext = null,
   toolLifecycle = null,
@@ -853,6 +854,48 @@ export function createEditorCommands({
       .register("selection.properties.applyExpression", args => {
         requireObjectMode("alterar propriedades do objeto");
         return propertyService.setSelectionProcedural(args);
+      });
+  }
+
+  if (propertyClipboard) {
+    commands
+      .register("selection.properties.copy", args => {
+        requireObjectMode("copiar propriedades");
+        return propertyClipboard.copy(args);
+      }, {
+        category: "properties",
+        mutates: false,
+        label: "Copiar propriedades"
+      })
+      .register("selection.properties.copyTransform", args => {
+        requireObjectMode("copiar transformação");
+        return propertyClipboard.copyTransform(args);
+      }, {
+        category: "properties",
+        mutates: false,
+        label: "Copiar transformação"
+      })
+      .register("selection.properties.copyAppearance", args => {
+        requireObjectMode("copiar aparência");
+        return propertyClipboard.copyAppearance(args);
+      }, {
+        category: "properties",
+        mutates: false,
+        label: "Copiar aparência e material"
+      })
+      .register("selection.properties.paste", args => {
+        requireObjectMode("colar propriedades");
+        return propertyClipboard.paste(args);
+      }, {
+        category: "properties",
+        mutates: true,
+        label: "Colar propriedades"
+      })
+      .register("selection.properties.clipboard.clear", () =>
+        propertyClipboard.clear(), {
+        category: "properties",
+        mutates: false,
+        label: "Limpar propriedades copiadas"
       });
   }
 

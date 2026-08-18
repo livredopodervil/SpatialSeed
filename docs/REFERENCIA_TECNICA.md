@@ -17,7 +17,7 @@ Ordem de autoridade:
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
 18 de agosto validadas pelos gates locais e identificadas como build
-`20260818-0054mt`.
+`20260818-0054mu`.
 
 ## 2 - Modelo de maturidade
 
@@ -158,6 +158,16 @@ authoring.tool.cancel
 
 Uma ferramenta declara identidade estável, contextos aceitos, parâmetros,
 entradas e ciclo. Adapters legados encaminham para controllers atuais.
+
+### Clipboard de propriedades
+
+`SelectionPropertyClipboard` armazena, na sessão, valores acompanhados pelos
+IDs estáveis do `PropertyRegistry`. Os comandos
+`selection.properties.copy`, `copyTransform`, `copyAppearance` e `paste`
+convergem com o Inspector. A colagem filtra suporte, escrita e
+`editableMany`, então delega a mutação atômica a
+`SelectionPropertyService.setSelection`. Identidade (`object.name`) é excluída
+da cópia geral, mas continua acessível por propriedades explicitamente pedidas.
 
 ## 8 - Documento, projeto e arquivos
 

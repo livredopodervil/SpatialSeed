@@ -295,6 +295,33 @@ export class ObjectInspector {
     }
   }
 
+  copyProperties() {
+    const mode = this.root.querySelector("#inspector-property-copy-mode")?.value ??
+      "all";
+    const command = mode === "transform"
+      ? "selection.properties.copyTransform"
+      : mode === "appearance"
+        ? "selection.properties.copyAppearance"
+        : "selection.properties.copy";
+    const result = this.execute(command, { targetScope: this.targetScope });
+    this.#refreshClipboardStatus(result);
+    return result;
+  }
+
+  pasteProperties() {
+    this.applying = true;
+    try {
+      const result = this.execute("selection.properties.paste", {
+        targetScope: this.targetScope
+      });
+      this.#refreshClipboardStatus(result);
+      return result;
+    } finally {
+      this.applying = false;
+      this.refresh();
+    }
+  }
+
   applyProcedural() {
     const property = this.root.querySelector(
       "#inspector-procedural-property"
@@ -639,6 +666,43 @@ export class ObjectInspector {
           if (!error?.fieldShown) this.#showValidation(error);
         }
       });
+    this.root
+      .querySelector("#inspector-properties-copy")
+      ?.addEventListener("click", () => {
+        try {
+          this.copyProperties();
+        } catch (error) {
+          this.#showValidation(error);
+        }
+      });
+    this.root
+      .querySelector("#inspector-properties-paste")
+      ?.addEventListener("click", () => {
+        try {
+          this.pasteProperties();
+        } catch (error) {
+          this.#showValidation(error);
+        }
+      });
+    this.#refreshClipboardStatus();
+  }
+
+  #refreshClipboardStatus(status = null) {
+    const output = this.root.querySelector("#inspector-property-clipboard-status");
+    const paste = this.root.querySelector("#inspector-properties-paste");
+    if (!output && !paste) return null;
+    const snapshot = status?.apiVersion
+      ? status
+      : this.query("selection.properties.clipboard.inspect");
+    if (paste) paste.disabled = !snapshot.available;
+    if (!output) return snapshot;
+    output.textContent = Array.isArray(status?.appliedProperties)
+      ? `${status.appliedProperties.length} propriedade(s) colada(s); ` +
+        `${status.skipped?.length ?? 0} ignorada(s).`
+      : snapshot.available
+        ? `${snapshot.count} propriedade(s) copiada(s) de ${snapshot.sourceId}.`
+        : "Nenhuma propriedade copiada nesta sessão.";
+    return snapshot;
   }
 
   #clearValidation() {

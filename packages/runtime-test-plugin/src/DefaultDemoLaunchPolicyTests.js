@@ -1,6 +1,6 @@
 import {
   shouldStartDefaultDemoAfterRecovery
-} from "../../platform-web/src/index.js?build=20260818-0054mt";
+} from "../../platform-web/src/index.js?build=20260818-0054mu";
 
 export function createDefaultDemoLaunchPolicyTests() {
   const launch = Object.freeze({ mode: "game", characterId: "fox" });

@@ -21,7 +21,7 @@ Nunca presuma o checkout ativo. Confirme `pwd`, branch, HEAD, status, remoto e
 ## Estado funcional
 
 O snapshot documental vivo de 18 de agosto de 2026 corresponde ao build
-`20260818-0054mt`. Toda promoção posterior deve atualizar manifesto, tokens de
+`20260818-0054mu`. Toda promoção posterior deve atualizar manifesto, tokens de
 cache, auditorias sucessoras e estado PWA como uma única alteração.
 
 Capacidades presentes:

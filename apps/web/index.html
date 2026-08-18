@@ -713,6 +713,18 @@
       </select>
     </label>
     <div id="inspector-properties"></div>
+    <div class="actions ins-property-clipboard">
+      <select id="inspector-property-copy-mode" aria-label="Tipo de propriedades a copiar">
+        <option value="all">Todas as propriedades</option>
+        <option value="transform">Transformação</option>
+        <option value="appearance">Aparência e material</option>
+      </select>
+      <button id="inspector-properties-copy" type="button">Copiar</button>
+      <button id="inspector-properties-paste" type="button">Colar</button>
+    </div>
+    <small id="inspector-property-clipboard-status" aria-live="polite">
+      Nenhuma propriedade copiada nesta sessão.
+    </small>
     <div class="actions">
       <button id="inspector-apply" type="button">
         Aplicar propriedades
@@ -1510,6 +1522,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260818-0054mt"></script>
+<script type="module" src="./boot.js?build=20260818-0054mu"></script>
 </body>
 </html>
