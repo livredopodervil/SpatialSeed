@@ -1,6 +1,6 @@
 import {
   AppearanceGraph
-} from "../../appearance-graph/src/index.js";
+} from "../../appearance-graph/src/index.js?build=20260818-0054mw";
 import {
   appearanceBindingForObject
 } from "../../appearance-binding/src/index.js?build=20260730-0041a";
@@ -37,6 +37,10 @@ export class AppearanceRuntime {
 
   exportAssets() {
     return this.graph.export();
+  }
+
+  listAssetDescriptors(options = {}) {
+    return this.graph.assets.listDescriptors(options);
   }
 
   internLegacyMaterial(material, options = {}) {

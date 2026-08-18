@@ -620,6 +620,10 @@ export class DevConsole {
       case "property":
         return this.#property(tokens);
 
+      case "resource":
+      case "resources":
+        return this.#resource(tokens);
+
       default:
         throw new Error(
           `Comando desconhecido: ${command || "(vazio)"}. Use help.`
@@ -667,6 +671,9 @@ export class DevConsole {
       if (["tool", "tools"].includes(String(topic).toLowerCase())) {
         return this.#toolHelp();
       }
+      if (["resource", "resources"].includes(String(topic).toLowerCase())) {
+        return this.#resourceHelp();
+      }
       throw new Error(`Tópico de ajuda desconhecido: ${topic}.`);
     }
 
@@ -703,6 +710,8 @@ export class DevConsole {
         "runtime ui-stats",
         "runtime query <query-id> [argumentos-JSON]",
         "runtime command <command-id> [argumentos-JSON]",
+        "resource search [termos|type:tipo|name:nome|id:id|hidden:true]",
+        "resource select object-id",
         "calc expressão JavaScript",
         "program código JavaScript",
         "procedure define|list|show|run|remove|export|import|help",
@@ -790,6 +799,38 @@ export class DevConsole {
         "undo",
         "redo"
       ]
+    };
+  }
+
+  #resource(tokens) {
+    if (!this.queries) throw new Error("Queries de recursos indisponíveis.");
+    const action = String(tokens.shift() ?? "search").toLowerCase();
+    if (action === "help") return this.#resourceHelp();
+    if (action === "status") {
+      this.#expectMaximum(tokens, 0, "resource status");
+      return this.queries.execute("resource.search.status");
+    }
+    if (action === "select") {
+      this.#expectExact(tokens, 1, "resource select object-id");
+      return this.commands.execute("selection.select-object", { id: tokens[0] });
+    }
+    const query = action === "search"
+      ? tokens.join(" ")
+      : [action, ...tokens].join(" ");
+    return this.queries.execute("resource.search", { query, limit: 80 });
+  }
+
+  #resourceHelp() {
+    return {
+      commands: [
+        "resource search raposa",
+        "resource search type:camera",
+        "resource search type:path hidden:false",
+        "resource search type:material",
+        "resource select object-id",
+        "resource status"
+      ],
+      filters: ["type", "kind", "name", "id", "hidden", "category"]
     };
   }
 

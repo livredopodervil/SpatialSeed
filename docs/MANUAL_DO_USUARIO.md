@@ -4,7 +4,7 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 18 de agosto de 2026, derivado do
-build `20260818-0054mv`. A árvore recebida passou pelos gates locais depois da
+build `20260818-0054mw`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
@@ -87,7 +87,7 @@ descartado.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260818-0054mv`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260818-0054mw`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -164,6 +164,13 @@ ID, categoria ou atalho. Ações de interface são executadas diretamente. Um
 comando do runtime que possa exigir parâmetros é aberto no Console, sem ser
 executado silenciosamente com argumentos ausentes. Use as setas para navegar,
 `Enter` para escolher e `Esc` para fechar.
+
+Use **Recursos** na barra ou `Ctrl+F` (`Cmd+F` no macOS) para localizar objetos
+e assets sem percorrer a árvore inteira. A busca aceita texto livre e filtros
+como `type:camera`, `type:path`, `type:material`, `name:raposa`, `id:fox-1` e
+`hidden:true`. Tocar num objeto o seleciona pelo comando público. Um material,
+textura ou aparência abre sua consulta no Console, pois assets compartilhados
+não equivalem a um único objeto selecionável.
 
 ## 5 - Primeiro percurso
 
@@ -519,10 +526,19 @@ desativadas. Marque apenas o que deseja substituir e pressione **Aplicar
 propriedades marcadas**. A aplicação confirmada produz uma única entrada de
 undo/redo.
 
+Texturas incorporadas não exibem o conteúdo Base64 nessa prévia. O Inspector
+mostra apenas o MIME type e o tamanho aproximado, por exemplo
+`image/png incorporada · 128 KiB`; o valor real permanece intacto no clipboard
+tipado e só é transferido após confirmação.
+
 No console, use `property presets`, `property copy transform`, `property
 clipboard` e `property paste all`. Para restringir a colagem, informe IDs, por
 exemplo `property paste transform.rotationDeg transform.scale`. A cópia é local
 à sessão e não depende de permissão do clipboard do sistema.
+
+No Console, `resource search raposa`, `resource search type:camera` e
+`resource search type:path hidden:false` usam o mesmo índice da interface.
+`resource select object-id` seleciona um objeto encontrado.
 
 ## 14 - Salvar, abrir e recuperar
 

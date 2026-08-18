@@ -33,6 +33,7 @@ expected_channels = {
     "20260818-0054mt": "fix/0054mt-visual-facing-on-slopes",
     "20260818-0054mu": "feature/0054mu-property-clipboard",
     "20260818-0054mv": "feature/0054mv-property-transfer-preview",
+    "20260818-0054mw": "feature/0054mw-universal-resource-search",
 }
 current_build = build.get("build")
 if current_build not in expected_channels:
@@ -54,12 +55,12 @@ physics = require("packages/game-runtime/src/CharacterPhysics.js", (
 ))
 runtime_version = (
     "game-runtime-v7-independent-visual-facing"
-    if current_build in {"20260818-0054mt", "20260818-0054mu", "20260818-0054mv"}
+    if current_build in {"20260818-0054mt", "20260818-0054mu", "20260818-0054mv", "20260818-0054mw"}
     else "game-runtime-v6-character-body-frame"
 )
 yaw_marker = (
     "this.#physics.facingYaw ?? this.#physics.yaw"
-    if current_build in {"20260818-0054mt", "20260818-0054mu", "20260818-0054mv"}
+    if current_build in {"20260818-0054mt", "20260818-0054mu", "20260818-0054mv", "20260818-0054mw"}
     else "yawDelta = this.#physics.yaw - (this.#physics.baseYaw ?? 0)"
 )
 game = require("packages/game-runtime/src/GameRuntime.js", (

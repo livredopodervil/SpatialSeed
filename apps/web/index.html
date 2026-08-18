@@ -111,7 +111,7 @@
     </div>
   </form>
 </dialog>
-<dialog id="command-palette-dialog" aria-labelledby="command-palette-title">
+<dialog id="command-palette-dialog" class="search-palette-dialog" aria-labelledby="command-palette-title">
   <form method="dialog">
     <header>
       <h2 id="command-palette-title">Comandos</h2>
@@ -137,9 +137,38 @@
   </form>
 </dialog>
 
+<dialog id="resource-palette-dialog" class="search-palette-dialog" aria-labelledby="resource-palette-title">
+  <form method="dialog">
+    <header>
+      <h2 id="resource-palette-title">Recursos</h2>
+      <button type="submit" value="cancel" aria-label="Fechar">×</button>
+    </header>
+    <input
+      id="resource-palette-input"
+      type="search"
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck="false"
+      placeholder="nome, type:camera, type:path, hidden:true"
+      aria-label="Buscar objetos e recursos"
+    >
+    <div
+      id="resource-palette-list"
+      class="command-palette-list"
+      role="listbox"
+      aria-label="Recursos encontrados"
+    ></div>
+    <p id="resource-palette-empty" hidden>Nenhum recurso encontrado.</p>
+    <footer>Toque para selecionar · filtros: type, kind, name, id, hidden</footer>
+  </form>
+</dialog>
+
 <header id="toolbar">
   <button id="command-palette" title="Buscar comandos (Ctrl/Cmd+P)">
     ⌘ Comandos
+  </button>
+  <button id="resource-search" title="Buscar recursos (Ctrl/Cmd+F)">
+    ⌕ Recursos
   </button>
   <button id="tool-navigate" data-tool-mode="navigate" title="Navegar">☝</button>
   <button id="tool-select" data-tool-mode="select" title="Selecionar">⌖</button>
@@ -1529,6 +1558,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260818-0054mv"></script>
+<script type="module" src="./boot.js?build=20260818-0054mw"></script>
 </body>
 </html>

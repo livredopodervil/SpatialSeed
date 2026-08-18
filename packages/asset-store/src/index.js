@@ -11,4 +11,4 @@ export {
 
 export {
   AssetStore
-} from "./AssetStore.js";
+} from "./AssetStore.js?build=20260818-0054mw";

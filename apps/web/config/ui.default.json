@@ -6,6 +6,7 @@
     "storageKey": "spatialseed.ui.toolbar.v2",
     "primary": [
       "command-palette",
+      "resource-search",
       "mesh-editor",
       "geometry-create",
       "inspector",
@@ -180,6 +181,11 @@
       {
         "action": "command.palette.toggle",
         "chord": "Primary+P",
+        "context": "global"
+      },
+      {
+        "action": "resource.palette.toggle",
+        "chord": "Primary+F",
         "context": "global"
       },
       {

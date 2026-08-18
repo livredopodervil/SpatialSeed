@@ -1,11 +1,11 @@
-import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260818-0054mv";
+import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, createResourcePaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260818-0054mw";
 import {
   BrowserAssetFileGateway,
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260818-0054mv";
+} from "../../../packages/platform-web/src/index.js?build=20260818-0054mw";
 import {
   normalizeGameDirectionalInput
-} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mv";
+} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mw";
 
 export function bindWebInterface({
   runtime,
@@ -446,11 +446,23 @@ export function bindWebInterface({
     });
 
   let commandPalette = null;
+  let resourcePalette = null;
   uiActions.register(
     "command.palette.toggle",
     () => commandPalette?.toggle(),
     {
       label: "Buscar comandos",
+      metadata: {
+        category: "interface",
+        allowInTextEditing: true
+      }
+    }
+  );
+  uiActions.register(
+    "resource.palette.toggle",
+    () => resourcePalette?.toggle(),
+    {
+      label: "Buscar recursos",
       metadata: {
         category: "interface",
         allowInTextEditing: true
@@ -476,6 +488,34 @@ export function bindWebInterface({
       input.focus();
       input.setSelectionRange?.(input.value.length, input.value.length);
       showNotice(`Comando ${entry.command} aberto no console.`);
+      return input.value;
+    },
+    onError: showError
+  });
+  resourcePalette = new CommandPalette({
+    dialog: $("resource-palette-dialog"),
+    input: $("resource-palette-input"),
+    list: $("resource-palette-list"),
+    empty: $("resource-palette-empty"),
+    entries: query => createResourcePaletteEntries(
+      runtime.query("resource.search", { query, limit: 80 })
+    ),
+    rankEntries: entries => entries,
+    onSelect: entry => {
+      const resource = entry.metadata;
+      if (resource.ownerObjectId) {
+        const result = execute("selection.select-object", {
+          id: resource.ownerObjectId
+        });
+        showNotice(`Selecionado: ${resource.label}.`);
+        return result;
+      }
+      const input = $("console-input");
+      input.value = `resource search id:${resource.id}`;
+      panelManager.show("#console-panel");
+      input.focus();
+      input.setSelectionRange?.(input.value.length, input.value.length);
+      showNotice(`Recurso ${resource.id} aberto no console.`);
       return input.value;
     },
     onError: showError
@@ -701,6 +741,7 @@ export function bindWebInterface({
     uiActions.bindControl(button, `tool.${button.dataset.toolMode}`)
   );
   uiActions.bindControl($("command-palette"), "command.palette.toggle");
+  uiActions.bindControl($("resource-search"), "resource.palette.toggle");
   documentRoot.querySelectorAll("[data-selection-op]").forEach(button =>
     uiActions.bindControl(
       button,
@@ -2546,6 +2587,7 @@ export function bindWebInterface({
       unsubscribeInstall();
       disconnectUiDiagnostics();
       commandPalette.dispose();
+      resourcePalette.dispose();
       uiActions.dispose();
       uiRefresh.dispose();
       pwaInstallController?.dispose();

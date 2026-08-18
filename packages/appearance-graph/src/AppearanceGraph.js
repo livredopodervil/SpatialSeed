@@ -1,4 +1,4 @@
-import { AssetStore } from "../../asset-store/src/index.js";
+import { AssetStore } from "../../asset-store/src/index.js?build=20260818-0054mw";
 import { TextureStore } from "./TextureStore.js";
 import { MaterialStore } from "./MaterialStore.js";
 import { AppearanceStore } from "./AppearanceStore.js";

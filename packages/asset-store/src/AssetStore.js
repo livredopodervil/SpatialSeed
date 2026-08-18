@@ -162,6 +162,22 @@ export class AssetStore {
       .map(snapshot);
   }
 
+  listDescriptors({ kind = null } = {}) {
+    const namespace = kind == null ? null : String(kind);
+    return Object.freeze(
+      [...this.#records.values()]
+        .filter(record => namespace === null || record.kind === namespace)
+        .map(record => Object.freeze({
+          id: record.id,
+          kind: record.kind,
+          metadata: Object.freeze(structuredClone(record.metadata)),
+          references: record.references,
+          canonicalBytes: record.canonicalBytes,
+          createdAt: record.createdAt
+        }))
+    );
+  }
+
   stats() {
     const byKind = {};
     let references = 0;

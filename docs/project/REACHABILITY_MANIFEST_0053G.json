@@ -16,9 +16,9 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 369,
-    "productionFiles": 323,
-    "productionFirstPartyFiles": 322,
+    "firstPartyJavaScriptFiles": 370,
+    "productionFiles": 324,
+    "productionFirstPartyFiles": 323,
     "productionExternalFiles": 1,
     "diagnosticFiles": 27,
     "unreferencedFiles": 20,
@@ -616,8 +616,8 @@
       "status": "production",
       "target": "procedural",
       "role": "production",
-      "sourceFiles": 2,
-      "productionFiles": 2,
+      "sourceFiles": 3,
+      "productionFiles": 3,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -997,6 +997,7 @@
     "packages/renderer-three/src/VisualCommitHandoff.js",
     "packages/renderer-three/src/WorldTransformProjection.js",
     "packages/renderer-three/src/index.js",
+    "packages/resource-tree/src/ResourceSearchIndex.js",
     "packages/resource-tree/src/ResourceTree.js",
     "packages/resource-tree/src/index.js",
     "packages/runtime-api/src/RuntimeCapabilities.js",

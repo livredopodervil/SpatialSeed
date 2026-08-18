@@ -1,3 +1,3 @@
 export {
   AppearanceRuntime
-} from "./AppearanceRuntime.js?build=20260807-0052b";
+} from "./AppearanceRuntime.js?build=20260818-0054mw";

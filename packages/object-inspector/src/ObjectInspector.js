@@ -783,10 +783,10 @@ export class ObjectInspector {
       const values = this.document.createElement("span");
       values.className = "ins-property-transfer-values";
       const descriptor = descriptors.get(entry.id) ?? {};
-      values.textContent = `origem: ${formatPropertyValue(
+      values.textContent = `origem: ${formatTransferValue(
         descriptor,
         entry.sourceValue
-      )} · destino atual: ${entry.compatible ? formatPropertyValue(
+      )} · destino atual: ${entry.compatible ? formatTransferValue(
         descriptor,
         entry.targetValue
       ) : transferReason(entry.reason)}`;
@@ -893,12 +893,23 @@ function transferReason(reason) {
 }
 
 function embeddedTextureLabel(source) {
-  const bytes = Math.ceil(String(source).length * 0.75);
+  const value = String(source);
+  const payload = value.slice(value.indexOf(",") + 1);
+  const bytes = Math.max(0, Math.floor(payload.length * 0.75) -
+    (payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0));
   const kibibytes = bytes / 1024;
   const size = kibibytes >= 1024
     ? `${(kibibytes / 1024).toFixed(1)} MiB`
     : `${Math.max(1, Math.round(kibibytes))} KiB`;
-  return `imagem incorporada · ${size}`;
+  const mimeType = value.match(/^data:([^;,]+)/i)?.[1] ?? "imagem";
+  return `${mimeType} incorporada · ${size}`;
+}
+
+function formatTransferValue(descriptor, value) {
+  if (typeof value === "string" && value.startsWith("data:")) {
+    return embeddedTextureLabel(value);
+  }
+  return formatPropertyValue(descriptor, value);
 }
 
 function proceduralHint(descriptor) {

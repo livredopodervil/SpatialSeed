@@ -13,7 +13,7 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260818-0054mv`, preparado em 18 de
+> documentação viva corresponde ao build `20260818-0054mw`, preparado em 18 de
 > agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 acompanha
 > esta edição consolidada.
 
@@ -32,6 +32,10 @@ salvar o projeto sem gravar cada quadro de uma animação ou cada passo da físi
 No build `0054ms`, a recuperação persistente também é concluída antes do
 lançamento automático do demo, impedindo que um modo jogo efêmero bloqueie um
 rascunho recuperável.
+
+No build `0054mw`, a busca de recursos passa a compartilhar um índice
+consultável entre interface e Console; texturas incorporadas são apresentadas
+por descritores compactos, sem despejar Base64 nas janelas.
 
 ## Três níveis de maturidade
 

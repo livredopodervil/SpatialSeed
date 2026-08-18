@@ -17,7 +17,7 @@ Ordem de autoridade:
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
 18 de agosto validadas pelos gates locais e identificadas como build
-`20260818-0054mv`.
+`20260818-0054mw`.
 
 ## 2 - Modelo de maturidade
 
@@ -108,6 +108,14 @@ experimento. A interface deve consultá-los, não manter listas concorrentes.
 mesma superfície; comandos sem ação equivalente são apenas encaminhados ao
 Console, evitando execução implícita sem parâmetros.
 
+`ResourceSearchIndex` é uma query sem autoridade editorial. Ele indexa nomes,
+IDs, tipos, visibilidade e caminhos de objetos, além de descritores compactos
+de assets. `AssetStore.listDescriptors()` omite deliberadamente o campo
+`value`; assim, texturas Base64 não são clonadas nem publicadas nos resultados.
+A interface consulta `resource.search`; selecionar um objeto reutiliza
+`selection.select-object`. O Console oferece `resource search`, `resource
+select` e `resource status` sobre as mesmas superfícies.
+
 ## 6 - Famílias principais de comandos
 
 A tabela é um mapa de navegação, não uma enumeração exaustiva.
@@ -121,6 +129,7 @@ A tabela é um mapa de navegação, não uma enumeração exaustiva.
 | Criação | `object.create.*`, `object.placement.*`, `light.create` |
 | Aparência | `appearance.*`, `resource.property.set` |
 | Propriedades | `properties.describe`, `selection.properties.*` |
+| Recursos | `resource.search`, `resource.search.status`, `resource search`, `resource select` |
 | Autoria | `authoring.tool.*`, `authoring.plane.*` |
 | Contexto de edição | `edit.context.*`, `edit.tool.*`, `drawing.target.*` |
 | Planar | `planar.*`, `measurement.*` |
@@ -182,6 +191,11 @@ editorial e no mesmo item de undo/redo que material e transformação.
 
 Superfícies de console correspondentes: `property presets`, `property copy`,
 `property clipboard`, `property paste` e `property clear`.
+
+Valores textuais com esquema `data:` permanecem no clipboard tipado, mas sua
+projeção visual usa um resumo de MIME type e tamanho. Essa regra é somente de
+apresentação: não cria outra representação persistente nem altera o valor
+aplicado.
 
 ## 8 - Documento, projeto e arquivos
 

@@ -24,9 +24,14 @@ def require(relative: str, *tokens: str) -> None:
 
 
 build = json.loads(read("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260818-0054mv":
-    errors.append(f"build incorreto: {build.get('build')!r}")
-if build.get("channel") != "feature/0054mv-property-transfer-preview":
+expected_channels = {
+    "20260818-0054mv": "feature/0054mv-property-transfer-preview",
+    "20260818-0054mw": "feature/0054mw-universal-resource-search",
+}
+current_build = build.get("build")
+if current_build not in expected_channels:
+    errors.append(f"build incorreto: {current_build!r}")
+elif build.get("channel") != expected_channels[current_build]:
     errors.append(f"canal incorreto: {build.get('channel')!r}")
 
 require(
@@ -69,6 +74,11 @@ require(
     'id="inspector-property-clipboard-preview"',
     'id="inspector-property-clipboard-entries"',
     "Aplicar propriedades marcadas",
+)
+require(
+    "packages/object-inspector/src/ObjectInspector.js",
+    "formatTransferValue",
+    "embeddedTextureLabel",
 )
 require(
     "packages/runtime-test-plugin/src/SelectionPropertyClipboardTests.js",

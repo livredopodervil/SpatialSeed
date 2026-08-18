@@ -55,6 +55,7 @@ GATES = [
     ("0054mt-visual-facing-on-slopes", [PYTHON, "tools/audit_visual_facing_0054mt.py"]),
     ("0054mu-property-clipboard", [PYTHON, "tools/audit_property_clipboard_0054mu.py"]),
     ("0054mv-property-transfer-preview", [PYTHON, "tools/audit_property_transfer_preview_0054mv.py"]),
+    ("0054mw-universal-resource-search", [PYTHON, "tools/audit_universal_resource_search_0054mw.py"]),
     ("event-previews", [PYTHON, "tools/audit_event_driven_previews.py"]),
     ("animation-overlays", [PYTHON, "tools/audit_independent_animation_overlays.py"]),
     ("mesh-ui", [PYTHON, "tools/audit_mesh_edit_ui.py"]),

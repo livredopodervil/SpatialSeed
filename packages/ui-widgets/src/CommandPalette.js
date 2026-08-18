@@ -43,6 +43,18 @@ export function createCommandPaletteEntries({
   return Object.freeze(entries);
 }
 
+export function createResourcePaletteEntries(searchResult = {}) {
+  return Object.freeze((searchResult.items ?? []).map(resource => Object.freeze({
+    id: resource.id,
+    label: resource.label,
+    kind: "resource",
+    enabled: true,
+    command: null,
+    shortcut: "",
+    metadata: Object.freeze({ ...resource })
+  })));
+}
+
 export function rankCommandPaletteEntries(entries, query = "", {
   limit = DEFAULT_LIMIT
 } = {}) {
@@ -92,18 +104,31 @@ export class CommandPalette {
   #entries;
   #onSelect;
   #onError;
+  #rankEntries;
   #visibleEntries = [];
   #activeIndex = 0;
   #inputListener;
   #keydownListener;
   #clickListener;
 
-  constructor({ dialog, input, list, empty, entries, onSelect, onError = null }) {
+  constructor({
+    dialog,
+    input,
+    list,
+    empty,
+    entries,
+    onSelect,
+    onError = null,
+    rankEntries = rankCommandPaletteEntries
+  }) {
     if (!dialog || !input || !list || !empty) {
       throw new TypeError("CommandPalette exige dialog, input, list e empty.");
     }
     if (typeof entries !== "function" || typeof onSelect !== "function") {
       throw new TypeError("CommandPalette exige providers funcionais.");
+    }
+    if (typeof rankEntries !== "function") {
+      throw new TypeError("CommandPalette exige rankEntries funcional.");
     }
     this.#dialog = dialog;
     this.#input = input;
@@ -112,6 +137,7 @@ export class CommandPalette {
     this.#entries = entries;
     this.#onSelect = onSelect;
     this.#onError = onError;
+    this.#rankEntries = rankEntries;
     this.#inputListener = () => this.refresh();
     this.#keydownListener = event => this.#handleKeydown(event);
     this.#clickListener = event => {
@@ -149,8 +175,8 @@ export class CommandPalette {
   }
 
   refresh() {
-    this.#visibleEntries = rankCommandPaletteEntries(
-      this.#entries(),
+    this.#visibleEntries = this.#rankEntries(
+      this.#entries(this.#input.value),
       this.#input.value
     );
     this.#activeIndex = Math.min(
@@ -173,7 +199,9 @@ export class CommandPalette {
       const detail = ownerDocument.createElement("span");
       detail.textContent = entry.kind === "command"
         ? `${entry.id} - abrir no console`
-        : entry.id;
+        : entry.kind === "resource"
+          ? resourceDetail(entry.metadata)
+          : entry.id;
       button.append(label, detail);
       if (entry.shortcut) {
         const shortcut = ownerDocument.createElement("kbd");
@@ -269,4 +297,9 @@ function displayChord(chord) {
     .replace("Primary", "Ctrl/Cmd")
     .replace("Backspace", "⌫")
     .replace("Delete", "Del");
+}
+
+function resourceDetail(resource = {}) {
+  const type = [resource.category, resource.kind].filter(Boolean).join(":");
+  return [type, resource.summary, resource.path].filter(Boolean).join(" · ");
 }

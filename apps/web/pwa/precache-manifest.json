@@ -263,6 +263,7 @@
     "packages/renderer-three/src/VisualCommitHandoff.js",
     "packages/renderer-three/src/WorldTransformProjection.js",
     "packages/renderer-three/src/index.js",
+    "packages/resource-tree/src/ResourceSearchIndex.js",
     "packages/resource-tree/src/ResourceTree.js",
     "packages/resource-tree/src/index.js",
     "packages/runtime-api/src/RuntimeCapabilities.js",

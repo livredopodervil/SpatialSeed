@@ -14,10 +14,10 @@ def req(rel,tokens):
  return s
 b=json.loads(src("apps/web/build-info.json") or "{}")
 current=b.get("build")
-if current not in {"20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo", "20260817-0054mp", "20260817-0054mq", "20260818-0054mr", "20260818-0054ms", "20260818-0054mt", "20260818-0054mu", "20260818-0054mv"}: errors.append(f"build incorreto: {current!r}")
-if current in {"20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo", "20260817-0054mp", "20260817-0054mq", "20260818-0054mr", "20260818-0054ms", "20260818-0054mt", "20260818-0054mu", "20260818-0054mv"}:
+if current not in {"20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo", "20260817-0054mp", "20260817-0054mq", "20260818-0054mr", "20260818-0054ms", "20260818-0054mt", "20260818-0054mu", "20260818-0054mv", "20260818-0054mw"}: errors.append(f"build incorreto: {current!r}")
+if current in {"20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo", "20260817-0054mp", "20260817-0054mq", "20260818-0054mr", "20260818-0054ms", "20260818-0054mt", "20260818-0054mu", "20260818-0054mv", "20260818-0054mw"}:
  req("packages/character-animation-three/src/ThreeCharacterAnimationBackend.js", ("independent-visual-projection", 'fit: "none"'))
- runtime_version = "game-runtime-v7-independent-visual-facing" if current in {"20260818-0054mt", "20260818-0054mu", "20260818-0054mv"} else "game-runtime-v6-character-body-frame"
+ runtime_version = "game-runtime-v7-independent-visual-facing" if current in {"20260818-0054mt", "20260818-0054mu", "20260818-0054mv", "20260818-0054mw"} else "game-runtime-v6-character-body-frame"
  req("packages/game-runtime/src/GameRuntime.js", (runtime_version,"desiredCameraPosition","minimumBaseClearance","#cameraFreePosition","characterWorldBounds"))
 else:
  req("packages/character-animation-three/src/ThreeCharacterAnimationBackend.js", ("scale-isolation-wrapper","parentEffectiveScale","matrixWorld","decompose"))

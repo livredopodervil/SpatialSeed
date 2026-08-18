@@ -7,7 +7,7 @@
 ## Baseline desta revisão
 
 A documentação viva de 18 de agosto de 2026 corresponde ao build
-`20260818-0054mv`, sucessor do marco publicado `0054mm`.
+`20260818-0054mw`, sucessor do marco publicado `0054mm`.
 
 O incremento `0054mo` conecta os parâmetros já declarados pelos providers de
 geometria ao registro comum de propriedades. Inspector e Console passam a
@@ -46,6 +46,13 @@ cor e cor própria da instância passam a ser presets distintos. O catálogo de
 presets é declarativo e extensível; a mutação continua pertencendo ao comando
 público e ao serviço universal de propriedades.
 
+O incremento `0054mw` acrescenta uma busca universal de objetos e assets por
+query, Console, atalho e botão móvel. O índice usa descritores compactos,
+aceita filtros tipados e encaminha a seleção ao comando público existente. A
+prévia do clipboard deixa de renderizar conteúdos Base64 completos e mostra
+somente tipo e tamanho, preservando o valor original para a aplicação
+confirmada.
+
 ## Implementado e verificável
 
 - editor espacial com seleção direta e gestos de área;
@@ -60,6 +67,7 @@ público e ao serviço universal de propriedades.
 - múltiplos viewers locais e objetos câmera;
 - modo jogo local, personagem GLB, colisão, câmera, áudio e eventos;
 - perfil diagnóstico, gates, testes do runtime e benchmarks.
+- busca de recursos por nome, ID, tipo, visibilidade e categoria.
 
 ## Contratos em consolidação
 
