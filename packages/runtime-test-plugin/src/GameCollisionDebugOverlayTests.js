@@ -1,6 +1,6 @@
 import {
   GameCollisionDebugOverlay
-} from "../../renderer-three/src/index.js?build=20260818-0054ms";
+} from "../../renderer-three/src/index.js?build=20260818-0054mt";
 
 export function createGameCollisionDebugOverlayTests() {
   return {

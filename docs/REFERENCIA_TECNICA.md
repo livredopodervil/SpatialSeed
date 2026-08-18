@@ -17,7 +17,7 @@ Ordem de autoridade:
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
 18 de agosto validadas pelos gates locais e identificadas como build
-`20260818-0054ms`.
+`20260818-0054mt`.
 
 ## 2 - Modelo de maturidade
 
@@ -203,6 +203,9 @@ STL não preserva materiais, UV, hierarquia, animação ou unidades.
 
 O fluxo atual usa GLB/glTF como fonte visual animada do personagem, separado do
 proxy físico. Isso não equivale a um importador geral rico de projeto glTF.
+O runtime mantém `visualYaw`/`facingYaw` como intenção visual e `yaw` como
+orientação efetivamente aceita pelo proxy OBB. A projeção da malha usa a
+primeira; colisão, bounds e depuração usam a segunda.
 
 ## 9 - Geometria e recursos
 

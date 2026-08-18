@@ -24,12 +24,13 @@ def require(relative: str, *tokens: str) -> None:
 
 
 build = json.loads(read("apps/web/build-info.json") or "{}")
-if build.get("build") not in {"20260817-0054mq", "20260818-0054mr", "20260818-0054ms"}:
+if build.get("build") not in {"20260817-0054mq", "20260818-0054mr", "20260818-0054ms", "20260818-0054mt"}:
     errors.append(f"build incorreto: {build.get('build')!r}")
 expected_channel = {
     "20260817-0054mq": "feature/0054mq-collision-debug-overlay",
     "20260818-0054mr": "feature/0054mr-obb-slope-kinematics",
     "20260818-0054ms": "fix/0054ms-recovery-before-demo-launch",
+    "20260818-0054mt": "fix/0054mt-visual-facing-on-slopes",
 }.get(build.get("build"))
 if build.get("channel") != expected_channel:
     errors.append(f"canal incorreto: {build.get('channel')!r}")

@@ -25,9 +25,13 @@ def require(relative: str, *tokens: str) -> str:
 
 
 build = json.loads(read("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260818-0054ms":
+if build.get("build") not in {"20260818-0054ms", "20260818-0054mt"}:
     errors.append(f"build incorreto: {build.get('build')!r}")
-if build.get("channel") != "fix/0054ms-recovery-before-demo-launch":
+expected_channels = {
+    "20260818-0054ms": "fix/0054ms-recovery-before-demo-launch",
+    "20260818-0054mt": "fix/0054mt-visual-facing-on-slopes",
+}
+if build.get("channel") != expected_channels.get(build.get("build")):
     errors.append(f"canal incorreto: {build.get('channel')!r}")
 
 policy = require(

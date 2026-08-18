@@ -13,7 +13,7 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260818-0054ms`, preparado em 18 de
+> documentação viva corresponde ao build `20260818-0054mt`, preparado em 18 de
 > agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 acompanha
 > esta edição consolidada.
 

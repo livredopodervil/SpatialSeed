@@ -4,7 +4,7 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 18 de agosto de 2026, derivado do
-build `20260818-0054ms`. A árvore recebida passou pelos gates locais depois da
+build `20260818-0054mt`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
@@ -87,7 +87,7 @@ descartado.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260818-0054ms`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260818-0054mt`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -728,6 +728,9 @@ deve permanecer recuperável e registrar o erro no console.
 
 Em toque, arraste o botão central dentro do círculo direcional. Ângulo e
 distância ao centro controlam, respectivamente, direção e intensidade; isso
+também orienta a malha visual em rampas. A OBB física pode conservar por um
+instante a última orientação livre quando girar o volume causaria interseção
+com o piso ou uma parede.
 permite diagonais e movimento suave. Soltar recentraliza e interrompe o
 movimento. Corrida e Pular conservam ponteiros próprios e podem ser combinados
 com o círculo.

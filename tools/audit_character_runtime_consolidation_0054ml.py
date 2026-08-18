@@ -30,6 +30,7 @@ expected_channels = {
     "20260817-0054mq": "feature/0054mq-collision-debug-overlay",
     "20260818-0054mr": "feature/0054mr-obb-slope-kinematics",
     "20260818-0054ms": "fix/0054ms-recovery-before-demo-launch",
+    "20260818-0054mt": "fix/0054mt-visual-facing-on-slopes",
 }
 current_build = build.get("build")
 if current_build not in expected_channels:
@@ -49,10 +50,20 @@ physics = require("packages/game-runtime/src/CharacterPhysics.js", (
     "characterBodyWorldBounds",
     "characterBodyWorldHalfExtents",
 ))
+runtime_version = (
+    "game-runtime-v7-independent-visual-facing"
+    if current_build == "20260818-0054mt"
+    else "game-runtime-v6-character-body-frame"
+)
+yaw_marker = (
+    "this.#physics.facingYaw ?? this.#physics.yaw"
+    if current_build == "20260818-0054mt"
+    else "yawDelta = this.#physics.yaw - (this.#physics.baseYaw ?? 0)"
+)
 game = require("packages/game-runtime/src/GameRuntime.js", (
-    "game-runtime-v6-character-body-frame",
+    runtime_version,
     "bodyFrame: world.character.bodyFrame ?? null",
-    "yawDelta = this.#physics.yaw - (this.#physics.baseYaw ?? 0)",
+    yaw_marker,
     "characterWorldBounds",
     "orbitDistance = camera.distance + bodySupport",
     "characterBodyHorizontalSupport",

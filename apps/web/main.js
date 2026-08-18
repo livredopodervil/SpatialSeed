@@ -1,6 +1,6 @@
 import {
   shouldStartDefaultDemoAfterRecovery
-} from "../../packages/platform-web/src/index.js?build=20260818-0054ms";
+} from "../../packages/platform-web/src/index.js?build=20260818-0054mt";
 
 const $ = id => document.getElementById(id);
 

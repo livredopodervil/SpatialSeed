@@ -3,13 +3,13 @@ import {
   normalizeCollisionWorld,
   queryCharacterBodyOverlaps,
   worldIntersectsCharacterBody
-} from "./CollisionWorld.js?build=20260818-0054ms";
+} from "./CollisionWorld.js?build=20260818-0054mt";
 import {
   characterBodyWorldBounds,
   characterBodyWorldHalfExtents,
   characterBodyWorldObb,
   normalizeCharacterBodyFrame
-} from "./CharacterBodyFrame.js?build=20260818-0054ms";
+} from "./CharacterBodyFrame.js?build=20260818-0054mt";
 
 export const DEFAULT_CHARACTER_GAME_CONFIG = Object.freeze({
   gravity: 18,
@@ -118,6 +118,7 @@ export function createCharacterPhysicsState({
     spawnPosition: [...position],
     velocity: [0, 0, 0],
     yaw: body.baseYaw,
+    facingYaw: body.baseYaw,
     baseYaw: body.baseYaw,
     grounded: false,
     contacts: [],
@@ -164,8 +165,13 @@ export function stepCharacterPhysics(
     state.velocity[0] = approach(state.velocity[0], targetX, acceleration * dt);
     state.velocity[2] = approach(state.velocity[2], targetZ, acceleration * dt);
     const targetYaw = Math.atan2(-directionZ, directionX);
+    state.facingYaw = approachAngle(
+      state.facingYaw ?? state.yaw,
+      targetYaw,
+      12 * dt
+    );
     const previousYaw = state.yaw;
-    state.yaw = approachAngle(state.yaw, targetYaw, 12 * dt);
+    state.yaw = state.facingYaw;
     if (worldIntersectsCharacterBody(
       movementCollisionBody(state, 0, config),
       world
@@ -560,6 +566,7 @@ function validatePhysicsState(state) {
   }
   finite(state.baseYaw ?? 0, "state.baseYaw");
   finite(state.yaw ?? 0, "state.yaw");
+  finite(state.facingYaw ?? state.yaw ?? 0, "state.facingYaw");
 }
 
 function vector3(value, label) {

@@ -13,17 +13,17 @@ import {
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260818-0054ms";
+} from "./CharacterPhysics.js?build=20260818-0054mt";
 import {
   characterBodyHorizontalSupport,
   characterBodyWorldObb
-} from "./CharacterBodyFrame.js?build=20260818-0054ms";
+} from "./CharacterBodyFrame.js?build=20260818-0054mt";
 import {
   castCollisionSegment,
   normalizeCollisionWorld
-} from "./CollisionWorld.js?build=20260818-0054ms";
+} from "./CollisionWorld.js?build=20260818-0054mt";
 
-export const GAME_RUNTIME_VERSION = "game-runtime-v6-character-body-frame";
+export const GAME_RUNTIME_VERSION = "game-runtime-v7-independent-visual-facing";
 
 const DEFAULT_CONTROLS = Object.freeze({
   movementReference: "camera"
@@ -328,6 +328,7 @@ export class GameRuntime {
       position: Object.freeze([...(physics?.position ?? [0, 0, 0])]),
       velocity: Object.freeze([...(physics?.velocity ?? [0, 0, 0])]),
       yaw: Number(physics?.yaw ?? 0),
+      visualYaw: Number(physics?.facingYaw ?? physics?.yaw ?? 0),
       grounded: Boolean(physics?.grounded),
       debug: Object.freeze({
         collision: this.#collisionDebugEnabled,
@@ -458,7 +459,8 @@ export class GameRuntime {
     const translation = this.#physics.position.map(
       (value, axis) => value - pivot[axis] + (axis === 1 ? bob : 0)
     );
-    const yawDelta = this.#physics.yaw - (this.#physics.baseYaw ?? 0);
+    const yawDelta = (this.#physics.facingYaw ?? this.#physics.yaw) -
+      (this.#physics.baseYaw ?? 0);
     const rotation = aroundPivot(
       quaternionMatrix(eulerQuaternion([0, yawDelta * 180 / Math.PI, 0])),
       pivot

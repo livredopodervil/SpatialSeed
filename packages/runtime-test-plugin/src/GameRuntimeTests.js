@@ -11,7 +11,7 @@ import {
   normalizeCollisionWorld,
   normalizeGameDirectionalInput,
   stepCharacterPhysics
-} from "../../game-runtime/src/index.js?build=20260818-0054ms";
+} from "../../game-runtime/src/index.js?build=20260818-0054mt";
 
 const CHARACTER_BOUNDS = Object.freeze({
   min: Object.freeze([-0.5, 0.5, -0.5]),
@@ -308,6 +308,40 @@ export function createGameRuntimeTests() {
       }
       assertEqual(airborneDescent, 0);
       assertEqual(maximumDescentStep < 0.08, true);
+      assertNear(ascending.facingYaw, 0, 0.03);
+      assertNear(Math.abs(descending.facingYaw), Math.PI, 0.03);
+    },
+
+    "visual acompanha a direção mesmo quando a OBB não pode girar"() {
+      const fixture = runtimeFixture({
+        colliders: [
+          PLATFORM,
+          { id: "wall", bounds: { min: [-8, -1, 0.8], max: [8, 3, 1.2] } }
+        ],
+        characterBodyFrame: {
+          centerOffset: [0, 0, 0],
+          halfExtents: [2, 0.5, 0.5],
+          baseYaw: 0
+        }
+      });
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({
+        characterId: "character",
+        controls: { movementReference: "world" }
+      });
+      runtime.setInput({ strafe: 1 });
+      for (let index = 0; index < 30; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+      }
+      const status = runtime.status();
+      const matrix = fixture.frames.at(-1).unitFrames[0].matrix;
+      assertNear(status.visualYaw, -Math.PI / 2, 0.03);
+      assertEqual(Math.abs(status.yaw - status.visualYaw) > 0.1, true);
+      assertNear(matrix[0], 0, 0.03);
+      runtime.dispose();
     },
 
     "parede bloqueia a normal e preserva o movimento tangencial"() {
