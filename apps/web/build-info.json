@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260818-0054mr",
-  "channel": "feature/0054mr-obb-slope-kinematics"
+  "build": "20260818-0054ms",
+  "channel": "fix/0054ms-recovery-before-demo-launch"
 }

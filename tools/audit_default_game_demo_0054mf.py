@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "apps/web/assets/demo/default-game.manifest.json"
 CREATE = ROOT / "apps/web/bootstrap/createWebRuntime.js"
+MAIN = ROOT / "apps/web/main.js"
 BIND = ROOT / "apps/web/bootstrap/bindWebInterface.js"
 INDEX = ROOT / "apps/web/index.html"
 errors: list[str] = []
@@ -59,10 +60,20 @@ for token in [
     "shouldOpenDefaultDemo(locationParameters)",
     "loadDefaultDemoProject()",
     "defaultDemoLaunch",
-    'await commands.execute("game.start"',
     "editor.selection.replace({",
 ]:
     require(token in create, f"bootstrap demo sem marcador: {token}")
+main = read(MAIN)
+for token in [
+    "const recoveryStatus = await interfaceBinding.ready",
+    "shouldStartDefaultDemoAfterRecovery(",
+    'await application.runtime.execute("game.start"',
+]:
+    require(token in main, f"lançamento demo sem marcador: {token}")
+require(
+    'await commands.execute("game.start"' not in create,
+    "bootstrap inicia jogo antes da recuperação",
+)
 require("Esfera 46" not in create, "bootstrap está acoplado ao nome atual do personagem demo")
 require(character_id not in create, "bootstrap está acoplado ao ID atual do personagem demo")
 

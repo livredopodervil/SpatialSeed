@@ -7,7 +7,7 @@
 ## Baseline desta revisão
 
 A documentação viva de 18 de agosto de 2026 corresponde ao build
-`20260818-0054mr`, sucessor do marco publicado `0054mm`.
+`20260818-0054ms`, sucessor do marco publicado `0054mm`.
 
 O incremento `0054mo` conecta os parâmetros já declarados pelos providers de
 geometria ao registro comum de propriedades. Inspector e Console passam a
@@ -24,6 +24,11 @@ penetração alimentam um overlay Three separado e desligado por padrão.
 O incremento `0054mr` usa a OBB orientada do personagem também na narrow phase,
 adiciona normais aos casts e estabiliza rampas e paredes com subida limitada,
 aderência ao solo e preservação da componente tangencial do movimento.
+
+O incremento `0054ms` ordena recuperação e lançamento do demo: checkpoints e
+journals são resolvidos antes de `game.start`, projetos recuperados reabrem em
+autoria e o diálogo de recuperação permanece acessível mesmo diante de uma
+transição defensiva para o modo jogo.
 
 ## Implementado e verificável
 

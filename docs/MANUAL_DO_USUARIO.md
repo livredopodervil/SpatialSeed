@@ -4,7 +4,7 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 18 de agosto de 2026, derivado do
-build `20260818-0054mr`. A árvore recebida passou pelos gates locais depois da
+build `20260818-0054ms`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
@@ -79,12 +79,15 @@ validação de desenvolvimento.
 O projeto demo é definido por
 `apps/web/assets/demo/default-game.manifest.json`. O manifesto escolhe arquivo,
 personagem, modo de lançamento e controles; o bootstrap não depende do nome ou
-do índice visual do personagem.
+do índice visual do personagem. Antes de iniciar o jogo, a aplicação conclui a
+recuperação local. Um projeto recuperado permanece no modo de autoria; o demo só
+entra em jogo quando não há projeto persistente ou quando o rascunho é
+descartado.
 
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260818-0054mr`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260818-0054ms`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -530,6 +533,12 @@ rascunho recuperável, a aplicação oferece:
 Recuperação local não substitui salvar um arquivo. Ela também não deve persistir
 previews, seleção, câmera ou jogo.
 
+Ao recarregar depois de editar, o diálogo de recuperação deve permanecer
+visível e operável. **Continuar** restaura o projeto e abre a interface de
+autoria, sem reativar o modo jogo. **Descartar** remove o rascunho daquela
+origem e permite que o projeto demo volte a ser o fallback. Não é necessário
+apagar cache ou dados do site para sair desse fluxo.
+
 ## 15 - Importar e exportar STL
 
 ### Importar
@@ -704,9 +713,10 @@ sessão atual.
 
 ### Projeto demo
 
-Na URL comum, o manifesto demo seleciona o proxy físico e inicia `game.start`.
-Se o início automático falhar, o editor deve permanecer recuperável e registrar
-o erro no console.
+Na URL comum, o manifesto demo seleciona o proxy físico. Depois de resolver a
+recuperação persistente, a aplicação inicia `game.start` somente se nenhum
+projeto anterior tiver sido restaurado. Se o início automático falhar, o editor
+deve permanecer recuperável e registrar o erro no console.
 
 ### Iniciar manualmente
 

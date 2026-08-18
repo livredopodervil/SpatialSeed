@@ -13,7 +13,7 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260818-0054mr`, preparado em 18 de
+> documentação viva corresponde ao build `20260818-0054ms`, preparado em 18 de
 > agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 acompanha
 > esta edição consolidada.
 
@@ -29,6 +29,9 @@ O estado lógico não pertence ao Three.js. O renderer projeta objetos; o editor
 mantém seleção e previews; o sandbox registra comandos confirmados; o viewer
 mantém câmera, apresentação, animação efêmera e jogo. Essa separação permite
 salvar o projeto sem gravar cada quadro de uma animação ou cada passo da física.
+No build `0054ms`, a recuperação persistente também é concluída antes do
+lançamento automático do demo, impedindo que um modo jogo efêmero bloqueie um
+rascunho recuperável.
 
 ## Três níveis de maturidade
 

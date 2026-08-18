@@ -51,6 +51,7 @@ GATES = [
     ("0054mp-analog-game-controls-shadow", [PYTHON, "tools/audit_analog_game_controls_shadow_0054mp.py"]),
     ("0054mq-collision-debug-overlay", [PYTHON, "tools/audit_collision_debug_overlay_0054mq.py"]),
     ("0054mr-obb-slope-kinematics", [PYTHON, "tools/audit_collision_kinematics_0054mr.py"]),
+    ("0054ms-recovery-before-demo-launch", [PYTHON, "tools/audit_recovery_before_demo_launch_0054ms.py"]),
     ("event-previews", [PYTHON, "tools/audit_event_driven_previews.py"]),
     ("animation-overlays", [PYTHON, "tools/audit_independent_animation_overlays.py"]),
     ("mesh-ui", [PYTHON, "tools/audit_mesh_edit_ui.py"]),

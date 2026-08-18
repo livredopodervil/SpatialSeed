@@ -427,10 +427,14 @@ import {
 } from "./CharacterAnimationTests.js?build=20260812-0054md";
 import {
   createGameCollisionDebugOverlayTests
-} from "./GameCollisionDebugOverlayTests.js?build=20260818-0054mr";
+} from "./GameCollisionDebugOverlayTests.js?build=20260818-0054ms";
+import {
+  createDefaultDemoLaunchPolicyTests
+} from "./DefaultDemoLaunchPolicyTests.js?build=20260818-0054ms";
 
 export function createRuntimeLayerTests() {
   return {
+    "default-demo-launch-policy": createDefaultDemoLaunchPolicyTests(),
     "character-animation": createCharacterAnimationTests(),
     "game-collision-debug-overlay": createGameCollisionDebugOverlayTests(),
     "game-runtime": createGameRuntimeTests(),

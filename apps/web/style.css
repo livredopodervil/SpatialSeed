@@ -2293,7 +2293,7 @@ html[data-toolbar-layout="vertical"] #selection-panel{
   background:#174f35;
 }
 #game-hud[hidden]{display:none}
-body.ss-game-mode > :not(#world):not(#game-hud):not(#error-box){
+body.ss-game-mode > :not(#world):not(#game-hud):not(#error-box):not(#recovery-dialog){
   display:none!important;
 }
 body.ss-game-mode #world{cursor:grab}

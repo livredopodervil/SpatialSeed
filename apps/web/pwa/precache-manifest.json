@@ -198,6 +198,7 @@
     "packages/platform-web/src/BrowserProcedureCatalogStore.js",
     "packages/platform-web/src/BrowserProjectFileGateway.js",
     "packages/platform-web/src/BuildInfo.js",
+    "packages/platform-web/src/DefaultDemoLaunchPolicy.js",
     "packages/platform-web/src/PwaInstallController.js",
     "packages/platform-web/src/PwaRegistration.js",
     "packages/platform-web/src/UiConfigurationLoader.js",

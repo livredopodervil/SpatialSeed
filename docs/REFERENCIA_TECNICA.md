@@ -17,7 +17,7 @@ Ordem de autoridade:
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
 18 de agosto validadas pelos gates locais e identificadas como build
-`20260818-0054mr`.
+`20260818-0054ms`.
 
 ## 2 - Modelo de maturidade
 
@@ -174,6 +174,16 @@ Separações obrigatórias:
 - documento não é sessão física;
 - arquivo não é recuperação local;
 - PWA não é armazenamento do projeto.
+
+### Ordem de recuperação e lançamento do demo
+
+`startApplication` aguarda `interfaceBinding.ready` antes de considerar o
+lançamento automático do demo. A política
+`shouldStartDefaultDemoAfterRecovery` permite o fallback em estados sem projeto
+persistente (`empty`, `unavailable`, `error` e `discarded`) e o bloqueia após
+`continued`, `restored-clean` ou `viewer-replica`. Assim, um checkpoint ou
+journal recuperado sempre vence o demo e reabre em autoria. O modo jogo continua
+local e efêmero.
 
 ### Procedimentos
 

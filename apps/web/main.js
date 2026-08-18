@@ -1,3 +1,7 @@
+import {
+  shouldStartDefaultDemoAfterRecovery
+} from "../../packages/platform-web/src/index.js?build=20260818-0054ms";
+
 const $ = id => document.getElementById(id);
 
 export async function startApplication(
@@ -37,13 +41,18 @@ export async function startApplication(
     uiConfiguration,
     pwaInstallController
   });
-  await interfaceBinding.ready;
+  const recoveryStatus = await interfaceBinding.ready;
 
   const defaultDemoLaunch = application.web?.defaultDemoLaunch ?? null;
-  if (defaultDemoLaunch?.mode === "game") {
+  if (shouldStartDefaultDemoAfterRecovery(
+    defaultDemoLaunch,
+    recoveryStatus
+  )) {
     try {
       await application.runtime.execute("game.start", {
         characterId: defaultDemoLaunch.characterId,
+        config: defaultDemoLaunch.config ?? {},
+        camera: defaultDemoLaunch.camera ?? {},
         controls: defaultDemoLaunch.controls ?? {}
       });
       application.runtime.emit("demo.started", {

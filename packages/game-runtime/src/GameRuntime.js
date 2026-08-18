@@ -13,15 +13,15 @@ import {
   createCharacterPhysicsState,
   normalizeCharacterGameConfig,
   stepCharacterPhysics
-} from "./CharacterPhysics.js?build=20260818-0054mr";
+} from "./CharacterPhysics.js?build=20260818-0054ms";
 import {
   characterBodyHorizontalSupport,
   characterBodyWorldObb
-} from "./CharacterBodyFrame.js?build=20260818-0054mr";
+} from "./CharacterBodyFrame.js?build=20260818-0054ms";
 import {
   castCollisionSegment,
   normalizeCollisionWorld
-} from "./CollisionWorld.js?build=20260818-0054mr";
+} from "./CollisionWorld.js?build=20260818-0054ms";
 
 export const GAME_RUNTIME_VERSION = "game-runtime-v6-character-body-frame";
 
