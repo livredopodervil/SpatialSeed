@@ -6,10 +6,9 @@
 
 ## Baseline desta revisão
 
-A revisão documental de 17 de agosto de 2026 corresponde ao build
-`20260817-0054mm`, derivado do commit base `27961f1`. O usuário confirmou 38 de
-38 gates locais depois da correção do bootstrap do demo. A publicação Git/PWA
-deve preservar essa mesma identidade de build.
+A documentação viva de 17 de agosto de 2026 corresponde ao build
+`20260817-0054mn1`, sucessor do marco publicado `0054mm`. O incremento adiciona
+uma paleta fina sobre ações e comandos já registrados, sem criar outro registro.
 
 ## Implementado e verificável
 

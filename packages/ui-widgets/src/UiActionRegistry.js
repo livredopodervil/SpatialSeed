@@ -124,10 +124,6 @@ export class UiActionRegistry {
       this.#statistics.ignoredRepeat += 1;
       return false;
     }
-    if (isTextEditingTarget(event.target)) {
-      this.#statistics.ignoredTextEditing += 1;
-      return false;
-    }
     if (event.target?.closest?.("dialog[open],[aria-modal='true']")) {
       return false;
     }
@@ -154,6 +150,13 @@ export class UiActionRegistry {
 
     const binding = candidates[0];
     const action = this.#actions.get(binding.action);
+    if (
+      isTextEditingTarget(event.target) &&
+      action?.metadata?.allowInTextEditing !== true
+    ) {
+      this.#statistics.ignoredTextEditing += 1;
+      return false;
+    }
     if (!action || !action.enabled()) {
       this.#statistics.disabled += 1;
       return false;
@@ -194,6 +197,7 @@ export class UiActionRegistry {
         Object.freeze({
           id: action.id,
           label: action.label,
+          enabled: Boolean(action.enabled()),
           metadata: { ...action.metadata }
         })
       )),

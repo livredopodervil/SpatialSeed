@@ -16,9 +16,9 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 360,
-    "productionFiles": 317,
-    "productionFirstPartyFiles": 316,
+    "firstPartyJavaScriptFiles": 361,
+    "productionFiles": 318,
+    "productionFirstPartyFiles": 317,
     "productionExternalFiles": 1,
     "diagnosticFiles": 24,
     "unreferencedFiles": 20,
@@ -742,8 +742,8 @@
       "status": "production",
       "target": "interface",
       "role": "production",
-      "sourceFiles": 9,
-      "productionFiles": 9,
+      "sourceFiles": 10,
+      "productionFiles": 10,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -1072,6 +1072,7 @@
     "packages/ui-config/src/ShortcutConfiguration.js",
     "packages/ui-config/src/UiConfiguration.js",
     "packages/ui-config/src/index.js",
+    "packages/ui-widgets/src/CommandPalette.js",
     "packages/ui-widgets/src/ConsoleOutputFormatter.js",
     "packages/ui-widgets/src/FloatingPanelManager.js",
     "packages/ui-widgets/src/FormFieldHints.js",

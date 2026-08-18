@@ -110,8 +110,36 @@
     </div>
   </form>
 </dialog>
+<dialog id="command-palette-dialog" aria-labelledby="command-palette-title">
+  <form method="dialog">
+    <header>
+      <h2 id="command-palette-title">Comandos</h2>
+      <button type="submit" value="cancel" aria-label="Fechar">×</button>
+    </header>
+    <input
+      id="command-palette-input"
+      type="search"
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck="false"
+      placeholder="Buscar ação ou comando"
+      aria-label="Buscar ação ou comando"
+    >
+    <div
+      id="command-palette-list"
+      class="command-palette-list"
+      role="listbox"
+      aria-label="Resultados"
+    ></div>
+    <p id="command-palette-empty" hidden>Nenhum comando encontrado.</p>
+    <footer>↑↓ navega · Enter escolhe · Esc fecha</footer>
+  </form>
+</dialog>
 
 <header id="toolbar">
+  <button id="command-palette" title="Buscar comandos (Ctrl/Cmd+P)">
+    ⌘ Comandos
+  </button>
   <button id="tool-navigate" data-tool-mode="navigate" title="Navegar">☝</button>
   <button id="tool-select" data-tool-mode="select" title="Selecionar">⌖</button>
   <button id="tool-translate" data-tool-mode="translate" title="Mover">↔</button>
@@ -1481,6 +1509,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260817-0054mm"></script>
+<script type="module" src="./boot.js?build=20260817-0054mn1"></script>
 </body>
 </html>

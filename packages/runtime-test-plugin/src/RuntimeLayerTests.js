@@ -362,8 +362,11 @@ import {
   SelectionMarquee,
   UiActionRegistry,
   UiRefreshCoordinator,
+  createCommandPaletteEntries,
   formatConsoleEntry,
-  normalizeShortcutChord
+  formatRuntimeCommandForConsole,
+  normalizeShortcutChord,
+  rankCommandPaletteEntries
 } from "../../ui-widgets/src/index.js?build=20260809-0053m";
 import {
   normalizeUiConfiguration
@@ -12930,6 +12933,86 @@ assets: {
     },
 
     "ui-actions": {
+      "paleta combina ações executáveis e comandos sem duplicar registro"() {
+        const registry = new UiActionRegistry({
+          root: null,
+          configuration: { bindings: [{
+            action: "history.undo",
+            chord: "Primary+Z",
+            context: "global"
+          }] }
+        });
+        registry
+          .register("history.undo", () => true, {
+            label: "Desfazer",
+            metadata: { command: "history.undo" }
+          })
+          .register("selection.quick", () => true, {
+            label: "Seleção rápida",
+            enabled: () => false
+          });
+        const entries = createCommandPaletteEntries({
+          uiActions: registry.describe(),
+          runtimeCommands: [
+            { id: "history.undo", metadata: { category: "history" } },
+            {
+              id: "mesh.extrude.invoke",
+              metadata: {
+                category: "mesh-edit",
+                label: "Iniciar extrusão por caminho"
+              }
+            }
+          ]
+        });
+        assertEqual(
+          entries.filter(entry => entry.command === "history.undo").length,
+          1
+        );
+        assertEqual(
+          entries.find(entry => entry.id === "selection.quick").enabled,
+          false
+        );
+        assertEqual(
+          rankCommandPaletteEntries(entries, "extr caminho")[0].id,
+          "mesh.extrude.invoke"
+        );
+        assertEqual(
+          rankCommandPaletteEntries(entries, "selec")[0].id,
+          "selection.quick"
+        );
+        assertEqual(
+          entries.find(entry => entry.id === "history.undo").shortcut,
+          "Ctrl/Cmd+Z"
+        );
+        assertEqual(
+          formatRuntimeCommandForConsole("mesh.extrude.invoke"),
+          "runtime command mesh.extrude.invoke"
+        );
+        registry.dispose();
+      },
+
+      "paleta pode abrir dentro de campo textual sem liberar outros atalhos"() {
+        let calls = 0;
+        const registry = new UiActionRegistry({
+          root: null,
+          configuration: { bindings: [{
+            action: "command.palette.toggle",
+            chord: "Primary+P",
+            context: "global"
+          }] }
+        });
+        registry.register("command.palette.toggle", () => { calls += 1; }, {
+          metadata: { allowInTextEditing: true }
+        });
+        assertEqual(registry.handleKeydown(createShortcutEvent({
+          key: "p",
+          ctrlKey: true,
+          textEditing: true
+        }), "viewport"), true);
+        assertEqual(calls, 1);
+        registry.dispose();
+      },
+
       "console resume testes e mutações sem despejar o objeto inteiro"() {
         assertEqual(
           formatConsoleEntry({

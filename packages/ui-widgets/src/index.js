@@ -1,4 +1,10 @@
 export { FloatingPanelManager } from "./FloatingPanelManager.js";
+export {
+  CommandPalette,
+  createCommandPaletteEntries,
+  formatRuntimeCommandForConsole,
+  rankCommandPaletteEntries
+} from "./CommandPalette.js?build=20260817-0054mn1";
 export { ScrubbableField, attachScrubbableFields } from "./ScrubbableField.js";
 export { SelectionMarquee } from "./SelectionMarquee.js?build=20260730-0040e";
 export { composeToolbar } from "./ToolbarComposer.js";

@@ -5,6 +5,7 @@
     "layout": "horizontal",
     "storageKey": "spatialseed.ui.toolbar.v2",
     "primary": [
+      "command-palette",
       "mesh-editor",
       "geometry-create",
       "inspector",
@@ -176,6 +177,11 @@
     "profile": "spatialseed-0054a",
     "storageKey": "spatialseed.ui.shortcuts.v2",
     "bindings": [
+      {
+        "action": "command.palette.toggle",
+        "chord": "Primary+P",
+        "context": "global"
+      },
       {
         "action": "history.undo",
         "chord": "Primary+Z",

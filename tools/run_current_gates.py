@@ -46,6 +46,7 @@ GATES = [
     ("0054mj-visual-scale-camera-pwa", [PYTHON, "tools/audit_character_visual_camera_pwa_0054mj.py"]),
     ("0054mk-character-scale-isolation", [PYTHON, "tools/audit_character_scale_isolation_0054mk.py"]),
     ("0054ml-character-runtime-consolidation", [PYTHON, "tools/audit_character_runtime_consolidation_0054ml.py"]),
+    ("0054mn-command-palette", [PYTHON, "tools/audit_command_palette_0054mn.py"]),
     ("event-previews", [PYTHON, "tools/audit_event_driven_previews.py"]),
     ("animation-overlays", [PYTHON, "tools/audit_independent_animation_overlays.py"]),
     ("mesh-ui", [PYTHON, "tools/audit_mesh_edit_ui.py"]),

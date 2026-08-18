@@ -1,8 +1,8 @@
-import { FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, formatConsoleEntry } from "../../../packages/ui-widgets/src/index.js?build=20260817-0054mm";
+import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260817-0054mn1";
 import {
   BrowserAssetFileGateway,
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260817-0054mm";
+} from "../../../packages/platform-web/src/index.js?build=20260817-0054mn1";
 
 export function bindWebInterface({
   runtime,
@@ -442,6 +442,42 @@ export function bindWebInterface({
         : panelManager.hide(panel);
     });
 
+  let commandPalette = null;
+  uiActions.register(
+    "command.palette.toggle",
+    () => commandPalette?.toggle(),
+    {
+      label: "Buscar comandos",
+      metadata: {
+        category: "interface",
+        allowInTextEditing: true
+      }
+    }
+  );
+  commandPalette = new CommandPalette({
+    dialog: $("command-palette-dialog"),
+    input: $("command-palette-input"),
+    list: $("command-palette-list"),
+    empty: $("command-palette-empty"),
+    entries: () => createCommandPaletteEntries({
+      uiActions: uiActions.describe(),
+      runtimeCommands: runtime.capabilities().commands
+    }).filter(entry => entry.id !== "command.palette.toggle"),
+    onSelect: entry => {
+      if (entry.kind === "action") {
+        return uiActions.execute(entry.id, {}, "palette");
+      }
+      const input = $("console-input");
+      input.value = formatRuntimeCommandForConsole(entry.command);
+      panelManager.show("#console-panel");
+      input.focus();
+      input.setSelectionRange?.(input.value.length, input.value.length);
+      showNotice(`Comando ${entry.command} aberto no console.`);
+      return input.value;
+    },
+    onError: showError
+  });
+
   function appendConsole(entry) {
     const line = {
       time: new Date().toLocaleTimeString(),
@@ -661,6 +697,7 @@ export function bindWebInterface({
   documentRoot.querySelectorAll("[data-tool-mode]").forEach(button =>
     uiActions.bindControl(button, `tool.${button.dataset.toolMode}`)
   );
+  uiActions.bindControl($("command-palette"), "command.palette.toggle");
   documentRoot.querySelectorAll("[data-selection-op]").forEach(button =>
     uiActions.bindControl(
       button,
@@ -2414,6 +2451,7 @@ export function bindWebInterface({
       unsubscribeViewerInstances();
       unsubscribeInstall();
       disconnectUiDiagnostics();
+      commandPalette.dispose();
       uiActions.dispose();
       uiRefresh.dispose();
       pwaInstallController?.dispose();

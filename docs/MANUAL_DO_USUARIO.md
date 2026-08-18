@@ -4,8 +4,8 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 17 de agosto de 2026, derivado do
-build `20260817-0054mm`. A árvore recebida alcançou 38 de 38 gates locais
-depois da correção do início automático do projeto demo.
+build `20260817-0054mn1`. A árvore recebida passou pelos gates locais depois da
+correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
 realmente carregada. Uma fonte modificada no disco não prova que o navegador ou
@@ -84,7 +84,7 @@ do índice visual do personagem.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260817-0054mm`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260817-0054mn1`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -153,6 +153,14 @@ arquivo do projeto.
 Painéis como Inspector, Câmera, Render, Console e Editar podem coexistir. Em
 telas pequenas, feche os que não estiver usando. A posição de um painel é estado
 de interface e não aparece no undo.
+
+### Paleta de comandos
+
+Use **Comandos** na barra ou `Ctrl+P` (`Cmd+P` no macOS). Digite parte do nome,
+ID, categoria ou atalho. Ações de interface são executadas diretamente. Um
+comando do runtime que possa exigir parâmetros é aberto no Console, sem ser
+executado silenciosamente com argumentos ausentes. Use as setas para navegar,
+`Enter` para escolher e `Esc` para fechar.
 
 ## 5 - Primeiro percurso
 

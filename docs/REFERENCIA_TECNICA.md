@@ -16,8 +16,8 @@ Ordem de autoridade:
 5. documentos de marco.
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
-17 de agosto validadas com 38 de 38 gates e identificadas como build
-`20260817-0054mm`.
+17 de agosto validadas pelos gates locais e identificadas como build
+`20260817-0054mn1`.
 
 ## 2 - Modelo de maturidade
 
@@ -102,6 +102,11 @@ documento.
 
 Registros fornecem descritores de geometria, propriedade, ferramenta, ação e
 experimento. A interface deve consultá-los, não manter listas concorrentes.
+
+`CommandPalette` consulta `UiActionRegistry.describe()` e
+`runtime.capabilities().commands`. Ações já registradas são executadas pela
+mesma superfície; comandos sem ação equivalente são apenas encaminhados ao
+Console, evitando execução implícita sem parâmetros.
 
 ## 6 - Famílias principais de comandos
 

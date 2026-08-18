@@ -14,8 +14,8 @@ def req(rel,tokens):
  return s
 b=json.loads(src("apps/web/build-info.json") or "{}")
 current=b.get("build")
-if current not in {"20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm"}: errors.append(f"build incorreto: {current!r}")
-if current in {"20260813-0054ml", "20260817-0054mm"}:
+if current not in {"20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1"}: errors.append(f"build incorreto: {current!r}")
+if current in {"20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1"}:
  req("packages/character-animation-three/src/ThreeCharacterAnimationBackend.js", ("independent-visual-projection", 'fit: "none"'))
  req("packages/game-runtime/src/GameRuntime.js", ("game-runtime-v6-character-body-frame","desiredCameraPosition","minimumBaseClearance","#cameraFreePosition","characterWorldBounds"))
 else:

@@ -13,8 +13,9 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação corresponde ao build `20260817-0054mm`, preparado em 17 de
-> agosto de 2026 e validado com os gates locais do projeto.
+> documentação viva corresponde ao build `20260817-0054mn1`, preparado em 17 de
+> agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 preserva
+> a edição consolidada do marco `0054mm`.
 
 ## O que o SpatialSeed é
 
@@ -99,6 +100,7 @@ Para começar vazio, abra `?project=new`. Para diagnóstico, abra
 | Criar | geometrias paramétricas e posicionamento |
 | Animação | presets e faixas temporais efêmeras |
 | Console | comandos, consultas, procedimentos, testes e benchmarks |
+| Paleta de comandos | busca unificada de ações e comandos com `Ctrl/Cmd+P` |
 | Diagnóstico | testes do runtime e estado interno consultável |
 | Status e comandos | seleção atual, pivô, câmera, build carregado e atualização PWA |
 
