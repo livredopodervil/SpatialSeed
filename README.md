@@ -13,7 +13,7 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260817-0054mo`, preparado em 17 de
+> documentação viva corresponde ao build `20260817-0054mp`, preparado em 17 de
 > agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 preserva
 > a edição consolidada do marco `0054mm`.
 
@@ -79,7 +79,7 @@ mas não para servir a aplicação.
 ## Percurso de cinco minutos
 
 1. Abra a URL comum para carregar o projeto de demonstração.
-2. Use o HUD de jogo ou `WASD`, `Shift` e `Espaço`.
+2. Use o círculo direcional do HUD ou `WASD`, `Shift` e `Espaço`.
 3. Pressione **Sair do jogo** para retornar à autoria.
 4. Selecione um objeto e use mover, girar ou escalar.
 5. Abra **Criar** para inserir uma geometria.

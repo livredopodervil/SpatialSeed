@@ -16,9 +16,9 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 361,
-    "productionFiles": 318,
-    "productionFirstPartyFiles": 317,
+    "firstPartyJavaScriptFiles": 362,
+    "productionFiles": 319,
+    "productionFirstPartyFiles": 318,
     "productionExternalFiles": 1,
     "diagnosticFiles": 24,
     "unreferencedFiles": 20,
@@ -265,8 +265,8 @@
       "status": "production",
       "target": "viewer",
       "role": "production",
-      "sourceFiles": 7,
-      "productionFiles": 7,
+      "sourceFiles": 8,
+      "productionFiles": 8,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -850,6 +850,7 @@
     "packages/game-runtime/src/CharacterPhysics.js",
     "packages/game-runtime/src/CollisionWorld.js",
     "packages/game-runtime/src/GameAudioRuntime.js",
+    "packages/game-runtime/src/GameDirectionalInput.js",
     "packages/game-runtime/src/GameEventRuntime.js",
     "packages/game-runtime/src/GameRuntime.js",
     "packages/game-runtime/src/index.js",

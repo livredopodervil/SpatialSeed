@@ -7,6 +7,7 @@ import {
   castCollisionSegment,
   intersectsCharacterBounds,
   normalizeCollisionWorld,
+  normalizeGameDirectionalInput,
   stepCharacterPhysics
 } from "../../game-runtime/src/index.js?build=20260813-0054ml";
 
@@ -24,6 +25,31 @@ const PLATFORM = Object.freeze({
 
 export function createGameRuntimeTests() {
   return {
+    "controle circular preserva direção diagonal intensidade e zona morta"() {
+      const diagonal = normalizeGameDirectionalInput({
+        offsetX: 50,
+        offsetY: -50,
+        radius: 100
+      });
+      assertNear(diagonal.strafe, 0.4718, 0.001);
+      assertNear(diagonal.forward, 0.4718, 0.001);
+      assertNear(diagonal.magnitude, 0.6672, 0.001);
+      const edge = normalizeGameDirectionalInput({
+        offsetX: -200,
+        offsetY: 0,
+        radius: 100
+      });
+      assertNear(edge.strafe, -1, 1e-9);
+      assertNear(edge.forward, 0, 1e-9);
+      const center = normalizeGameDirectionalInput({
+        offsetX: 5,
+        offsetY: -5,
+        radius: 100
+      });
+      assertNear(center.magnitude, 0, 1e-9);
+      assertNear(center.forward, 0, 1e-9);
+      assertNear(center.strafe, 0, 1e-9);
+    },
     "gravidade apoia o personagem sobre uma plataforma"() {
       const state = characterState([0, 3, 0]);
       const world = normalizeCollisionWorld([PLATFORM]);

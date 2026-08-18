@@ -7,12 +7,15 @@
 ## Baseline desta revisão
 
 A documentação viva de 17 de agosto de 2026 corresponde ao build
-`20260817-0054mo`, sucessor do marco publicado `0054mm`. O incremento adiciona
-uma paleta fina sobre ações e comandos já registrados, sem criar outro registro.
+`20260817-0054mp`, sucessor do marco publicado `0054mm`.
 
 O incremento `0054mo` conecta os parâmetros já declarados pelos providers de
 geometria ao registro comum de propriedades. Inspector e Console passam a
 editar esses parâmetros pelo comando existente, com undo e serialização comuns.
+
+O incremento `0054mp` substitui as quatro direções tácteis discretas por um
+controle circular analógico e integra o visual GLB ao pipeline de sombras já
+existente no renderer.
 
 ## Implementado e verificável
 

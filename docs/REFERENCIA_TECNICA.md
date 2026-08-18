@@ -17,7 +17,7 @@ Ordem de autoridade:
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
 17 de agosto validadas pelos gates locais e identificadas como build
-`20260817-0054mo`.
+`20260817-0054mp`.
 
 ## 2 - Modelo de maturidade
 
@@ -378,13 +378,16 @@ para as consultas atuais.
 
 O visual animado não é filho escalável do proxy físico. Uma raiz transitória de
 pose sincroniza posição e rotação; escala visual pertence à configuração do
-asset. `sourceMode` aceita `default`, `custom` e `original`.
+asset. Malhas importadas emitem e recebem sombras pelo pipeline configurável do
+viewer. `sourceMode` aceita `default`, `custom` e `original`.
 
 ### Entrada
 
 O snapshot normaliza `forward`, `strafe`, `sprint`, `jump` e deltas de look.
-Ponteiros mantêm estados separados e são combinados. A referência de movimento
-pode ser `camera` ou `world`.
+`normalizeGameDirectionalInput()` converte deslocamento radial em dois eixos
+contínuos, com zona morta central e intensidade preservada. Ponteiros mantêm
+estados separados e são combinados. A referência de movimento pode ser
+`camera` ou `world`.
 
 ### Colisão
 

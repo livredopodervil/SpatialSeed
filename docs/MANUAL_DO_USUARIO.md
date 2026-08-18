@@ -4,7 +4,7 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 17 de agosto de 2026, derivado do
-build `20260817-0054mo`. A árvore recebida passou pelos gates locais depois da
+build `20260817-0054mp`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
@@ -84,7 +84,7 @@ do índice visual do personagem.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260817-0054mo`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260817-0054mp`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -716,8 +716,11 @@ o erro no console.
 4. arraste o viewer para controlar a câmera;
 5. pressione **Sair do jogo** ou `Esc`.
 
-Em toque, o HUD possui direções, Corrida e Pular. Estados de ponteiro separados
-permitem pressionar direção, corrida e salto simultaneamente.
+Em toque, arraste o botão central dentro do círculo direcional. Ângulo e
+distância ao centro controlam, respectivamente, direção e intensidade; isso
+permite diagonais e movimento suave. Soltar recentraliza e interrompe o
+movimento. Corrida e Pular conservam ponteiros próprios e podem ser combinados
+com o círculo.
 
 ### Proxy físico e visual GLB
 
@@ -725,6 +728,10 @@ O objeto selecionado é a autoridade física. Seu frame define centro, meia
 extensão e yaw. O visual GLB é projetado por uma raiz transitória independente,
 com escala e alinhamento próprios. Aumentar o proxy deve aumentar o collider,
 sem necessariamente aumentar a raposa ou outro rig.
+
+As malhas do visual GLB emitem e recebem sombras quando sombras estão
+habilitadas nas opções do viewer. O piso de sombra continua pertencendo ao
+renderer, e não ao asset do personagem.
 
 Use **Carregar personagem GLB** para associar um asset. Clips são vinculados a
 `idle`, `walk`, `run`, `jump`, `fall` e `land` quando os nomes permitem. O painel

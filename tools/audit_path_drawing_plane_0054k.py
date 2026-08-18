@@ -21,7 +21,7 @@ if build.get("build") == "20260812-0054k":
     if "plano efetivo:" not in panel: errors.append("painel não publica plano efetivo")
     if "Automático: edição → desenho → trava → viewer" not in html:
         errors.append("UI não explicita prioridade automática")
-elif build.get("build") in {"20260812-0054l", "20260812-0054m", "20260812-0054ma", "20260812-0054mc", "20260812-0054md", "20260812-0054mh", "20260812-0054mi", "20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo"}:
+elif build.get("build") in {"20260812-0054l", "20260812-0054m", "20260812-0054ma", "20260812-0054mc", "20260812-0054md", "20260812-0054mh", "20260812-0054mi", "20260813-0054mj", "20260813-0054mk", "20260813-0054ml", "20260817-0054mm", "20260817-0054mn", "20260817-0054mn1", "20260817-0054mo", "20260817-0054mp"}:
     for marker in ["resolveActiveAuthoringPlane", 'resolvedPlaneSource: active?.frame?.source ?? null']:
         if marker not in path: errors.append(f"migração 0054l ausente: {marker}")
     if "plano efetivo:" not in panel: errors.append("painel não publica plano efetivo")

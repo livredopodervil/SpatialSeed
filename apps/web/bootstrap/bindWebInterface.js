@@ -1,8 +1,11 @@
-import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260817-0054mo";
+import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260817-0054mp";
 import {
   BrowserAssetFileGateway,
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260817-0054mo";
+} from "../../../packages/platform-web/src/index.js?build=20260817-0054mp";
+import {
+  normalizeGameDirectionalInput
+} from "../../../packages/game-runtime/src/index.js?build=20260817-0054mp";
 
 export function bindWebInterface({
   runtime,
@@ -2036,6 +2039,10 @@ export function bindWebInterface({
   const gameKeyboardCodes = new Set();
   const gamePointerControls = new Map();
   const gameControlListeners = [];
+  const gameDirectionalControl = $("game-direction-control");
+  const gameDirectionalThumb = $("game-direction-thumb");
+  let gameDirectionalPointerId = null;
+  let gameDirectionalInput = Object.freeze({ forward: 0, strafe: 0 });
   const initialShortcutContext =
     documentRoot.body.dataset.shortcutContext ?? null;
   let gameLookPointer = null;
@@ -2091,11 +2098,19 @@ export function bindWebInterface({
   };
 
   function gameInputSnapshot(extra = {}) {
+    const keyboardForward = (gameControlActive("forward") ? 1 : 0) -
+      (gameControlActive("back") ? 1 : 0);
+    const keyboardStrafe = (gameControlActive("right") ? 1 : 0) -
+      (gameControlActive("left") ? 1 : 0);
     return {
-      forward: (gameControlActive("forward") ? 1 : 0) -
-        (gameControlActive("back") ? 1 : 0),
-      strafe: (gameControlActive("right") ? 1 : 0) -
-        (gameControlActive("left") ? 1 : 0),
+      forward: Math.max(-1, Math.min(
+        1,
+        keyboardForward + gameDirectionalInput.forward
+      )),
+      strafe: Math.max(-1, Math.min(
+        1,
+        keyboardStrafe + gameDirectionalInput.strafe
+      )),
       sprint: gameControlActive("sprint"),
       jump: gameControlActive("jump"),
       ...extra
@@ -2112,6 +2127,10 @@ export function bindWebInterface({
     gameKeyboardCodes.clear();
     gamePointerControls.clear();
     gameLookPointer = null;
+    gameDirectionalPointerId = null;
+    gameDirectionalInput = Object.freeze({ forward: 0, strafe: 0 });
+    gameDirectionalControl?.removeAttribute("data-active");
+    if (gameDirectionalThumb) gameDirectionalThumb.style.transform = "";
     documentRoot.querySelectorAll("[data-game-control]").forEach(button => {
       button.dataset.active = "false";
     });
@@ -2201,6 +2220,67 @@ export function bindWebInterface({
   browserWindow.addEventListener("keyup", onGameKeyUp, true);
   browserWindow.addEventListener("blur", onGameBlur);
   $("game-hud")?.addEventListener("pointerdown", unlockGameAudioFromGesture, true);
+
+  const updateGameDirectionalControl = event => {
+    if (!gameDirectionalControl || !gameDirectionalThumb) return false;
+    const bounds = gameDirectionalControl.getBoundingClientRect();
+    const radius = Math.max(
+      1,
+      Math.min(bounds.width, bounds.height) * 0.5 -
+        gameDirectionalThumb.offsetWidth * 0.5
+    );
+    const direction = normalizeGameDirectionalInput({
+      offsetX: event.clientX - (bounds.left + bounds.width * 0.5),
+      offsetY: event.clientY - (bounds.top + bounds.height * 0.5),
+      radius,
+      deadZone: 0.12
+    });
+    gameDirectionalInput = Object.freeze({
+      forward: direction.forward,
+      strafe: direction.strafe
+    });
+    gameDirectionalThumb.style.transform =
+      `translate(${direction.x * radius}px, ${direction.y * radius}px)`;
+    gameDirectionalControl.dataset.active =
+      direction.magnitude > 0 ? "true" : "false";
+    publishGameInput();
+    return true;
+  };
+  const onGameDirectionStart = event => {
+    if (latestGame.state !== "running" || gameDirectionalPointerId !== null ||
+        (event.pointerType === "mouse" && event.button !== 0)) return;
+    unlockGameAudioFromGesture();
+    event.preventDefault();
+    gameDirectionalPointerId = event.pointerId;
+    gameDirectionalControl?.setPointerCapture?.(event.pointerId);
+    updateGameDirectionalControl(event);
+  };
+  const onGameDirectionMove = event => {
+    if (gameDirectionalPointerId !== event.pointerId) return;
+    event.preventDefault();
+    updateGameDirectionalControl(event);
+  };
+  const onGameDirectionEnd = event => {
+    if (gameDirectionalPointerId !== event.pointerId) return;
+    event.preventDefault();
+    gameDirectionalPointerId = null;
+    gameDirectionalInput = Object.freeze({ forward: 0, strafe: 0 });
+    gameDirectionalControl?.removeAttribute("data-active");
+    if (gameDirectionalThumb) gameDirectionalThumb.style.transform = "";
+    publishGameInput();
+  };
+  for (const [name, listener] of [
+    ["pointerdown", onGameDirectionStart],
+    ["pointermove", onGameDirectionMove],
+    ["pointerup", onGameDirectionEnd],
+    ["pointercancel", onGameDirectionEnd],
+    ["lostpointercapture", onGameDirectionEnd]
+  ]) {
+    gameDirectionalControl?.addEventListener(name, listener);
+    if (gameDirectionalControl) {
+      gameControlListeners.push([gameDirectionalControl, name, listener]);
+    }
+  }
 
   for (const button of documentRoot.querySelectorAll("[data-game-control]")) {
     const control = button.dataset.gameControl;

@@ -37,6 +37,10 @@ export class ThreeCharacterAnimationBackend {
     if (!originalClips.length) throw new Error("GLB/glTF não contém animações.");
     root.traverse?.(object => {
       if (object?.isSkinnedMesh) object.frustumCulled = false;
+      if (object?.isMesh) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+      }
     });
     const clips = normalizeRootMotionClips(
       originalClips,

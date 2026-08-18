@@ -25,6 +25,10 @@ export {
   GAME_RUNTIME_VERSION,
   GameRuntime
 } from "./GameRuntime.js?build=20260813-0054ml";
+export {
+  GAME_DIRECTIONAL_INPUT_VERSION,
+  normalizeGameDirectionalInput
+} from "./GameDirectionalInput.js?build=20260817-0054mp";
 
 export { GAME_EVENT_RUNTIME_VERSION, GameEventRuntime } from "./GameEventRuntime.js?build=20260813-0054mj";
 export { GAME_AUDIO_RUNTIME_VERSION, GameAudioRuntime } from "./GameAudioRuntime.js?build=20260813-0054mj";

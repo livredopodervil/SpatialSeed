@@ -2324,19 +2324,55 @@ body.ss-game-mode #game-hud{
   font:600 .78rem/1.2 system-ui;
   backdrop-filter:blur(8px);
 }
-.game-direction-pad{
+.game-direction-control{
   grid-column:1;
   grid-row:3;
-  display:grid;
-  grid-template-columns:repeat(3,3.2rem);
-  grid-template-rows:repeat(2,3.2rem);
-  gap:.3rem;
+  position:relative;
+  width:8.4rem;
+  height:8.4rem;
+  border:1px solid #d9ecff55;
+  border-radius:50%;
+  background:radial-gradient(circle,#17304ac0 0 21%,#071421d9 22% 68%,#26445d99 69% 71%,#071421b8 72%);
+  box-shadow:0 .45rem 1.4rem #0008,inset 0 0 1.2rem #8acaff18;
   pointer-events:auto;
+  touch-action:none;
+  user-select:none;
 }
-.game-direction-pad [data-game-control="forward"]{grid-column:2;grid-row:1}
-.game-direction-pad [data-game-control="left"]{grid-column:1;grid-row:2}
-.game-direction-pad [data-game-control="back"]{grid-column:2;grid-row:2}
-.game-direction-pad [data-game-control="right"]{grid-column:3;grid-row:2}
+.game-direction-ring{
+  position:absolute;
+  inset:1rem;
+  border:1px solid #d9ecff25;
+  border-radius:50%;
+  pointer-events:none;
+}
+.game-direction-ring::before,.game-direction-ring::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  background:#d9ecff22;
+  transform:translate(-50%,-50%);
+}
+.game-direction-ring::before{width:1px;height:100%}
+.game-direction-ring::after{width:100%;height:1px}
+.game-direction-thumb{
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:3.2rem;
+  height:3.2rem;
+  margin:-1.6rem 0 0 -1.6rem;
+  border:1px solid #e8f5ff88;
+  border-radius:50%;
+  background:#173c5fee;
+  box-shadow:0 .3rem .8rem #0008,inset 0 0 .7rem #bde6ff33;
+  pointer-events:none;
+  transition:transform 90ms ease-out,background 90ms ease-out;
+}
+.game-direction-control[data-active="true"] .game-direction-thumb{
+  background:#17613fee;
+  transition:none;
+}
 .game-action-pad{
   grid-column:2;
   grid-row:3;
@@ -2406,11 +2442,11 @@ body.ss-game-mode #game-hud [data-character-visual-panel] p{
   pointer-events:auto;
 }
 @media(pointer:fine){
-  .game-direction-pad,.game-action-pad{opacity:.42}
-  .game-direction-pad:hover,.game-action-pad:hover{opacity:1}
+  .game-direction-control,.game-action-pad{opacity:.42}
+  .game-direction-control:hover,.game-action-pad:hover{opacity:1}
 }
 @media(max-width:560px){
   #game-hud p{display:none}
-  .game-direction-pad{grid-template-columns:repeat(3,3.6rem);grid-template-rows:repeat(2,3.6rem)}
+  .game-direction-control{width:9.2rem;height:9.2rem}
   #game-hud button{min-width:3.6rem;min-height:3.6rem}
 }

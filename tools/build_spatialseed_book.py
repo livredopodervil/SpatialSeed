@@ -409,7 +409,11 @@ class CoverPage(Flowable):
         c.drawString(-MARGIN + 0.73 * inch, PAGE_H * 0.09 - MARGIN, "Rogério Duarte")
         c.setFont(FONT_REGULAR, 7.8)
         c.setFillColor(HexColor("#8FA8BA"))
-        c.drawRightString(PAGE_W - MARGIN - 0.02 * inch, PAGE_H * 0.09 - MARGIN, "17 de agosto de 2026 - baseline 0054")
+        c.drawRightString(
+            CONTENT_W - 0.02 * inch,
+            PAGE_H * 0.09 - MARGIN,
+            "17 de agosto de 2026 - baseline 0054",
+        )
         c.restoreState()
 
 

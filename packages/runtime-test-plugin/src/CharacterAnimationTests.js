@@ -79,11 +79,17 @@ export function createCharacterAnimationTests() {
     async "backend Three usa visual transitório e AnimationMixer sem clock próprio"() {
       const surface = fakeThreeSurface();
       const clip = new THREE.AnimationClip("Idle", 1, []);
+      const asset = new THREE.Group();
+      const shadowMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshBasicMaterial()
+      );
+      asset.add(shadowMesh);
       const backend = new ThreeCharacterAnimationBackend({
         surface,
         loaderFactory: () => ({
           async loadAsync() {
-            return { scene: new THREE.Group(), animations: [clip] };
+            return { scene: asset, animations: [clip] };
           }
         })
       });
@@ -93,6 +99,8 @@ export function createCharacterAnimationTests() {
         options: {}
       });
       assertEqual(loaded.clips[0].name, "Idle");
+      assertEqual(shadowMesh.castShadow, true);
+      assertEqual(shadowMesh.receiveShadow, true);
       // 0054mi: o GLB é projeção da sessão de jogo, não preview persistente.
       assertEqual(surface.active, false);
       backend.setActive("hero", false);
