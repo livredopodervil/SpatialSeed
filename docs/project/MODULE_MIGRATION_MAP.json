@@ -167,6 +167,10 @@
       "target": "renderer-three",
       "disposition": "preserve-incremental-projection"
     },
+    "packages/interaction-runtime": {
+      "target": "viewer",
+      "disposition": "preserve-portable-event-command-runtime"
+    },
     "packages/instance-batches": {
       "target": "renderer-three",
       "disposition": "preserve-batching"

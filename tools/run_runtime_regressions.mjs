@@ -8,11 +8,23 @@ const {
   runRuntimeTests
 } = await import("../packages/runtime-test-plugin/src/RuntimeLayerTests.js");
 
-const DOM_ONLY = Object.freeze([Object.freeze({
-  suite: "object-inspector",
-  test: "painel fechado adia inspeção até ser aberto",
-  reason: "requires-browser-dom"
-})]);
+const DOM_ONLY = Object.freeze([
+  Object.freeze({
+    suite: "object-inspector",
+    test: "painel fechado adia inspeção até ser aberto",
+    reason: "requires-browser-dom"
+  }),
+  Object.freeze({
+    suite: "interaction-composer",
+    test: "compositor mostra somente o comportamento do objeto selecionado",
+    reason: "requires-browser-dom"
+  }),
+  Object.freeze({
+    suite: "interaction-composer",
+    test: "formulário deriva campos do catálogo e chama comando público",
+    reason: "requires-browser-dom"
+  })
+]);
 
 const requested = String(process.argv[2] ?? "all");
 const suites = createRuntimeLayerTests();

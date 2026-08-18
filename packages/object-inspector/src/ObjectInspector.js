@@ -4,6 +4,8 @@ import {
   parsePropertyInput,
   propertyComponentCount
 } from "../../property-registry/src/index.js?build=20260807-0051a";
+import { InteractionComposer } from "./InteractionComposer.js?build=20260818-0054mx";
+export { InteractionComposer };
 
 const GROUP_LABELS = Object.freeze({
   object: "Identificação",
@@ -79,6 +81,14 @@ export class ObjectInspector {
     this.#buildPropertyFields();
     this.#buildTransferPresets();
     this.#buildProceduralEditor();
+    const interactionHost = root.querySelector("#inspector-interactions-root");
+    this.interactionComposer = interactionHost
+      ? new InteractionComposer({
+          host: interactionHost,
+          query: this.query,
+          execute: this.execute
+        })
+      : null;
     this.#bind();
 
     this.unsubscribeSelection = editor.selection.subscribe(() =>
@@ -116,6 +126,7 @@ export class ObjectInspector {
     const inspection = this.query("selection.properties.inspect", {
       targetScope: this.targetScope
     });
+    this.interactionComposer?.refresh();
     this.pendingRefresh = false;
     this.refreshStatistics.refreshes += 1;
     const empty = this.root.querySelector("#inspector-empty");
@@ -265,6 +276,7 @@ export class ObjectInspector {
     }
     this.unsubscribeSelection?.();
     this.unsubscribeSandbox?.();
+    this.interactionComposer?.dispose();
     return true;
   }
 
@@ -374,12 +386,16 @@ export class ObjectInspector {
       let group = groups.get(descriptor.group);
 
       if (!group) {
-        const fieldset = this.document.createElement("fieldset");
-        const legend = this.document.createElement("legend");
-        legend.textContent = GROUP_LABELS[descriptor.group] ?? descriptor.group;
-        fieldset.append(legend);
-        container.append(fieldset);
-        group = fieldset;
+        const details = this.document.createElement("details");
+        details.className = "ins-property-group";
+        details.dataset.propertyGroup = descriptor.group;
+        const summary = this.document.createElement("summary");
+        summary.textContent = GROUP_LABELS[descriptor.group] ?? descriptor.group;
+        const content = this.document.createElement("div");
+        content.className = "ins-property-group-content";
+        details.append(summary, content);
+        container.append(details);
+        group = content;
         groups.set(descriptor.group, group);
       }
 
@@ -663,7 +679,10 @@ export class ObjectInspector {
   #markDirty(id, { preserveUnset = false } = {}) {
     this.dirty.add(id);
     if (!preserveUnset) this.unset.delete(id);
-    this.controls.get(id)?.row.classList.add("is-dirty");
+    const row = this.controls.get(id)?.row;
+    row?.classList.add("is-dirty");
+    const group = row?.closest?.("details.ins-property-group");
+    if (group) group.open = true;
   }
 
   #clearPending() {

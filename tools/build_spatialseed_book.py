@@ -482,7 +482,7 @@ class PartDivider(Flowable):
         sp.drawOn(c, 0, self.height * 0.39)
         c.setFillColor(HexColor("#8FA8BA"))
         c.setFont(FONT_MONO, 7.5)
-        c.drawString(0, 0.14 * inch, "snapshot 18-08-2026 - build 20260818-0054mw")
+        c.drawString(0, 0.14 * inch, "snapshot 18-08-2026 - build 20260818-0054mx")
         c.restoreState()
 
 
@@ -630,15 +630,11 @@ def qr_block(url, description):
 
 
 def pretty_code(text: str, width=92):
-    def expand_quoted(match):
-        expression = match.group(1)
-        expression = re.sub(r"([+\-*/%])", r" \1 ", expression)
-        expression = re.sub(r"\s+", " ", expression).strip()
-        return f'"{expression}"'
-
     lines = []
     for raw in text.strip().splitlines():
-        expanded = re.sub(r'"([^"]*)"', expand_quoted, raw)
+        # A listing is evidence and must not rewrite quoted identifiers,
+        # paths, JSON strings or executable expressions for typography.
+        expanded = raw
         wrapped = textwrap.wrap(
             expanded,
             width=width,

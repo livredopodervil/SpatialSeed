@@ -202,6 +202,7 @@ import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260806-0050b";
 import {
+  InteractionComposer,
   ObjectInspector
 } from "../../object-inspector/src/ObjectInspector.js?build=20260818-0054mv";
 import {
@@ -435,9 +436,14 @@ import {
 import {
   createSelectionPropertyClipboardTests
 } from "./SelectionPropertyClipboardTests.js?build=20260818-0054mv";
+import {
+  createInteractionBindingTests
+} from "./InteractionBindingTests.js?build=20260818-0054mx";
 
 export function createRuntimeLayerTests() {
   return {
+    "interaction-composer": createInteractionComposerTests(),
+    "interaction-bindings": createInteractionBindingTests(),
     "selection-property-clipboard": createSelectionPropertyClipboardTests(),
     "default-demo-launch-policy": createDefaultDemoLaunchPolicyTests(),
     "character-animation": createCharacterAnimationTests(),
@@ -18881,6 +18887,98 @@ function createExperimentDefinition() {
       source: "({ count }) => count"
     }
   };
+}
+
+function createInteractionComposerTests() {
+  return {
+    "compositor mostra somente o comportamento do objeto selecionado"() {
+      const fixture = interactionComposerFixture({
+        bindings: [{
+          id: "binding-a",
+          objectId: "object-a",
+          event: "app.start",
+          enabled: true,
+          actions: [{
+            type: "command",
+            command: "animation.preset",
+            args: { id: "spin", targetIds: ["$self"] }
+          }]
+        }]
+      });
+      const inspection = fixture.composer.refresh();
+      assertEqual(inspection.objectId, "object-a");
+      assertEqual(fixture.host.querySelectorAll(
+        ".ins-interaction-binding"
+      ).length, 1);
+      assertEqual(
+        fixture.host.querySelector(".ins-summary-count").textContent,
+        "1"
+      );
+      fixture.composer.dispose();
+    },
+
+    "formulário deriva campos do catálogo e chama comando público"() {
+      const fixture = interactionComposerFixture();
+      fixture.composer.refresh();
+      fixture.host.querySelector(".ins-interaction-add").click();
+      const preset = fixture.host.querySelector(
+        '.ins-interaction-parameters input[type="text"]'
+      );
+      assertEqual(Boolean(preset), true);
+      preset.value = "rainbow";
+      fixture.host.querySelector(".ins-interaction-dialog .primary").click();
+      assertDeepEqual(fixture.executions[0], {
+        id: "selection.interactions.add",
+        args: {
+          event: "app.start",
+          command: "animation.preset",
+          args: { id: "rainbow" }
+        }
+      });
+      fixture.composer.dispose();
+    }
+  };
+}
+
+function interactionComposerFixture({ bindings = [] } = {}) {
+  const host = document.createElement("div");
+  const executions = [];
+  const catalog = {
+    events: [{ id: "app.start", label: "Ao iniciar" }],
+    actions: [{
+      id: "animation.preset",
+      command: "animation.preset",
+      label: "Animar",
+      defaults: { targetIds: ["$self"] },
+      parameters: [{
+        id: "id",
+        label: "Preset",
+        type: "text",
+        required: true,
+        placeholder: "spin"
+      }]
+    }]
+  };
+  const composer = new InteractionComposer({
+    host,
+    query(id) {
+      if (id === "interaction.catalog.describe") return catalog;
+      if (id === "selection.interactions.inspect") {
+        return {
+          count: 1,
+          editable: true,
+          objectId: "object-a",
+          bindings
+        };
+      }
+      throw new Error(`Consulta inesperada: ${id}.`);
+    },
+    execute(id, args) {
+      executions.push(structuredClone({ id, args }));
+      return { changed: true };
+    }
+  });
+  return { host, composer, executions };
 }
 
 export async function runRuntimeTests(

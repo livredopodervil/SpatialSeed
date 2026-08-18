@@ -1108,6 +1108,30 @@ converter silenciosamente esse estado transitório em documento.
 
 Consulte [`GAME_MODE_0054A.md`](../GAME_MODE_0054A.md).
 
+## D-058 — Comportamento persistente é dado portátil que referencia comandos autorizados
+
+**Estado:** implementada inicialmente no incremento 0054mx.
+
+Uma ligação de interação registra identidade, evento, proprietário, estado de
+ativação e ações serializáveis. A ação `command` referencia uma operação pública
+que se declarou apta a participar do catálogo; evento, Inspector, Console e
+runtime não recebem autoridade para contornar essa declaração. Fontes de
+sistema, documento e sessão são compostas no runtime sem se apagarem.
+
+**Motivação:** applets, jogos pequenos e objetos reutilizáveis precisam reagir
+sem exigir edição de módulos do bootstrap. Guardar funções, snippets ou callbacks
+do DOM dentro de objetos tornaria persistência, segurança, undo, exportação e
+execução fora do editor dependentes da implementação web atual.
+
+**Consequências:** `scene.interactions` participa do projeto e do histórico;
+parâmetros aceitos são dados JSON portáteis; `$self` é resolvido somente ao
+executar; comandos são autorizados no catálogo e novamente no despacho; ciclos
+imediatos do mesmo binding são interrompidos. Novos gatilhos, bindings de
+propriedades, prefabs e exportadores devem reutilizar o contrato ou declarar uma
+nova fronteira, nunca armazenar closures, elementos DOM ou referências Three.js
+como comportamento canônico. Termux e Linux podem hospedar ferramentas de
+desenvolvimento, mas não integram o contrato de execução distribuível.
+
 ## Decisões superadas ou rejeitadas
 
 - **Build hard-coded no HTML:** superado por `build-info.json`.

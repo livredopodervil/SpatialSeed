@@ -14,15 +14,15 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260809-0053m";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054mw";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054mx";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
   parseResourcePath,
   ResourceSearchIndex
-} from "../../../packages/resource-tree/src/index.js?build=20260818-0054mw";
-import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260818-0054mw";
-import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260818-0054mw";
+} from "../../../packages/resource-tree/src/index.js?build=20260818-0054mx";
+import { DevConsole } from "../../../packages/devtools/src/DevConsole.js?build=20260818-0054mx";
+import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectInspector.js?build=20260818-0054mx";
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260808-0053f";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260809-0053m";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260812-0054g";
@@ -41,8 +41,8 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260818-0054mw";
-import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260818-0054mw";
+} from "../../../packages/platform-web/src/index.js?build=20260818-0054mx";
+import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260818-0054mx";
 import {
   AppearanceBindingService
 } from "../../../packages/appearance-binding/src/index.js?build=20260808-0053f";
@@ -55,7 +55,7 @@ import {
   createDefaultPropertyRegistry,
   SelectionPropertyClipboard,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260818-0054mw";
+} from "../../../packages/property-registry/src/index.js?build=20260818-0054mx";
 import {
   createDefaultGeometryRegistry
 } from "../../../packages/geometry-registry/src/index.js?build=20260808-0053f";
@@ -118,14 +118,17 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mw";
+} from "../../../packages/game-runtime/src/index.js?build=20260818-0054mx";
+import {
+  SelectionInteractionService
+} from "../../../packages/interaction-runtime/src/index.js?build=20260818-0054mx";
 import {
   CHARACTER_ANIMATION_VERSION,
   CharacterAnimationSystem
-} from "../../../packages/character-animation/src/index.js?build=20260818-0054mw";
+} from "../../../packages/character-animation/src/index.js?build=20260818-0054mx";
 import {
   ThreeCharacterAnimationBackend
-} from "../../../packages/character-animation-three/src/index.js?build=20260818-0054mw";
+} from "../../../packages/character-animation-three/src/index.js?build=20260818-0054mx";
 import {
   ViewerRenderPanel
 } from "../../../packages/viewer-render-panel/src/index.js?build=20260808-0053f";
@@ -134,13 +137,13 @@ import {
 } from "../../../packages/mesh-editor-core/src/index.js?build=20260812-0054g";
 import {
   MeshExchangeService
-} from "../../../packages/mesh-exchange/src/index.js?build=20260818-0054mw";
+} from "../../../packages/mesh-exchange/src/index.js?build=20260818-0054mx";
 import {
   createThreeMeshTriangulator
-} from "../../../packages/mesh-exchange-three/src/index.js?build=20260818-0054mw";
+} from "../../../packages/mesh-exchange-three/src/index.js?build=20260818-0054mx";
 import {
   MeshPathGestureController
-} from "../../../packages/mesh-interaction/src/index.js?build=20260818-0054mw";
+} from "../../../packages/mesh-interaction/src/index.js?build=20260818-0054mx";
 import {
   listMeshOperatorContracts
 } from "../../../packages/mesh-operator-kernel/src/index.js?build=20260812-0054g";
@@ -152,7 +155,7 @@ import {
 } from "../../../packages/edit-context/src/index.js?build=20260809-0053l";
 import {
   EditHud
-} from "../../../packages/edit-hud/src/index.js?build=20260818-0054mw";
+} from "../../../packages/edit-hud/src/index.js?build=20260818-0054mx";
 import {
   ToolLifecycleController,
   ToolParameterStore,
@@ -161,10 +164,10 @@ import {
   createLegacyToolParameterMigration,
   createDefaultToolCapabilityFacade,
   installToolCapabilityRuntime
-} from "../../../packages/edit-tools/src/index.js?build=20260818-0054mw";
+} from "../../../packages/edit-tools/src/index.js?build=20260818-0054mx";
 import {
   ObjectPlacementController
-} from "../../../packages/object-placement/src/index.js?build=20260818-0054mw";
+} from "../../../packages/object-placement/src/index.js?build=20260818-0054mx";
 import {
   DrawingTargetController
 } from "../../../packages/drawing-target/src/index.js?build=20260808-0053f";
@@ -1125,7 +1128,7 @@ export async function createWebRuntime({
     return true;
   };
   const gameEvents = new GameEventRuntime({
-    executeAction: async (action, event) => {
+    executeAction: async (action, event, binding) => {
       switch (action.type) {
         case "audio.music":
           return action.clip
@@ -1157,21 +1160,29 @@ export async function createWebRuntime({
             : commandsRef.execute("program.plan.commit", { plan });
         }
         case "command":
+          if (!commandsRef.describe().some(command =>
+            command.id === action.command &&
+            Boolean(command.metadata?.interactionAction)
+          )) {
+            throw new Error(
+              `Comando não autorizado como ação: ${action.command}.`
+            );
+          }
           return commandsRef.execute(action.command, {
             ...(action.args ?? {}),
-            gameEvent: event
+            interactionTargetId: binding?.objectId ?? null
           });
         default:
           throw new Error(`Unsupported game event action: ${action.type}`);
       }
     }
   });
-  gameEvents.configure({
+  gameEvents.configureSource("system", {
     bindings: [
-      { event: "game.start", actions: [{ type: "audio.music" }] },
-      { event: "game.stop", actions: [{ type: "audio.music.stop" }] },
-      { event: "character.jump", actions: [{ type: "audio.effect", name: "jump" }] },
-      { event: "character.land", actions: [{ type: "audio.effect", name: "land" }] }
+      { id: "system:game-start-music", event: "game.start", actions: [{ type: "audio.music" }] },
+      { id: "system:game-stop-music", event: "game.stop", actions: [{ type: "audio.music.stop" }] },
+      { id: "system:character-jump-audio", event: "character.jump", actions: [{ type: "audio.effect", name: "jump" }] },
+      { id: "system:character-land-audio", event: "character.land", actions: [{ type: "audio.effect", name: "land" }] }
     ]
   });
   gameRuntime = new GameRuntime({
@@ -1403,7 +1414,11 @@ export async function createWebRuntime({
         category: "game",
         mutates: false,
         asynchronous: true,
-        label: "Iniciar modo jogo"
+        label: "Iniciar modo jogo",
+        interactionAction: {
+          label: "Iniciar jogo com este objeto",
+          defaults: { characterId: "$self" }
+        }
       }
     )
     .register(
@@ -1418,7 +1433,8 @@ export async function createWebRuntime({
         category: "game",
         mutates: false,
         asynchronous: true,
-        label: "Sair do modo jogo"
+        label: "Sair do modo jogo",
+        interactionAction: { label: "Encerrar modo jogo" }
       }
     )
     .register(
@@ -1429,7 +1445,12 @@ export async function createWebRuntime({
     .register(
       "game.respawn",
       () => gameRuntime.respawn(),
-      { category: "game", mutates: false, label: "Reposicionar personagem" }
+      {
+        category: "game",
+        mutates: false,
+        label: "Reposicionar personagem",
+        interactionAction: { label: "Reposicionar personagem" }
+      }
     )
     .register(
       "game.config.set",
@@ -1456,17 +1477,40 @@ export async function createWebRuntime({
       args => args && Object.keys(args).length
         ? gameAudio.playMusic(args)
         : gameAudio.playMusic(),
-      { category: "game", mutates: false, asynchronous: true }
+      {
+        category: "game",
+        mutates: false,
+        asynchronous: true,
+        interactionAction: { label: "Tocar música" }
+      }
     )
     .register(
       "game.audio.music.stop",
       () => gameAudio.stopMusic(),
-      { category: "game", mutates: false }
+      {
+        category: "game",
+        mutates: false,
+        interactionAction: { label: "Parar música" }
+      }
     )
     .register(
       "game.audio.effect.play",
       ({ name, clip = null } = {}) => gameAudio.playEffect(name, clip),
-      { category: "game", mutates: false, asynchronous: true }
+      {
+        category: "game",
+        mutates: false,
+        asynchronous: true,
+        interactionAction: {
+          label: "Tocar efeito sonoro",
+          parameters: [{
+            id: "name",
+            label: "Efeito",
+            type: "text",
+            required: true,
+            placeholder: "jump"
+          }]
+        }
+      }
     )
     .register(
       "game.audio.status",
@@ -1475,7 +1519,7 @@ export async function createWebRuntime({
     )
     .register(
       "game.events.configure",
-      args => gameEvents.configure(args),
+      args => gameEvents.configureSource("session", args),
       { category: "game", mutates: false, label: "Configurar eventos do jogo" }
     )
     .register(
@@ -1877,7 +1921,29 @@ export async function createWebRuntime({
           targetMode,
           timeDomainId
         }),
-      { category: "animation", mutates: false }
+      {
+        category: "animation",
+        mutates: false,
+        interactionAction: {
+          label: "Animar este objeto com preset",
+          defaults: { targetIds: ["$self"], targetMode: "objects" },
+          parameters: [
+            {
+              id: "id",
+              label: "Preset",
+              type: "text",
+              required: true,
+              placeholder: "spin, float, pulse ou rainbow"
+            },
+            {
+              id: "parameters",
+              label: "Parâmetros opcionais",
+              type: "json",
+              placeholder: "{}"
+            }
+          ]
+        }
+      }
     )
     .register(
       "animation.tracks.start",
@@ -1897,7 +1963,11 @@ export async function createWebRuntime({
     .register(
       "animation.stop",
       () => sharedAnimations.stop(),
-      { category: "animation", mutates: false }
+      {
+        category: "animation",
+        mutates: false,
+        interactionAction: { label: "Parar animação" }
+      }
     )
     .register(
       "animation.instance.pause",
@@ -2273,9 +2343,83 @@ export async function createWebRuntime({
     { category: "time", mutates: false }
   );
 
+  const interactionService = new SelectionInteractionService({
+    selection: editor.selection,
+    sandbox,
+    occurrenceResolver,
+    commands
+  });
+  const synchronizeDocumentInteractions = () =>
+    gameEvents.configureSource("document", {
+      bindings: interactionService.runtimeBindings()
+    });
+  synchronizeDocumentInteractions();
+  const unsubscribeInteractions = sandbox.subscribe((_snapshot, changes) => {
+    const list = Array.isArray(changes) ? changes : [];
+    if (
+      !list.length ||
+      list.some(change =>
+        change?.type === "interaction-bindings-changed" ||
+        change?.type === "object-deleted" ||
+        ![
+          "object-created",
+          "object-transform",
+          "object-updated"
+        ].includes(change?.type)
+      )
+    ) {
+      synchronizeDocumentInteractions();
+    }
+  });
+  commands
+    .register(
+      "selection.interactions.add",
+      args => interactionService.add(args),
+      {
+        category: "interactions",
+        mutates: true,
+        label: "Adicionar evento e ação"
+      }
+    )
+    .register(
+      "selection.interactions.remove",
+      args => interactionService.remove(args),
+      {
+        category: "interactions",
+        mutates: true,
+        label: "Remover evento e ação"
+      }
+    )
+    .register(
+      "selection.interactions.enabled.set",
+      args => interactionService.setEnabled(args),
+      {
+        category: "interactions",
+        mutates: true,
+        label: "Ativar ou desativar comportamento"
+      }
+    )
+    .register(
+      "interaction.event.emit",
+      ({ type, ...payload } = {}) => gameEvents.emit(type, payload),
+      {
+        category: "interactions",
+        mutates: false,
+        asynchronous: true,
+        label: "Emitir evento de interação"
+      }
+    );
+
   const queries = new RuntimeQueryRegistry();
   queries
     .register("game.status", () => gameRuntime.status())
+    .register("interaction.catalog.describe", () =>
+      interactionService.describeCatalog()
+    )
+    .register("selection.interactions.inspect", () =>
+      interactionService.inspectSelection()
+    )
+    .register("interaction.status", () => gameEvents.status())
     .register("character.animation.status", () => characterAnimation.status())
     .register("character.animation.version", () => CHARACTER_ANIMATION_VERSION)
     .register("time.status", () => temporalRuntime.status())
@@ -3316,6 +3460,7 @@ export async function createWebRuntime({
     .onDispose(unsubscribeSelection)
     .onDispose(unsubscribeOccurrenceResolver)
     .onDispose(unsubscribeSpatialReferences)
+    .onDispose(unsubscribeInteractions)
     .onDispose(unsubscribeSandbox);
 
   let activeWebExtensions;
@@ -3410,6 +3555,7 @@ export async function createWebRuntime({
       geometryRegistry,
       propertyRegistry,
       propertyService,
+      interactionService,
       propertyClipboard,
       appearanceBindings,
       experimentRegistry,

@@ -34,5 +34,5 @@ export {
   normalizeGameDirectionalInput
 } from "./GameDirectionalInput.js?build=20260818-0054mv";
 
-export { GAME_EVENT_RUNTIME_VERSION, GameEventRuntime } from "./GameEventRuntime.js?build=20260813-0054mj";
+export { GAME_EVENT_RUNTIME_VERSION, GameEventRuntime } from "./GameEventRuntime.js?build=20260818-0054mx";
 export { GAME_AUDIO_RUNTIME_VERSION, GameAudioRuntime } from "./GameAudioRuntime.js?build=20260813-0054mj";

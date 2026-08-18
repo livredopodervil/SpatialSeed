@@ -9,6 +9,9 @@ import {
   normalizeInstanceGraph,
   validateInstanceGraph
 } from "../../instance-graph/src/index.js?build=20260807-0052b";
+import {
+  normalizeInteractionDocument
+} from "../../core/src/index.js?build=20260818-0054mx";
 
 export class ProjectValidator {
   parse(text) {
@@ -199,6 +202,7 @@ function validatedSceneShell(scene, { instanceGraph, defaultCameraId, objects })
   } = scene ?? {};
   return {
     ...structuredClone(shell),
+    interactions: normalizeInteractionDocument(scene?.interactions),
     ...(instanceGraph ? { instanceGraph } : {}),
     ...(defaultCameraId === null ? {} : { defaultCameraId }),
     objects

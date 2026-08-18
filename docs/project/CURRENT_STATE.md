@@ -7,7 +7,7 @@
 ## Baseline desta revisão
 
 A documentação viva de 18 de agosto de 2026 corresponde ao build
-`20260818-0054mw`, sucessor do marco publicado `0054mm`.
+`20260818-0054mx`, sucessor do marco publicado `0054mm`.
 
 O incremento `0054mo` conecta os parâmetros já declarados pelos providers de
 geometria ao registro comum de propriedades. Inspector e Console passam a
@@ -53,6 +53,13 @@ prévia do clipboard deixa de renderizar conteúdos Base64 completos e mostra
 somente tipo e tamanho, preservando o valor original para a aplicação
 confirmada.
 
+O incremento `0054mx` introduz a primeira superfície de comportamento por
+objeto: bindings portáteis de evento para comando explicitamente autorizado.
+Inspector, Console, arquivo de projeto e undo/redo convergem no mesmo serviço;
+o runtime combina fontes de sistema, documento e sessão sem dar autoridade ao
+DOM ou ao renderer. Grupos de propriedades do Inspector ficam recolhidos por
+padrão e abrem quando um valor do grupo é editado.
+
 ## Implementado e verificável
 
 - editor espacial com seleção direta e gestos de área;
@@ -68,6 +75,8 @@ confirmada.
 - modo jogo local, personagem GLB, colisão, câmera, áudio e eventos;
 - perfil diagnóstico, gates, testes do runtime e benchmarks.
 - busca de recursos por nome, ID, tipo, visibilidade e categoria.
+- comportamento persistente por objeto no formato evento → comando autorizado,
+  editável pelo Inspector e pelo Console.
 
 ## Contratos em consolidação
 
@@ -76,12 +85,15 @@ confirmada.
 - estabilidade de seleção/preview em hierarquias e ocorrências complexas;
 - colisão triangular e aceleração espacial;
 - proxy físico, visual GLB e mapeamento de clips;
-- runtime de eventos/procedimentos para jogos;
+- ampliação do catálogo de eventos e ações para ponteiro, colisão e propriedades;
 - atualização PWA durante desenvolvimento em múltiplos checkouts.
 
 ## Arquitetura pretendida
 
 - modificadores vinculados e regeneração procedural incremental;
+- bindings reativos entre propriedades e grafo de dependências;
+- prefabs parametrizáveis e exportação de applets web autônomos;
+- texto, painéis interativos e geometrias implícitas como recursos extensíveis;
 - booleanas robustas e reparo topológico geral;
 - física de corpos dinâmicos e contatos completos;
 - colaboração remota com envelope causal e conflitos geométricos explícitos;

@@ -21,7 +21,7 @@ Nunca presuma o checkout ativo. Confirme `pwd`, branch, HEAD, status, remoto e
 ## Estado funcional
 
 O snapshot documental vivo de 18 de agosto de 2026 corresponde ao build
-`20260818-0054mw`. Toda promoção posterior deve atualizar manifesto, tokens de
+`20260818-0054mx`. Toda promoção posterior deve atualizar manifesto, tokens de
 cache, auditorias sucessoras e estado PWA como uma única alteração.
 
 Capacidades presentes:
@@ -35,6 +35,7 @@ Capacidades presentes:
 - runtime temporal e animação efêmera;
 - viewers locais e objetos câmera;
 - modo jogo, personagem GLB, colisão, câmera, áudio e eventos;
+- comportamentos por objeto no contrato portátil evento → comando autorizado;
 - gates, diagnóstico, testes e benchmarks.
 
 ## Invariantes
@@ -55,6 +56,10 @@ Capacidades presentes:
 12. PWA, recuperação e arquivo de projeto são mecanismos distintos.
 13. Alterações são pequenas, testáveis, reversíveis e documentadas.
 14. Não pedir grandes edições manuais no celular; entregar patch verificável.
+15. Comportamentos persistem dados portáteis; eventos não autorizam comandos
+    por si e scripts livres não entram no objeto como atalho.
+16. Termux e Linux são ambientes de desenvolvimento, nunca dependências do
+    documento, do runtime publicado ou de um applet exportado.
 
 ## Uso local
 
@@ -99,11 +104,14 @@ listas geráveis para esta semente.
 
 ## Próxima prioridade
 
-Consolidar documentação e acessibilidade das capacidades atuais antes de
-expandir arquitetura. Depois, priorizar contratos de maior retorno: ferramentas
-procedurais vinculadas, topologia robusta, jogo por eventos e estabilização da
-experiência móvel. Colaboração remota e novas VMs dependem de critérios e
-benchmarks explícitos.
+Usar o contrato `Resource + Property + Command + Event` como núcleo
+multiplicador. O passo imediato é ampliar gatilhos e endereçamento de
+propriedades sem introduzir scripts livres; em seguida vêm bindings reativos,
+prefabs com overrides e um perfil de exportação web autônomo. O artefato
+exportado deve abrir em navegador comum, ser incorporável ou compartilhável e
+não depender de Termux, Linux ou instalação do editor. Geometrias implícitas,
+texto e painéis interativos entram como recursos/plugins sobre essas fronteiras,
+sem criar autoridades paralelas.
 
 ## Protocolo para nova LLM
 

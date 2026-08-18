@@ -13,7 +13,7 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260818-0054mw`, preparado em 18 de
+> documentação viva corresponde ao build `20260818-0054mx`, preparado em 18 de
 > agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 acompanha
 > esta edição consolidada.
 
@@ -37,13 +37,18 @@ No build `0054mw`, a busca de recursos passa a compartilhar um índice
 consultável entre interface e Console; texturas incorporadas são apresentadas
 por descritores compactos, sem despejar Base64 nas janelas.
 
+No build `0054mx`, objetos ganham comportamentos portáteis no formato
+**evento → comando autorizado**. A composição aparece recolhida no Inspector,
+tem superfície equivalente no Console, participa de salvar/abrir e undo/redo e
+é executada sem transformar DOM, renderer ou scripts livres em autoridade.
+
 ## Três níveis de maturidade
 
 | Nível | Significado | Exemplos nesta edição |
 | --- | --- | --- |
-| Implementado e verificável | Existe no código atual e possui caminho de uso ou teste | seleção, transformações, grupos, projetos, PWA, edição de malha, STL, animação efêmera e modo jogo local |
-| Contrato em consolidação | A superfície pública existe, mas interação, desempenho ou semântica ainda evoluem | ferramentas por caminho, colisão por malha, personagem GLB, eventos de jogo e autoria unificada |
-| Arquitetura pretendida | Direção de projeto; não deve ser apresentada como recurso entregue | colaboração remota, física geral, modificadores vinculados, booleanas robustas e gramática procedural completa |
+| Implementado e verificável | Existe no código atual e possui caminho de uso ou teste | seleção, transformações, projetos, malha, STL, animação efêmera, jogo local e comportamentos evento → comando |
+| Contrato em consolidação | A superfície pública existe, mas interação, desempenho ou semântica ainda evoluem | ferramentas por caminho, colisão por malha, personagem GLB, catálogo de eventos e autoria unificada |
+| Arquitetura pretendida | Direção de projeto; não deve ser apresentada como recurso entregue | bindings de propriedades, prefabs, exportação autônoma, física geral, colaboração remota e modificadores vinculados |
 
 Os documentos históricos preservam decisões e marcos. Eles não substituem o
 manual atual nem o manifesto carregado.
@@ -103,7 +108,7 @@ Para começar vazio, abra `?project=new`. Para diagnóstico, abra
 | Viewer | navegação, projeção, seleção e manipulação visual |
 | Barra principal | ferramentas, painéis, projeto, modo cena e modo jogo |
 | HUD Editar | nível objeto/vértice/aresta/face, ferramenta, frame, plano ativo, snap e operações contextuais |
-| Inspector | propriedades literais, parâmetros geométricos e expressões em lote |
+| Inspector | propriedades e comportamento do objeto, em grupos contextuais recolhíveis |
 | Criar | geometrias paramétricas e posicionamento |
 | Animação | presets e faixas temporais efêmeras |
 | Console | comandos, consultas, procedimentos, testes e benchmarks |
@@ -156,7 +161,9 @@ Para começar vazio, abra `?project=new`. Para diagnóstico, abra
 - procedimentos importáveis e exportáveis;
 - planos revisáveis antes do commit atômico;
 - animação temporal efêmera de transformações e cores;
-- sessões temporais compartilháveis entre viewers locais.
+- sessões temporais compartilháveis entre viewers locais;
+- bindings persistentes de eventos para comandos permitidos, com autoria no
+  Inspector e no Console.
 
 ### Jogo e personagem
 
@@ -193,8 +200,16 @@ repeat count 8
 property set appearance.color #44aaff
 animate spin speed=45 axis=y
 animate stop
+interaction list
+interaction catalog
 game status
 ```
+
+Com um único objeto selecionado, `interaction add app.start animation.preset
+'{"id":"spin"}'` cria o mesmo comportamento disponível em **Inspector →
+Comportamento**. A lista de ações é deliberadamente restrita; scripts livres,
+cliques, colisões autorais, bindings entre propriedades e prefabs ainda não
+fazem parte desse contrato.
 
 Uma série paramétrica:
 

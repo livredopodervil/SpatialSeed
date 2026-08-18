@@ -15,9 +15,9 @@ Ordem de autoridade:
 4. esta referência;
 5. documentos de marco.
 
-O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
-18 de agosto validadas pelos gates locais e identificadas como build
-`20260818-0054mw`.
+O snapshot documentado contém as alterações de 18 de agosto validadas pelos
+gates locais e identificadas como build `20260818-0054mx`. Commit, árvore e
+branch devem ser consultados no checkout; não são constantes deste documento.
 
 ## 2 - Modelo de maturidade
 
@@ -116,6 +116,68 @@ A interface consulta `resource.search`; selecionar um objeto reutiliza
 `selection.select-object`. O Console oferece `resource search`, `resource
 select` e `resource status` sobre as mesmas superfícies.
 
+### Bindings de interação
+
+`spatialseed-interactions-v1` descreve dados JSON portáteis no estado da cena:
+
+```json
+{
+  "version": "spatialseed-interactions-v1",
+  "bindings": [{
+    "id": "start-spin",
+    "event": "app.start",
+    "objectId": "object-a",
+    "enabled": true,
+    "actions": [{
+      "type": "command",
+      "command": "animation.preset",
+      "args": {"id": "spin", "targetIds": ["$self"], "targetMode": "objects"}
+    }]
+  }]
+}
+```
+
+`InteractionRuntime` combina bindings das fontes `system`, `document` e
+`session`. Ele não conhece DOM, renderer, seleção ou formato de arquivo. Antes
+de executar, resolve `$self`, `$event.type` e `$event.objectId`; eventos com
+`objectId` alcançam somente o proprietário correspondente. Uma proteção de
+reentrada impede o mesmo binding de executar recursivamente enquanto ainda está
+ativo e publica a contagem `cyclesPrevented` no status.
+
+`SelectionInteractionService` resolve o único objeto selecionado, valida o
+catálogo e publica `interaction.bindings.set`. Ações não são strings de código:
+somente comandos cujo descritor contém `metadata.interactionAction` entram no
+catálogo e a autorização é verificada novamente na execução. Parâmetros
+desconhecidos são rejeitados; valores devem ser finitos, acíclicos e compostos
+somente por dados JSON portáteis.
+
+Adapters históricos como `audio.music`, `procedure` e `character.animation`
+continuam aceitos apenas em fontes internas ou transitórias do runtime. O
+validador do documento rejeita qualquer ação persistente diferente de
+`command`, impedindo que um arquivo importado contorne a allowlist.
+
+Eventos publicados inicialmente: `app.start`, `game.start`, `game.stop`,
+`character.jump`, `character.land` e `character.respawn`. Ações iniciais:
+`game.start`, `game.stop`, `game.respawn`, `game.audio.music.play`,
+`game.audio.music.stop`, `game.audio.effect.play`, `animation.preset` e
+`animation.stop`.
+
+Superfícies públicas:
+
+```text
+selection.interactions.add
+selection.interactions.remove
+selection.interactions.enabled.set
+interaction.event.emit
+interaction.catalog.describe
+selection.interactions.inspect
+interaction.status
+```
+
+O `InteractionComposer` consulta essas superfícies no Inspector; o Console usa
+`interaction list|catalog|add|remove|enable|disable|emit|status`. Nenhuma das
+duas superfícies grava diretamente no objeto ou mantém lista concorrente.
+
 ## 6 - Famílias principais de comandos
 
 A tabela é um mapa de navegação, não uma enumeração exaustiva.
@@ -130,6 +192,7 @@ A tabela é um mapa de navegação, não uma enumeração exaustiva.
 | Aparência | `appearance.*`, `resource.property.set` |
 | Propriedades | `properties.describe`, `selection.properties.*` |
 | Recursos | `resource.search`, `resource.search.status`, `resource search`, `resource select` |
+| Interações | `selection.interactions.*`, `interaction.event.emit`, `interaction.*` |
 | Autoria | `authoring.tool.*`, `authoring.plane.*` |
 | Contexto de edição | `edit.context.*`, `edit.tool.*`, `drawing.target.*` |
 | Planar | `planar.*`, `measurement.*` |
@@ -203,6 +266,12 @@ aplicado.
 
 O arquivo transporta estado lógico e metadados do projeto. Estado transitório
 do viewer não deve ser serializado como parte do mundo.
+
+`scene.interactions` é estado lógico opcional e versionado. O validador o
+normaliza; o serializer preserva o shell da cena; o reducer produz um único
+delta `interaction-bindings-changed`, portanto adicionar, remover ou ativar uma
+ligação participa de salvar/abrir, recuperação e undo/redo. Bindings cujo objeto
+não existe permanecem observáveis no documento, mas são filtrados da execução.
 
 Separações obrigatórias:
 
@@ -466,8 +535,11 @@ marcadores de contato entre frames.
 
 ### Áudio e eventos
 
-`GameEventRuntime` associa eventos a ações. `GameAudioRuntime` mantém música e
-efeitos substituíveis. Política de autoplay pertence à camada web.
+`GameEventRuntime` conserva a fachada pública de compatibilidade sobre o
+`InteractionRuntime` genérico. Bindings internos de áudio ocupam a fonte
+`system`; o documento ocupa `document`; reconfigurações transitórias usam
+`session`, sem apagar as demais. `GameAudioRuntime` mantém música e efeitos
+substituíveis. Política de autoplay pertence à camada web.
 
 ### Efemeridade
 
@@ -568,6 +640,13 @@ Exemplo do runtime temporal legado/event-driven:
 node tools/test_animation_runtime_event_driven.mjs
 ```
 
+Contrato de interações:
+
+```bash
+node --import ./tools/register_node_vendor_loader.mjs \
+  tools/test_interaction_bindings_0054mx.mjs
+```
+
 ### Qualidade visual
 
 Mudanças de UI, PWA, câmera, gizmo, animação e jogo exigem roteiro manual. Uma
@@ -581,6 +660,7 @@ regressão observada continua sendo regressão mesmo quando gates passam.
 - colisão triangular sem aceleração universal;
 - ferramentas por caminho e extrusão interativa;
 - autoria unificada sobre adapters legados;
+- catálogo inicial de eventos e ações por objeto;
 - visual GLB e mapeamento de clips;
 - PWA em múltiplos checkouts durante desenvolvimento.
 
@@ -589,6 +669,8 @@ regressão observada continua sendo regressão mesmo quando gates passam.
 - cápsula opcional e contatos tangenciais completos;
 - corpos dinâmicos e física geral;
 - modificadores vinculados e avaliação incremental universal;
+- bindings reativos entre propriedades, prefabs e exportação de applets;
+- gatilhos autorais de ponteiro, colisão e mudança de propriedade;
 - booleanas robustas em backend substituível;
 - colaboração remota com semântica de conflitos;
 - segundo backend de isolamento para plugins hostis;
@@ -612,6 +694,7 @@ verdade devem ser rejeitadas ou explicitamente migradas.
 | Arquivos | `project-io`, `platform-web`, `mesh-exchange` |
 | Programação | `script-runtime`, `experiment-runtime` |
 | Tempo | `temporal-runtime`, `animation-runtime` |
+| Interações | `interaction-runtime`, contrato portátil em `core` |
 | Jogo | `game-runtime`, `character-animation`, `character-animation-three` |
 | Diagnóstico | `runtime-test-plugin`, ferramentas em `tools/` |
 

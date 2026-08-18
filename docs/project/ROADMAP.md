@@ -376,14 +376,38 @@ viewer e sandbox. Elas devem ser entregues em incrementos independentes:
    o trabalho de 0054mo para transformações, aparência, luzes, câmeras e jogo;
 4. adicionar fontes de propriedade (`constant`, `keyframes`, `expression` e
    `binding`) sobre o runtime temporal já existente;
-5. expor no Inspector uma lista `event -> action/procedure` por objeto, usando
-   `GameEventRuntime` e o runtime de scripts atuais, sem criar segunda autoridade;
+5. **entregue em 0054mx:** expor no Inspector e Console uma lista persistente
+   `event -> comando autorizado` por objeto, generalizando `GameEventRuntime`
+   sem criar segunda autoridade nem armazenar scripts livres;
 6. amadurecer a fronteira física: controlador cinemático continua apropriado ao
    personagem; corpos dinâmicos entram por backend separado, passo fixo,
    colisores explícitos e estado efêmero.
 
 Cada item deve permanecer um incremento testável. Física geral não bloqueia
 propriedades, eventos ou autoria de jogos simples.
+
+#### Sequência de composição e distribuição após 0054mx
+
+1. publicar gatilhos de ponteiro, colisão e mudança de propriedade por adapters
+   pequenos, com payload portátil e sem tornar renderer ou física autoridades;
+2. estabilizar endereços universais de propriedade e avaliação reativa
+   `constant | keyframes | expression | binding`, incluindo detecção de ciclos;
+3. representar prefab como recurso de grafo instanciável, com identidade
+   compartilhada, overrides explícitos e comandos **Make Instance/Make Unique**;
+4. criar um perfil de applet que selecione projeto, assets, runtime e catálogo
+   mínimo de capabilities e gere um pacote estático versionado;
+5. validar o pacote aberto diretamente num navegador comum, servido por
+   hospedagem estática e incorporado por `iframe`, sem Termux, Linux, Node ou o
+   editor completo como dependências de execução;
+6. acrescentar texto, painéis interativos e geometrias implícitas como providers
+   ou plugins declarativos que reutilizam Property, Command, Event e Binding.
+
+Essa ordem não privilegia uma UI predeterminada. Ela reduz primeiro o custo de
+compor comportamento, depois preserva essa composição num recurso reutilizável
+e só então congela uma fronteira de exportação. Um exportador antecipado
+copiaria acoplamentos atuais; prefabs antes de propriedades endereçáveis teriam
+overrides ad hoc; bindings antes de um catálogo de comandos e eventos seriam um
+grafo reativo sem maneira segura de causar ações.
 
 #### Nota de desenvolvimento — módulos ESM sob Node
 

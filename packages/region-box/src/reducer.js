@@ -5,6 +5,9 @@ import {
   persistentObjectUpdateMany
 } from "../../core/src/index.js?build=20260808-0053i";
 import {
+  normalizeInteractionDocument
+} from "../../core/src/index.js?build=20260818-0054mx";
+import {
   compactHierarchyRoots,
   duplicateReferenceRoots,
   isInstanceNode,
@@ -1231,6 +1234,21 @@ export function boxRegionReducer(state, command, context = {}) {
       };
     }
 
+    case "interaction.bindings.set": {
+      const interactions = normalizeInteractionDocument(command.interactions);
+      const previous = normalizeInteractionDocument(state.interactions);
+      if (interactionDocumentsEqual(previous, interactions)) {
+        return { state, changes: [] };
+      }
+      return {
+        state: Object.freeze({ ...state, interactions }),
+        changes: [Object.freeze({
+          type: "interaction-bindings-changed",
+          source: command.source ?? "interaction.bindings.set"
+        })]
+      };
+    }
+
     case "selection.duplicate-reference": {
       const result = duplicateReferenceRoots(
         state,
@@ -1662,6 +1680,10 @@ function resourcePatchKeys(patch = {}) {
     "position", "rotation", "scale", "name", "parentId", "instanceState"
   ]);
   return Object.keys(patch).filter(key => !transformOnly.has(key));
+}
+
+function interactionDocumentsEqual(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function newPrototypeId(objectId) {

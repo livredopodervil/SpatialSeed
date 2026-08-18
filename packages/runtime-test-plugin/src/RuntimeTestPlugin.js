@@ -40,6 +40,8 @@ export function activateRuntimeTestPlugin({ commands }) {
         "runtime test character-animation",
         "runtime test runtime-profile",
         "runtime test object-inspector",
+        "runtime test interaction-bindings",
+        "runtime test interaction-composer",
         "runtime test program-planning",
         "runtime test program-evaluation",
         "runtime test program-session",

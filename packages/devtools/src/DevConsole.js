@@ -532,6 +532,11 @@ export class DevConsole {
       case "jogo":
         return this.#game(tokens);
 
+      case "interaction":
+      case "interacao":
+      case "interação":
+        return this.#interaction(tokens);
+
       case "recovery":
         return this.#recovery(tokens);
 
@@ -656,6 +661,11 @@ export class DevConsole {
       if (["game", "jogo"].includes(String(topic).toLowerCase())) {
         return this.#gameHelp();
       }
+      if (["interaction", "interacao", "interação"].includes(
+        String(topic).toLowerCase()
+      )) {
+        return this.#interactionHelp();
+      }
       if (String(topic).toLowerCase() === "recovery") {
         return this.#recoveryHelp();
       }
@@ -723,6 +733,7 @@ export class DevConsole {
         "animate pause|resume|stop|status|list|help",
         "camera status|position|move|quaternion|lookat|orbit|frame|projection|restore|interpolate",
         "game start [object-id]|stop|status|respawn|config {JSON}|help",
+        "interaction list|catalog|add|remove|enable|disable|emit|status|help",
         "recovery status|help",
         "viewers status|open|sync|help",
         "session status|reset|cancel|help",
@@ -2786,6 +2797,91 @@ export class DevConsole {
       );
     }
     throw new Error("Uso: game start|stop|status|respawn|config|help.");
+  }
+
+  #interaction(tokens) {
+    const action = (tokens.shift() ?? "list").toLowerCase();
+    if (["help", "ajuda"].includes(action)) {
+      this.#expectMaximum(tokens, 0, "interaction help");
+      return this.#interactionHelp();
+    }
+    if (action === "list") {
+      this.#expectMaximum(tokens, 0, "interaction list");
+      return this.#query("selection.interactions.inspect");
+    }
+    if (action === "catalog") {
+      this.#expectMaximum(tokens, 0, "interaction catalog");
+      return this.#query("interaction.catalog.describe");
+    }
+    if (action === "status") {
+      this.#expectMaximum(tokens, 0, "interaction status");
+      return this.#query("interaction.status");
+    }
+    if (action === "add") {
+      const event = tokens.shift();
+      const command = tokens.shift();
+      if (!event || !command) {
+        throw new Error(
+          "Uso: interaction add evento comando [{JSON de argumentos}]."
+        );
+      }
+      const args = tokens.length
+        ? parseJson(tokens.join(" "), "Argumentos da ação")
+        : {};
+      return this.commands.execute("selection.interactions.add", {
+        event,
+        command,
+        args
+      });
+    }
+    if (action === "remove") {
+      this.#expectExact(tokens, 1, "interaction remove binding-id");
+      return this.commands.execute("selection.interactions.remove", {
+        id: tokens[0]
+      });
+    }
+    if (action === "enable" || action === "disable") {
+      this.#expectExact(tokens, 1, `interaction ${action} binding-id`);
+      return this.commands.execute("selection.interactions.enabled.set", {
+        id: tokens[0],
+        enabled: action === "enable"
+      });
+    }
+    if (action === "emit") {
+      const type = tokens.shift();
+      if (!type) throw new Error("Uso: interaction emit evento [{JSON}].");
+      const payload = tokens.length
+        ? parseJson(tokens.join(" "), "Payload do evento")
+        : {};
+      return this.commands.execute("interaction.event.emit", {
+        type,
+        ...payload
+      });
+    }
+    throw new Error(
+      "Uso: interaction list|catalog|add|remove|enable|disable|emit|status|help."
+    );
+  }
+
+  #interactionHelp() {
+    return {
+      purpose: "Compor eventos portáteis com comandos autorizados do runtime.",
+      usage: [
+        "interaction list",
+        "interaction catalog",
+        "interaction add evento comando [{JSON de argumentos}]",
+        "interaction remove binding-id",
+        "interaction enable|disable binding-id",
+        "interaction emit evento [{JSON}]",
+        "interaction status"
+      ],
+      examples: [
+        "interaction add app.start animation.preset '{\"id\":\"spin\"}'",
+        "interaction add character.jump game.audio.effect.play '{\"name\":\"jump\"}'",
+        "interaction emit app.start"
+      ],
+      safety: "Somente comandos marcados explicitamente como interactionAction são aceitos."
+    };
   }
 
   #integer(value) {

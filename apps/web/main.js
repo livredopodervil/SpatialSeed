@@ -1,6 +1,6 @@
 import {
   shouldStartDefaultDemoAfterRecovery
-} from "../../packages/platform-web/src/index.js?build=20260818-0054mw";
+} from "../../packages/platform-web/src/index.js?build=20260818-0054mx";
 
 const $ = id => document.getElementById(id);
 
@@ -42,6 +42,18 @@ export async function startApplication(
     pwaInstallController
   });
   const recoveryStatus = await interfaceBinding.ready;
+
+  try {
+    await application.runtime.execute("interaction.event.emit", {
+      type: "app.start"
+    });
+  } catch (error) {
+    console.warn("Uma ação de inicialização da aplicação falhou.", error);
+    application.runtime.emit("interaction.failed", {
+      event: "app.start",
+      error: String(error?.message ?? error)
+    });
+  }
 
   const defaultDemoLaunch = application.web?.defaultDemoLaunch ?? null;
   if (shouldStartDefaultDemoAfterRecovery(

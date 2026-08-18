@@ -16,13 +16,13 @@
     ]
   },
   "summary": {
-    "firstPartyJavaScriptFiles": 370,
-    "productionFiles": 324,
-    "productionFirstPartyFiles": 323,
+    "firstPartyJavaScriptFiles": 376,
+    "productionFiles": 329,
+    "productionFirstPartyFiles": 328,
     "productionExternalFiles": 1,
-    "diagnosticFiles": 27,
+    "diagnosticFiles": 28,
     "unreferencedFiles": 20,
-    "productionComponents": 71,
+    "productionComponents": 72,
     "diagnosticComponents": 9,
     "unreferencedComponents": 2
   },
@@ -148,8 +148,8 @@
       "status": "production",
       "target": "document",
       "role": "production",
-      "sourceFiles": 5,
-      "productionFiles": 5,
+      "sourceFiles": 6,
+      "productionFiles": 6,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -315,6 +315,15 @@
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
+    "packages/interaction-runtime": {
+      "status": "production",
+      "target": "viewer",
+      "role": "production",
+      "sourceFiles": 3,
+      "productionFiles": 3,
+      "diagnosticFiles": 0,
+      "unreferencedFiles": 0
+    },
     "packages/local-viewers": {
       "status": "production",
       "target": "viewer",
@@ -436,8 +445,8 @@
       "status": "production",
       "target": "interface",
       "role": "production",
-      "sourceFiles": 1,
-      "productionFiles": 1,
+      "sourceFiles": 2,
+      "productionFiles": 2,
       "diagnosticFiles": 0,
       "unreferencedFiles": 0
     },
@@ -643,9 +652,9 @@
       "status": "diagnostics",
       "target": "platform-web",
       "role": "diagnostics",
-      "sourceFiles": 11,
+      "sourceFiles": 12,
       "productionFiles": 0,
-      "diagnosticFiles": 11,
+      "diagnosticFiles": 12,
       "unreferencedFiles": 0
     },
     "packages/scene-hierarchy": {
@@ -810,6 +819,7 @@
     "packages/complexity-audit/src/ComplexityScope.js",
     "packages/complexity-audit/src/index.js",
     "packages/core/src/EventBus.js",
+    "packages/core/src/InteractionBindings.js",
     "packages/core/src/PersistentObjectArray.js",
     "packages/core/src/Region.js",
     "packages/core/src/Sandbox.js",
@@ -884,6 +894,9 @@
     "packages/instance-graph/src/InstanceGraph.js",
     "packages/instance-graph/src/InstanceGraphProjectionCache.js",
     "packages/instance-graph/src/index.js",
+    "packages/interaction-runtime/src/InteractionRuntime.js",
+    "packages/interaction-runtime/src/SelectionInteractionService.js",
+    "packages/interaction-runtime/src/index.js",
     "packages/local-viewers/src/CoordinatedSandbox.js",
     "packages/local-viewers/src/LocalAnimationCoordinator.js",
     "packages/local-viewers/src/LocalProjectLaunch.js",
@@ -922,6 +935,7 @@
     "packages/mesh-operator-kernel/src/index.js",
     "packages/mesh-tool-registry/src/MeshToolRegistry.js",
     "packages/mesh-tool-registry/src/index.js",
+    "packages/object-inspector/src/InteractionComposer.js",
     "packages/object-inspector/src/ObjectInspector.js",
     "packages/object-placement/src/ObjectPlacementController.js",
     "packages/object-placement/src/index.js",
@@ -1109,6 +1123,7 @@
     "packages/runtime-test-plugin/src/DefaultDemoLaunchPolicyTests.js",
     "packages/runtime-test-plugin/src/GameCollisionDebugOverlayTests.js",
     "packages/runtime-test-plugin/src/GameRuntimeTests.js",
+    "packages/runtime-test-plugin/src/InteractionBindingTests.js",
     "packages/runtime-test-plugin/src/ModuleRegistryTests.js",
     "packages/runtime-test-plugin/src/RuntimeDiagnosticsExtension.js",
     "packages/runtime-test-plugin/src/RuntimeLayerTests.js",

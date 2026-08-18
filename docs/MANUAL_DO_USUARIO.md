@@ -4,8 +4,9 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 18 de agosto de 2026, derivado do
-build `20260818-0054mw`. A árvore recebida passou pelos gates locais depois da
-correção do início automático do projeto demo e da inclusão da paleta.
+build `20260818-0054mx`. A árvore recebida passou pelos gates locais depois da
+correção do início automático do demo, da inclusão das paletas e da primeira
+superfície persistente de comportamento por objeto.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
 realmente carregada. Uma fonte modificada no disco não prova que o navegador ou
@@ -87,7 +88,7 @@ descartado.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260818-0054mw`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260818-0054mx`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -154,8 +155,10 @@ arquivo do projeto.
 ### Painéis
 
 Painéis como Inspector, Câmera, Render, Console e Editar podem coexistir. Em
-telas pequenas, feche os que não estiver usando. A posição de um painel é estado
-de interface e não aparece no undo.
+telas pequenas, feche os que não estiver usando. No Inspector, grupos de
+propriedades e a seção **Comportamento** começam recolhidos; editar um campo
+abre o grupo correspondente. A posição e o colapso de um painel são estado de
+interface e não aparecem no undo.
 
 ### Paleta de comandos
 
@@ -678,7 +681,58 @@ procedure export
 
 Importar uma biblioteca armazena fonte; não executa automaticamente.
 
-## 17 - Animação efêmera
+## 17 - Criar comportamentos por evento
+
+O fluxo atual liga um fato a um comando permitido sem anexar JavaScript livre
+ao objeto. Para criar um comportamento sem teclado:
+
+1. selecione exatamente um objeto;
+2. abra **Inspector** e expanda **Comportamento**;
+3. toque em **+ Evento → ação**;
+4. escolha **Quando**, **Fazer** e os parâmetros exibidos;
+5. toque em **Adicionar**.
+
+Cada linha pode ser desativada pela caixa de seleção ou removida. A alteração
+entra no mesmo histórico de undo/redo do projeto e é preservada ao salvar e
+abrir o arquivo `.spatialseed`.
+
+Eventos disponíveis nesta primeira versão:
+
+| Evento | Momento |
+| --- | --- |
+| `app.start` | runtime web terminou de preparar a aplicação |
+| `game.start` | sessão de jogo começou |
+| `game.stop` | sessão de jogo terminou |
+| `character.jump` | personagem iniciou um salto |
+| `character.land` | personagem voltou ao apoio |
+| `character.respawn` | personagem foi reposicionado |
+
+As ações publicadas incluem iniciar ou encerrar o jogo, respawn, tocar ou parar
+música, tocar um efeito, iniciar um preset de animação e parar a animação. A
+lista do diálogo vem do catálogo real de comandos: um comando só aparece se
+declarar explicitamente que pode ser usado como ação.
+
+Um teste simples em toque é configurar **Ao iniciar a aplicação → Animar este
+objeto com preset**, informar `spin`, salvar e recarregar. Após a recuperação do
+projeto, o objeto deve girar. Se o navegador ainda estiver sob um service worker
+antigo, use **Atualizar agora** antes de avaliar o resultado.
+
+No Console, com um objeto selecionado:
+
+```text
+interaction catalog
+interaction list
+interaction add app.start animation.preset '{"id":"spin"}'
+interaction emit app.start
+interaction help
+```
+
+`$self` resolve o objeto proprietário; a reentrada imediata do mesmo binding é
+bloqueada. Clique, colisão e mudança de propriedade ainda não são gatilhos;
+bindings entre propriedades, prefabs, scripts por objeto e exportação autônoma
+são próximos contratos, não recursos concluídos.
+
+## 18 - Animação efêmera
 
 ### Presets
 
@@ -713,7 +767,7 @@ sessão conforme o contrato da operação.
 integrações devem usar `TemporalAnimationRuntime`. Essa distinção é técnica e
 não muda o fluxo comum do painel.
 
-## 18 - Câmera e modo somente cena
+## 19 - Câmera e modo somente cena
 
 ### Câmera de navegação
 
@@ -738,7 +792,7 @@ Cada viewer escolhe localmente qual câmera usa.
 Esse modo oculta superfícies de autoria para apresentar a cena. Ele não é o
 mesmo que modo jogo. Use o hotspot ou a ação de saída para restaurar a interface.
 
-## 19 - Viewers locais
+## 20 - Viewers locais
 
 O painel de projetos/viewers descobre sessões da mesma origem. Uma aba pode
 abrir outra conectada a um sandbox escolhido. Cada viewer conserva câmera,
@@ -751,7 +805,7 @@ colaboração remota nem multiusuário pela internet.
 Também é possível abrir novo projeto ou arquivo em outra aba sem anexá-lo à
 sessão atual.
 
-## 20 - Jogar com um personagem
+## 21 - Jogar com um personagem
 
 ### Projeto demo
 
@@ -772,10 +826,9 @@ Em toque, arraste o botão central dentro do círculo direcional. Ângulo e
 distância ao centro controlam, respectivamente, direção e intensidade; isso
 também orienta a malha visual em rampas. A OBB física pode conservar por um
 instante a última orientação livre quando girar o volume causaria interseção
-com o piso ou uma parede.
-permite diagonais e movimento suave. Soltar recentraliza e interrompe o
-movimento. Corrida e Pular conservam ponteiros próprios e podem ser combinados
-com o círculo.
+com o piso ou uma parede. O controle permite diagonais e movimento suave;
+soltar recentraliza e interrompe o movimento. Corrida e Pular conservam
+ponteiros próprios e podem ser combinados com o círculo.
 
 ### Proxy físico e visual GLB
 
@@ -843,7 +896,7 @@ game config set {"character":{"maximumSlopeDegrees":50}}
 
 O estado físico é efêmero: sair do jogo restaura autoria, câmera e projeção.
 
-## 21 - Diagnóstico e testes
+## 22 - Diagnóstico e testes
 
 ### Perfil diagnóstico
 
@@ -881,7 +934,7 @@ Node pode emitir `MODULE_TYPELESS_PACKAGE_JSON` porque vários arquivos `.js`
 são ESM sem `type: module` no escopo do pacote. O runner reparsa os arquivos. A
 normalização foi adiada para não alterar scripts legados sem auditoria.
 
-## 22 - Solução de problemas
+## 23 - Solução de problemas
 
 ### O build exibido não mudou
 
@@ -942,7 +995,7 @@ pkg install nodejs-lts
 Depois, execute novamente o teste específico. Node não é necessário para abrir
 o aplicativo web.
 
-## 23 - Atalhos e hábitos seguros
+## 24 - Atalhos e hábitos seguros
 
 Atalhos comuns incluem undo/redo, duplicar, excluir, enquadrar e ferramentas de
 navegação/transformação. O perfil efetivo pode ser configurável; campos de texto
@@ -959,7 +1012,7 @@ Hábitos recomendados:
 6. registre dispositivo, navegador, cenário e amostras em benchmarks;
 7. trate documentos de build antigos como histórico, não como manual atual.
 
-## 24 - O que ainda não prometer
+## 25 - O que ainda não prometer
 
 Esta edição não afirma que o SpatialSeed já oferece:
 
@@ -968,6 +1021,9 @@ Esta edição não afirma que o SpatialSeed já oferece:
 - CAD topológico completo;
 - booleanas robustas para qualquer malha;
 - modificadores procedurais vinculados e regeneração universal;
+- bindings reativos entre propriedades, prefabs e exportação autônoma de applets;
+- gatilhos autorais gerais de clique, colisão e mudança de propriedade;
+- texto, painéis interativos e geometrias implícitas como famílias concluídas;
 - compatibilidade rica completa com glTF, Collada e todos os formatos 3D;
 - segurança auditada para executar plugins hostis;
 - estabilidade comercial do formato de projeto.

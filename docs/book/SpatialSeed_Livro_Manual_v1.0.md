@@ -113,6 +113,24 @@ Queries descrevem estado. Eventos comunicam fatos transitórios. Misturar os
 três conceitos produz dependências ocultas: uma leitura que muda o mundo, um
 evento que se torna autoridade, ou um botão que contorna o serviço canônico.
 
+O incremento 0054mx transforma essa distinção numa capacidade de autoria. Um
+objeto pode guardar a relação entre um evento e um comando autorizado, mas não
+uma função JavaScript, um elemento da interface ou um objeto do renderer. O
+evento informa; o binding escolhe uma reação; o comando continua sendo a
+fronteira que valida a ação. Essa pequena linguagem é o primeiro elo prático
+entre cenas editáveis e applets distribuíveis.
+
+```text
+recurso.propriedade <- binding(fonte)
+evento              -> comando autorizado(argumentos)
+prefab               -> grafo + parâmetros + overrides       [pretendido]
+applet               -> projeto + assets + runtime mínimo    [pretendido]
+```
+
+Somente a segunda linha está entregue de ponta a ponta nesta edição. A notação
+mostra convergência arquitetural, não uma promessa de que bindings, prefabs e
+exportação já estejam prontos.
+
 ## 7 - O custo das abstrações
 
 Separar camadas tem custo fixo. O projeto não trata isso como motivo para
@@ -328,8 +346,20 @@ booleanas substituível.
 
 ### Jogo
 
-Mover comportamentos específicos para eventos, procedimentos e componentes por
-objeto, preservando `GameRuntime` como scheduler.
+Ampliar o contrato entregue de evento → comando com gatilhos de ponteiro,
+colisão e propriedade, preservando `GameRuntime` como scheduler.
+
+### Composição e distribuição
+
+Endereçar propriedades, introduzir bindings com detecção de ciclos, representar
+prefabs como grafos parametrizáveis e exportar um perfil mínimo de applet. O
+resultado deve abrir em navegador comum, funcionar em hospedagem estática e ser
+incorporável numa página sem instalar SpatialSeed, Termux, Linux ou Node.
+
+Texto, painéis interativos e geometrias implícitas são candidatos naturais a
+providers/plugins dessa linguagem comum. Entram depois das fronteiras de
+propriedade, evento e recurso para não se tornarem subsistemas verticais
+isolados.
 
 ### Colaboração
 
