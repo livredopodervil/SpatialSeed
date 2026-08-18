@@ -14562,6 +14562,100 @@ assets: {
         assertEqual("normalize" in color, false);
       },
 
+      "providers geométricos ampliam o mesmo registro de propriedades"() {
+        const registry = createDefaultPropertyRegistry({
+          geometryRegistry: createDefaultGeometryRegistry()
+        });
+        const properties = registry.describe().properties;
+        const depth = properties.find(property =>
+          property.id === "geometry.extrude.depth"
+        );
+        const bevelSegments = properties.find(property =>
+          property.id === "geometry.extrude.bevelSegments"
+        );
+        const contour = properties.find(property =>
+          property.id === "geometry.extrude.contour"
+        );
+        const boxSizes = properties.filter(property =>
+          property.id === "geometry.size" ||
+          property.id === "geometry.box.size"
+        );
+
+        assertEqual(depth.valueType, "number");
+        assertEqual(depth.minimum, 0.001);
+        assertEqual(depth.integer, false);
+        assertEqual(bevelSegments.integer, true);
+        assertEqual(bevelSegments.minimum, 0);
+        assertEqual(contour.valueType, "json");
+        assertDeepEqual(boxSizes.map(property => property.id), ["geometry.size"]);
+      },
+
+      "parâmetro geométrico usa comando atômico undo redo e save open"() {
+        const fixture = createGeometryPropertyFixture();
+        fixture.editor.selection.replace({
+          regionId: fixture.region.id,
+          objectId: "extrude-a"
+        });
+
+        const changed = fixture.service.setSelection({
+          "geometry.extrude.depth": 4,
+          "geometry.extrude.bevelSegments": 5
+        });
+        assertEqual(changed.changed, true);
+        assertEqual(fixture.sandbox.getObject("extrude-a").geometry.depth, 4);
+        assertEqual(
+          fixture.sandbox.getObject("extrude-a").geometry.bevelSegments,
+          5
+        );
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 1);
+
+        assertEqual(fixture.sandbox.undo(), true);
+        assertEqual(fixture.sandbox.getObject("extrude-a").geometry.depth, 1);
+        assertEqual(fixture.sandbox.redo(), true);
+        assertEqual(fixture.sandbox.getObject("extrude-a").geometry.depth, 4);
+
+        const saved = fixture.projectService.save();
+        fixture.service.setSelection({ "geometry.extrude.depth": 2 });
+        fixture.projectService.openText(saved.text);
+        assertEqual(fixture.sandbox.getObject("extrude-a").geometry.depth, 4);
+      },
+
+      "console edita parâmetro geométrico pela API comum"() {
+        const fixture = createGeometryPropertyFixture();
+        fixture.editor.selection.replace({
+          regionId: fixture.region.id,
+          objectId: "extrude-a"
+        });
+        const console = createPropertyConsole(fixture);
+        const result = console.execute(
+          "property set geometry.extrude.depth 3.5"
+        )[0];
+
+        assertEqual(result.ok, true);
+        assertEqual(
+          fixture.sandbox.getObject("extrude-a").geometry.depth,
+          3.5
+        );
+      },
+
+      "inteiro geométrico inválido não altera mundo nem histórico"() {
+        const fixture = createGeometryPropertyFixture();
+        fixture.editor.selection.replace({
+          regionId: fixture.region.id,
+          objectId: "extrude-a"
+        });
+        const before = fixture.sandbox.materializeState();
+
+        assertThrowsMessage(
+          () => fixture.service.setSelection({
+            "geometry.extrude.bevelSegments": 1.5
+          }),
+          "deve ser inteiro"
+        );
+        assertDeepEqual(fixture.sandbox.materializeState(), before);
+        assertEqual(fixture.sandbox.getHistoryDiagnostics().commandCount, 0);
+      },
+
       "escopo renderizável abre grupos aninhados sem editar nós lógicos"() {
         const fixture = createPropertyFixture({ grouped: true });
         fixture.selection.replace({
@@ -14648,6 +14742,13 @@ assets: {
             ["sim"]
           ),
           true
+        );
+        assertDeepEqual(
+          parsePropertyInput(
+            { id: "geometry.tube.points", valueType: "json" },
+            ['[[0,0,0],[1,0,0]]']
+          ),
+          [[0,0,0],[1,0,0]]
         );
       },
 
@@ -17799,6 +17900,64 @@ function createPropertyConsole(fixture) {
       }
     }
   });
+}
+
+function createGeometryPropertyFixture() {
+  const geometryRegistry = createDefaultGeometryRegistry();
+  const appearanceRuntime = new AppearanceRuntime();
+  const geometry = geometryRegistry.normalize({
+    type: "extrude",
+    contour: [[-1,-1],[1,-1],[1,1],[-1,1]],
+    depth: 1
+  });
+  const scene = appearanceRuntime.normalizeScene({
+    schemaVersion: 1,
+    objects: [{
+      id: "extrude-a",
+      kind: "extrude",
+      name: "Extrusão A",
+      position: [0, 0, 0],
+      rotation: [0, 0, 0, 1],
+      scale: [1, 1, 1],
+      geometry,
+      material: { color: "#6699cc" },
+      instanceState: {}
+    }]
+  });
+  const region = new Region(
+    { id: "region-geometry-properties", name: "Geometria", type: "box-region" },
+    scene
+  );
+  const sandbox = new Sandbox(region, boxRegionReducer);
+  const editor = new EditorState();
+  const registry = createDefaultPropertyRegistry({ geometryRegistry });
+  const service = new SelectionPropertyService({
+    selection: editor.selection,
+    sandbox,
+    appearanceRuntime,
+    registry
+  });
+  const renderer = {
+    getTransformConfig: () => ({}),
+    setTransformConfig() {}
+  };
+  const projectService = new ProjectService({
+    sandbox,
+    editor,
+    renderer,
+    region,
+    appearanceRuntime
+  });
+  return {
+    appearanceRuntime,
+    editor,
+    geometryRegistry,
+    projectService,
+    region,
+    registry,
+    sandbox,
+    service
+  };
 }
 
 function flattenResourcePaths(node) {

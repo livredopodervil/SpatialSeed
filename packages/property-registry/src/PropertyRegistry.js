@@ -45,7 +45,12 @@ export class PropertyRegistry {
           editableMany: descriptor.editableMany,
           procedural: descriptor.procedural,
           writable: descriptor.writable,
-          values: descriptor.values
+          values: descriptor.values,
+          minimum: descriptor.minimum,
+          maximum: descriptor.maximum,
+          step: descriptor.step,
+          unit: descriptor.unit,
+          integer: descriptor.integer
         })
       ))
     });
@@ -125,6 +130,11 @@ function normalizeDescriptor(input) {
     values: input.values
       ? Object.freeze([...input.values])
       : null,
+    minimum: finiteMetadata(input.minimum),
+    maximum: finiteMetadata(input.maximum),
+    step: positiveMetadata(input.step),
+    unit: input.unit == null ? null : String(input.unit),
+    integer: Boolean(input.integer),
     normalize: input.normalize,
     write: typeof input.write === "function"
       ? input.write
@@ -134,6 +144,22 @@ function normalizeDescriptor(input) {
       ? input.supports
       : () => true
   });
+}
+
+function finiteMetadata(value) {
+  if (value === undefined || value === null) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    throw new TypeError(`Metadado numérico inválido: ${value}.`);
+  }
+  return number;
+}
+
+function positiveMetadata(value) {
+  const number = finiteMetadata(value);
+  if (number === null) return null;
+  if (!(number > 0)) throw new RangeError("O passo deve ser positivo.");
+  return number;
 }
 
 function equalValue(left, right) {

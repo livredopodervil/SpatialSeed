@@ -25,6 +25,7 @@ expected_channels = {
     "20260817-0054mm": "release/0054mm-documentation-demo",
     "20260817-0054mn": "feature/0054mn-command-palette",
     "20260817-0054mn1": "fix/0054mn1-command-palette-console-bridge",
+    "20260817-0054mo": "feature/0054mo-property-schema-consolidation",
 }
 current_build = build.get("build")
 if current_build not in expected_channels:

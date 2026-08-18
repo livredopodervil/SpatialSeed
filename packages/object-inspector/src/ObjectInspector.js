@@ -398,7 +398,7 @@ export class ObjectInspector {
       const componentCount = propertyComponentCount(descriptor);
       editor.dataset.components = String(componentCount);
       for (let index = 0; index < componentCount; index += 1) {
-        const input = numberInput(this.document);
+        const input = numberInput(this.document, descriptor);
         input.setAttribute("aria-label", `${descriptor.label} ${index + 1}`);
         editor.append(input);
         inputs.push(input);
@@ -442,9 +442,12 @@ export class ObjectInspector {
       });
     } else {
       const input = descriptor.valueType === "number"
-        ? numberInput(this.document)
-        : this.document.createElement("input");
-      if (descriptor.valueType !== "number") input.type = "text";
+        ? numberInput(this.document, descriptor)
+        : descriptor.valueType === "json"
+          ? this.document.createElement("textarea")
+          : this.document.createElement("input");
+      if (!["number", "json"].includes(descriptor.valueType)) input.type = "text";
+      if (descriptor.valueType === "json") input.rows = 3;
       input.spellcheck = false;
       editor.append(input);
       inputs.push(input);
@@ -664,10 +667,14 @@ export class ObjectInspector {
   }
 }
 
-function numberInput(documentRoot) {
+function numberInput(documentRoot, descriptor = {}) {
   const input = documentRoot.createElement("input");
   input.type = "number";
-  input.step = "any";
+  input.step = descriptor.step == null
+    ? descriptor.integer ? "1" : "any"
+    : String(descriptor.step);
+  if (descriptor.minimum != null) input.min = String(descriptor.minimum);
+  if (descriptor.maximum != null) input.max = String(descriptor.maximum);
   return input;
 }
 

@@ -1,8 +1,8 @@
-import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260817-0054mn1";
+import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260817-0054mo";
 import {
   BrowserAssetFileGateway,
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260817-0054mn1";
+} from "../../../packages/platform-web/src/index.js?build=20260817-0054mo";
 
 export function bindWebInterface({
   runtime,

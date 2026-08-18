@@ -17,7 +17,7 @@ Ordem de autoridade:
 
 O snapshot documentado deriva do commit `27961f1` e contém alterações locais de
 17 de agosto validadas pelos gates locais e identificadas como build
-`20260817-0054mn1`.
+`20260817-0054mo`.
 
 ## 2 - Modelo de maturidade
 
@@ -200,6 +200,12 @@ proxy físico. Isso não equivale a um importador geral rico de projeto glTF.
 
 Geometrias entram por providers descritivos. O registry normaliza parâmetros e
 permite que criação, renderer, console e scripts compartilhem famílias.
+
+Os mesmos descritores alimentam o `PropertyRegistry` sob IDs estáveis no formato
+`geometry.<tipo>.<parâmetro>`. O Inspector e o Console não reimplementam as
+regras do provider: a escrita recompõe e normaliza o descritor geométrico antes
+do único comando persistente. Metadados de faixa, passo, unidade, integralidade
+e valores enumerados permanecem no contrato descritivo.
 
 ### Recursos compartilhados
 

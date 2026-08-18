@@ -13,7 +13,7 @@ programar, simular e transportar mundos digitais no navegador.**
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260817-0054mn1`, preparado em 17 de
+> documentação viva corresponde ao build `20260817-0054mo`, preparado em 17 de
 > agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 preserva
 > a edição consolidada do marco `0054mm`.
 
@@ -96,7 +96,7 @@ Para começar vazio, abra `?project=new`. Para diagnóstico, abra
 | Viewer | navegação, projeção, seleção e manipulação visual |
 | Barra principal | ferramentas, painéis, projeto, modo cena e modo jogo |
 | HUD Editar | nível objeto/vértice/aresta/face, ferramenta, frame, plano ativo, snap e operações contextuais |
-| Inspector | propriedades literais e expressões em lote |
+| Inspector | propriedades literais, parâmetros geométricos e expressões em lote |
 | Criar | geometrias paramétricas e posicionamento |
 | Animação | presets e faixas temporais efêmeras |
 | Console | comandos, consultas, procedimentos, testes e benchmarks |
@@ -121,6 +121,7 @@ Para começar vazio, abra `?project=new`. Para diagnóstico, abra
 ### Geometria, caminhos e malha
 
 - catálogo declarativo de geometrias Three.js;
+- parâmetros dos providers geométricos projetados no registro comum de propriedades;
 - ponto, linha, polilinha, retângulo, círculo, arco e polígono sobre plano
   arbitrário;
 - caminhos, tubos, varreduras e distribuição de objetos;

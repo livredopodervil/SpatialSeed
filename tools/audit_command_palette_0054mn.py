@@ -25,9 +25,14 @@ def require(relative: str, *tokens: str) -> None:
 
 
 build = json.loads(read("apps/web/build-info.json") or "{}")
-if build.get("build") != "20260817-0054mn1":
-    errors.append(f"build incorreto: {build.get('build')!r}")
-if build.get("channel") != "fix/0054mn1-command-palette-console-bridge":
+expected_channels = {
+    "20260817-0054mn1": "fix/0054mn1-command-palette-console-bridge",
+    "20260817-0054mo": "feature/0054mo-property-schema-consolidation",
+}
+current_build = build.get("build")
+if current_build not in expected_channels:
+    errors.append(f"build incorreto: {current_build!r}")
+elif build.get("channel") != expected_channels[current_build]:
     errors.append(f"canal incorreto: {build.get('channel')!r}")
 
 require(

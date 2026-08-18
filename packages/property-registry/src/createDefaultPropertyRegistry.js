@@ -1,8 +1,8 @@
 import { normalizeHexColor } from "./ColorCodec.js";
 import { PropertyRegistry } from "./PropertyRegistry.js";
 
-export function createDefaultPropertyRegistry() {
-  return new PropertyRegistry()
+export function createDefaultPropertyRegistry({ geometryRegistry = null } = {}) {
+  const registry = new PropertyRegistry()
     .register(property({
       id: "object.name",
       label: "Nome",
@@ -62,10 +62,26 @@ export function createDefaultPropertyRegistry() {
       path: ["size"],
       valueType: "vector3",
       procedural: true,
+      minimum: 0.001,
       normalize: value => positiveVector(value, 3),
       supports: object =>
-        object?.kind === "box" && Array.isArray(object.size),
-      read: object => [...object.size]
+        object?.kind === "box" && (
+          Array.isArray(object.size) ||
+          geometryTypeOf(geometryRegistry, object) === "box"
+        ),
+      read: object => [...(
+        object.size ?? geometryRegistry.describeLegacyObject(object).size
+      )],
+      write: (patch, value, { object }) => {
+        if (object.geometry && geometryRegistry) {
+          patch.geometry = geometryRegistry.normalize({
+            ...geometryRegistry.describeLegacyObject(object),
+            size: value
+          });
+        } else {
+          patch.size = value;
+        }
+      }
     }))
     .register(property({
       id: "camera.fov",
@@ -395,6 +411,126 @@ export function createDefaultPropertyRegistry() {
         : normalizeHexColor(value),
       read: object => object.instanceState?.color ?? null
     }));
+
+  return registerGeometryProperties(registry, geometryRegistry);
+}
+
+export function registerGeometryProperties(registry, geometryRegistry) {
+  if (!geometryRegistry || typeof geometryRegistry.describe !== "function") {
+    return registry;
+  }
+
+  for (const geometry of geometryRegistry.describe()) {
+    for (const parameter of geometry.parameters ?? []) {
+      if (geometry.type === "box" && parameter.id === "size") continue;
+      registry.register(geometryProperty({
+        geometryRegistry,
+        geometry,
+        parameter
+      }));
+    }
+  }
+  return registry;
+}
+
+function geometryProperty({ geometryRegistry, geometry, parameter }) {
+  const valueType = geometryPropertyValueType(parameter.type);
+  return property({
+    id: `geometry.${geometry.type}.${parameter.id}`,
+    label: parameter.label,
+    group: "geometry",
+    scope: "object",
+    path: ["geometry", parameter.id],
+    valueType,
+    values: parameter.options ?? parameter.values ?? null,
+    minimum: parameter.minimum,
+    maximum: parameter.maximum,
+    step: parameter.step,
+    unit: parameter.unit,
+    integer: ["integer", "integer-vector3"].includes(parameter.type),
+    procedural: ["number", "vector3"].includes(parameter.type),
+    normalize: value => normalizeGeometryParameter(parameter, value),
+    supports: object => geometryTypeOf(geometryRegistry, object) === geometry.type,
+    read: object => geometryRegistry.describeLegacyObject(object)[parameter.id],
+    write: (patch, value, { object }) => {
+      const current = patch.geometry ??
+        geometryRegistry.describeLegacyObject(object);
+      const normalized = geometryRegistry.normalize({
+        ...current,
+        [parameter.id]: value
+      });
+      if (!object.geometry && object.kind === "box") {
+        patch.size = normalized.size;
+        if (parameter.id !== "size") patch.geometry = normalized;
+      } else {
+        patch.geometry = normalized;
+      }
+    }
+  });
+}
+
+function geometryTypeOf(geometryRegistry, object) {
+  const explicit = String(object?.geometry?.type ?? "").trim().toLowerCase();
+  if (explicit && geometryRegistry?.has?.(explicit)) return explicit;
+  if (
+    object?.kind === "box" &&
+    Array.isArray(object.size) &&
+    geometryRegistry?.has?.("box")
+  ) {
+    return "box";
+  }
+  return null;
+}
+
+function geometryPropertyValueType(type) {
+  if (type === "integer") return "number";
+  if (type === "integer-vector3") return "vector3";
+  if (["number", "boolean", "vector3", "json", "enum"].includes(type)) {
+    return type;
+  }
+  return "string";
+}
+
+function normalizeGeometryParameter(parameter, value) {
+  const type = String(parameter.type ?? "string");
+  if (type === "number" || type === "integer") {
+    const number = boundedGeometryNumber(parameter, value);
+    if (type === "integer" && !Number.isInteger(number)) {
+      throw new TypeError(`${parameter.id} deve ser inteiro.`);
+    }
+    return number;
+  }
+  if (type === "vector3" || type === "integer-vector3") {
+    const result = vector(value, 3).map(component =>
+      boundedGeometryNumber(parameter, component)
+    );
+    if (type === "integer-vector3" && result.some(value => !Number.isInteger(value))) {
+      throw new TypeError(`${parameter.id} deve conter inteiros.`);
+    }
+    return result;
+  }
+  if (type === "boolean") return booleanValue(value);
+  if (type === "enum") {
+    return enumValue(value, parameter.options ?? parameter.values ?? []);
+  }
+  if (type === "json") {
+    if (value === null || typeof value !== "object") {
+      throw new TypeError(`${parameter.id} deve ser JSON estruturado.`);
+    }
+    return structuredClone(value);
+  }
+  return String(value);
+}
+
+function boundedGeometryNumber(parameter, value) {
+  const number = finiteNumber(value);
+  if (parameter.minimum != null && number < Number(parameter.minimum)) {
+    throw new RangeError(`${parameter.id} deve ser ≥ ${parameter.minimum}.`);
+  }
+  if (parameter.maximum != null && number > Number(parameter.maximum)) {
+    throw new RangeError(`${parameter.id} deve ser ≤ ${parameter.maximum}.`);
+  }
+  return number;
 }
 
 function property(input) {

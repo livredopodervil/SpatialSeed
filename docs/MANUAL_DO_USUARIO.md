@@ -4,7 +4,7 @@
 
 Este manual descreve tarefas concretas na aplicação web mantida em `apps/web/`.
 Ele foi reescrito a partir do snapshot de 17 de agosto de 2026, derivado do
-build `20260817-0054mn1`. A árvore recebida passou pelos gates locais depois da
+build `20260817-0054mo`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do projeto demo e da inclusão da paleta.
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
@@ -84,7 +84,7 @@ do índice visual do personagem.
 ## 3 - Confirmar o build carregado
 
 O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260817-0054mn1`. Esse é o build publicado lido com `no-store`.
+`v0.1.0 - build 20260817-0054mo`. Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -461,6 +461,11 @@ geral de auto-interseção ainda não formam um conjunto estável completo.
 Selecione objetos, abra **Inspector**, altere uma propriedade e aplique. O
 Inspector distingue valor uniforme, misto e propriedade não suportada.
 
+Geometrias paramétricas preservadas, como extrusão, tubo, esfera e lathe,
+também publicam no Inspector os parâmetros declarados pelo próprio provider.
+Por exemplo, uma extrusão expõe profundidade, passos e bisel. Aplicar vários
+campos produz uma única operação de undo; salvar e reabrir preserva os valores.
+
 Propriedades comuns:
 
 - nome;
@@ -468,7 +473,8 @@ Propriedades comuns:
 - cor, opacidade e transparência;
 - textura, repetição, deslocamento, rotação e wrapping;
 - cor por instância;
-- parâmetros específicos de geometria ou luz.
+- parâmetros específicos de geometria ou luz;
+- JSON estruturado para contornos, pontos, furos e outros parâmetros compostos.
 
 ### Aplicação procedural em lote
 

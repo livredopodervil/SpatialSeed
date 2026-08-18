@@ -1,5 +1,5 @@
 {
   "version": "0.1.0",
-  "build": "20260817-0054mn1",
-  "channel": "fix/0054mn1-command-palette-console-bridge"
+  "build": "20260817-0054mo",
+  "channel": "feature/0054mo-property-schema-consolidation"
 }

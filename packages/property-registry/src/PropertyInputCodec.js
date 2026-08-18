@@ -19,6 +19,10 @@ export function parsePropertyInput(descriptor, input) {
     case "vector4":
       return numericVector(values, 4, descriptor);
 
+    case "json":
+      expectLength(values, 1, descriptor);
+      return jsonValue(values[0], descriptor);
+
     default:
       expectLength(values, 1, descriptor);
       return values[0];
@@ -36,7 +40,22 @@ export function formatPropertyValue(descriptor, value) {
     return formatNumber(value);
   }
 
+  if (descriptor.valueType === "json") {
+    return JSON.stringify(value);
+  }
+
   return String(value);
+}
+
+function jsonValue(value, descriptor) {
+  if (value !== null && typeof value === "object") {
+    return structuredClone(value);
+  }
+  try {
+    return JSON.parse(String(value));
+  } catch (error) {
+    throw new TypeError(`JSON inválido para ${descriptor.id}: ${error.message}`);
+  }
 }
 
 export function propertyComponentCount(descriptor) {
