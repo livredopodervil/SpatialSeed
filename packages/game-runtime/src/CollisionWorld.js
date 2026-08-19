@@ -4,6 +4,7 @@ import {
 
 const EPSILON = 1e-9;
 const MIN_BROAD_HALF_THICKNESS = 1e-6;
+const TRIANGLE_BLOCK_SIZE = 32;
 const normalizedWorlds = new WeakSet();
 
 /**
@@ -220,21 +221,30 @@ function segmentTriangleMeshHit(start, end, mesh) {
   const direction = subtract(end, start);
   for (const part of mesh.parts) {
     if (segmentAabbFraction(start, end, part.broadBounds) === null) continue;
-    const triangles = part.triangles;
-    for (let offset = 0; offset < triangles.length; offset += 9) {
-      const a = transformPoint(part.matrix, triangles.slice(offset, offset + 3));
-      const b = transformPoint(part.matrix, triangles.slice(offset + 3, offset + 6));
-      const c = transformPoint(part.matrix, triangles.slice(offset + 6, offset + 9));
-      const fraction = segmentTriangleFraction(start, end, a, b, c);
-      if (fraction === null) continue;
-      if (nearest === null || fraction < nearest.fraction) {
-        nearest = Object.freeze({
-          fraction,
-          normal: Object.freeze(orientNormalAgainst(
-            normalized(cross(subtract(b, a), subtract(c, a)), [0, 1, 0]),
-            direction
-          ))
-        });
+    for (const block of part.triangleBlocks) {
+      if (segmentAabbFraction(start, end, block.bounds) === null) continue;
+      for (let triangleIndex = block.start; triangleIndex < block.end; triangleIndex += 1) {
+        const boundsOffset = triangleIndex * 6;
+        if (segmentAabbFraction(
+          start,
+          end,
+          flatBounds(part.triangleBounds, boundsOffset)
+        ) === null) continue;
+        const offset = triangleIndex * 9;
+        const a = flatVector3(part.worldTriangles, offset);
+        const b = flatVector3(part.worldTriangles, offset + 3);
+        const c = flatVector3(part.worldTriangles, offset + 6);
+        const fraction = segmentTriangleFraction(start, end, a, b, c);
+        if (fraction === null) continue;
+        if (nearest === null || fraction < nearest.fraction) {
+          nearest = Object.freeze({
+            fraction,
+            normal: Object.freeze(orientNormalAgainst(
+              flatVector3(part.triangleNormals, triangleIndex * 3),
+              direction
+            ))
+          });
+        }
       }
     }
   }
@@ -401,13 +411,22 @@ function normalizeTriangleMesh(source, index) {
         "must contain complete triangles."
       );
     }
+    const acceleration = buildTriangleAcceleration(triangles, matrix);
     const broadBounds = part?.broadBounds
       ? normalizeBroadBounds(
           part.broadBounds,
           `colliders[${index}].collider.parts[${partIndex}].broadBounds`
         )
-      : boundsForTransformedTriangles(triangles, matrix);
-    return Object.freeze({ matrix, triangles, broadBounds });
+      : acceleration.broadBounds;
+    return Object.freeze({
+      matrix,
+      triangles,
+      broadBounds,
+      worldTriangles: acceleration.worldTriangles,
+      triangleBounds: acceleration.triangleBounds,
+      triangleNormals: acceleration.triangleNormals,
+      triangleBlocks: acceleration.triangleBlocks
+    });
   });
   return Object.freeze({
     type: "triangle-mesh",
@@ -419,13 +438,16 @@ function intersectsAabbTriangleMesh(aabb, mesh, padding) {
   const expanded = expandedBounds(aabb, padding);
   for (const part of mesh.parts) {
     if (!aabbOverlap(expanded, part.broadBounds)) continue;
-    const triangles = part.triangles;
-    for (let offset = 0; offset < triangles.length; offset += 9) {
-      const a = transformPoint(part.matrix, triangles.slice(offset, offset + 3));
-      const b = transformPoint(part.matrix, triangles.slice(offset + 3, offset + 6));
-      const c = transformPoint(part.matrix, triangles.slice(offset + 6, offset + 9));
-      if (!triangleBroadOverlap(expanded, a, b, c)) continue;
-      if (triangleIntersectsAabb(expanded, a, b, c)) return true;
+    for (const block of part.triangleBlocks) {
+      if (!aabbOverlap(expanded, block.bounds)) continue;
+      for (let triangleIndex = block.start; triangleIndex < block.end; triangleIndex += 1) {
+        if (!flatBoundsOverlap(expanded, part.triangleBounds, triangleIndex * 6)) continue;
+        const offset = triangleIndex * 9;
+        const a = flatVector3(part.worldTriangles, offset);
+        const b = flatVector3(part.worldTriangles, offset + 3);
+        const c = flatVector3(part.worldTriangles, offset + 6);
+        if (triangleIntersectsAabb(expanded, a, b, c)) return true;
+      }
     }
   }
   return false;
@@ -439,37 +461,77 @@ function intersectsObbTriangleMesh(body, mesh, padding) {
   };
   for (const part of mesh.parts) {
     if (!aabbOverlap(body.broadBounds, part.broadBounds, padding)) continue;
-    const triangles = part.triangles;
-    for (let offset = 0; offset < triangles.length; offset += 9) {
-      const a = worldPointToBodyLocal(
-        body,
-        transformPoint(part.matrix, triangles.slice(offset, offset + 3))
-      );
-      const b = worldPointToBodyLocal(
-        body,
-        transformPoint(part.matrix, triangles.slice(offset + 3, offset + 6))
-      );
-      const c = worldPointToBodyLocal(
-        body,
-        transformPoint(part.matrix, triangles.slice(offset + 6, offset + 9))
-      );
-      if (!triangleBroadOverlap(localBounds, a, b, c)) continue;
-      if (triangleIntersectsAabb(localBounds, a, b, c)) return true;
+    for (const block of part.triangleBlocks) {
+      if (!aabbOverlap(body.broadBounds, block.bounds, padding)) continue;
+      for (let triangleIndex = block.start; triangleIndex < block.end; triangleIndex += 1) {
+        if (!flatBoundsOverlap(body.broadBounds, part.triangleBounds, triangleIndex * 6, padding)) continue;
+        const offset = triangleIndex * 9;
+        const a = worldPointToBodyLocal(body, flatVector3(part.worldTriangles, offset));
+        const b = worldPointToBodyLocal(body, flatVector3(part.worldTriangles, offset + 3));
+        const c = worldPointToBodyLocal(body, flatVector3(part.worldTriangles, offset + 6));
+        if (!triangleBroadOverlap(localBounds, a, b, c)) continue;
+        if (triangleIntersectsAabb(localBounds, a, b, c)) return true;
+      }
     }
   }
   return false;
 }
 
-function boundsForTransformedTriangles(triangles, matrix) {
-  const minimum = [Infinity, Infinity, Infinity];
-  const maximum = [-Infinity, -Infinity, -Infinity];
-  for (let offset = 0; offset < triangles.length; offset += 3) {
-    const point = transformPoint(matrix, triangles.slice(offset, offset + 3));
+function buildTriangleAcceleration(triangles, matrix) {
+  const worldTriangles = [];
+  const triangleBounds = [];
+  const triangleNormals = [];
+  const triangleBlocks = [];
+  let blockMinimum = [Infinity, Infinity, Infinity];
+  let blockMaximum = [-Infinity, -Infinity, -Infinity];
+  let partMinimum = [Infinity, Infinity, Infinity];
+  let partMaximum = [-Infinity, -Infinity, -Infinity];
+  const triangleCount = triangles.length / 9;
+
+  for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex += 1) {
+    const offset = triangleIndex * 9;
+    const a = transformPoint(matrix, flatVector3(triangles, offset));
+    const b = transformPoint(matrix, flatVector3(triangles, offset + 3));
+    const c = transformPoint(matrix, flatVector3(triangles, offset + 6));
+    worldTriangles.push(...a, ...b, ...c);
+    const minimum = [0, 1, 2].map(axis => Math.min(a[axis], b[axis], c[axis]));
+    const maximum = [0, 1, 2].map(axis => Math.max(a[axis], b[axis], c[axis]));
+    triangleBounds.push(...minimum, ...maximum);
+    triangleNormals.push(...normalized(
+      cross(subtract(b, a), subtract(c, a)),
+      [0, 1, 0]
+    ));
     for (let axis = 0; axis < 3; axis += 1) {
-      minimum[axis] = Math.min(minimum[axis], point[axis]);
-      maximum[axis] = Math.max(maximum[axis], point[axis]);
+      blockMinimum[axis] = Math.min(blockMinimum[axis], minimum[axis]);
+      blockMaximum[axis] = Math.max(blockMaximum[axis], maximum[axis]);
+      partMinimum[axis] = Math.min(partMinimum[axis], minimum[axis]);
+      partMaximum[axis] = Math.max(partMaximum[axis], maximum[axis]);
+    }
+    const blockComplete = (triangleIndex + 1) % TRIANGLE_BLOCK_SIZE === 0;
+    const lastTriangle = triangleIndex + 1 === triangleCount;
+    if (blockComplete || lastTriangle) {
+      triangleBlocks.push(Object.freeze({
+        start: triangleIndex + 1 - ((triangleIndex % TRIANGLE_BLOCK_SIZE) + 1),
+        end: triangleIndex + 1,
+        bounds: freezeBoundsWithThickness(blockMinimum, blockMaximum)
+      }));
+      blockMinimum = [Infinity, Infinity, Infinity];
+      blockMaximum = [-Infinity, -Infinity, -Infinity];
     }
   }
+
+  return Object.freeze({
+    worldTriangles: Object.freeze(worldTriangles),
+    triangleBounds: Object.freeze(triangleBounds),
+    triangleNormals: Object.freeze(triangleNormals),
+    triangleBlocks: Object.freeze(triangleBlocks),
+    broadBounds: freezeBoundsWithThickness(partMinimum, partMaximum)
+  });
+}
+
+function freezeBoundsWithThickness(minimumSource, maximumSource) {
+  const minimum = [...minimumSource];
+  const maximum = [...maximumSource];
   for (let axis = 0; axis < 3; axis += 1) {
     if (maximum[axis] - minimum[axis] <= EPSILON) {
       minimum[axis] -= MIN_BROAD_HALF_THICKNESS;
@@ -480,6 +542,24 @@ function boundsForTransformedTriangles(triangles, matrix) {
     min: Object.freeze(minimum),
     max: Object.freeze(maximum)
   });
+}
+
+function flatVector3(values, offset) {
+  return [values[offset], values[offset + 1], values[offset + 2]];
+}
+
+function flatBounds(values, offset) {
+  return {
+    min: [values[offset], values[offset + 1], values[offset + 2]],
+    max: [values[offset + 3], values[offset + 4], values[offset + 5]]
+  };
+}
+
+function flatBoundsOverlap(bounds, values, offset, padding = 0) {
+  return [0, 1, 2].every(axis =>
+    bounds.max[axis] + padding >= values[offset + axis] - EPSILON &&
+    bounds.min[axis] - padding <= values[offset + 3 + axis] + EPSILON
+  );
 }
 
 function triangleBroadOverlap(box, a, b, c) {

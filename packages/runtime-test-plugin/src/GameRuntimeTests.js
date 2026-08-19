@@ -406,6 +406,64 @@ export function createGameRuntimeTests() {
       assertNear(Math.abs(descending.facingYaw), Math.PI, 0.03);
     },
 
+    "visual segue normal local do suporte sem alterar a física"() {
+      const fixture = runtimeFixture({ colliders: rampWorld() });
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({
+        characterId: "character",
+        controls: { movementReference: "world" }
+      });
+      runtime.setInput({ forward: 1 });
+      let maximumPitchStep = 0;
+      let previousPitch = 0;
+      for (let index = 0; index < 60; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+        const currentPitch = runtime.status().visualPitch;
+        maximumPitchStep = Math.max(
+          maximumPitchStep,
+          Math.abs(currentPitch - previousPitch)
+        );
+        previousPitch = currentPitch;
+      }
+      const status = runtime.status();
+      assertEqual(status.grounded, true);
+      assertEqual(Boolean(status.debug.visualSurface), true);
+      assertEqual(status.visualPitch > 0.05, true);
+      assertEqual(maximumPitchStep <= 2.2 / 60 + 1e-9, true);
+      assertEqual(Math.abs(status.yaw - status.visualYaw) < 1e-9, true);
+      runtime.dispose();
+    },
+
+    "alinhamento visual pode ser desativado para personagem vertical"() {
+      const fixture = runtimeFixture({ colliders: rampWorld() });
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera
+      });
+      runtime.start({
+        characterId: "character",
+        controls: {
+          movementReference: "world",
+          surfacePitch: false,
+          surfaceHeight: false
+        }
+      });
+      runtime.setInput({ forward: 1 });
+      for (let index = 0; index < 60; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+      }
+      const status = runtime.status();
+      assertEqual(status.grounded, true);
+      assertNear(status.visualPitch, 0, 1e-12);
+      assertNear(status.visualGroundOffsetY, 0, 1e-12);
+      assertEqual(status.controls.surfacePitch, false);
+      assertEqual(status.controls.surfaceHeight, false);
+      runtime.dispose();
+    },
+
     "visual acompanha a direção mesmo quando a OBB não pode girar"() {
       const fixture = runtimeFixture({
         colliders: [

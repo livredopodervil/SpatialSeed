@@ -2405,6 +2405,16 @@ body.ss-game-mode #game-hud{
   font:500 .76rem/1.2 system-ui;
 }
 .game-look-option input{accent-color:currentColor}
+.game-character-visual-details{
+  grid-column:1/-1;
+  justify-self:center;
+  pointer-events:auto;
+}
+.game-character-visual-details>summary{
+  cursor:pointer;
+  touch-action:manipulation;
+  user-select:none;
+}
 body.ss-game-mode #game-hud [data-character-visual-panel]{
   position:absolute;
   top:max(3.8rem,calc(env(safe-area-inset-top) + 3rem));

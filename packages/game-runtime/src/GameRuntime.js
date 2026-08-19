@@ -3,9 +3,7 @@ import {
 } from "../../runtime-layers/src/index.js?build=20260810-0054f";
 import {
   aroundPivot,
-  eulerQuaternion,
   multiplyMatrices,
-  quaternionMatrix,
   translationMatrix
 } from "../../math-affine/src/index.js?build=20260810-0054f";
 import {
@@ -30,8 +28,17 @@ import {
 export const GAME_RUNTIME_VERSION = "game-runtime-v8-kinematic-platforms";
 
 const DEFAULT_CONTROLS = Object.freeze({
-  movementReference: "camera"
+  movementReference: "camera",
+  surfacePitch: true,
+  surfaceHeight: true,
+  surfaceRoll: false
 });
+
+const CHARACTER_SURFACE_PITCH_RESPONSE = 6;
+const CHARACTER_SURFACE_AIRBORNE_RESPONSE = 3;
+const CHARACTER_SURFACE_HEIGHT_RESPONSE = 12;
+const CHARACTER_SURFACE_MAXIMUM_PITCH = 35 * Math.PI / 180;
+const CHARACTER_SURFACE_MAXIMUM_PITCH_RATE = 2.2;
 
 const DEFAULT_CAMERA = Object.freeze({
   distance: 6,
@@ -65,6 +72,10 @@ export class GameRuntime {
   #cameraFreePosition = null;
   #cameraYaw = 0;
   #cameraPitch = DEFAULT_CAMERA.pitch;
+  #visualSurfacePitch = 0;
+  #visualSurfaceOffsetY = 0;
+  #visualFootPivot = null;
+  #visualSupport = null;
   #input = initialInput();
   #jumpQueued = false;
   #collisionDebugEnabled = false;
@@ -139,6 +150,10 @@ export class GameRuntime {
         bodyFrame: world.character.bodyFrame ?? null,
         config: this.config
       });
+      this.#visualSurfacePitch = 0;
+      this.#visualSurfaceOffsetY = 0;
+      this.#visualFootPivot = characterVisualFootPivot(pivot, world.character.bounds);
+      this.#visualSupport = null;
       this.characterId = id;
       this.#initialCamera = this.cameraController.snapshot();
       const target = characterCameraTarget(this.#physics, this.cameraConfig);
@@ -343,13 +358,24 @@ export class GameRuntime {
       velocity: Object.freeze([...(physics?.velocity ?? [0, 0, 0])]),
       yaw: Number(physics?.yaw ?? 0),
       visualYaw: Number(physics?.facingYaw ?? physics?.yaw ?? 0),
+      visualPitch: Number(this.#visualSurfacePitch ?? 0),
+      visualGroundOffsetY: Number(this.#visualSurfaceOffsetY ?? 0),
       grounded: Boolean(physics?.grounded),
       supportColliderId: physics?.supportColliderId ?? null,
       debug: Object.freeze({
         collision: this.#collisionDebugEnabled,
         contacts: Object.freeze((physics?.contacts ?? []).map(contact =>
           Object.freeze({ ...contact })
-        ))
+        )),
+        visualSurface: this.#visualSupport
+          ? Object.freeze({
+              colliderId: this.#visualSupport.colliderId,
+              point: Object.freeze([...this.#visualSupport.point]),
+              normal: Object.freeze([...this.#visualSupport.normal]),
+              targetPitch: this.#visualSupport.targetPitch,
+              targetOffsetY: this.#visualSupport.targetOffsetY
+            })
+          : null
       }),
       body: physics ? Object.freeze({
         baseYaw: Number(physics.baseYaw ?? 0),
@@ -526,14 +552,43 @@ export class GameRuntime {
         : moving
           ? Math.abs(Math.sin(time * 10)) * 0.045
           : 0;
+    this.#visualSupport = sampleVisualSupport(
+      this.#physics,
+      this.#colliders,
+      this.config
+    );
+    const targetPitch = this.controlConfig.surfacePitch && this.#visualSupport
+      ? this.#visualSupport.targetPitch
+      : 0;
+    const targetOffsetY = this.controlConfig.surfaceHeight && this.#visualSupport
+      ? this.#visualSupport.targetOffsetY
+      : 0;
+    this.#visualSurfacePitch = nextVisualSurfacePitch(
+      this.#visualSurfacePitch,
+      targetPitch,
+      this.#physics.grounded,
+      this.clock.stepSeconds
+    );
+    this.#visualSurfaceOffsetY = nextVisualSurfaceOffset(
+      this.#visualSurfaceOffsetY,
+      targetOffsetY,
+      this.#physics.grounded,
+      this.clock.stepSeconds,
+      characterWorldBounds(this.#physics)
+    );
     const translation = this.#physics.position.map(
-      (value, axis) => value - pivot[axis] + (axis === 1 ? bob : 0)
+      (value, axis) => value - pivot[axis] +
+        (axis === 1 ? bob + this.#visualSurfaceOffsetY : 0)
     );
     const yawDelta = (this.#physics.facingYaw ?? this.#physics.yaw) -
       (this.#physics.baseYaw ?? 0);
+    const visualPivot = this.#visualFootPivot ?? pivot;
     const rotation = aroundPivot(
-      quaternionMatrix(eulerQuaternion([0, yawDelta * 180 / Math.PI, 0])),
-      pivot
+      multiplyMatrices(
+        rotationYMatrix(yawDelta),
+        rotationZMatrix(this.#visualSurfacePitch)
+      ),
+      visualPivot
     );
     const matrix = multiplyMatrices(translationMatrix(translation), rotation);
     const frame = this.#targets.units.map(unit => Object.freeze({
@@ -628,6 +683,10 @@ export class GameRuntime {
     this.#initialCamera = null;
     this.#cameraPosition = null;
     this.#cameraFreePosition = null;
+    this.#visualSurfacePitch = 0;
+    this.#visualSurfaceOffsetY = 0;
+    this.#visualFootPivot = null;
+    this.#visualSupport = null;
     this.#input = initialInput();
     this.#jumpQueued = false;
     this.#lastPublishedTick = -1;
@@ -664,7 +723,18 @@ function normalizeControlConfig(source = {}) {
   if (!["world", "camera"].includes(movementReference)) {
     throw new RangeError("controls.movementReference must be world or camera.");
   }
-  return Object.freeze({ movementReference });
+  return Object.freeze({
+    movementReference,
+    surfacePitch: value.surfacePitch === undefined
+      ? DEFAULT_CONTROLS.surfacePitch
+      : Boolean(value.surfacePitch),
+    surfaceHeight: value.surfaceHeight === undefined
+      ? DEFAULT_CONTROLS.surfaceHeight
+      : Boolean(value.surfaceHeight),
+    surfaceRoll: value.surfaceRoll === undefined
+      ? DEFAULT_CONTROLS.surfaceRoll
+      : Boolean(value.surfaceRoll)
+  });
 }
 
 function movementBasis(reference, cameraYaw) {
@@ -848,6 +918,132 @@ function yawFromCamera(position, target) {
   const x = target[0] - position[0];
   const z = target[2] - position[2];
   return Math.hypot(x, z) <= 1e-9 ? 0 : Math.atan2(x, -z);
+}
+
+
+function characterVisualFootPivot(pivot, bounds) {
+  const minimumY = Number(bounds?.min?.[1]);
+  return Number.isFinite(minimumY)
+    ? [pivot[0], minimumY, pivot[2]]
+    : [...pivot];
+}
+
+function sampleVisualSupport(physics, colliders, config) {
+  if (!physics?.grounded) return null;
+  const bounds = characterWorldBounds(physics);
+  const centerX = (bounds.min[0] + bounds.max[0]) * 0.5;
+  const centerZ = (bounds.min[2] + bounds.max[2]) * 0.5;
+  const footY = bounds.min[1];
+  const bodyHeight = Math.max(0.05, bounds.max[1] - bounds.min[1]);
+  const rise = Math.max(config.stepHeight, config.groundProbe, 0.05) +
+    config.collisionSkin * 2;
+  const drop = Math.max(
+    config.groundSnapDistance,
+    config.stepHeight,
+    config.groundProbe,
+    bodyHeight * 0.75
+  );
+  const hit = castCollisionSegment(
+    [centerX, footY + rise, centerZ],
+    [centerX, footY - drop, centerZ],
+    colliders
+  );
+  if (!hit || !Array.isArray(hit.normal)) return null;
+  const normal = normalizedVector3(hit.normal);
+  if (!normal) return null;
+  const minimumNormalY = Math.cos(config.maximumSlopeDegrees * Math.PI / 180);
+  if (normal[1] < minimumNormalY) return null;
+  const yaw = Number(physics.facingYaw ?? physics.yaw ?? 0);
+  const forwardX = Math.cos(yaw);
+  const forwardZ = -Math.sin(yaw);
+  const dot = forwardX * normal[0] + forwardZ * normal[2];
+  const tangentX = forwardX - normal[0] * dot;
+  const tangentY = -normal[1] * dot;
+  const tangentZ = forwardZ - normal[2] * dot;
+  const horizontal = Math.hypot(tangentX, tangentZ);
+  const targetPitch = horizontal <= 1e-9
+    ? 0
+    : clamp(
+        Math.atan2(tangentY, horizontal),
+        -CHARACTER_SURFACE_MAXIMUM_PITCH,
+        CHARACTER_SURFACE_MAXIMUM_PITCH
+      );
+  const maximumOffset = bodyHeight * 0.75;
+  const targetOffsetY = clamp(
+    hit.point[1] + config.collisionSkin - footY,
+    -maximumOffset,
+    maximumOffset
+  );
+  return Object.freeze({
+    colliderId: hit.colliderId ?? null,
+    point: Object.freeze([...hit.point]),
+    normal: Object.freeze(normal),
+    targetPitch,
+    targetOffsetY
+  });
+}
+
+function nextVisualSurfacePitch(current, target, grounded, deltaSeconds) {
+  const safeCurrent = Number.isFinite(current) ? current : 0;
+  const safeTarget = Number.isFinite(target) ? target : 0;
+  const dt = clamp(Number(deltaSeconds) || 0, 0, 0.25);
+  if (dt <= 0) return safeCurrent;
+  const response = grounded
+    ? CHARACTER_SURFACE_PITCH_RESPONSE
+    : CHARACTER_SURFACE_AIRBORNE_RESPONSE;
+  const alpha = 1 - Math.exp(-response * dt);
+  const maximumStep = CHARACTER_SURFACE_MAXIMUM_PITCH_RATE * dt;
+  return safeCurrent + clamp(
+    (safeTarget - safeCurrent) * alpha,
+    -maximumStep,
+    maximumStep
+  );
+}
+
+function nextVisualSurfaceOffset(current, target, grounded, deltaSeconds, bounds) {
+  const safeCurrent = Number.isFinite(current) ? current : 0;
+  const safeTarget = Number.isFinite(target) ? target : 0;
+  const dt = clamp(Number(deltaSeconds) || 0, 0, 0.25);
+  if (dt <= 0) return safeCurrent;
+  const response = grounded ? CHARACTER_SURFACE_HEIGHT_RESPONSE : CHARACTER_SURFACE_AIRBORNE_RESPONSE;
+  const alpha = 1 - Math.exp(-response * dt);
+  const bodyHeight = Math.max(0.05, Number(bounds?.max?.[1]) - Number(bounds?.min?.[1]));
+  const maximumStep = Math.max(0.25, bodyHeight * 4) * dt;
+  return safeCurrent + clamp(
+    (safeTarget - safeCurrent) * alpha,
+    -maximumStep,
+    maximumStep
+  );
+}
+
+function normalizedVector3(source) {
+  const x = Number(source?.[0]) || 0;
+  const y = Number(source?.[1]) || 0;
+  const z = Number(source?.[2]) || 0;
+  const length = Math.hypot(x, y, z);
+  return length > 1e-9 ? [x / length, y / length, z / length] : null;
+}
+
+function rotationYMatrix(angle) {
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  return [
+    cosine, 0, -sine, 0,
+    0, 1, 0, 0,
+    sine, 0, cosine, 0,
+    0, 0, 0, 1
+  ];
+}
+
+function rotationZMatrix(angle) {
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  return [
+    cosine, sine, 0, 0,
+    -sine, cosine, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1
+  ];
 }
 
 function characterMotionSnapshot(physics, input) {
