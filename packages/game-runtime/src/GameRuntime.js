@@ -18,14 +18,15 @@ import {
 } from "./CharacterBodyFrame.js?build=20260818-0054my";
 import {
   castCollisionSegment,
-  normalizeCollisionWorld
-} from "./CollisionWorld.js?build=20260818-0054my";
+  normalizeCollisionWorld,
+  queryCharacterBodyOverlaps
+} from "./CollisionWorld.js?build=20260819-0054nb";
 import {
   applyKinematicSupportMotion,
   mergeKinematicCollisionWorld
 } from "./KinematicCollisionWorld.js?build=20260818-0054my";
 
-export const GAME_RUNTIME_VERSION = "game-runtime-v8-kinematic-platforms";
+export const GAME_RUNTIME_VERSION = "game-runtime-v9-sensors-triggers";
 
 const DEFAULT_CONTROLS = Object.freeze({
   movementReference: "camera",
@@ -65,6 +66,11 @@ export class GameRuntime {
   #physics = null;
   #baseColliders = Object.freeze([]);
   #colliders = Object.freeze([]);
+  #baseSensors = Object.freeze([]);
+  #sensors = Object.freeze([]);
+  #activeSensorIds = new Set();
+  #lastTriggerEvent = null;
+  #collisionModeForObject = () => "solid";
   #kinematicRevision = null;
   #kinematicOwnerIds = Object.freeze([]);
   #initialCamera = null;
@@ -90,7 +96,8 @@ export class GameRuntime {
     camera = {},
     controls = {},
     events = null,
-    characterAnimation = null
+    characterAnimation = null,
+    collisionModeForObject = null
   } = {}) {
     validateSurface(surface);
     if (!cameraController?.snapshot || !cameraController?.execute) {
@@ -104,6 +111,10 @@ export class GameRuntime {
     this.clock = clock;
     this.events = events;
     this.characterAnimation = characterAnimation;
+    if (collisionModeForObject !== null && typeof collisionModeForObject !== "function") {
+      throw new TypeError("collisionModeForObject must be a function.");
+    }
+    this.#collisionModeForObject = collisionModeForObject ?? (() => "solid");
     this.config = normalizeCharacterGameConfig(config);
     this.cameraConfig = normalizeCameraConfig(camera);
     this.controlConfig = normalizeControlConfig(controls);
@@ -140,8 +151,13 @@ export class GameRuntime {
     try {
       const pivot = targets.units[0].pivot;
       this.#targets = targets;
-      this.#baseColliders = normalizeCollisionWorld(world.colliders);
+      const collisionSets = this.#partitionCollisionWorld(world.colliders);
+      this.#baseColliders = collisionSets.solids;
+      this.#baseSensors = collisionSets.sensors;
       this.#colliders = this.#baseColliders;
+      this.#sensors = this.#baseSensors;
+      this.#activeSensorIds.clear();
+      this.#lastTriggerEvent = null;
       this.#kinematicRevision = null;
       this.#kinematicOwnerIds = Object.freeze([]);
       this.#physics = createCharacterPhysicsState({
@@ -297,9 +313,13 @@ export class GameRuntime {
   refreshCollisionWorld() {
     if (!this.characterId || this.state !== "running") return this.status();
     const world = this.surface.readGameCollisionWorld(this.characterId);
-    this.#baseColliders = normalizeCollisionWorld(world.colliders);
+    const collisionSets = this.#partitionCollisionWorld(world.colliders);
+    this.#baseColliders = collisionSets.solids;
+    this.#baseSensors = collisionSets.sensors;
     this.#replaceCollisionWorld(this.#baseColliders);
+    this.#sensors = this.#baseSensors;
     this.#refreshKinematicCollisionFrame({ force: true, rebuildBase: false });
+    this.#refreshSensorOverlaps();
     this.statistics.worldRefreshes += 1;
     this.#notify("world-refreshed");
     return this.status();
@@ -362,6 +382,11 @@ export class GameRuntime {
       visualGroundOffsetY: Number(this.#visualSurfaceOffsetY ?? 0),
       grounded: Boolean(physics?.grounded),
       supportColliderId: physics?.supportColliderId ?? null,
+      triggers: Object.freeze({
+        sensorCount: this.#sensors.length,
+        activeSensorIds: Object.freeze([...this.#activeSensorIds].sort()),
+        lastEvent: this.#lastTriggerEvent
+      }),
       debug: Object.freeze({
         collision: this.#collisionDebugEnabled,
         contacts: Object.freeze((physics?.contacts ?? []).map(contact =>
@@ -465,6 +490,7 @@ export class GameRuntime {
     if (!wasGrounded && this.#physics.grounded) {
       this.#emitEvent("character.land", { objectId: this.characterId });
     }
+    this.#refreshSensorOverlaps();
     if (previousAnimationState !== this.#physics.animationState) {
       this.#emitEvent("character.state", {
         objectId: this.characterId,
@@ -501,11 +527,22 @@ export class GameRuntime {
     const previousSignature = this.#kinematicOwnerIds.join("\u0000");
     if (rebuildBase && ownerSignature !== previousSignature) {
       const world = this.surface.readGameCollisionWorld(this.characterId);
-      this.#baseColliders = normalizeCollisionWorld(world.colliders);
+      const collisionSets = this.#partitionCollisionWorld(world.colliders);
+      this.#baseColliders = collisionSets.solids;
+      this.#baseSensors = collisionSets.sensors;
       this.statistics.worldRefreshes += 1;
     }
-    const next = mergeKinematicCollisionWorld(this.#baseColliders, frame);
+    const dynamicSets = this.#partitionCollisionWorld(frame.colliders ?? []);
+    const next = mergeKinematicCollisionWorld(this.#baseColliders, {
+      ...frame,
+      colliders: dynamicSets.solids
+    });
+    const nextSensors = mergeKinematicCollisionWorld(this.#baseSensors, {
+      ...frame,
+      colliders: dynamicSets.sensors
+    });
     const carried = this.#replaceCollisionWorld(next);
+    this.#sensors = nextSensors;
     this.#kinematicRevision = frame.revision ?? null;
     this.#kinematicOwnerIds = ownerIds;
     this.statistics.kinematicRefreshes += 1;
@@ -528,6 +565,69 @@ export class GameRuntime {
     );
     this.#colliders = next;
     return carried;
+  }
+
+  #partitionCollisionWorld(colliders) {
+    const normalized = normalizeCollisionWorld(colliders ?? []);
+    const solids = [];
+    const sensors = [];
+    for (const collider of normalized) {
+      const mode = normalizeCollisionMode(
+        this.#collisionModeForObject(collider.ownerId)
+      );
+      if (mode === "sensor") sensors.push(collider);
+      else if (mode === "solid") solids.push(collider);
+    }
+    return Object.freeze({
+      solids: normalizeCollisionWorld(solids),
+      sensors: normalizeCollisionWorld(sensors)
+    });
+  }
+
+  #refreshSensorOverlaps() {
+    if (!this.#physics) return false;
+    const body = characterBodyWorldObb(this.#physics);
+    const hits = queryCharacterBodyOverlaps(body, this.#sensors, 0);
+    const byOwner = new Map();
+    for (const hit of hits) {
+      const sensorId = String(hit.ownerId ?? hit.id);
+      const colliderIds = byOwner.get(sensorId) ?? [];
+      colliderIds.push(String(hit.id));
+      byOwner.set(sensorId, colliderIds);
+    }
+    const next = new Set(byOwner.keys());
+    for (const sensorId of next) {
+      if (this.#activeSensorIds.has(sensorId)) continue;
+      this.statistics.triggerEnters += 1;
+      this.#lastTriggerEvent = Object.freeze({
+        type: "trigger.enter",
+        objectId: sensorId
+      });
+      this.#emitEvent("trigger.enter", {
+        objectId: sensorId,
+        sensorId,
+        characterId: this.characterId,
+        colliderIds: Object.freeze([...(byOwner.get(sensorId) ?? [])])
+      });
+    }
+    for (const sensorId of this.#activeSensorIds) {
+      if (next.has(sensorId)) continue;
+      this.statistics.triggerExits += 1;
+      this.#lastTriggerEvent = Object.freeze({
+        type: "trigger.exit",
+        objectId: sensorId
+      });
+      this.#emitEvent("trigger.exit", {
+        objectId: sensorId,
+        sensorId,
+        characterId: this.characterId,
+        colliderIds: Object.freeze([])
+      });
+    }
+    const changed = next.size !== this.#activeSensorIds.size ||
+      [...next].some(id => !this.#activeSensorIds.has(id));
+    this.#activeSensorIds = next;
+    return changed;
   }
 
   #emitEvent(type, payload) {
@@ -678,6 +778,10 @@ export class GameRuntime {
     this.#physics = null;
     this.#baseColliders = Object.freeze([]);
     this.#colliders = Object.freeze([]);
+    this.#baseSensors = Object.freeze([]);
+    this.#sensors = Object.freeze([]);
+    this.#activeSensorIds.clear();
+    this.#lastTriggerEvent = null;
     this.#kinematicRevision = null;
     this.#kinematicOwnerIds = Object.freeze([]);
     this.#initialCamera = null;
@@ -1068,10 +1172,17 @@ function initialStatistics() {
     worldRefreshes: 0,
     kinematicRefreshes: 0,
     platformCarries: 0,
+    triggerEnters: 0,
+    triggerExits: 0,
     lastKinematicRefreshMs: 0,
     maximumKinematicRefreshMs: 0,
     lastStopReason: null
   };
+}
+
+function normalizeCollisionMode(value) {
+  const mode = String(value ?? "solid").trim().toLowerCase();
+  return mode === "sensor" || mode === "none" ? mode : "solid";
 }
 
 function nowMilliseconds() {

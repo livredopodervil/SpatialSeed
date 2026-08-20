@@ -38,7 +38,7 @@ export {
 export {
   GAME_RUNTIME_VERSION,
   GameRuntime
-} from "./GameRuntime.js?build=20260818-0054my";
+} from "./GameRuntime.js?build=20260818-0054my&revision=20260819-0054nb";
 export {
   GAME_DIRECTIONAL_INPUT_VERSION,
   normalizeGameDirectionalInput

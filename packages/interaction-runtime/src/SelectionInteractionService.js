@@ -14,7 +14,9 @@ export const INTERACTION_EVENT_CATALOG = Object.freeze([
   event("game.stop", "Ao encerrar o modo jogo", "game"),
   event("character.jump", "Ao pular", "character"),
   event("character.land", "Ao aterrissar", "character"),
-  event("character.respawn", "Ao reposicionar", "character")
+  event("character.respawn", "Ao reposicionar", "character"),
+  event("trigger.enter", "Ao entrar no sensor", "trigger"),
+  event("trigger.exit", "Ao sair do sensor", "trigger")
 ]);
 
 export class SelectionInteractionService {

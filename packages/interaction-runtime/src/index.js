@@ -6,4 +6,4 @@ export {
   INTERACTION_EVENT_CATALOG,
   SELECTION_INTERACTION_SERVICE_VERSION,
   SelectionInteractionService
-} from "./SelectionInteractionService.js";
+} from "./SelectionInteractionService.js?revision=20260819-0054nb";

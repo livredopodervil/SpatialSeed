@@ -5,7 +5,7 @@ export {
   formatPropertyValue,
   propertyComponentCount
 } from "./PropertyInputCodec.js";
-export { createDefaultPropertyRegistry } from "./createDefaultPropertyRegistry.js?build=20260818-0054mv";
+export { createDefaultPropertyRegistry } from "./createDefaultPropertyRegistry.js?build=20260818-0054mv&revision=20260819-0054nb";
 export { SelectionPropertyService } from "./SelectionPropertyService.js?build=20260818-0054mv";
 export {
   PROPERTY_TRANSFER_PRESET_CATALOG_VERSION,

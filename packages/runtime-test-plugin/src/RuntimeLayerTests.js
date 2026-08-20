@@ -197,7 +197,7 @@ import {
   resolveSelectionTargetIds,
   SelectionPropertyClipboard,
   SelectionPropertyService
-} from "../../property-registry/src/index.js?build=20260818-0054mv";
+} from "../../property-registry/src/index.js?build=20260818-0054mv&revision=20260819-0054nb";
 import {
   DevConsole
 } from "../../devtools/src/DevConsole.js?build=20260806-0050b";
@@ -14583,6 +14583,22 @@ assets: {
         assertEqual(color.editableMany, true);
         assertEqual(color.procedural, true);
         assertEqual("normalize" in color, false);
+      },
+
+      "modo de colisão do jogo é propriedade autoral enum"() {
+        const descriptor = createDefaultPropertyRegistry().require(
+          "game.collisionMode"
+        );
+        assertDeepEqual(descriptor.values, ["solid", "sensor", "none"]);
+        assertEqual(descriptor.read({ id: "a", kind: "box" }), "solid");
+        assertEqual(descriptor.normalize("sensor"), "sensor");
+        const patch = {};
+        descriptor.write(patch, "sensor", {
+          object: { game: { tag: "checkpoint" } }
+        });
+        assertDeepEqual(patch, {
+          game: { tag: "checkpoint", collisionMode: "sensor" }
+        });
       },
 
       "providers geométricos ampliam o mesmo registro de propriedades"() {

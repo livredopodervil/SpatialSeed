@@ -7,7 +7,7 @@ import { Selection } from "../../editor-core/src/Selection.js";
 import {
   InteractionRuntime,
   SelectionInteractionService
-} from "../../interaction-runtime/src/index.js?build=20260818-0054mx";
+} from "../../interaction-runtime/src/index.js?build=20260818-0054mx&revision=20260819-0054nb";
 import { boxRegionReducer } from "../../region-box/src/index.js";
 import { ProjectValidator } from "../../project-files/src/ProjectValidator.js";
 
@@ -77,6 +77,13 @@ export function createInteractionBindingTests() {
         event: "app.start",
         command: "project.open"
       }), "não autorizado");
+    },
+
+    "catálogo publica eventos de entrada e saída de sensor"() {
+      const events = serviceFixture().service.describeCatalog().events;
+      const ids = events.map(item => item.id);
+      assertEqual(ids.includes("trigger.enter"), true);
+      assertEqual(ids.includes("trigger.exit"), true);
     },
 
     "runtime combina fontes e resolve self sem conhecer editor ou DOM"() {

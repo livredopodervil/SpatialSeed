@@ -19,6 +19,21 @@ export function createDefaultPropertyRegistry({ geometryRegistry = null } = {}) 
       read: object => object.name ?? object.id
     }))
     .register(property({
+      id: "game.collisionMode",
+      label: "Colisão no jogo",
+      group: "game",
+      scope: "object",
+      path: ["game", "collisionMode"],
+      valueType: "enum",
+      values: ["solid", "sensor", "none"],
+      normalize: value => enumValue(value, ["solid", "sensor", "none"]),
+      supports: object => !["group", "camera", "light"].includes(object?.kind),
+      read: object => object?.game?.collisionMode ?? "solid",
+      write: (patch, value, { object }) => {
+        patch.game = { ...(object?.game ?? {}), collisionMode: value };
+      }
+    }))
+    .register(property({
       id: "transform.position",
       label: "Posição",
       group: "transform",

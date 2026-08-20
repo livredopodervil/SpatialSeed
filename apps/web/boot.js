@@ -66,8 +66,11 @@ async function startRuntime(buildInfo, pwaInstallController) {
   exposeApplicationDefinition(applicationDefinition);
   await loadStylesheet(buildInfo);
 
-  const cacheKey = encodeURIComponent(buildInfo.build);
-  const { startApplication } = await import(`./main.js?build=${cacheKey}`);
+  const buildKey = encodeURIComponent(buildInfo.build);
+  const revisionKey = encodeURIComponent(buildInfo.revision ?? buildInfo.build);
+  const { startApplication } = await import(
+    `./main.js?build=${buildKey}&revision=${revisionKey}`
+  );
   await startApplication(buildInfo, uiConfiguration, {
     applicationDefinition,
     runtimeExtensions,

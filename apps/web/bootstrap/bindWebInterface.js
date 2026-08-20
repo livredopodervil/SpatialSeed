@@ -2210,9 +2210,18 @@ export function bindWebInterface({
     const position = snapshot.position
       .map(value => Number(value).toFixed(2))
       .join(", ");
+    const trigger = snapshot.triggers?.lastEvent;
+    let sessionLabel = "";
+    try {
+      sessionLabel = formatGameSessionState(runtime.query("game.state.status"));
+    } catch {}
     $("game-status").textContent =
       `${labels[snapshot.animationState] ?? snapshot.animationState} · ` +
       `${snapshot.grounded ? "no chão" : "no ar"} · ${position}` +
+      ` · build ${buildInfo.build}` +
+      (buildInfo.revision ? ` · rev ${buildInfo.revision}` : "") +
+      (trigger ? ` · ${trigger.type}: ${trigger.objectId}` : "") +
+      (sessionLabel ? ` · ${sessionLabel}` : "") +
       (snapshot.debug?.collision
         ? ` · contatos ${snapshot.debug.contacts?.length ?? 0}`
         : "");
@@ -2230,6 +2239,25 @@ export function bindWebInterface({
     if (movementReference && documentRoot.activeElement !== movementReference) {
       movementReference.value = snapshot.controls?.movementReference ?? "camera";
     }
+  }
+
+  function formatGameSessionState(snapshot) {
+    if (!snapshot?.active || !Array.isArray(snapshot.items) || !snapshot.items.length) {
+      return "";
+    }
+    return snapshot.items.slice(0, 2).map(item => {
+      const value = item?.value;
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return `${item.id}=${String(value)}`;
+      }
+      const entries = Object.entries(value).slice(0, 4).map(([key, entry]) => {
+        if (entry === null || ["string", "number", "boolean"].includes(typeof entry)) {
+          return `${key}=${String(entry)}`;
+        }
+        return `${key}=…`;
+      });
+      return `${item.id}{${entries.join(",")}}`;
+    }).join(" ");
   }
 
   const onGameKeyDown = event => {

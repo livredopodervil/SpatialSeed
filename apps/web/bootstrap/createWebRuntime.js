@@ -58,7 +58,7 @@ import {
   createDefaultPropertyRegistry,
   SelectionPropertyClipboard,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260818-0054mx";
+} from "../../../packages/property-registry/src/index.js?build=20260818-0054mx&revision=20260819-0054nb";
 import {
   createDefaultGeometryRegistry
 } from "../../../packages/geometry-registry/src/index.js?build=20260808-0053f";
@@ -122,10 +122,10 @@ import {
   GameEventRuntime,
   GameRuntime,
   GameSessionState
-} from "../../../packages/game-runtime/src/index.js?build=20260819-0054na";
+} from "../../../packages/game-runtime/src/index.js?build=20260819-0054na&revision=20260819-0054nb";
 import {
   SelectionInteractionService
-} from "../../../packages/interaction-runtime/src/index.js?build=20260818-0054mx";
+} from "../../../packages/interaction-runtime/src/index.js?build=20260818-0054mx&revision=20260819-0054nb";
 import {
   CHARACTER_ANIMATION_VERSION,
   CharacterAnimationSystem
@@ -1194,7 +1194,9 @@ export async function createWebRuntime({
     surface: renderer,
     cameraController,
     events: gameEvents,
-    characterAnimation
+    characterAnimation,
+    collisionModeForObject: objectId =>
+      sandbox.getObject(objectId)?.game?.collisionMode ?? "solid"
   });
   commands
     .register(

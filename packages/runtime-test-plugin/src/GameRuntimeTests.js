@@ -2,6 +2,7 @@ import {
   GameAudioRuntime,
   GameEventRuntime,
   GameRuntime,
+  GameSessionState,
   applyKinematicSupportMotion,
   characterBodyWorldObb,
   characterWorldBounds,
@@ -13,7 +14,7 @@ import {
   normalizeCollisionWorld,
   normalizeGameDirectionalInput,
   stepCharacterPhysics
-} from "../../game-runtime/src/index.js?build=20260818-0054my";
+} from "../../game-runtime/src/index.js?build=20260818-0054my&revision=20260819-0054nb";
 
 const CHARACTER_BOUNDS = Object.freeze({
   min: Object.freeze([-0.5, 0.5, -0.5]),
@@ -156,6 +157,146 @@ export function createGameRuntimeTests() {
       assertEqual(status.supportColliderId, "platform");
       assertEqual(status.statistics.platformCarries > 0, true);
       assertEqual(status.kinematics.activeOwnerIds[0], "platform");
+      runtime.dispose();
+    },
+
+    "sensor dispara entrada e saída sem bloquear o personagem"() {
+      const sensor = movingBoxCollider(
+        "sensor",
+        [1.25, 1, 0],
+        [0.25, 1.5, 2]
+      );
+      const fixture = runtimeFixture({ colliders: [PLATFORM, sensor] });
+      const observed = [];
+      const events = new GameEventRuntime({
+        executeAction(_action, event) {
+          observed.push(event.type);
+          return true;
+        }
+      });
+      events.configure({
+        bindings: [
+          {
+            id: "sensor-enter",
+            objectId: "sensor",
+            event: "trigger.enter",
+            actions: [{ type: "command", command: "game.state.increment" }]
+          },
+          {
+            id: "sensor-exit",
+            objectId: "sensor",
+            event: "trigger.exit",
+            actions: [{ type: "command", command: "game.state.increment" }]
+          }
+        ]
+      });
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera,
+        events,
+        controls: { movementReference: "world" },
+        collisionModeForObject: id => id === "sensor" ? "sensor" : "solid"
+      });
+      runtime.start({ characterId: "character" });
+      runtime.setInput({ forward: 1 });
+      for (let index = 0; index < 180; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+      }
+      const status = runtime.status();
+      assertEqual(status.position[0] > 1.75, true);
+      assertEqual(status.statistics.triggerEnters, 1);
+      assertEqual(status.statistics.triggerExits, 1);
+      assertEqual(JSON.stringify(observed), JSON.stringify(["trigger.enter", "trigger.exit"]));
+      assertEqual(status.triggers.activeSensorIds.length, 0);
+      assertEqual(status.triggers.lastEvent.type, "trigger.exit");
+      assertEqual(status.triggers.lastEvent.objectId, "sensor");
+      runtime.dispose();
+    },
+
+    "trigger pode alterar GameSessionState por binding portátil"() {
+      const sensor = movingBoxCollider(
+        "checkpoint",
+        [1.25, 1, 0],
+        [0.25, 1.5, 2]
+      );
+      const fixture = runtimeFixture({ colliders: [PLATFORM, sensor] });
+      const authored = {
+        version: "spatialseed-data-objects-v1",
+        items: [{
+          id: "game-state",
+          kind: "data",
+          dataType: "game-state",
+          value: { score: 0 }
+        }]
+      };
+      const session = new GameSessionState();
+      session.start(authored);
+      const events = new GameEventRuntime({
+        executeAction(action) {
+          if (action.type !== "command" ||
+              action.command !== "game.state.increment") {
+            throw new Error(`Ação inesperada: ${action.type}:${action.command}.`);
+          }
+          const args = action.args ?? {};
+          return session.increment(args.dataId, args.path, args.amount ?? 1);
+        }
+      });
+      events.configure({
+        bindings: [{
+          id: "checkpoint-score",
+          objectId: "checkpoint",
+          event: "trigger.enter",
+          actions: [{
+            type: "command",
+            command: "game.state.increment",
+            args: { dataId: "game-state", path: "score", amount: 1 }
+          }]
+        }]
+      });
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera,
+        events,
+        controls: { movementReference: "world" },
+        collisionModeForObject: id => id === "checkpoint" ? "sensor" : "solid"
+      });
+      runtime.start({ characterId: "character" });
+      runtime.setInput({ forward: 1 });
+      for (let index = 0; index < 120; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+      }
+      assertEqual(session.get("game-state", "score"), 1);
+      assertEqual(authored.items[0].value.score, 0);
+      assertEqual(runtime.status().statistics.triggerEnters, 1);
+      runtime.dispose();
+      session.stop();
+    },
+
+    "modo none remove colisor da física e dos triggers"() {
+      const ignored = movingBoxCollider(
+        "ignored",
+        [1.25, 1, 0],
+        [0.25, 1.5, 2]
+      );
+      const fixture = runtimeFixture({ colliders: [PLATFORM, ignored] });
+      const emitted = [];
+      const runtime = new GameRuntime({
+        surface: fixture.surface,
+        cameraController: fixture.camera,
+        events: { emit(type) { emitted.push(type); return Promise.resolve(); } },
+        controls: { movementReference: "world" },
+        collisionModeForObject: id => id === "ignored" ? "none" : "solid"
+      });
+      runtime.start({ characterId: "character" });
+      runtime.setInput({ forward: 1 });
+      for (let index = 0; index < 180; index += 1) {
+        runtime.advance({ deltaSeconds: 1 / 60 });
+      }
+      const status = runtime.status();
+      assertEqual(status.position[0] > 1.75, true);
+      assertEqual(status.triggers.sensorCount, 0);
+      assertEqual(emitted.includes("trigger.enter"), false);
+      assertEqual(emitted.includes("trigger.exit"), false);
       runtime.dispose();
     },
 

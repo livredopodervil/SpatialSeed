@@ -13,10 +13,11 @@ export async function startApplication(
     pwaInstallController = null
   } = {}
 ) {
-  const cacheKey=encodeURIComponent(buildInfo.build);
+  const buildKey=encodeURIComponent(buildInfo.build);
+  const revisionKey=encodeURIComponent(buildInfo.revision ?? buildInfo.build);
   const [runtimeModule,interfaceModule]=await Promise.all([
-    import(`./bootstrap/createWebRuntime.js?build=${cacheKey}`),
-    import(`./bootstrap/bindWebInterface.js?build=${cacheKey}`)
+    import(`./bootstrap/createWebRuntime.js?build=${buildKey}&revision=${revisionKey}`),
+    import(`./bootstrap/bindWebInterface.js?build=${buildKey}&revision=${revisionKey}`)
   ]);
 
   const application = await runtimeModule.createWebRuntime({
