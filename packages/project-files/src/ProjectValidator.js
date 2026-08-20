@@ -1,6 +1,6 @@
 import {
   ProjectSerializer
-} from "./ProjectSerializer.js?build=20260807-0052b";
+} from "./ProjectSerializer.js?build=20260819-0054na";
 import {
   HierarchyIndex
 } from "../../scene-hierarchy/src/index.js";
@@ -10,8 +10,9 @@ import {
   validateInstanceGraph
 } from "../../instance-graph/src/index.js?build=20260807-0052b";
 import {
+  normalizeDataObjectDocument,
   normalizeInteractionDocument
-} from "../../core/src/index.js?build=20260818-0054mx";
+} from "../../core/src/index.js?build=20260819-0054na";
 
 export class ProjectValidator {
   parse(text) {
@@ -198,11 +199,16 @@ function validatedSceneShell(scene, { instanceGraph, defaultCameraId, objects })
   const {
     objects: _objects,
     instanceGraph: _instanceGraph,
+    dataObjects: _dataObjects,
     ...shell
   } = scene ?? {};
+  const dataObjects = normalizeDataObjectDocument(scene?.dataObjects);
   return {
     ...structuredClone(shell),
     interactions: normalizeInteractionDocument(scene?.interactions),
+    ...(dataObjects.items.length
+      ? { dataObjects: structuredClone(dataObjects) }
+      : {}),
     ...(instanceGraph ? { instanceGraph } : {}),
     ...(defaultCameraId === null ? {} : { defaultCameraId }),
     objects

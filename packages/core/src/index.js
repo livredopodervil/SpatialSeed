@@ -1,3 +1,11 @@
+export {
+  DATA_OBJECTS_VERSION,
+  dataObjectDocumentEqual,
+  emptyDataObjectDocument,
+  normalizeDataObject,
+  normalizeDataObjectDocument,
+  portableDataValue
+} from "./DataObjects.js?build=20260819-0054na";
 export { EventBus } from "./EventBus.js";
 export {
   INTERACTION_BINDINGS_VERSION,

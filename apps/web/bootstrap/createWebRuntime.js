@@ -1,5 +1,8 @@
 import { Region } from "../../../packages/core/src/Region.js?build=20260808-0053f";
-import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260808-0053i";
+import { Sandbox } from "../../../packages/core/src/Sandbox.js?build=20260819-0054na";
+import {
+  emptyDataObjectDocument
+} from "../../../packages/core/src/index.js?build=20260819-0054na";
 import {
   ModuleRegistry
 } from "../../../packages/plugin-api/src/index.js?build=20260808-0053f";
@@ -13,7 +16,7 @@ import {
 import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
-} from "../../../packages/region-box/src/index.js?build=20260809-0053m";
+} from "../../../packages/region-box/src/index.js?build=20260819-0054na";
 import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054my";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
@@ -26,7 +29,7 @@ import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectIn
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260808-0053f";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260809-0053m";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260812-0054g";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260808-0053f";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260819-0054na";
 import {
   InstanceGraphProjectionCache,
   instanceGraphDiagnostics
@@ -49,7 +52,7 @@ import {
 import {
   classifyChanges,
   SceneProjectionScheduler
-} from "../../../packages/incremental-runtime/src/index.js?build=20260808-0053f";
+} from "../../../packages/incremental-runtime/src/index.js?build=20260819-0054na";
 import {
   createDefaultPropertyTransferPresetCatalog,
   createDefaultPropertyRegistry,
@@ -117,8 +120,9 @@ import {
   GAME_RUNTIME_VERSION,
   GameAudioRuntime,
   GameEventRuntime,
-  GameRuntime
-} from "../../../packages/game-runtime/src/index.js?build=20260818-0054my";
+  GameRuntime,
+  GameSessionState
+} from "../../../packages/game-runtime/src/index.js?build=20260819-0054na";
 import {
   SelectionInteractionService
 } from "../../../packages/interaction-runtime/src/index.js?build=20260818-0054mx";
@@ -947,6 +951,7 @@ export async function createWebRuntime({
       { category: "mesh", mutates: false, label: "Exportar STL" }
     );
   commandsRef = commands;
+  const gameSessionState = new GameSessionState();
   const gameAudio = new GameAudioRuntime();
   gameAudio.configure({
     music: { src: "assets/audio/music.ogg", volume: 0.35, loop: true },
@@ -1387,6 +1392,130 @@ export async function createWebRuntime({
       { category: "game", mutates: false }
     )
     .register(
+      "data.object.create",
+      ({ id = null, name = null, dataType = "record", value = {}, metadata = {} } = {}) => {
+        const dataId = String(id ?? "").trim() ||
+          `data-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`;
+        const changed = sandbox.dispatch({
+          type: "data.object.create",
+          id: dataId,
+          name: name ?? dataId,
+          dataType,
+          value,
+          metadata
+        });
+        const dataObject = sandbox.getSnapshot().dataObjects.items.find(
+          item => item.id === dataId
+        ) ?? null;
+        return Object.freeze({ changed, dataObject });
+      },
+      { category: "data", mutates: true, label: "Criar DataObject" }
+    )
+    .register(
+      "data.object.update",
+      ({ id, patch = {} } = {}) => {
+        const dataId = String(id ?? "").trim();
+        const changed = sandbox.dispatch({
+          type: "data.object.update",
+          id: dataId,
+          patch
+        });
+        const dataObject = sandbox.getSnapshot().dataObjects.items.find(
+          item => item.id === dataId
+        ) ?? null;
+        return Object.freeze({ changed, dataObject });
+      },
+      { category: "data", mutates: true, label: "Atualizar DataObject" }
+    )
+    .register(
+      "data.object.delete",
+      ({ id } = {}) => Object.freeze({
+        changed: sandbox.dispatch({ type: "data.object.delete", id: String(id ?? "").trim() })
+      }),
+      { category: "data", mutates: true, label: "Remover DataObject" }
+    )
+    .register(
+      "data.object.list",
+      () => sandbox.getSnapshot().dataObjects ?? emptyDataObjectDocument(),
+      { category: "data", mutates: false, label: "Listar DataObjects" }
+    )
+    .register(
+      "game.state.get",
+      ({ dataId, path = null } = {}) => gameSessionState.get(dataId, path),
+      { category: "game", mutates: false, label: "Ler estado do jogo" }
+    )
+    .register(
+      "game.state.set",
+      ({ dataId, path, value } = {}) => gameSessionState.set(dataId, path, value),
+      {
+        category: "game",
+        mutates: false,
+        label: "Definir estado do jogo",
+        interactionAction: {
+          label: "Definir valor do estado",
+          parameters: [
+            { id: "dataId", label: "DataObject", type: "text", required: true },
+            { id: "path", label: "Caminho", type: "text", required: true },
+            { id: "value", label: "Valor", type: "json", required: true }
+          ]
+        }
+      }
+    )
+    .register(
+      "game.state.increment",
+      ({ dataId, path, amount = 1 } = {}) =>
+        gameSessionState.increment(dataId, path, amount),
+      {
+        category: "game",
+        mutates: false,
+        label: "Incrementar estado do jogo",
+        interactionAction: {
+          label: "Incrementar valor do estado",
+          parameters: [
+            { id: "dataId", label: "DataObject", type: "text", required: true },
+            { id: "path", label: "Caminho", type: "text", required: true },
+            { id: "amount", label: "Incremento", type: "number", default: 1 }
+          ]
+        }
+      }
+    )
+    .register(
+      "game.state.toggle",
+      ({ dataId, path } = {}) => gameSessionState.toggle(dataId, path),
+      {
+        category: "game",
+        mutates: false,
+        label: "Alternar estado do jogo",
+        interactionAction: {
+          label: "Alternar booleano do estado",
+          parameters: [
+            { id: "dataId", label: "DataObject", type: "text", required: true },
+            { id: "path", label: "Caminho", type: "text", required: true }
+          ]
+        }
+      }
+    )
+    .register(
+      "game.state.reset",
+      ({ dataId = null } = {}) => gameSessionState.reset(dataId),
+      {
+        category: "game",
+        mutates: false,
+        label: "Restaurar estado inicial do jogo",
+        interactionAction: {
+          label: "Restaurar estado inicial",
+          parameters: [
+            { id: "dataId", label: "DataObject (vazio = todos)", type: "text", required: false }
+          ]
+        }
+      }
+    )
+    .register(
+      "game.state.status",
+      () => gameSessionState.snapshot(),
+      { category: "game", mutates: false, label: "Estado lógico da sessão" }
+    )
+    .register(
       "game.start",
       async ({ characterId = null, config = {}, camera = {}, controls = {} } = {}) => {
         const selection = editor.selection.snapshot();
@@ -1403,12 +1532,18 @@ export async function createWebRuntime({
         await ensureCharacterVisual(selectedId);
         resetTransientAuthoring({ operation: "game.start" });
         commands.execute("tool.set", { mode: "navigate" });
-        return gameRuntime.start({
-          characterId: selectedId,
-          config,
-          camera,
-          controls
-        });
+        gameSessionState.start(sandbox.getSnapshot().dataObjects);
+        try {
+          return gameRuntime.start({
+            characterId: selectedId,
+            config,
+            camera,
+            controls
+          });
+        } catch (error) {
+          gameSessionState.stop();
+          throw error;
+        }
       },
       {
         category: "game",
@@ -2413,6 +2548,7 @@ export async function createWebRuntime({
   const queries = new RuntimeQueryRegistry();
   queries
     .register("game.status", () => gameRuntime.status())
+    .register("game.state.status", () => gameSessionState.snapshot())
     .register("interaction.catalog.describe", () =>
       interactionService.describeCatalog()
     )
@@ -2479,7 +2615,13 @@ export async function createWebRuntime({
     capabilities
   });
   const unsubscribeGame = gameRuntime.subscribe(
-    (snapshot, event) => runtime.emit("game.changed", { snapshot, event })
+    (snapshot, event) => {
+      runtime.emit("game.changed", { snapshot, event });
+      if (event?.type === "stopped") {
+        globalThis.queueMicrotask?.(() => gameSessionState.stop()) ??
+          gameSessionState.stop();
+      }
+    }
   );
   runtime
     .onDispose(unsubscribeGame)
@@ -3320,7 +3462,7 @@ export async function createWebRuntime({
         sceneProjection.applyInitial(state, {
           revision: baseSandbox.revision
         });
-      } else {
+      } else if (classification.mode !== "none") {
         sceneProjection.enqueue(state, {
           ...classification,
           revision: baseSandbox.revision
@@ -3359,10 +3501,17 @@ export async function createWebRuntime({
         emitCharacterAnimationChanged(id, "history-sync", { status });
       }
       const gameplayChanges = (changes ?? []).filter(
-        change => ![
-          "character-animation.visual",
-          "character-animation.source"
-        ].includes(change?.source)
+        change =>
+          ![
+            "character-animation.visual",
+            "character-animation.source"
+          ].includes(change?.source) &&
+          ![
+            "data-object-created",
+            "data-object-deleted",
+            "data-object-updated",
+            "interaction-bindings-changed"
+          ].includes(change?.type)
       );
       if (gameRuntime.state === "running" && gameplayChanges.length) {
         gameRuntime.sceneChanged(gameplayChanges);
@@ -3573,6 +3722,7 @@ export async function createWebRuntime({
       animationCommands,
       characterAnimation,
       gameRuntime,
+      gameSessionState,
       sharedAnimations,
       transformPreviews,
       sandboxRecovery,

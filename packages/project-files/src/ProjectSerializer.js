@@ -1,4 +1,7 @@
 import {
+  normalizeDataObjectDocument
+} from "../../core/src/index.js?build=20260819-0054na";
+import {
   compactSceneToInstanceGraph
 } from "../../instance-graph/src/index.js?build=20260807-0052b";
 export class ProjectSerializer {
@@ -20,10 +23,13 @@ export class ProjectSerializer {
   }
 
   serialize(metadata = {}, { state = null } = {}) {
-    const compactScene = compactSceneToInstanceGraph(
-      state ?? this.sandbox.getState()
-    );
-    const scene = this.appearanceRuntime.normalizeScene(compactScene);
+    const sourceState = state ?? this.sandbox.getState();
+    const compactScene = compactSceneToInstanceGraph(sourceState);
+    const projectedScene = this.appearanceRuntime.normalizeScene(compactScene);
+    const dataObjects = normalizeDataObjectDocument(sourceState.dataObjects);
+    const scene = dataObjects.items.length
+      ? { ...projectedScene, dataObjects: structuredClone(dataObjects) }
+      : projectedScene;
 
     return {
       format: ProjectSerializer.format,

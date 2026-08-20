@@ -425,6 +425,9 @@ import {
   createGameRuntimeTests
 } from "./GameRuntimeTests.js?build=20260818-0054my";
 import {
+  createGameSessionStateTests
+} from "./GameSessionStateTests.js?build=20260819-0054na";
+import {
   createCharacterAnimationTests
 } from "./CharacterAnimationTests.js?build=20260812-0054md";
 import {
@@ -448,6 +451,7 @@ export function createRuntimeLayerTests() {
     "default-demo-launch-policy": createDefaultDemoLaunchPolicyTests(),
     "character-animation": createCharacterAnimationTests(),
     "game-collision-debug-overlay": createGameCollisionDebugOverlayTests(),
+    "game-session-state": createGameSessionStateTests(),
     "game-runtime": createGameRuntimeTests(),
     "module-v2": createModuleRegistryTests(),
     "tool-capabilities": createToolCapabilityTests(),

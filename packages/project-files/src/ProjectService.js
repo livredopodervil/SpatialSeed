@@ -1,7 +1,10 @@
 import {
+  normalizeDataObjectDocument
+} from "../../core/src/index.js?build=20260819-0054na";
+import {
   ProjectSerializer
-} from "./ProjectSerializer.js?build=20260807-0052b";
-import { ProjectValidator } from "./ProjectValidator.js?build=20260807-0052b";
+} from "./ProjectSerializer.js?build=20260819-0054na";
+import { ProjectValidator } from "./ProjectValidator.js?build=20260819-0054na";
 
 export class ProjectService {
   static apiVersion = "project-service-v7-instance-graph";
@@ -200,7 +203,11 @@ export class ProjectService {
           { replace: true }
         );
       }
-      return this.appearanceRuntime.normalizeScene(project.scene);
+      const scene = this.appearanceRuntime.normalizeScene(project.scene);
+      const dataObjects = normalizeDataObjectDocument(project.scene.dataObjects);
+      return dataObjects.items.length
+        ? { ...scene, dataObjects }
+        : scene;
     }
 
     return structuredClone(project.scene);

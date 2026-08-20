@@ -1,9 +1,12 @@
 import {
+  dataObjectDocumentEqual,
+  normalizeDataObject,
+  normalizeDataObjectDocument,
   persistentObjectAppendMany,
   persistentObjectRemoveIds,
   persistentObjectUpdateAt,
   persistentObjectUpdateMany
-} from "../../core/src/index.js?build=20260808-0053i";
+} from "../../core/src/index.js?build=20260819-0054na";
 import {
   normalizeInteractionDocument
 } from "../../core/src/index.js?build=20260818-0054mx";
@@ -1231,6 +1234,92 @@ export function boxRegionReducer(state, command, context = {}) {
             })),
           ...occurrenceRootChanges(result.rootChanges, "selection.properties")
         ]
+      };
+    }
+
+    case "data.object.create": {
+      const document = normalizeDataObjectDocument(state.dataObjects);
+      const dataObject = normalizeDataObject(command.dataObject ?? {
+        id: command.id,
+        name: command.name,
+        dataType: command.dataType,
+        value: command.value,
+        metadata: command.metadata
+      });
+      if (document.items.some(item => item.id === dataObject.id)) {
+        throw new Error(`DataObject duplicado: ${dataObject.id}.`);
+      }
+      const dataObjects = normalizeDataObjectDocument({
+        version: document.version,
+        items: [...document.items, dataObject]
+      });
+      return {
+        state: Object.freeze({ ...state, dataObjects }),
+        changes: [Object.freeze({
+          type: "data-object-created",
+          dataObjectId: dataObject.id,
+          dataObject
+        })]
+      };
+    }
+
+    case "data.object.update": {
+      const document = normalizeDataObjectDocument(state.dataObjects);
+      const id = String(command.id ?? command.dataObjectId ?? "").trim();
+      if (!id) throw new TypeError("DataObject a atualizar não informado.");
+      const index = document.items.findIndex(item => item.id === id);
+      if (index < 0) throw new Error(`DataObject inexistente: ${id}.`);
+      const previousDataObject = document.items[index];
+      const patch = command.patch && typeof command.patch === "object"
+        ? command.patch
+        : {};
+      const dataObject = normalizeDataObject({
+        ...previousDataObject,
+        ...patch,
+        id,
+        kind: "data"
+      });
+      if (dataObjectDocumentEqual(
+        { items: [previousDataObject] },
+        { items: [dataObject] }
+      )) {
+        return { state, changes: [] };
+      }
+      const items = [...document.items];
+      items[index] = dataObject;
+      const dataObjects = normalizeDataObjectDocument({
+        version: document.version,
+        items
+      });
+      return {
+        state: Object.freeze({ ...state, dataObjects }),
+        changes: [Object.freeze({
+          type: "data-object-updated",
+          dataObjectId: id,
+          dataObject,
+          previousDataObject
+        })]
+      };
+    }
+
+    case "data.object.delete": {
+      const document = normalizeDataObjectDocument(state.dataObjects);
+      const id = String(command.id ?? command.dataObjectId ?? "").trim();
+      if (!id) throw new TypeError("DataObject a remover não informado.");
+      const previousDataObject = document.items.find(item => item.id === id) ?? null;
+      if (!previousDataObject) return { state, changes: [] };
+      const dataObjects = normalizeDataObjectDocument({
+        version: document.version,
+        items: document.items.filter(item => item.id !== id)
+      });
+      return {
+        state: Object.freeze({ ...state, dataObjects }),
+        changes: [Object.freeze({
+          type: "data-object-deleted",
+          dataObjectId: id,
+          dataObject: previousDataObject,
+          previousDataObject
+        })]
       };
     }
 

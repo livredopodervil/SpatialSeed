@@ -32,6 +32,10 @@ export {
   stepCharacterPhysics
 } from "./CharacterPhysics.js?build=20260818-0054my";
 export {
+  GAME_SESSION_STATE_VERSION,
+  GameSessionState
+} from "./GameSessionState.js?build=20260819-0054na";
+export {
   GAME_RUNTIME_VERSION,
   GameRuntime
 } from "./GameRuntime.js?build=20260818-0054my";

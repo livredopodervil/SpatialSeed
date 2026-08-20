@@ -1,7 +1,7 @@
 import {
   MODULE_MANIFEST_VERSION
 } from "../../plugin-api/src/index.js?build=20260802-0047b";
-import { boxRegionReducer } from "./reducer.js?build=20260809-0053m";
+import { boxRegionReducer } from "./reducer.js?build=20260819-0054na";
 
 /*
  * O reducer precisa sair pelo mesmo registro de módulo que o publica como

@@ -1,4 +1,7 @@
 import {
+  normalizeDataObjectDocument
+} from "./DataObjects.js?build=20260819-0054na";
+import {
   createPersistentObjectArray,
   isPersistentObjectArray,
   materializePersistentObjectArray,
@@ -20,6 +23,11 @@ import {
 } from "../../math-affine/src/index.js";
 
 const PREPARED_COMMAND_MARKER = "spatialseed-prepared-command-v1";
+const DATA_OBJECT_CHANGE_TYPES = new Set([
+  "data-object-created",
+  "data-object-deleted",
+  "data-object-updated"
+]);
 
 export class Sandbox {
   #baseState;
@@ -661,18 +669,20 @@ export class Sandbox {
 
   #updateObjectIndex(changes) {
     const list = Array.isArray(changes) ? changes : [];
+    const spatial = list.filter(change => !DATA_OBJECT_CHANGE_TYPES.has(change?.type));
+    if (!spatial.length) return;
     const supported = new Set([
       "object-created",
       "object-deleted",
       "object-transform",
       "object-updated"
     ]);
-    if (!list.length || list.some(change => !supported.has(change?.type))) {
+    if (spatial.some(change => !supported.has(change?.type))) {
       this.#rebuildObjectIndex();
       return;
     }
 
-    for (const change of list) {
+    for (const change of spatial) {
       const id = String(change.objectId ?? change.object?.id ?? "");
       if (!id) {
         this.#rebuildObjectIndex();
@@ -768,6 +778,40 @@ function invertObjectChanges(changes) {
   const inverse = [];
   for (let index = changes.length - 1; index >= 0; index -= 1) {
     const change = changes[index];
+    if (change?.type === "data-object-created") {
+      const dataId = String(change.dataObjectId ?? change.dataObject?.id ?? "");
+      if (!dataId) return Object.freeze([]);
+      inverse.push(Object.freeze({
+        type: "data-object-deleted",
+        dataObjectId: dataId,
+        dataObject: change.dataObject,
+        previousDataObject: change.dataObject
+      }));
+      continue;
+    }
+    if (change?.type === "data-object-deleted") {
+      const dataObject = change.previousDataObject ?? change.dataObject;
+      const dataId = String(change.dataObjectId ?? dataObject?.id ?? "");
+      if (!dataId || !dataObject) return Object.freeze([]);
+      inverse.push(Object.freeze({
+        type: "data-object-created",
+        dataObjectId: dataId,
+        dataObject
+      }));
+      continue;
+    }
+    if (change?.type === "data-object-updated") {
+      const dataObject = change.previousDataObject;
+      const dataId = String(change.dataObjectId ?? dataObject?.id ?? "");
+      if (!dataId || !dataObject) return Object.freeze([]);
+      inverse.push(Object.freeze({
+        type: "data-object-updated",
+        dataObjectId: dataId,
+        dataObject,
+        previousDataObject: change.dataObject
+      }));
+      continue;
+    }
     const id = String(change?.objectId ?? "");
     if (!id) return Object.freeze([]);
     if (change.type === "object-created") {
@@ -870,12 +914,24 @@ function normalizeSandboxState(value) {
   const instanceGraph = value.instanceGraph
     ? normalizeInstanceGraph(value.instanceGraph)
     : emptyInstanceGraph();
+  const hasDataObjects = Object.hasOwn(value, "dataObjects");
+  const dataObjects = hasDataObjects
+    ? normalizeDataObjectDocument(value.dataObjects)
+    : null;
+  const keepDataObjects = Boolean(dataObjects?.items.length);
   if (
     objects === value.objects &&
     instanceGraph === value.instanceGraph &&
+    (!hasDataObjects || (keepDataObjects && dataObjects === value.dataObjects)) &&
     Object.isFrozen(value)
   ) return value;
-  return Object.freeze({ ...value, objects, instanceGraph });
+  const { dataObjects: _dataObjects, ...shell } = value;
+  return Object.freeze({
+    ...shell,
+    objects,
+    instanceGraph,
+    ...(keepDataObjects ? { dataObjects } : {})
+  });
 }
 
 function freezeObjectShell(value) {
@@ -906,9 +962,14 @@ function cloneStateShell(state) {
 }
 
 function materializeState(state) {
+  const dataObjects = normalizeDataObjectDocument(state.dataObjects);
+  const { dataObjects: _dataObjects, ...shell } = state;
   return {
-    ...state,
+    ...shell,
     instanceGraph: cloneExportValue(state.instanceGraph ?? emptyInstanceGraph()),
+    ...(dataObjects.items.length
+      ? { dataObjects: cloneExportValue(dataObjects) }
+      : {}),
     objects: materializePersistentObjectArray(state.objects).map(
       cloneObjectForExport
     )

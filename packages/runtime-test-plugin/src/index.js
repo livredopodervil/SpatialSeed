@@ -1,7 +1,7 @@
 export {
   manifest,
   activateRuntimeTestPlugin
-} from "./RuntimeTestPlugin.js?build=20260818-0054my";
+} from "./RuntimeTestPlugin.js?build=20260819-0054na";
 export {
   activateRuntimeDiagnostics,
   runtimeDiagnosticsManifest,
