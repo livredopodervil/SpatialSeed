@@ -445,9 +445,13 @@ import {
 import {
   createPortableAssetTests
 } from "./PortableAssetTests.js?revision=20260819-0054nc";
+import {
+  createGamePresentationTests
+} from "./GamePresentationTests.js?revision=20260820-0054nd2";
 
 export function createRuntimeLayerTests() {
   return {
+    "game-presentation": createGamePresentationTests(),
     "portable-assets": createPortableAssetTests(),
     "interaction-composer": createInteractionComposerTests(),
     "interaction-bindings": createInteractionBindingTests(),
@@ -9928,6 +9932,59 @@ export function createRuntimeLayerTests() {
         assertNear(service.status().time.simulationTime, 2.5);
         assertEqual(service.status().preset.id, "spin");
         assertEqual(structuredClone(descriptor).kind, "preset");
+        runtime.dispose();
+      },
+
+      "reprodução compartilhada nova substitui a anterior sem acumular instâncias"() {
+        const fixture = createAnimationFixture();
+        const domains = new AnalyticTimeDomains({ nowSeconds: () => 0 });
+        const temporal = new TemporalRuntime({ domains });
+        const runtime = new TemporalAnimationRuntime({
+          surface: fixture.surface,
+          temporalRuntime: temporal,
+          timeDomains: domains,
+          now: monotonicNow()
+        });
+        const service = new AnimationCommandService({
+          runtime,
+          selection: () => ({ members: [{ objectId: "group-a" }] })
+        });
+        const firstDescriptor = service.prepareShared("preset", {
+          id: "pulse"
+        });
+        service.synchronizeShared({
+          sequence: 1,
+          playbackId: "shared-first",
+          state: "playing",
+          descriptor: firstDescriptor,
+          positionSeconds: 0,
+          changedAtMs: 1000,
+          baseRevision: 0,
+          reason: null
+        }, { now: () => 1000 });
+        const firstInstanceId = service.status().sharedRuntimeInstanceId;
+        assertEqual(runtime.status().instanceCount, 1);
+
+        const secondDescriptor = service.prepareShared("preset", {
+          id: "float"
+        });
+        service.synchronizeShared({
+          sequence: 2,
+          playbackId: "shared-second",
+          state: "playing",
+          descriptor: secondDescriptor,
+          positionSeconds: 0,
+          changedAtMs: 2000,
+          baseRevision: 0,
+          reason: null
+        }, { now: () => 2000 });
+
+        assertEqual(runtime.status().instanceCount, 1);
+        assertEqual(fixture.restored.length, 1);
+        assertEqual(
+          service.status().sharedRuntimeInstanceId === firstInstanceId,
+          false
+        );
         runtime.dispose();
       },
 

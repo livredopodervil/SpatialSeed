@@ -24,6 +24,13 @@
 <canvas id="world"></canvas>
 <aside id="game-hud" hidden aria-label="Controles do modo jogo">
   <output id="game-status" aria-live="polite">Preparando personagem…</output>
+  <div id="game-player-hud" class="game-player-hud" aria-live="polite"></div>
+  <div id="game-world-text-layer" class="game-world-text-layer" aria-hidden="true"></div>
+  <section id="game-dialog" class="game-dialog" role="dialog" aria-modal="true" hidden>
+    <strong id="game-dialog-speaker"></strong>
+    <p id="game-dialog-text"></p>
+    <button id="game-dialog-close" type="button">Continuar</button>
+  </section>
   <div id="game-direction-control" class="game-direction-control"
        role="group" aria-label="Controle direcional analógico">
     <span class="game-direction-ring" aria-hidden="true"></span>
@@ -1559,6 +1566,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260818-0054my&revision=20260819-0054nc"></script>
+<script type="module" src="./boot.js?build=20260818-0054my&revision=20260820-0054nd2"></script>
 </body>
 </html>

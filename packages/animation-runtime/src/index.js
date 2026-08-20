@@ -24,7 +24,7 @@ export {
 export {
   ANIMATION_COMMAND_SERVICE_VERSION,
   AnimationCommandService
-} from "./AnimationCommandService.js?build=20260808-0053i";
+} from "./AnimationCommandService.js?build=20260808-0053i&revision=20260820-0054nd2";
 export {
   ANIMATION_TRACK_PROGRAM_VERSION,
   compileAnimationTrackProgram,

@@ -17,7 +17,7 @@ import {
   REGION_BOX_REDUCER_CONTRIBUTION_ID,
   regionBoxModule
 } from "../../../packages/region-box/src/index.js?build=20260819-0054na";
-import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054my";
+import { ThreeRegionRenderer } from "../../../packages/renderer-three/src/index.js?build=20260818-0054my&revision=20260820-0054nd2";
 import { OutlineRenderer } from "../../../packages/renderer-outline/src/OutlineRenderer.js?build=20260808-0053f";
 import {
   createVirtualResourceTree,
@@ -63,7 +63,7 @@ import {
   createDefaultPropertyRegistry,
   SelectionPropertyClipboard,
   SelectionPropertyService
-} from "../../../packages/property-registry/src/index.js?build=20260818-0054mx&revision=20260819-0054nb";
+} from "../../../packages/property-registry/src/index.js?build=20260818-0054mx&revision=20260820-0054nd2";
 import {
   createDefaultGeometryRegistry
 } from "../../../packages/geometry-registry/src/index.js?build=20260808-0053f";
@@ -117,7 +117,7 @@ import {
   AnimationCommandService,
   AnimationProcedureService,
   TemporalAnimationRuntime
-} from "../../../packages/animation-runtime/src/index.js?build=20260808-0053i";
+} from "../../../packages/animation-runtime/src/index.js?build=20260808-0053i&revision=20260820-0054nd2";
 import {
   AnimationPanel
 } from "../../../packages/animation-panel/src/index.js?build=20260808-0053f";
@@ -125,9 +125,10 @@ import {
   GAME_RUNTIME_VERSION,
   GameAudioRuntime,
   GameEventRuntime,
+  GamePresentationRuntime,
   GameRuntime,
   GameSessionState
-} from "../../../packages/game-runtime/src/index.js?build=20260819-0054na&revision=20260819-0054nb";
+} from "../../../packages/game-runtime/src/index.js?build=20260819-0054na&revision=20260820-0054nd2";
 import {
   SelectionInteractionService
 } from "../../../packages/interaction-runtime/src/index.js?build=20260818-0054mx&revision=20260819-0054nb";
@@ -963,6 +964,20 @@ export async function createWebRuntime({
     );
   commandsRef = commands;
   const gameSessionState = new GameSessionState();
+  const gamePresentation = new GamePresentationRuntime({
+    readStateValue: (dataId, path) => gameSessionState.get(dataId, path),
+    projectObject: objectId => renderer.projectObjectReferenceToScreen(objectId)
+  });
+  const authoredWorldText = () => sandbox.getSnapshot().objects
+    .map(object => sandbox.getObject(object.id) ?? object)
+    .filter(object => String(object?.game?.worldText ?? "").trim())
+    .map(object => Object.freeze({
+      id: `authored:${object.id}`,
+      objectId: String(object.id),
+      text: String(object.game.worldText),
+      offsetX: 0,
+      offsetY: -18
+    }));
   const gameAudio = new GameAudioRuntime();
   gameAudio.configure({
     music: { src: "assets/audio/music.ogg", volume: 0.35, loop: true },
@@ -1192,6 +1207,42 @@ export async function createWebRuntime({
     }
     return true;
   };
+  const gameSessionAnimationPlaybackIds = new Set();
+  const GAME_SESSION_ANIMATION_COMMANDS = new Set([
+    "animation.start",
+    "animation.preset",
+    "animation.tracks.start"
+  ]);
+  const trackGameSessionAnimation = (commandId, result, eventType) => {
+    if (!GAME_SESSION_ANIMATION_COMMANDS.has(String(commandId))) return result;
+    if (String(eventType) === "game.stop") return result;
+    const playbackId = String(
+      result?.shared?.playbackId ??
+      sharedAnimations.status()?.shared?.playbackId ??
+      ""
+    ).trim();
+    if (playbackId) gameSessionAnimationPlaybackIds.add(playbackId);
+    return result;
+  };
+  const stopGameSessionAnimation = (reason = "game-session-ended") => {
+    const shared = sharedAnimations.status()?.shared ?? null;
+    const playbackId = String(shared?.playbackId ?? "").trim();
+    const owned = Boolean(
+      playbackId && gameSessionAnimationPlaybackIds.has(playbackId)
+    );
+    if (owned && shared?.state !== "idle") {
+      try {
+        sharedAnimations.stop(reason);
+      } catch (error) {
+        globalThis.console?.warn?.(
+          "Falha ao encerrar animação da sessão de jogo.",
+          error
+        );
+      }
+    }
+    gameSessionAnimationPlaybackIds.clear();
+    return owned;
+  };
   const gameEvents = new GameEventRuntime({
     executeAction: async (action, event, binding) => {
       switch (action.type) {
@@ -1224,7 +1275,7 @@ export async function createWebRuntime({
             ? plan
             : commandsRef.execute("program.plan.commit", { plan });
         }
-        case "command":
+        case "command": {
           if (!commandsRef.describe().some(command =>
             command.id === action.command &&
             Boolean(command.metadata?.interactionAction)
@@ -1233,10 +1284,16 @@ export async function createWebRuntime({
               `Comando não autorizado como ação: ${action.command}.`
             );
           }
-          return commandsRef.execute(action.command, {
+          const result = await commandsRef.execute(action.command, {
             ...(action.args ?? {}),
             interactionTargetId: binding?.objectId ?? null
           });
+          return trackGameSessionAnimation(
+            action.command,
+            result,
+            event?.type
+          );
+        }
         default:
           throw new Error(`Unsupported game event action: ${action.type}`);
       }
@@ -1609,6 +1666,116 @@ export async function createWebRuntime({
       { category: "game", mutates: false, label: "Estado lógico da sessão" }
     )
     .register(
+      "game.hud.text.show",
+      args => gamePresentation.showHudText(args),
+      {
+        category: "game",
+        mutates: false,
+        label: "Mostrar texto no HUD",
+        interactionAction: {
+          label: "Mostrar texto no HUD",
+          parameters: [
+            { id: "id", label: "Identificador", type: "text", default: "main" },
+            { id: "text", label: "Texto", type: "text", required: true, placeholder: "Score: {game-state.score}" },
+            {
+              id: "anchor",
+              label: "Posição",
+              type: "select",
+              default: "superior-esquerda",
+              values: [
+                "superior-esquerda", "superior-centro", "superior-direita",
+                "centro", "inferior-esquerda", "inferior-centro",
+                "inferior-direita"
+              ]
+            }
+          ]
+        }
+      }
+    )
+    .register(
+      "game.hud.text.hide",
+      args => gamePresentation.hideHudText(args),
+      {
+        category: "game",
+        mutates: false,
+        label: "Ocultar texto do HUD",
+        interactionAction: {
+          label: "Ocultar texto do HUD",
+          parameters: [{ id: "id", label: "Identificador", type: "text", default: "main" }]
+        }
+      }
+    )
+    .register(
+      "game.dialog.show",
+      args => gamePresentation.showDialog(args),
+      {
+        category: "game",
+        mutates: false,
+        label: "Mostrar diálogo",
+        interactionAction: {
+          label: "Mostrar diálogo",
+          parameters: [
+            { id: "speaker", label: "Falante", type: "text", required: false },
+            { id: "text", label: "Texto", type: "text", required: true }
+          ]
+        }
+      }
+    )
+    .register(
+      "game.dialog.close",
+      () => gamePresentation.closeDialog(),
+      {
+        category: "game",
+        mutates: false,
+        label: "Fechar diálogo",
+        interactionAction: { label: "Fechar diálogo" }
+      }
+    )
+    .register(
+      "game.world-text.show",
+      ({ interactionTargetId = null, objectId = null, ...args } = {}) =>
+        gamePresentation.showWorldText({
+          ...args,
+          objectId: objectId ?? interactionTargetId
+        }),
+      {
+        category: "game",
+        mutates: false,
+        label: "Mostrar texto no mundo",
+        interactionAction: {
+          label: "Mostrar texto no mundo",
+          parameters: [
+            { id: "id", label: "Identificador", type: "text", required: false },
+            { id: "text", label: "Texto", type: "text", required: true },
+            { id: "offsetX", label: "Offset X (px)", type: "number", default: 0 },
+            { id: "offsetY", label: "Offset Y (px)", type: "number", default: -18 }
+          ]
+        }
+      }
+    )
+    .register(
+      "game.world-text.hide",
+      ({ interactionTargetId = null, objectId = null, ...args } = {}) =>
+        gamePresentation.hideWorldText({
+          ...args,
+          objectId: objectId ?? interactionTargetId
+        }),
+      {
+        category: "game",
+        mutates: false,
+        label: "Ocultar texto no mundo",
+        interactionAction: {
+          label: "Ocultar texto no mundo",
+          parameters: [{ id: "id", label: "Identificador", type: "text", required: false }]
+        }
+      }
+    )
+    .register(
+      "game.presentation.status",
+      () => gamePresentation.snapshot(),
+      { category: "game", mutates: false, label: "Apresentação do jogo" }
+    )
+    .register(
       "game.start",
       async ({ characterId = null, config = {}, camera = {}, controls = {} } = {}) => {
         const selection = editor.selection.snapshot();
@@ -1625,7 +1792,9 @@ export async function createWebRuntime({
         await ensureCharacterVisual(selectedId);
         resetTransientAuthoring({ operation: "game.start" });
         commands.execute("tool.set", { mode: "navigate" });
+        gameSessionAnimationPlaybackIds.clear();
         gameSessionState.start(sandbox.getSnapshot().dataObjects);
+        gamePresentation.start({ worldText: authoredWorldText() });
         try {
           return gameRuntime.start({
             characterId: selectedId,
@@ -1634,6 +1803,7 @@ export async function createWebRuntime({
             controls
           });
         } catch (error) {
+          gamePresentation.stop();
           gameSessionState.stop();
           throw error;
         }
@@ -2642,6 +2812,7 @@ export async function createWebRuntime({
   queries
     .register("game.status", () => gameRuntime.status())
     .register("game.state.status", () => gameSessionState.snapshot())
+    .register("game.presentation.status", () => gamePresentation.snapshot())
     .register("interaction.catalog.describe", () =>
       interactionService.describeCatalog()
     )
@@ -2711,13 +2882,23 @@ export async function createWebRuntime({
     (snapshot, event) => {
       runtime.emit("game.changed", { snapshot, event });
       if (event?.type === "stopped") {
+        stopGameSessionAnimation("game-session-ended");
+        gamePresentation.stop();
         globalThis.queueMicrotask?.(() => gameSessionState.stop()) ??
           gameSessionState.stop();
       }
     }
   );
+  const unsubscribeGamePresentation = gamePresentation.subscribe(
+    (snapshot, event) => {
+      runtime.emit("game.presentation.changed", { snapshot, event });
+    }
+  );
   runtime
     .onDispose(unsubscribeGame)
+    .onDispose(unsubscribeGamePresentation)
+    .onDispose(() => stopGameSessionAnimation("runtime-disposed"))
+    .onDispose(() => gamePresentation.stop())
     .onDispose(() => gameRuntime.dispose());
   temporalExecution = new TemporalExecutionController({
     runtime: temporalRuntime,
@@ -3378,7 +3559,14 @@ export async function createWebRuntime({
       gravity: true,
       jumping: true,
       characterAnimationStates: ["idle", "walk", "jump", "fall"],
-      camera: "third-person-damped-follow"
+      camera: "third-person-damped-follow",
+      presentation: {
+        runtime: "game-presentation-runtime-v1",
+        hudText: true,
+        dialog: true,
+        worldText: "screen-projected-object-labels",
+        stateTemplates: "{dataObject.path}"
+      }
     }))
     .register("authoringTools", () => ({
       ...toolCapabilities.capabilities(),

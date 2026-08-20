@@ -2462,3 +2462,83 @@ body.ss-game-mode #game-hud [data-character-visual-panel] p{
   .game-direction-control{width:9.2rem;height:9.2rem}
   #game-hud button{min-width:3.6rem;min-height:3.6rem}
 }
+
+/* 0054nd: apresentação declarativa do jogador */
+.game-player-hud,.game-world-text-layer{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+}
+.game-player-hud{z-index:1}
+.game-world-text-layer{z-index:2;overflow:hidden}
+.game-player-hud-item{
+  position:absolute;
+  max-width:min(32rem,70vw);
+  padding:.45rem .7rem;
+  border:1px solid #ffffff2d;
+  border-radius:.65rem;
+  background:#06101bd9;
+  color:#f2f7ff;
+  font:650 .9rem/1.3 system-ui;
+  white-space:pre-wrap;
+  text-shadow:0 1px 2px #000;
+  backdrop-filter:blur(7px);
+}
+.game-player-hud-item[data-anchor="top-left"]{top:1rem;left:1rem}
+.game-player-hud-item[data-anchor="top-center"]{top:1rem;left:50%;transform:translateX(-50%)}
+.game-player-hud-item[data-anchor="top-right"]{top:1rem;right:1rem}
+.game-player-hud-item[data-anchor="center"]{top:50%;left:50%;transform:translate(-50%,-50%)}
+.game-player-hud-item[data-anchor="bottom-left"]{bottom:1rem;left:1rem}
+.game-player-hud-item[data-anchor="bottom-center"]{bottom:1rem;left:50%;transform:translateX(-50%)}
+.game-player-hud-item[data-anchor="bottom-right"]{right:1rem;bottom:1rem}
+.game-world-text-item{
+  position:fixed;
+  left:0;
+  top:0;
+  max-width:min(26rem,70vw);
+  padding:.28rem .48rem;
+  border-radius:.42rem;
+  background:#06101bc2;
+  color:#fff;
+  font:650 .78rem/1.2 system-ui;
+  white-space:pre-wrap;
+  text-align:center;
+  text-shadow:0 1px 2px #000;
+  transform:translate(-50%,-100%);
+  will-change:transform;
+}
+.game-dialog{
+  position:absolute;
+  z-index:5;
+  left:50%;
+  bottom:max(7rem,calc(env(safe-area-inset-bottom) + 6rem));
+  width:min(42rem,calc(100vw - 2rem));
+  box-sizing:border-box;
+  transform:translateX(-50%);
+  padding:1rem;
+  border:1px solid #ffffff38;
+  border-radius:.9rem;
+  background:#06101bf2;
+  box-shadow:0 .8rem 2.5rem #000b;
+  pointer-events:auto;
+  backdrop-filter:blur(10px);
+}
+.game-dialog[hidden]{display:none}
+.game-dialog strong{display:block;margin-bottom:.45rem;color:#9ee7d7}
+.game-dialog p{
+  display:block!important;
+  position:static!important;
+  margin:0 0 .8rem!important;
+  padding:0!important;
+  border-radius:0!important;
+  background:none!important;
+  color:#edf4ff!important;
+  font-size:.95rem!important;
+  line-height:1.45!important;
+  white-space:pre-wrap;
+}
+.game-dialog button{float:right;min-width:6rem!important;min-height:2.5rem!important}
+body.ss-game-mode:has(#game-dialog:not([hidden])) #game-direction-control,
+body.ss-game-mode:has(#game-dialog:not([hidden])) .game-action-pad{
+  opacity:.18;
+}

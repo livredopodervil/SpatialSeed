@@ -107,6 +107,7 @@ export function bindWebInterface({
   let latestEditor = runtime.query("editor.snapshot");
   let latestMeshEdit = runtime.query("mesh.edit.status");
   let latestGame = runtime.query("game.status");
+  let latestGamePresentation = runtime.query("game.presentation.status");
   let latestViewerInstances = runtime.query(
     "viewer.instances.status"
   );
@@ -648,8 +649,21 @@ export function bindWebInterface({
     ({ snapshot } = {}) => {
       if (!snapshot) return;
       latestGame = snapshot;
+      try {
+        latestGamePresentation = runtime.query("game.presentation.status");
+      } catch {}
       setGamePresentation(snapshot);
+      renderGamePlayerPresentation(latestGamePresentation);
       uiRefresh.request("game.changed");
+    }
+  );
+
+  const unsubscribeGamePresentation = runtime.subscribe(
+    "game.presentation.changed",
+    ({ snapshot } = {}) => {
+      if (!snapshot) return;
+      latestGamePresentation = snapshot;
+      renderGamePlayerPresentation(snapshot);
     }
   );
 
@@ -2088,6 +2102,7 @@ export function bindWebInterface({
     documentRoot.body.dataset.shortcutContext ?? null;
   let gameLookPointer = null;
   let gamePresentationActive = false;
+  let gameDialogPresentationOpen = false;
   let gameAudioUnlocked = false;
   let gameAudioUnlockPending = false;
 
@@ -2158,8 +2173,12 @@ export function bindWebInterface({
     };
   }
 
+  function gameDialogOpen() {
+    return Boolean($("game-dialog") && !$("game-dialog").hidden);
+  }
+
   function publishGameInput(extra = {}) {
-    if (latestGame.state !== "running") return false;
+    if (latestGame.state !== "running" || gameDialogOpen()) return false;
     execute("game.input.set", gameInputSnapshot(extra));
     return true;
   }
@@ -2260,9 +2279,89 @@ export function bindWebInterface({
     }).join(" ");
   }
 
+  function renderGamePlayerPresentation(snapshot) {
+    const active = Boolean(snapshot?.active && latestGame.state === "running");
+    const hudRoot = $("game-player-hud");
+    const worldRoot = $("game-world-text-layer");
+    const dialog = $("game-dialog");
+    if (!hudRoot || !worldRoot || !dialog) return;
+
+    syncPresentationItems(hudRoot, active ? snapshot.hud : [], {
+      key: "gameHudId",
+      className: "game-player-hud-item",
+      update: (node, item) => {
+        node.textContent = item.text;
+        node.dataset.anchor = item.anchor;
+      }
+    });
+
+    syncPresentationItems(worldRoot, active ? snapshot.worldText : [], {
+      key: "gameWorldTextId",
+      className: "game-world-text-item",
+      update: (node, item) => {
+        node.textContent = item.text;
+        const screen = item.screen;
+        const visible = Boolean(screen?.visible);
+        node.hidden = !visible;
+        if (visible) {
+          node.style.transform =
+            `translate(${Number(screen.x) + Number(item.offsetX ?? 0)}px,` +
+            `${Number(screen.y) + Number(item.offsetY ?? 0)}px) ` +
+            "translate(-50%,-100%)";
+        }
+      }
+    });
+
+    const currentDialog = active ? snapshot.dialog : null;
+    const dialogOpening = Boolean(currentDialog) && !gameDialogPresentationOpen;
+    gameDialogPresentationOpen = Boolean(currentDialog);
+    dialog.hidden = !currentDialog;
+    if (dialogOpening && latestGame.state === "running") {
+      clearGameControls();
+      execute("game.input.set", gameInputSnapshot());
+    }
+    if (currentDialog) {
+      $("game-dialog-speaker").textContent = currentDialog.speaker || "";
+      $("game-dialog-speaker").hidden = !currentDialog.speaker;
+      $("game-dialog-text").textContent = currentDialog.text;
+    }
+  }
+
+  function syncPresentationItems(root, items, { key, className, update }) {
+    const attribute = `data-${key.replace(/[A-Z]/g, match => `-${match.toLowerCase()}`)}`;
+    const existing = new Map([...root.children].map(node => [
+      node.getAttribute(attribute),
+      node
+    ]));
+    const keep = new Set();
+    for (const item of items ?? []) {
+      const id = String(item.id);
+      keep.add(id);
+      let node = existing.get(id);
+      if (!node) {
+        node = documentRoot.createElement("div");
+        node.className = className;
+        node.setAttribute(attribute, id);
+        root.append(node);
+      }
+      update(node, item);
+    }
+    for (const [id, node] of existing) {
+      if (!keep.has(id)) node.remove();
+    }
+  }
+
   const onGameKeyDown = event => {
     if (latestGame.state !== "running") return;
     unlockGameAudioFromGesture();
+    if (gameDialogOpen()) {
+      if (["Escape", "Enter", "Space"].includes(event.code)) {
+        execute("game.dialog.close");
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     if (event.code === "Escape") {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -2443,6 +2542,10 @@ export function bindWebInterface({
       controls: { movementReference: String(event.currentTarget?.value ?? "camera") }
     });
   });
+  $("game-dialog-close")?.addEventListener("click", () => {
+    execute("game.dialog.close");
+  });
+
   $("game-exit").addEventListener("click", () => {
     execute("game.stop", { reason: "hud-exit" });
   });
@@ -2590,6 +2693,7 @@ export function bindWebInterface({
   }
 
   setGamePresentation(latestGame);
+  renderGamePlayerPresentation(latestGamePresentation);
   uiRefresh.flushNow("initial");
   refreshCameraObjects();
 
@@ -2605,6 +2709,7 @@ export function bindWebInterface({
       unsubscribeEditor();
       unsubscribeMeshEdit();
       unsubscribeGame();
+      unsubscribeGamePresentation();
       unsubscribeCharacterAnimation();
       unsubscribeMeasurement();
       unsubscribeSelection();

@@ -6192,6 +6192,53 @@ export class ThreeRegionRenderer {
     return this.#selectionReferencePosition(String(objectId ?? ""))?.toArray() ?? null;
   }
 
+  projectObjectReferenceToScreen(objectId) {
+    const id = String(objectId ?? "");
+    if (!id) return null;
+    const position = this.#presentationReferencePosition(id);
+    if (!position) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    this.camera.updateMatrixWorld(true);
+    return Object.freeze(projectWorldToScreen(position, this.camera, rect));
+  }
+
+  #presentationReferencePosition(objectId) {
+    const id = String(objectId ?? "");
+    if (!id) return null;
+    const animated = this.#animationPivotOverrides.get(id);
+    if (animated) return new THREE.Vector3().fromArray(animated);
+
+    const object = this.#objectsById.get(id) ?? null;
+    const defaultPolicy = object && (
+      object.kind === "instance-family" ||
+      object.kind === "stroke-bundle" ||
+      object.geometry?.type === "stroke-bundle"
+    ) ? "bounds-center" : "pivot";
+    const policy = String(
+      object?.selectionAnchorPolicy ??
+      object?.geometry?.selectionAnchorPolicy ??
+      defaultPolicy
+    );
+
+    // Policies whose reference is not the object origin already have precise
+    // specialized handling in the selection reference resolver.
+    if (["reference", "bounds-center", "custom", "origin"].includes(policy)) {
+      return this.#selectionReferencePosition(id);
+    }
+
+    // Root transforms use an incremental render path that intentionally does
+    // not rebuild the whole HierarchyIndex immediately. Presentation labels
+    // must follow the matrix actually rendered now, not that deferred index.
+    const worldMatrix = this.#resolvedObjects.worldMatrix(id) ??
+      this.#fastTransformOverlay.worldMatrix(id);
+    if (worldMatrix) {
+      return new THREE.Vector3().setFromMatrixPosition(
+        new THREE.Matrix4().fromArray(worldMatrix)
+      );
+    }
+    return this.#selectionReferencePosition(id);
+  }
+
   getSelectionPivotPosition() {
     if (this.#meshEdit) {
       return selectedVertexPivotWorld({

@@ -189,6 +189,13 @@ export class AnimationCommandService {
     const currentTime = timeSource();
 
     if (!samePlayback) {
+      const previousInstanceId = this.sharedRuntimeInstanceId;
+      if (previousInstanceId && this.#hasInstance(previousInstanceId)) {
+        this.runtime.stop(
+          "shared-replaced",
+          { instanceId: previousInstanceId }
+        );
+      }
       this.#applyDescriptor(next.descriptor, {
         timeSource,
         initialTime: currentTime

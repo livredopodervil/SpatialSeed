@@ -1,4 +1,4 @@
-export { ThreeRegionRenderer } from "./ThreeRegionRenderer.js?build=20260818-0054my";
+export { ThreeRegionRenderer } from "./ThreeRegionRenderer.js?build=20260818-0054my&revision=20260820-0054nd2";
 export {
   GAME_COLLISION_DEBUG_OVERLAY_VERSION,
   GameCollisionDebugOverlay

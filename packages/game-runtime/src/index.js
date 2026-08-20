@@ -36,6 +36,10 @@ export {
   GameSessionState
 } from "./GameSessionState.js?build=20260819-0054na";
 export {
+  GAME_PRESENTATION_RUNTIME_VERSION,
+  GamePresentationRuntime
+} from "./GamePresentationRuntime.js?revision=20260820-0054nd2";
+export {
   GAME_RUNTIME_VERSION,
   GameRuntime
 } from "./GameRuntime.js?build=20260818-0054my&revision=20260819-0054nb";

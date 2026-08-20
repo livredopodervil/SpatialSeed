@@ -34,6 +34,20 @@ export function createDefaultPropertyRegistry({ geometryRegistry = null } = {}) 
       }
     }))
     .register(property({
+      id: "game.worldText",
+      label: "Texto no mundo",
+      group: "game",
+      scope: "object",
+      path: ["game", "worldText"],
+      valueType: "string",
+      normalize: value => String(value ?? "").trim(),
+      supports: object => !["group", "camera", "light"].includes(object?.kind),
+      read: object => String(object?.game?.worldText ?? ""),
+      write: (patch, value, { object }) => {
+        patch.game = { ...(object?.game ?? {}), worldText: value };
+      }
+    }))
+    .register(property({
       id: "transform.position",
       label: "Posição",
       group: "transform",
