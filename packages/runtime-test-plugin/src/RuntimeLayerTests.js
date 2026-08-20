@@ -442,9 +442,13 @@ import {
 import {
   createInteractionBindingTests
 } from "./InteractionBindingTests.js?build=20260818-0054mx";
+import {
+  createPortableAssetTests
+} from "./PortableAssetTests.js?revision=20260819-0054nc";
 
 export function createRuntimeLayerTests() {
   return {
+    "portable-assets": createPortableAssetTests(),
     "interaction-composer": createInteractionComposerTests(),
     "interaction-bindings": createInteractionBindingTests(),
     "selection-property-clipboard": createSelectionPropertyClipboardTests(),

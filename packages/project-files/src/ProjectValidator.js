@@ -1,6 +1,10 @@
 import {
+  AssetStore,
+  validatePortableBinaryRecord
+} from "../../asset-store/src/index.js?revision=20260819-0054nc";
+import {
   ProjectSerializer
-} from "./ProjectSerializer.js?build=20260819-0054na";
+} from "./ProjectSerializer.js?build=20260819-0054na&revision=20260819-0054nc";
 import {
   HierarchyIndex
 } from "../../scene-hierarchy/src/index.js";
@@ -74,6 +78,8 @@ export class ProjectValidator {
         "Catálogo de assets inválido."
       );
     }
+
+    validatePortableAssets(value.assets?.portable);
 
     const ids = new Set();
 
@@ -298,4 +304,13 @@ function finite(value) {
     throw new TypeError("Valor de câmera deve ser finito.");
   }
   return number;
+}
+
+function validatePortableAssets(document) {
+  if (document === undefined || document === null) return;
+  const store = new AssetStore();
+  store.import(document, { replace: true });
+  for (const record of store.findByKind("binary")) {
+    validatePortableBinaryRecord(record);
+  }
 }

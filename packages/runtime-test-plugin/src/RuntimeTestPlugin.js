@@ -37,6 +37,7 @@ export function activateRuntimeTestPlugin({ commands }) {
         "runtime test animation-tracks",
         "runtime test simulation",
         "runtime test game-session-state",
+        "runtime test portable-assets",
         "runtime test game-runtime",
         "runtime test character-animation",
         "runtime test runtime-profile",

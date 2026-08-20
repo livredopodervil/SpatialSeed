@@ -44,6 +44,7 @@
     "packages/asset-store/src/AssetStore.js",
     "packages/asset-store/src/CanonicalValue.js",
     "packages/asset-store/src/ContentId.js",
+    "packages/asset-store/src/PortableBinaryAsset.js",
     "packages/asset-store/src/index.js",
     "packages/batch-material-cache/src/BatchMaterialCache.js",
     "packages/batch-material-cache/src/index.js",

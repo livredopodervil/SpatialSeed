@@ -13,13 +13,15 @@ export class ProjectSerializer {
     editor,
     renderer,
     region,
-    appearanceRuntime
+    appearanceRuntime,
+    portableAssetStore = null
   }) {
     this.sandbox = sandbox;
     this.editor = editor;
     this.renderer = renderer;
     this.region = region;
     this.appearanceRuntime = appearanceRuntime;
+    this.portableAssetStore = portableAssetStore;
   }
 
   serialize(metadata = {}, { state = null } = {}) {
@@ -30,6 +32,12 @@ export class ProjectSerializer {
     const scene = dataObjects.items.length
       ? { ...projectedScene, dataObjects: structuredClone(dataObjects) }
       : projectedScene;
+
+    const assets = this.appearanceRuntime.exportAssets();
+    const portableAssets = this.portableAssetStore?.export?.() ?? null;
+    if (portableAssets && Object.keys(portableAssets.assets ?? {}).length) {
+      assets.portable = portableAssets;
+    }
 
     return {
       format: ProjectSerializer.format,
@@ -43,7 +51,7 @@ export class ProjectSerializer {
         descriptor: structuredClone(this.region.descriptor),
         version: this.region.version
       },
-      assets: this.appearanceRuntime.exportAssets(),
+      assets,
       scene,
       editor: this.editor.snapshot(),
       renderer: {

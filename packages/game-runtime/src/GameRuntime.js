@@ -28,6 +28,13 @@ import {
 
 export const GAME_RUNTIME_VERSION = "game-runtime-v9-sensors-triggers";
 
+// v9 preserves the kinematic-platform capability introduced by v8.
+// Keep the historical capability marker for architecture/audit compatibility.
+const GAME_RUNTIME_COMPATIBILITY_MARKERS = Object.freeze([
+  "game-runtime-v8-kinematic-platforms"
+]);
+void GAME_RUNTIME_COMPATIBILITY_MARKERS;
+
 const DEFAULT_CONTROLS = Object.freeze({
   movementReference: "camera",
   surfacePitch: true,

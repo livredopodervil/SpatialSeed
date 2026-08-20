@@ -1,9 +1,12 @@
 import {
+  AssetStore
+} from "../../asset-store/src/index.js?revision=20260819-0054nc";
+import {
   normalizeDataObjectDocument
 } from "../../core/src/index.js?build=20260819-0054na";
 import {
   ProjectSerializer
-} from "./ProjectSerializer.js?build=20260819-0054na";
+} from "./ProjectSerializer.js?build=20260819-0054na&revision=20260819-0054nc";
 import { ProjectValidator } from "./ProjectValidator.js?build=20260819-0054na";
 
 export class ProjectService {
@@ -16,19 +19,22 @@ export class ProjectService {
     editor,
     renderer,
     region,
-    appearanceRuntime
+    appearanceRuntime,
+    portableAssetStore = new AssetStore()
   }) {
     this.sandbox = sandbox;
     this.editor = editor;
     this.renderer = renderer;
     this.region = region;
     this.appearanceRuntime = appearanceRuntime;
+    this.portableAssetStore = portableAssetStore;
     this.serializer = new ProjectSerializer({
       sandbox,
       editor,
       renderer,
       region,
-      appearanceRuntime
+      appearanceRuntime,
+      portableAssetStore
     });
     this.validator = new ProjectValidator();
     this.metadata = {
@@ -79,6 +85,7 @@ export class ProjectService {
 
   newProject() {
     this.appearanceRuntime.reset();
+    resetPortableAssets(this.portableAssetStore);
     const scene = { schemaVersion: 1, objects: [] };
     this.region.restoreCheckpoint(scene, { version: 0 });
     this.sandbox.replaceState(scene, { markClean: true });
@@ -202,6 +209,12 @@ export class ProjectService {
           project.assets,
           { replace: true }
         );
+        this.portableAssetStore.import(
+          project.assets?.portable ?? emptyPortableAssets(),
+          { replace: true }
+        );
+      } else {
+        resetPortableAssets(this.portableAssetStore);
       }
       const scene = this.appearanceRuntime.normalizeScene(project.scene);
       const dataObjects = normalizeDataObjectDocument(project.scene.dataObjects);
@@ -289,4 +302,12 @@ function safeName(value) {
     .replace(/[^a-zA-Z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .toLowerCase() || "projeto-spatial-seed";
+}
+
+function emptyPortableAssets() {
+  return { schemaVersion: 1, assets: {} };
+}
+
+function resetPortableAssets(store) {
+  store.import(emptyPortableAssets(), { replace: true });
 }

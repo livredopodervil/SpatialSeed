@@ -29,7 +29,12 @@ import { ObjectInspector } from "../../../packages/object-inspector/src/ObjectIn
 import { GeometryCreationPanel } from "../../../packages/geometry-creation-panel/src/index.js?build=20260808-0053f";
 import { SelectionOperations } from "../../../packages/selection-operations/src/SelectionOperations.js?build=20260809-0053m";
 import { createEditorCommands } from "../../../packages/editor-commands/src/EditorCommands.js?build=20260812-0054g";
-import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260819-0054na";
+import { ProjectService } from "../../../packages/project-files/src/ProjectService.js?build=20260819-0054na&revision=20260819-0054nc";
+import {
+  AssetStore,
+  portableBinarySource,
+  portableBinaryValue
+} from "../../../packages/asset-store/src/index.js?revision=20260819-0054nc";
 import {
   InstanceGraphProjectionCache,
   instanceGraphDiagnostics
@@ -255,6 +260,7 @@ export async function createWebRuntime({
   );
 
   const appearanceRuntime = new AppearanceRuntime();
+  const portableAssetStore = new AssetStore();
   const geometryRegistry=createDefaultGeometryRegistry();
   const initialScene = appearanceRuntime.normalizeScene({
     schemaVersion: 1,
@@ -395,7 +401,8 @@ export async function createWebRuntime({
     editor,
     renderer,
     region,
-    appearanceRuntime
+    appearanceRuntime,
+    portableAssetStore
   });
   const projectLaunchMode = locationParameters.get("project");
   let incomingProject = null;
@@ -833,6 +840,7 @@ export async function createWebRuntime({
 
   let toolWorkspace = null;
   let gameRuntime = null;
+  let resetCharacterVisualSources = () => {};
   const resetTransientAuthoring = ({ operation }) => {
     if (gameRuntime?.state === "running") {
       gameRuntime.stop(`transient-reset:${String(operation)}`);
@@ -854,6 +862,9 @@ export async function createWebRuntime({
     drawingTarget.resetForProjectChange();
     toolWorkspace?.clear();
     toolLifecycle.cancelAction();
+    if (String(operation) !== "game.start") {
+      resetCharacterVisualSources();
+    }
     return path;
   };
   projectService = withProjectTransientReset(
@@ -997,6 +1008,32 @@ export async function createWebRuntime({
   const customCharacterSources = new Map();
   const loadedCharacterSourceModes = new Map();
   const sourceReconcileSuppressed = new Set();
+  resetCharacterVisualSources = () => {
+    customCharacterSources.clear();
+    loadedCharacterSourceModes.clear();
+    sourceReconcileSuppressed.clear();
+  };
+  const persistCharacterBinary = ({ data, filename = null } = {}) => {
+    const value = portableBinaryValue(data, {
+      mediaType: characterMediaType(filename)
+    });
+    return portableAssetStore.intern("binary", value, {
+      retain: false,
+      metadata: {
+        filename: filename ? String(filename) : null,
+        role: "character-model"
+      }
+    });
+  };
+  const resolvePortableCharacterSource = object => {
+    const assetId = storedCharacterAssetId(object);
+    if (!assetId) return null;
+    const record = portableAssetStore.get(assetId);
+    if (!record) {
+      throw new Error(`Asset portátil inexistente: ${assetId}.`);
+    }
+    return portableBinarySource(record);
+  };
   const normalizeCharacterVisualSourceMode = value => {
     const mode = String(value ?? "default").trim().toLowerCase();
     if (!CHARACTER_VISUAL_SOURCE_MODES.includes(mode)) {
@@ -1010,10 +1047,22 @@ export async function createWebRuntime({
     normalizeCharacterVisualSourceMode(
       object?.characterAnimation?.sourceMode ?? "default"
     );
-  const characterSourceMetadata = (object, sourceMode) => Object.freeze({
-    ...(object?.characterAnimation ?? {}),
-    sourceMode: normalizeCharacterVisualSourceMode(sourceMode)
-  });
+  const characterSourceMetadata = (object, sourceMode, { assetId = null } = {}) => {
+    const mode = normalizeCharacterVisualSourceMode(sourceMode);
+    const next = {
+      ...(object?.characterAnimation ?? {}),
+      sourceMode: mode
+    };
+    const portableId = String(
+      assetId ?? object?.characterAnimation?.assetId ?? ""
+    ).trim();
+    if (portableId) next.assetId = portableId;
+    return Object.freeze(next);
+  };
+  const storedCharacterAssetId = object => {
+    const value = String(object?.characterAnimation?.assetId ?? "").trim();
+    return value || null;
+  };
   const characterSourceStatus = characterId => {
     const id = String(characterId ?? "").trim();
     const object = id ? sandbox.getObject(id) : null;
@@ -1024,6 +1073,7 @@ export async function createWebRuntime({
       loadedMode: id ? loadedCharacterSourceModes.get(id) ?? null : null,
       loaded: Boolean(animation?.loaded),
       assetId: animation?.assetId ?? null,
+      portableAssetId: storedCharacterAssetId(object),
       defaultAsset: DEFAULT_CHARACTER_VISUAL_ASSET.src
     });
   };
@@ -1075,8 +1125,18 @@ export async function createWebRuntime({
       if (current.loaded && loadedMode === "custom") {
         return characterSourceStatus(id);
       }
-      const cached = customCharacterSources.get(id);
-      if (!cached) {
+      let source = null;
+      try {
+        source = resolvePortableCharacterSource(object);
+      } catch (error) {
+        runtime.emit("character.animation.asset.missing", {
+          characterId: id,
+          assetId: storedCharacterAssetId(object),
+          error: String(error?.message ?? error)
+        });
+      }
+      source ??= customCharacterSources.get(id) ?? null;
+      if (!source) {
         if (current.loaded) await characterAnimation.unload(id);
         loadedCharacterSourceModes.delete(id);
         return emitCharacterAnimationChanged(id, "custom-unavailable", {
@@ -1084,7 +1144,7 @@ export async function createWebRuntime({
         });
       }
       if (current.loaded) await characterAnimation.unload(id);
-      await loadCharacterVisualSource(id, cached, "custom");
+      await loadCharacterVisualSource(id, source, "custom");
       return emitCharacterAnimationChanged(id, "custom-loaded");
     }
 
@@ -1224,6 +1284,9 @@ export async function createWebRuntime({
           source,
           { bindings, visual: effectiveVisual, rootMotion }
         );
+        const portableAsset = data == null
+          ? null
+          : persistCharacterBinary({ data, filename });
         customCharacterSources.set(id, source);
         loadedCharacterSourceModes.set(id, "custom");
         sourceReconcileSuppressed.add(id);
@@ -1235,7 +1298,8 @@ export async function createWebRuntime({
             patch: {
               characterAnimation: characterSourceMetadata(
                 sandbox.getObject(id),
-                "custom"
+                "custom",
+                { assetId: portableAsset?.id ?? null }
               )
             },
             source: "character-animation.source"
@@ -1246,7 +1310,13 @@ export async function createWebRuntime({
         const sourceStatus = emitCharacterAnimationChanged(id, "asset-load", {
           changed
         });
-        return Object.freeze({ ...status, sourceStatus, changed });
+        return Object.freeze({
+          ...status,
+          sourceStatus,
+          changed,
+          portableAssetId: portableAsset?.id ?? null,
+          portable: Boolean(portableAsset)
+        });
       },
       { category: "game", mutates: true, asynchronous: true, label: "Carregar personagem GLB" }
     )
@@ -1267,6 +1337,27 @@ export async function createWebRuntime({
         return characterSourceStatus(id);
       },
       { category: "game", mutates: false, label: "Fonte visual do personagem" }
+    )
+    .register(
+      "asset.portable.list",
+      ({ kind = null } = {}) => portableAssetStore.listDescriptors({ kind }),
+      { category: "project", mutates: false, label: "Listar assets portáteis" }
+    )
+    .register(
+      "asset.portable.status",
+      ({ assetId } = {}) => {
+        const id = String(assetId ?? "").trim();
+        if (!id) throw new TypeError("assetId obrigatório.");
+        const record = portableAssetStore.get(id);
+        if (!record) throw new Error(`Asset portátil inexistente: ${id}.`);
+        return Object.freeze({
+          id: record.id,
+          kind: record.kind,
+          metadata: Object.freeze(structuredClone(record.metadata)),
+          bytes: Number(record.value?.bytes ?? record.canonicalBytes ?? 0)
+        });
+      },
+      { category: "project", mutates: false, label: "Inspecionar asset portátil" }
     )
     .register(
       "character.animation.source.set",
@@ -3906,6 +3997,13 @@ function withProjectTransientReset(projectService, beforeReplace) {
       return bound;
     }
   });
+}
+
+function characterMediaType(filename) {
+  const lower = String(filename ?? "").trim().toLowerCase();
+  if (lower.endsWith(".glb")) return "model/gltf-binary";
+  if (lower.endsWith(".gltf")) return "model/gltf+json";
+  return "application/octet-stream";
 }
 
 function validateApis() {
