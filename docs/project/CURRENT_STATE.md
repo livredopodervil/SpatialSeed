@@ -142,3 +142,5 @@ runtime test all
 ```
 
 Interação, PWA, câmera, animação e jogo também exigem teste visual.
+
+Correção 0054nf1: regressões móveis relatadas na interface estão registradas em `docs/INTERFACE_MODULAR.md`; validação visual real pendente.

@@ -8,6 +8,16 @@ export class FloatingPanelManager {
   #viewportResizeListener;
   #compactExclusive = false;
   #openers = new Map();
+  #escapeListener;
+
+  hideAll() {
+    for (const panel of this.#panels.values()) this.hide(panel, { restoreFocus: false });
+  }
+
+  #isCompact() {
+    const view = this.#root.defaultView;
+    return this.#compactExclusive && (view.innerWidth <= 760 || view.innerHeight <= 500);
+  }
 
   setCompactExclusive(value) {
     this.#compactExclusive = Boolean(value);
@@ -15,7 +25,7 @@ export class FloatingPanelManager {
   }
 
   #consolidateCompactPanels(keep = null) {
-    if (!this.#compactExclusive || this.#root.defaultView.innerWidth > 760) return;
+    if (!this.#isCompact()) return;
     const visible = [...this.#panels.values()].filter(panel => !panel.hidden);
     const current = keep ?? visible.sort((a, b) => Number(b.style.zIndex) - Number(a.style.zIndex))[0];
     for (const panel of visible) if (panel !== current) this.hide(panel, { restoreFocus: false });
@@ -33,6 +43,13 @@ export class FloatingPanelManager {
   } = {}) {
     this.#root = root;
     this.#key = storageKey;
+    this.#escapeListener = event => {
+      if (event.key !== "Escape" || event.defaultPrevented || this.#root.querySelector("dialog[open]")) return;
+      const panel = [...this.#panels.values()].filter(item => !item.hidden)
+        .sort((a, b) => Number(b.style.zIndex) - Number(a.style.zIndex))[0];
+      if (panel) { this.hide(panel); event.preventDefault(); }
+    };
+    this.#root.addEventListener("keydown", this.#escapeListener);
     this.#toolbarLayoutListener = event =>
       this.#applyToolbarClearance(
         event.detail?.clearance,
@@ -67,6 +84,10 @@ export class FloatingPanelManager {
     panel.setAttribute("aria-label", handle.querySelector("strong")?.textContent ?? panel.id);
     panel.tabIndex = -1;
     handle.classList.add("ss-panel-handle");
+    for (const close of handle.querySelectorAll('button[id^="close-"]')) {
+      close.type = "button";
+      close.setAttribute("aria-label", "Fechar painel");
+    }
     panel.style.resize = options.resizable === false ? "none" : "both";
     panel.style.maxHeight =
       "calc(100dvh - var(--ss-toolbar-clearance, 4rem) - .55rem)";
@@ -208,6 +229,7 @@ export class FloatingPanelManager {
   }
 
   dispose() {
+    this.#root.removeEventListener("keydown", this.#escapeListener);
     this.#root.removeEventListener(
       "spatialseed:toolbar-layout",
       this.#toolbarLayoutListener
@@ -243,6 +265,10 @@ export class FloatingPanelManager {
     this.bringToFront(panel);
 
     const rectangle = panel.getBoundingClientRect();
+    const view = this.#root.defaultView;
+    const computed = view.getComputedStyle(this.#root.documentElement);
+    const minimumTop = parseFloat(computed.getPropertyValue("--ss-toolbar-clearance")) || 0;
+    const minimumLeft = parseFloat(computed.getPropertyValue("--ss-toolbar-left-clearance")) || 0;
     const origin = {
       x: event.clientX,
       y: event.clientY,
@@ -259,13 +285,13 @@ export class FloatingPanelManager {
     const move = current => {
       const left = clamp(
         origin.left + current.clientX - origin.x,
-        0,
-        Math.max(0, innerWidth - panel.offsetWidth)
+        minimumLeft,
+        Math.max(minimumLeft, view.innerWidth - panel.offsetWidth)
       );
       const top = clamp(
         origin.top + current.clientY - origin.y,
-        0,
-        Math.max(0, innerHeight - panel.offsetHeight)
+        minimumTop,
+        Math.max(minimumTop, view.innerHeight - panel.offsetHeight)
       );
       panel.style.left = `${left}px`;
       panel.style.top = `${top}px`;
@@ -293,7 +319,7 @@ export class FloatingPanelManager {
   }
 
   #save(panel) {
-    if (this.#compactExclusive && this.#root.defaultView.innerWidth <= 760) return;
+    if (this.#isCompact()) return;
     if (
       panel.hidden ||
       panel.classList.contains("ss-panel-maximized")
@@ -403,7 +429,6 @@ export class FloatingPanelManager {
   }
 
   #fitToViewport(panel) {
-    if (this.#compactExclusive && this.#root.defaultView.innerWidth <= 760) return;
     if (!panel || panel.hidden || panel.classList.contains("ss-panel-maximized")) {
       return;
     }

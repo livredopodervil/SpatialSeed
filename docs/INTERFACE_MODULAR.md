@@ -122,3 +122,25 @@ executada nesta entrega: o acesso ao servidor local foi bloqueado pelo ambiente.
    atualização da PWA instalada e abertura offline após o novo precache.
 
 Uma regressão visual observada continua pendente mesmo com gates aprovados.
+
+## Correção 0054nf1 — acesso e painéis no telefone
+
+A avaliação no telefone identificou regressões na primeira entrega, apesar dos
+testes automatizados verdes: painéis sobrepostos, arraste bloqueado, fechamento
+difícil e HUD compacto inacessível. Esta correção remove as posições CSS fixas
+que impediam o arraste, mantém o cabeçalho acima da área de rolagem e evita que
+o conteúdo de edição de malha seja comprimido pelo painel.
+
+O botão **HUD compacto**, na barra principal, fecha os painéis e usa o controle
+de tamanho já existente do HUD. Tanto no modo guiado quanto no livre, abrir um
+painel em tela estreita ou baixa fecha o anterior. Escape fecha o painel da frente.
+Painéis maximizados respeitam a barra; o arraste preserva o acesso ao cabeçalho.
+
+Validação: contratos e CSS em DOM emulado em retrato, paisagem e desktop;
+fechamento, exclusividade, acesso ao HUD e posição de arraste. Isso não valida
+a renderização real nem gestos Android. A tentativa de acesso pelo navegador
+de teste falhou por conexão recusada. Não promover sem a revisão visual.
+
+Roteiro: abrir Editar e Criar em sequência; fechar pelo cabeçalho; reabrir e
+arrastar o título; maximizar e fechar; tocar HUD compacto; rolar até a última
+seção de Editar. Repetir em retrato, paisagem e desktop.

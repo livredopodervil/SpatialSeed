@@ -10,11 +10,14 @@ import { WorkspaceShell, FloatingPanelManager, composeToolbar, UiActionRegistry 
 const html = await fs.readFile(new URL('../apps/web/index.html', import.meta.url), 'utf8');
 const config = normalizeUiConfiguration(JSON.parse(await fs.readFile(new URL('../apps/web/config/ui.default.json', import.meta.url), 'utf8')));
 const checks = [];
-for (const width of [1440, 390]) {
-  const win = new Window({ url: 'http://localhost/', width, height: 900,
+for (const [width, height] of [[1440, 900], [390, 900], [360, 640], [844, 390]]) {
+  const compact = width <= 760 || height <= 500;
+  const win = new Window({ url: 'http://localhost/', width, height,
     settings: { disableJavaScriptEvaluation: true, disableJavaScriptFileLoading: true, disableCSSFileLoading: true } });
   const doc = win.document;
   for (const key of ['window', 'document', 'localStorage', 'ResizeObserver', 'CustomEvent']) globalThis[key] = key === 'window' ? win : win[key];
+  globalThis.innerWidth = width;
+  globalThis.innerHeight = height;
   globalThis.requestAnimationFrame = win.requestAnimationFrame.bind(win);
   globalThis.cancelAnimationFrame = win.cancelAnimationFrame.bind(win);
   doc.write(html);
@@ -22,6 +25,17 @@ for (const width of [1440, 390]) {
     const style = doc.createElement('style');
     style.textContent = await fs.readFile(new URL('../apps/web/'+name, import.meta.url), 'utf8');
     doc.head.append(style);
+    // Happy DOM incorrectly treats comma-separated media queries as AND.
+    // Expand the equivalent OR rules in this fixture, keeping production CSS intact.
+    const sheet = style.sheet;
+    for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
+      const rule = sheet.cssRules[i];
+      if (!rule.media?.mediaText.includes(',')) continue;
+      const queries = rule.media.mediaText.split(',');
+      const body = [...rule.cssRules].map(item => item.cssText).join('\n');
+      sheet.deleteRule(i);
+      for (const query of queries) sheet.insertRule(`@media ${query} { ${body} }`, i);
+    }
   }
   const $ = id => doc.getElementById(id);
   const ids = [...doc.querySelectorAll('[id]')].map(node => node.id);
@@ -37,7 +51,7 @@ for (const width of [1440, 390]) {
     onPanelVisibility: (id, visible) => visibility.push({ id, visible }) });
   assert.equal(doc.documentElement.dataset.workspace, 'guided');
   assert.equal(shell.section, 'select');
-  assert.equal(shell.collapsed, width <= 760);
+  assert.equal(shell.collapsed, compact);
   assert.ok($('selection-panel').hidden);
   assert.ok(originalControls.every(control => control.isConnected), 'Controle foi removido na composição');
   const section = id => doc.querySelector(`[data-workspace-section="${id}"]`);
@@ -54,8 +68,41 @@ for (const width of [1440, 390]) {
   assert.ok($('inspector-panel').hidden, 'Seleção abriu Inspector');
   panels.show('#inspector-panel');
   panels.show('#geometry-create-panel');
-  assert.equal($('inspector-panel').hidden, width <= 760, 'Exclusividade mobile ou múltiplos painéis desktop quebrados');
-  if (width <= 760) assert.ok(visibility.some(event => event.id === 'inspector-panel' && event.visible === false));
+  assert.equal($('inspector-panel').hidden, compact, 'Exclusividade mobile ou múltiplos painéis desktop quebrados');
+  if (compact) assert.ok(visibility.some(event => event.id === 'inspector-panel' && event.visible === false));
+  for (const id of Object.keys(config.panels.items)) {
+    const panel = $(id);
+    panels.show(panel);
+    panels.hide(panel);
+    assert.equal(win.getComputedStyle(panel).display, 'none', `Painel fechado ainda renderiza: ${id}`);
+  }
+  panels.show('#inspector-panel');
+  panels.show('#geometry-create-panel');
+  $('workspace-hud-compact').click();
+  assert.equal(shell.mode, 'free');
+  assert.equal($('edit-hud-size').value, 'compact');
+  assert.equal(doc.querySelectorAll('.ss-floating-panel:not([hidden])').length, 0, 'Atalho HUD deixou painel aberto');
+  assert.equal($('workspace-hud-compact').parentElement.id, 'toolbar', 'HUD compacto ficou preso em um menu');
+  panels.show('#inspector-panel');
+  panels.show('#geometry-create-panel');
+  assert.equal($('inspector-panel').hidden, compact, 'HUD livre perdeu exclusividade no telefone');
+  doc.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  assert.ok($('geometry-create-panel').hidden, 'Escape não fechou painel');
+  if (compact) {
+    shell.setMode('guided');
+    panels.show('#mesh-edit-panel');
+    const panel = $('mesh-edit-panel');
+    panel.style.left = '12px'; panel.style.top = '180px';
+    const css = win.getComputedStyle(panel);
+    assert.equal(css.left, '12px', 'CSS bloqueou posição horizontal de arraste');
+    assert.equal(css.top, '180px', 'CSS bloqueou posição vertical de arraste');
+    assert.equal(css.display, 'block', `Painel móvel voltou a comprimir o conteúdo em flex em ${width}x${height}`);
+    assert.equal(win.getComputedStyle(panel.querySelector('.mesh-edit-content')).overflow, 'visible', 'Conteúdo ficou em uma segunda área de rolagem');
+    assert.notEqual(win.getComputedStyle($('edit-hud')).visibility, 'hidden', 'Painel escondeu o HUD');
+    assert.equal(win.getComputedStyle(panel.querySelector('header')).flexShrink, '0', 'Cabeçalho pode ser comprimido');
+    assert.ok(Number(win.getComputedStyle($('toolbar')).zIndex) > 1000, 'Barra de acesso ficou sob painel maximizado');
+    panels.hideAll();
+  }
   shell.selectSection('draw');
   shell.setMode('free');
   assert.equal(JSON.parse(win.localStorage.getItem(config.toolbar.storageKey)).left, 111, 'Posição da barra perdida');
@@ -86,6 +133,6 @@ for (const width of [1440, 390]) {
   assert.equal(doc.activeElement, menus[1].querySelector('summary'));
   shell.dispose(); actions.dispose(); panels.dispose(); toolbar.dispose();
   await win.happyDOM.close();
-  checks.push({ width, ok: true, controlCount: originalControls.length });
+  checks.push({ width, height, ok: true, controlCount: originalControls.length });
 }
 console.log(JSON.stringify({ scope: 'workspace-dom-integration', ok: true, checks }, null, 2));

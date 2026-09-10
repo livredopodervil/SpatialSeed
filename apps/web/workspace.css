@@ -302,7 +302,7 @@ html[data-workspace="guided"] #inspector-panel .ins-property-row { min-width: 0;
 #workspace-help-dialog li { margin: 12px 0; padding-left: 4px; }
 #workspace-help-dialog a { color: #85d6bf; }
 #workspace-help-dialog summary { cursor: pointer; padding: 8px 0; }
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 500px) {
   html[data-workspace="guided"] #toolbar[data-layout="horizontal"] {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -312,7 +312,8 @@ html[data-workspace="guided"] #inspector-panel .ins-property-row { min-width: 0;
     left: 4px;
     right: 4px;
   }
-  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #workspace-brand { grid-column: span 2; order: 0; margin: 0; padding-left: 4px; }
+  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #workspace-brand { display: none; }
+  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #workspace-hud-compact { grid-column: span 2; order: 0; }
   html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #command-palette { grid-column: span 2; order: 0; margin: 0; }
   html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #workspace-help { order: 0; }
   html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > .ss-toolbar-menu { min-width: 0; }
@@ -335,19 +336,45 @@ html[data-workspace="guided"] #inspector-panel .ins-property-row { min-width: 0;
     max-height: min(58dvh, calc(100dvh - var(--ss-toolbar-clearance, 150px) - 12px)) !important;
   }
   html[data-workspace="guided"] .ss-workspace-tool-header { position: sticky; top: 0; background: var(--ws-bg); z-index: 2; }
-  html[data-workspace="guided"] .ss-floating-panel:not(.ss-panel-maximized) {
-    left: 4px !important;
-    right: 4px !important;
-    top: auto !important;
-    bottom: max(4px, env(safe-area-inset-bottom)) !important;
-    width: calc(100vw - 8px) !important;
+}
+
+/* Closing and scrolling must work independently of the chosen HUD layout. */
+.ss-floating-panel[hidden], .ss-floating-panel [hidden] { display: none !important; }
+.ss-floating-panel > header { flex: 0 0 auto; }
+.ss-floating-panel > header strong { min-width: 0; overflow-wrap: anywhere; }
+.ss-floating-panel > header button { flex: 0 0 auto; }
+@media (max-width: 760px), (max-height: 500px) {
+  html[data-workspace] #toolbar { z-index: 2000; }
+  html[data-workspace] #workspace-hud-compact { min-height: 42px; }
+  html[data-workspace] .ss-floating-panel {
     min-width: 0 !important;
-    height: auto !important;
-    max-height: calc(100dvh - var(--ss-toolbar-clearance, 150px) - 12px) !important;
-    resize: none !important;
+    min-height: 0 !important;
+    overflow: auto !important;
+    touch-action: pan-y pinch-zoom;
+    overscroll-behavior: contain;
   }
-  html[data-workspace="guided"] body:has(.ss-floating-panel:not([hidden])) #edit-hud { visibility: hidden; }
-  html[data-workspace="guided"] .ss-floating-panel > header button { min-width: 42px; min-height: 42px; }
+  html[data-workspace] .ss-floating-panel > header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    min-height: 48px;
+    background: #101b29;
+    touch-action: none;
+  }
+  html[data-workspace] .ss-floating-panel > header button { min-width: 42px; min-height: 42px; }
+  html[data-workspace] #mesh-edit-panel:not([hidden]) { display: block; }
+  html[data-workspace] #mesh-edit-panel .mesh-edit-content {
+    display: block;
+    overflow: visible;
+  }
+  html[data-workspace] #mesh-edit-panel .mesh-edit-content > * { margin-bottom: 10px; }
+  html[data-workspace] .ss-floating-panel :is(fieldset, form, pre, details) { min-width: 0; }
+  html[data-workspace] .ss-floating-panel.ss-panel-maximized {
+    top: var(--ss-toolbar-clearance, 150px) !important;
+    left: 4px !important;
+    width: calc(100vw - 8px) !important;
+    height: calc(100dvh - var(--ss-toolbar-clearance, 150px) - 8px) !important;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   html[data-workspace="guided"] *, html[data-workspace="guided"] *::after { transition: none !important; }

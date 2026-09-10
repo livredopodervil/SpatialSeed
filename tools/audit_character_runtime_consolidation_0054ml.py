@@ -36,7 +36,7 @@ expected_channels = {
     "20260818-0054mw": "feature/0054mw-universal-resource-search",
     "20260818-0054mx": "feature/0054mx-interaction-bindings",
     "20260818-0054my": "feature/0054my-kinematic-platforms",
-    "20260909-0054nf": "feature/0054nf-modular-workspace",
+    "20260910-0054nf1": "fix/0054nf1-mobile-panels", "20260909-0054nf": "feature/0054nf-modular-workspace",
 }
 current_build = build.get("build")
 if current_build not in expected_channels:
@@ -58,14 +58,14 @@ physics = require("packages/game-runtime/src/CharacterPhysics.js", (
 ))
 runtime_version = (
     "game-runtime-v8-kinematic-platforms"
-    if current_build in {"20260818-0054my", "20260909-0054nf"}
+    if current_build in {"20260818-0054my", "20260909-0054nf", "20260910-0054nf1"}
     else "game-runtime-v7-independent-visual-facing"
     if current_build in {"20260818-0054mt", "20260818-0054mu", "20260818-0054mv", "20260818-0054mw", "20260818-0054mx"}
     else "game-runtime-v6-character-body-frame"
 )
 yaw_marker = (
     "this.#physics.facingYaw ?? this.#physics.yaw"
-    if current_build in {"20260818-0054mt", "20260818-0054mu", "20260818-0054mv", "20260818-0054mw", "20260818-0054mx", "20260818-0054my", "20260909-0054nf"}
+    if current_build in {"20260818-0054mt", "20260818-0054mu", "20260818-0054mv", "20260818-0054mw", "20260818-0054mx", "20260818-0054my", "20260909-0054nf", "20260910-0054nf1"}
     else "yawDelta = this.#physics.yaw - (this.#physics.baseYaw ?? 0)"
 )
 game = require("packages/game-runtime/src/GameRuntime.js", (

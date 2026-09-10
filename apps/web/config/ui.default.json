@@ -10,7 +10,8 @@
       "undo",
       "redo",
       "game-mode",
-      "workspace-help"
+      "workspace-help",
+      "workspace-hud-compact"
     ],
     "menus": [
       {

@@ -17,7 +17,7 @@ export class WorkspaceShell {
     this.strip = this.hud.querySelector(".edit-hud-strip");
     this.modeControl = root.getElementById("workspace-layout");
     this.toolsToggle = root.getElementById("workspace-tools-toggle");
-    this.collapsed = this.readState().collapsed ?? (this.view.innerWidth <= 760);
+    this.collapsed = this.readState().collapsed ?? (this.view.innerWidth <= 760 || this.view.innerHeight <= 500);
     this.nav = root.createElement("nav");
     this.nav.className = "ss-workspace-sections";
     this.nav.setAttribute("aria-label", "Grupos de ferramentas");
@@ -49,6 +49,14 @@ export class WorkspaceShell {
       attributeFilter: ["hidden", "data-active", "data-hud-hint-title"]
     });
     this.listen(this.modeControl, "change", () => this.setMode(this.modeControl.value));
+    this.listen(root.getElementById("workspace-hud-compact"), "click", () => {
+      this.setMode("free");
+      panelManager.hideAll();
+      const size = root.getElementById("edit-hud-size");
+      size.value = "compact";
+      size.dispatchEvent(new this.view.Event("change", { bubbles: true }));
+      root.getElementById("edit-hud-open").focus({ preventScroll: true });
+    });
     this.listen(this.toolsToggle, "click", () => {
       this.collapsed = !this.collapsed;
       this.syncCollapsed();
@@ -98,9 +106,8 @@ export class WorkspaceShell {
     this.mode = requested === "guided" && this.layout.sections.length ? "guided" : "free";
     this.root.documentElement.dataset.workspace = this.mode;
     this.modeControl.value = this.mode;
-    this.panelManager.setCompactExclusive(this.mode === "guided");
+    this.panelManager.setCompactExclusive(true);
     if (this.mode === "guided") this.panelManager.hide("#selection-panel");
-    else this.panelManager.show("#selection-panel");
     this.syncCollapsed();
     if (persist) this.saveState({ mode: this.mode });
   }

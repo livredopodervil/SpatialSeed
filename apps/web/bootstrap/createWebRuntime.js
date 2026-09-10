@@ -49,7 +49,7 @@ import {
 import {
   activateWebRuntimeExtensions,
   BrowserProcedureCatalogStore
-} from "../../../packages/platform-web/src/index.js?build=20260909-0054nf";
+} from "../../../packages/platform-web/src/index.js?build=20260910-0054nf1";
 import { AppearanceRuntime } from "../../../packages/appearance-runtime/src/index.js?build=20260818-0054mx";
 import {
   AppearanceBindingService

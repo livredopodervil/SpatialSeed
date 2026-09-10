@@ -1,6 +1,6 @@
 {
   "version": "0.1.0",
-  "build": "20260909-0054nf",
-  "channel": "feature/0054nf-modular-workspace",
-  "revision": "20260909-0054nf"
+  "build": "20260910-0054nf1",
+  "channel": "fix/0054nf1-mobile-panels",
+  "revision": "20260910-0054nf1"
 }
