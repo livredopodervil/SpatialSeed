@@ -28,6 +28,7 @@ build = json.loads(read("apps/web/build-info.json") or "{}")
 expected_channels = {
     "20260818-0054mx": "feature/0054mx-interaction-bindings",
     "20260818-0054my": "feature/0054my-kinematic-platforms",
+    "20260909-0054nf": "feature/0054nf-modular-workspace",
 }
 if build.get("build") not in expected_channels:
     errors.append(f"build incorreto: {build.get('build')!r}")

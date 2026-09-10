@@ -1,5 +1,25 @@
 # Registro de decisões do SpatialSeed
 
+## D-060 — Workspace guiado compõe controles existentes por tarefa
+
+**Estado:** implementada nesta árvore; validação visual em aparelho pendente.
+
+`workspace` estende o manifesto `ui.default.json`. Seções referenciam grupos
+do HUD existente; os mesmos elementos conservam handlers, descritores e
+comandos. Manifestos antigos continuam no modo livre. Preferências do workspace
+usam um campo da chave de barra já existente, sem criar outro sistema de perfis.
+
+O compositor recebe documento, armazenamento e gerenciador de painéis por
+injeção. Sua projeção contextual lê somente os snapshots já disponíveis, sem
+consultar geometrias, construir a árvore da cena ou inspecionar propriedades.
+Detalhes continuam no Inspector, ativado pela visibilidade efetiva. Estado de
+layout nunca é comando editorial nem entra no documento.
+
+Em tela estreita, um painel é mostrado por vez e o fechamento notifica seus
+consumidores. O layout móvel não persiste sobre as dimensões do desktop. No
+desktop, preservam-se painéis simultâneos. O HUD livre conserva suas preferências
+e permanece acessível no mesmo manifesto.
+
 > Documento vivo. Auditado em 8 de agosto de 2026 até o marco `0053g`.
 > Este arquivo registra decisões duráveis, não detalhes passageiros de build.
 

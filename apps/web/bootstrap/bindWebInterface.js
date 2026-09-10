@@ -1,8 +1,8 @@
-import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, createResourcePaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260818-0054mx";
+import { CommandPalette, FloatingPanelManager, SelectionMarquee, UiActionRegistry, UiRefreshCoordinator, WorkspaceShell, attachFormFieldHints, attachScrubbableFields, composeToolbar, createCommandPaletteEntries, createResourcePaletteEntries, formatConsoleEntry, formatRuntimeCommandForConsole } from "../../../packages/ui-widgets/src/index.js?build=20260818-0054mx";
 import {
   BrowserAssetFileGateway,
   BrowserProjectFileGateway
-} from "../../../packages/platform-web/src/index.js?build=20260818-0054my";
+} from "../../../packages/platform-web/src/index.js?build=20260909-0054nf";
 import {
   normalizeGameDirectionalInput
 } from "../../../packages/game-runtime/src/index.js?build=20260818-0054my";
@@ -102,6 +102,7 @@ export function bindWebInterface({
   let consoleHistoryIndex = 0;
   let lastConsoleText = "";
   let statusTimer = null;
+  let workspaceShell = null;
   let lastViewerOutcome = null;
   let latestSelection = runtime.query("selection.snapshot");
   let latestEditor = runtime.query("editor.snapshot");
@@ -296,9 +297,10 @@ export function bindWebInterface({
     $("edit-pivot").disabled=latestMeshEdit.active||latestSelection.members.length===0;
     const count=latestSelection?.members?.length??0,active=latestSelection?.activeMember?.objectId??"∅",mode=latestEditor?.tool?.mode??"select",operation=latestEditor?.selectionOperation??"replace";
     const viewerRole = replica ? "viewer réplica" : "viewer autoritativo";
-    $("status").textContent=latestMeshEdit.active
-      ? `malha ${latestMeshEdit.objectId} · ${latestMeshEdit.selectedCount}/${latestMeshEdit.vertexCount} vértices · frame ${latestMeshEdit.frameMode} · ${mode} · ${viewerRole}`
-      : `${count} selecionados · ativo ${active} · ${mode} · ${operation} · sandbox ${status.dirty?"alterado":"limpo"} · ${viewerRole}`;
+    $("status").textContent = `${count} selecionado${count === 1 ? "" : "s"} · ${status.dirty ? "Alterações locais" : "Sem alterações locais"}`;
+    $("status").title = `${active} · ${mode} · ${operation} · ${viewerRole}`;
+    workspaceShell?.update({ selection: latestSelection, editor: latestEditor,
+      mesh: latestMeshEdit, frame: renderer.transform.space, dirty: status.dirty });
   }
 
   const scheduleUiFrame = callback =>
@@ -2198,6 +2200,7 @@ export function bindWebInterface({
 
   function setGamePresentation(snapshot) {
     const active = snapshot?.state === "running";
+    objectInspector.setActive(!active && !sceneOnly && !$("inspector-panel").hidden);
     const hud = $("game-hud");
     const presentationChanged = active !== gamePresentationActive;
     if (presentationChanged) {
@@ -2561,6 +2564,7 @@ export function bindWebInterface({
     const entering = Boolean(enabled) && !sceneOnly;
     sceneOnly = Boolean(enabled);
     documentRoot.body.classList.toggle("ss-scene-only", sceneOnly);
+    objectInspector.setActive(!sceneOnly && latestGame.state !== "running" && !$("inspector-panel").hidden);
     $("scene-only").dataset.active = sceneOnly ? "true" : "false";
     $("scene-only").setAttribute(
       "aria-pressed",
@@ -2692,6 +2696,15 @@ export function bindWebInterface({
     }
   }
 
+  workspaceShell = new WorkspaceShell({
+    root: documentRoot,
+    configuration: uiConfiguration,
+    panelManager,
+    storage: (() => { try { return browserWindow.localStorage; } catch { return null; } })(),
+    onPanelVisibility: (panelId, visible) => {
+      if (panelId === "inspector-panel") objectInspector.setActive(visible && !sceneOnly && latestGame.state !== "running");
+    }
+  });
   setGamePresentation(latestGame);
   renderGamePlayerPresentation(latestGamePresentation);
   uiRefresh.flushNow("initial");
@@ -2721,6 +2734,7 @@ export function bindWebInterface({
       disconnectUiDiagnostics();
       commandPalette.dispose();
       resourcePalette.dispose();
+      workspaceShell.dispose();
       uiActions.dispose();
       uiRefresh.dispose();
       pwaInstallController?.dispose();

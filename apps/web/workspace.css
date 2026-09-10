@@ -1,0 +1,354 @@
+/* The guided workspace is a presentation of the existing controls. */
+html[data-workspace="guided"] {
+  --ws-bg: #101b29;
+  --ws-surface: #162334;
+  --ws-border: #344458;
+  --ws-text: #ecf2fa;
+  --ws-muted: #b7c6d8;
+  --ws-accent: #85d6bf;
+  color-scheme: dark;
+}
+.ss-workspace-tool-header, .ss-workspace-sections, .ss-workspace-hint { display: none; }
+html[data-workspace="guided"] button,
+html[data-workspace="guided"] select {
+  border-radius: 7px;
+  font-size: .875rem;
+  min-height: 38px;
+  line-height: 1.35;
+  border-color: var(--ws-border);
+}
+html[data-workspace="guided"] button { cursor: pointer; }
+html[data-workspace="guided"] button:disabled { cursor: default; opacity: .45; }
+html[data-workspace="guided"] :is(button, summary, input, select, textarea, a):focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 3px;
+}
+html[data-workspace="guided"] #toolbar {
+  padding: 8px;
+  gap: 5px;
+  border: 1px solid var(--ws-border);
+  border-radius: 10px;
+  background: var(--ws-bg);
+  box-shadow: 0 6px 24px #0003;
+  pointer-events: auto;
+  z-index: 35;
+}
+html[data-workspace="guided"] #workspace-brand {
+  color: var(--ws-accent);
+  font-size: 1rem;
+  letter-spacing: -.025em;
+  margin: 0 10px 0 3px;
+}
+html[data-workspace="guided"] #toolbar > .ss-toolbar-menu { order: 1; }
+html[data-workspace="guided"] #toolbar > button { order: 2; }
+html[data-workspace="guided"] #toolbar > #status {
+  order: 3;
+  font-size: .8rem;
+  color: var(--ws-muted);
+  opacity: 1;
+  white-space: normal;
+}
+html[data-workspace="guided"] #toolbar > #command-palette { margin-left: auto; }
+html[data-workspace="guided"] #toolbar > #game-mode { background: #214d45; border-color: #599c8a; }
+html[data-workspace="guided"] #toolbar summary {
+  min-height: 38px;
+  padding: 9px;
+  font-size: .875rem;
+  border-radius: 7px;
+  line-height: 1.35;
+}
+html[data-workspace="guided"] #toolbar details[open] > summary { background: #30475b; }
+html[data-workspace="guided"] .ss-toolbar-menu-content {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(310px, calc(100vw - 16px));
+  padding: 8px;
+  gap: 5px;
+  background: var(--ws-bg);
+  border: 1px solid var(--ws-border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px #0007;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y pinch-zoom;
+}
+html[data-workspace="guided"] .ss-toolbar-menu-content :is(button, select) {
+  width: 100%;
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+  min-height: 42px;
+}
+html[data-workspace="guided"] .ss-toolbar-menu-content button[data-shortcuts]::after {
+  content: attr(data-shortcuts);
+  float: right;
+  color: var(--ws-muted);
+  margin-left: 8px;
+  font-size: .75rem;
+}
+html[data-workspace="guided"] #delete-selection { color: #ffb6b6; }
+html[data-workspace="guided"] #edit-hud {
+  position: fixed;
+  top: var(--ss-toolbar-clearance, 80px) !important;
+  left: var(--ss-toolbar-left-clearance, 8px) !important;
+  right: auto !important;
+  bottom: auto !important;
+  width: min(320px, calc(100vw - 16px)) !important;
+  max-width: calc(100vw - 16px) !important;
+  max-height: calc(100dvh - var(--ss-toolbar-clearance, 80px) - 12px) !important;
+  border: 1px solid var(--ws-border);
+  border-radius: 10px;
+  background: var(--ws-bg);
+  box-shadow: 0 8px 26px #0003;
+  overflow: auto;
+  resize: none;
+  touch-action: pan-y pinch-zoom;
+  padding: 0;
+  z-index: 25;
+}
+html[data-workspace="guided"] .ss-workspace-tool-header {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ws-border);
+}
+html[data-workspace="guided"] #workspace-tools-toggle {
+  background: transparent;
+  border: 0;
+  color: var(--ws-accent);
+  text-align: left;
+  font-weight: 650;
+  padding: 2px 0;
+}
+html[data-workspace="guided"] #workspace-context {
+  color: var(--ws-muted);
+  font-size: .8rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+html[data-workspace="guided"] #edit-hud-handle {
+  display: flex;
+  padding: 5px 10px;
+  gap: 6px;
+  cursor: default;
+  border: 0;
+}
+html[data-workspace="guided"] #edit-hud-handle > :is(#edit-hud-status, #edit-hud-resize) { display: none; }
+html[data-workspace="guided"] #edit-hud-handle > button { width: auto; font-size: .8rem; }
+html[data-workspace="guided"] #edit-hud-open::after { content: " Detalhes"; }
+html[data-workspace="guided"] #edit-hud-help::after { content: " Dicas"; }
+html[data-workspace="guided"] .edit-hud-config { margin-left: auto; }
+html[data-workspace="guided"] .edit-hud-config > summary { min-height: 38px; padding: 8px; }
+html[data-workspace="guided"] .edit-hud-config[open] {
+  position: static;
+  max-width: 100%;
+  overflow: auto;
+}
+html[data-workspace="guided"] .edit-hud-config[open] > :not(summary) {
+  position: static;
+  width: 100%;
+  max-width: 100%;
+  white-space: normal;
+}
+html[data-workspace="guided"] #edit-hud-handle:has(.edit-hud-config[open]) { flex-wrap: wrap; }
+html[data-workspace="guided"] .edit-hud-config[open] { flex-basis: 100%; }
+html[data-workspace="guided"] .ss-workspace-sections {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  padding: 5px 10px;
+}
+html[data-workspace="guided"] .ss-workspace-sections button {
+  min-width: 0;
+  padding: 8px 3px;
+  overflow-wrap: anywhere;
+}
+html[data-workspace="guided"] .ss-workspace-sections button[aria-pressed="true"] {
+  background: #224a44;
+  border-color: var(--ws-accent);
+  color: #ddfff5;
+}
+html[data-workspace="guided"] .ss-workspace-hint {
+  display: block;
+  margin: 6px 12px 8px;
+  color: var(--ws-muted);
+  font-size: .8rem;
+  line-height: 1.5;
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-strip {
+  display: flex !important;
+  flex-direction: column;
+  gap: 10px;
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+  max-height: none !important;
+  padding: 4px 10px 12px;
+  overflow: visible;
+  scrollbar-gutter: auto;
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  order: var(--workspace-group-order, 0);
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group::before {
+  content: attr(aria-label);
+  grid-column: 1 / -1;
+  font-size: .8rem;
+  font-weight: 650;
+  color: var(--ws-muted);
+  padding: 8px 0 4px;
+  border-top: 1px solid var(--ws-border);
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group > :is(button, label) {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  width: auto !important;
+  height: auto !important;
+  min-height: 42px !important;
+  padding: 8px !important;
+  font-size: .875rem;
+  line-height: 1.35;
+  border-radius: 6px;
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group button[data-workspace-label]::after {
+  content: attr(data-workspace-label);
+  font-size: .875rem;
+  line-height: 1.35;
+  text-align: left;
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group label {
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group label[data-workspace-label]::before {
+  content: attr(data-workspace-label);
+  flex: 1 1 120px;
+  font-size: .875rem;
+  color: var(--ws-text);
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group label > :is(input, select) {
+  position: static !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  width: 100% !important;
+  min-width: 0;
+  min-height: 36px;
+  flex: 1 1 120px;
+  font-size: .875rem;
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group label > input[type="checkbox"] {
+  width: 20px !important;
+  height: 20px !important;
+  min-height: 20px;
+  flex: 0 0 20px;
+  accent-color: var(--ws-accent);
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group label > span { display: none; }
+html[data-workspace="guided"] #edit-hud .edit-hud-group > small {
+  grid-column: 1 / -1;
+  font-size: .8rem;
+  line-height: 1.4;
+}
+html[data-workspace="guided"] #edit-hud .edit-hud-group[data-workspace-hidden="true"],
+html[data-workspace="guided"] #edit-hud .edit-hud-group[hidden],
+html[data-workspace="guided"] #edit-hud .edit-hud-group > [hidden],
+html[data-workspace="guided"] #edit-hud [data-workspace-section][hidden] { display: none !important; }
+html[data-workspace="guided"] #edit-hud[data-workspace-collapsed="true"] > :not(.ss-workspace-tool-header):not(#edit-hud-tooltip) { display: none !important; }
+html[data-workspace="guided"] .ss-floating-panel {
+  background: var(--ws-bg) !important;
+  border-color: var(--ws-border) !important;
+  border-radius: 10px !important;
+  box-shadow: 0 12px 36px #0005;
+  font-size: .875rem;
+  touch-action: pan-y pinch-zoom;
+  overscroll-behavior: contain;
+}
+html[data-workspace="guided"] .ss-floating-panel > header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ws-bg);
+  min-height: 48px;
+}
+html[data-workspace="guided"] .ss-floating-panel :is(input, textarea, select) { font-size: .875rem; min-width: 0; max-width: 100%; }
+html[data-workspace="guided"] #inspector-panel label { line-height: 1.45; }
+html[data-workspace="guided"] #inspector-panel summary { padding: 12px 8px; font-size: .875rem; }
+html[data-workspace="guided"] #inspector-panel .ins-property-row { min-width: 0; }
+#workspace-help-dialog {
+  max-width: min(650px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  padding: 20px;
+  border: 1px solid #465b71;
+  border-radius: 12px;
+  background: #101b29;
+  color: #ecf2fa;
+  font: 1rem/1.6 system-ui, sans-serif;
+  overflow: auto;
+  touch-action: pan-y pinch-zoom;
+}
+#workspace-help-dialog::backdrop { background: #02070cb3; }
+#workspace-help-dialog header { display: flex; gap: 12px; align-items: center; }
+#workspace-help-dialog h2 { flex: 1; font-size: 1.25rem; margin: 0; }
+#workspace-help-dialog li { margin: 12px 0; padding-left: 4px; }
+#workspace-help-dialog a { color: #85d6bf; }
+#workspace-help-dialog summary { cursor: pointer; padding: 8px 0; }
+@media (max-width: 760px) {
+  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+    padding: 5px;
+    top: max(4px, env(safe-area-inset-top));
+    left: 4px;
+    right: 4px;
+  }
+  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #workspace-brand { grid-column: span 2; order: 0; margin: 0; padding-left: 4px; }
+  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #command-palette { grid-column: span 2; order: 0; margin: 0; }
+  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #workspace-help { order: 0; }
+  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > .ss-toolbar-menu { min-width: 0; }
+  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #resource-search { grid-column: span 2; }
+  html[data-workspace="guided"] #toolbar[data-layout="horizontal"] > #status { display: none; }
+  html[data-workspace="guided"] #toolbar > :is(button, .ss-toolbar-menu) { min-width: 0; }
+  html[data-workspace="guided"] #toolbar > .ss-toolbar-menu > summary::after { display: none; }
+  html[data-workspace="guided"] #toolbar > button,
+  html[data-workspace="guided"] #toolbar > .ss-toolbar-menu > summary { font-size: .875rem; padding: 7px 2px; min-height: 42px; text-align: center; }
+  html[data-workspace="guided"] #toolbar > :is(#undo, #redo) { font-size: 0; }
+  html[data-workspace="guided"] #toolbar > #undo::after { content: "↶"; font-size: 1.4rem; }
+  html[data-workspace="guided"] #toolbar > #redo::after { content: "↷"; font-size: 1.4rem; }
+  html[data-workspace="guided"] #edit-hud {
+    top: auto !important;
+    bottom: max(4px, env(safe-area-inset-bottom)) !important;
+    left: 4px !important;
+    right: 4px !important;
+    width: calc(100vw - 8px) !important;
+    max-width: none !important;
+    max-height: min(58dvh, calc(100dvh - var(--ss-toolbar-clearance, 150px) - 12px)) !important;
+  }
+  html[data-workspace="guided"] .ss-workspace-tool-header { position: sticky; top: 0; background: var(--ws-bg); z-index: 2; }
+  html[data-workspace="guided"] .ss-floating-panel:not(.ss-panel-maximized) {
+    left: 4px !important;
+    right: 4px !important;
+    top: auto !important;
+    bottom: max(4px, env(safe-area-inset-bottom)) !important;
+    width: calc(100vw - 8px) !important;
+    min-width: 0 !important;
+    height: auto !important;
+    max-height: calc(100dvh - var(--ss-toolbar-clearance, 150px) - 12px) !important;
+    resize: none !important;
+  }
+  html[data-workspace="guided"] body:has(.ss-floating-panel:not([hidden])) #edit-hud { visibility: hidden; }
+  html[data-workspace="guided"] .ss-floating-panel > header button { min-width: 42px; min-height: 42px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-workspace="guided"] *, html[data-workspace="guided"] *::after { transition: none !important; }
+}

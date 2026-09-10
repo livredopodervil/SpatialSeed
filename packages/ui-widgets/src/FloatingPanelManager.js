@@ -6,6 +6,26 @@ export class FloatingPanelManager {
   #restoreStyles = new Map();
   #toolbarLayoutListener;
   #viewportResizeListener;
+  #compactExclusive = false;
+  #openers = new Map();
+
+  setCompactExclusive(value) {
+    this.#compactExclusive = Boolean(value);
+    this.#consolidateCompactPanels();
+  }
+
+  #consolidateCompactPanels(keep = null) {
+    if (!this.#compactExclusive || this.#root.defaultView.innerWidth > 760) return;
+    const visible = [...this.#panels.values()].filter(panel => !panel.hidden);
+    const current = keep ?? visible.sort((a, b) => Number(b.style.zIndex) - Number(a.style.zIndex))[0];
+    for (const panel of visible) if (panel !== current) this.hide(panel, { restoreFocus: false });
+  }
+
+  #notifyVisibility(panel, visible) {
+    this.#root.dispatchEvent(new this.#root.defaultView.CustomEvent(
+      "spatialseed:panel-visibility", { detail: { panelId: panel.id, visible } }
+    ));
+  }
 
   constructor({
     root = document,
@@ -23,6 +43,7 @@ export class FloatingPanelManager {
       this.#toolbarLayoutListener
     );
     this.#viewportResizeListener = () => {
+      this.#consolidateCompactPanels();
       for (const panel of this.#panels.values()) this.#fitToViewport(panel);
     };
     this.#root.defaultView?.addEventListener(
@@ -42,6 +63,9 @@ export class FloatingPanelManager {
     if (!handle) return panel;
 
     panel.classList.add("ss-floating-panel");
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-label", handle.querySelector("strong")?.textContent ?? panel.id);
+    panel.tabIndex = -1;
     handle.classList.add("ss-panel-handle");
     panel.style.resize = options.resizable === false ? "none" : "both";
     panel.style.maxHeight =
@@ -92,16 +116,28 @@ export class FloatingPanelManager {
   show(selector) {
     const panel = this.#resolve(selector);
     if (!panel) return null;
+    if (panel.hidden) this.#openers.set(panel.id, this.#root.activeElement);
+    this.#consolidateCompactPanels(panel);
     panel.hidden = false;
     this.#fitToViewport(panel);
     this.bringToFront(panel);
+    this.#notifyVisibility(panel, true);
+    panel.focus({ preventScroll: true });
     return panel;
   }
 
-  hide(selector) {
+  hide(selector, { restoreFocus = true } = {}) {
     const panel = this.#resolve(selector);
-    if (!panel) return false;
+    if (!panel || panel.hidden) return false;
+    const hadFocus = panel.contains(this.#root.activeElement);
     panel.hidden = true;
+    this.#notifyVisibility(panel, false);
+    if (restoreFocus && hadFocus) {
+      const opener = this.#openers.get(panel.id);
+      const target = opener?.getClientRects().length ? opener :
+        opener?.closest("details")?.querySelector("summary");
+      target?.focus?.({ preventScroll: true });
+    }
     return true;
   }
 
@@ -185,6 +221,7 @@ export class FloatingPanelManager {
     }
     this.#panels.clear();
     this.#restoreStyles.clear();
+    this.#openers.clear();
   }
 
   #resolve(selector) {
@@ -256,6 +293,7 @@ export class FloatingPanelManager {
   }
 
   #save(panel) {
+    if (this.#compactExclusive && this.#root.defaultView.innerWidth <= 760) return;
     if (
       panel.hidden ||
       panel.classList.contains("ss-panel-maximized")
@@ -365,6 +403,7 @@ export class FloatingPanelManager {
   }
 
   #fitToViewport(panel) {
+    if (this.#compactExclusive && this.#root.defaultView.innerWidth <= 760) return;
     if (!panel || panel.hidden || panel.classList.contains("ss-panel-maximized")) {
       return;
     }

@@ -12,10 +12,10 @@ programar, simular e transportar mundos digitais no navegador.**
 [Mapa da documentação](docs/README.md)
 
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
-> `apps/web/build-info.json` identifica o build publicado. Este snapshot de
-> documentação viva corresponde ao build `20260818-0054my`, preparado em 18 de
-> agosto de 2026 e validado com os gates locais do projeto. O PDF v1.0 acompanha
-> esta edição consolidada.
+> `apps/web/build-info.json` identifica o build desta árvore. A interface guiada
+> reúne ferramentas por tarefa, conserva o HUD livre e adapta os painéis ao
+> celular. Consulte o [guia da interface](docs/INTERFACE_MODULAR.md) para uso,
+> configuração e validação. O PDF v1.0 é o registro anterior à reorganização.
 
 ## O que o SpatialSeed é
 

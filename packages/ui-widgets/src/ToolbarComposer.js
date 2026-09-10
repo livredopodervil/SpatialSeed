@@ -2,6 +2,8 @@ export function composeToolbar({ root = document, configuration }) {
   const toolbar = root.getElementById("toolbar");
   if (!toolbar || !configuration) return Object.freeze({ dispose() {} });
   const ownerDocument = toolbar.ownerDocument;
+  const originalChildren = [...toolbar.children];
+  const originalHidden = new Map(originalChildren.map(node => [node, node.hidden]));
 
   const configured = new Set([
     ...configuration.primary,
@@ -97,6 +99,7 @@ export function composeToolbar({ root = document, configuration }) {
   };
   const closeOtherMenus = event => {
     const current = event.target.closest(".ss-toolbar-menu");
+    if (!current?.open) return;
     for (const menu of createdMenus) {
       if (menu !== current) menu.open = false;
     }
@@ -106,6 +109,30 @@ export function composeToolbar({ root = document, configuration }) {
     for (const menu of createdMenus) positionMenu(menu);
   };
   toolbar.addEventListener("toggle", closeOtherMenus, true);
+  const closeMenus = () => createdMenus.forEach(menu => { menu.open = false; });
+  const onOutsidePointer = event => {
+    if (!toolbar.contains(event.target)) closeMenus();
+  };
+  const onMenuAction = event => {
+    const button = event.target.closest(".ss-toolbar-menu-content button");
+    if (!button || button.disabled) return;
+    const summary = button.closest("details")?.querySelector("summary");
+    closeMenus();
+    if (ownerDocument.activeElement === button) summary?.focus();
+  };
+  const onMenuKey = event => {
+    if (event.key === "Escape") {
+      const open = createdMenus.find(menu => menu.open);
+      if (!open) return;
+      closeMenus();
+      open.querySelector("summary")?.focus();
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+  ownerDocument.addEventListener("pointerdown", onOutsidePointer);
+  ownerDocument.addEventListener("keydown", onMenuKey);
+  toolbar.addEventListener("click", onMenuAction);
   ownerDocument.defaultView.addEventListener("resize", repositionMenus);
   ownerDocument.defaultView.addEventListener("scroll", repositionMenus, true);
 
@@ -235,8 +262,17 @@ export function composeToolbar({ root = document, configuration }) {
       layoutSelect.removeEventListener("change", onLayoutChange);
       dragHandle.removeEventListener("pointerdown", drag);
       toolbar.removeEventListener("toggle", closeOtherMenus, true);
+      ownerDocument.removeEventListener("pointerdown", onOutsidePointer);
+      ownerDocument.removeEventListener("keydown", onMenuKey);
+      toolbar.removeEventListener("click", onMenuAction);
       ownerDocument.defaultView.removeEventListener("resize", repositionMenus);
       ownerDocument.defaultView.removeEventListener("scroll", repositionMenus, true);
+      for (const menu of createdMenus) menu.remove();
+      dragHandle.remove();
+      for (const node of originalChildren) {
+        node.hidden = originalHidden.get(node);
+        toolbar.append(node);
+      }
     }
   });
 }

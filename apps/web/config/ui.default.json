@@ -1,58 +1,80 @@
 {
   "schemaVersion": 1,
-  "profile": "touch-compact",
+  "profile": "modular-workspace",
   "toolbar": {
     "layout": "horizontal",
     "storageKey": "spatialseed.ui.toolbar.v2",
     "primary": [
       "command-palette",
       "resource-search",
-      "mesh-editor",
-      "geometry-create",
-      "inspector",
-      "animation",
+      "undo",
+      "redo",
       "game-mode",
-      "scene-only",
-      "viewport-fullscreen"
+      "workspace-help"
     ],
     "menus": [
-      {
-        "id": "explore",
-        "label": "Explorar",
-        "items": [
-          "experiment-lab"
-        ]
-      },
-      {
-        "id": "panels",
-        "label": "Painéis",
-        "items": [
-          "structure",
-          "review",
-          "diagnostics",
-          "camera-settings",
-          "viewer-render-settings",
-          "viewer-new",
-          "developer",
-          "console",
-          "toolbar-layout",
-          "scene-help"
-        ]
-      },
       {
         "id": "project",
         "label": "Projeto",
         "items": [
-          "project-save",
-          "project-open",
           "project-new",
+          "project-open",
+          "project-save",
           "mesh-import-stl",
           "mesh-export-stl",
-          "character-import-glb",
-          "procedure-library-save",
-          "procedure-library-open",
-          "procedure-editor",
+          "review",
           "pwa-install"
+        ]
+      },
+      {
+        "id": "create",
+        "label": "Criar",
+        "items": [
+          "geometry-create",
+          "experiment-lab",
+          "character-import-glb"
+        ]
+      },
+      {
+        "id": "edit",
+        "label": "Editar",
+        "items": [
+          "inspector",
+          "mesh-editor",
+          "duplicate-selection",
+          "repeat-duplicate",
+          "group-selection",
+          "ungroup-selection",
+          "delete-selection"
+        ]
+      },
+      {
+        "id": "program",
+        "label": "Programar",
+        "items": [
+          "animation",
+          "console",
+          "procedure-editor",
+          "procedure-library-open",
+          "procedure-library-save"
+        ]
+      },
+      {
+        "id": "view",
+        "label": "Exibir",
+        "items": [
+          "structure",
+          "workspace-status",
+          "camera-settings",
+          "viewer-render-settings",
+          "viewer-new",
+          "scene-only",
+          "viewport-fullscreen",
+          "workspace-layout",
+          "toolbar-layout",
+          "scene-help",
+          "diagnostics",
+          "developer"
         ]
       }
     ],
@@ -75,14 +97,7 @@
       "lasso-selection",
       "selection-eraser",
       "pivot-policy",
-      "edit-pivot",
-      "duplicate-selection",
-      "repeat-duplicate",
-      "group-selection",
-      "ungroup-selection",
-      "delete-selection",
-      "undo",
-      "redo"
+      "edit-pivot"
     ]
   },
   "panels": {
@@ -285,5 +300,79 @@
     "editHud": {
       "storageKey": "spatialseed.edit.hud.v1"
     }
+  },
+  "workspace": {
+    "mode": "guided",
+    "defaultSection": "select",
+    "sections": [
+      {
+        "id": "select",
+        "label": "Selecionar",
+        "groups": [
+          "tool",
+          "quick",
+          "selection",
+          "actions",
+          "navigation"
+        ],
+        "hint": "Toque em um objeto. Use Adicionar para selecionar vários."
+      },
+      {
+        "id": "create",
+        "label": "Criar",
+        "groups": [
+          "creation",
+          "drawing-target",
+          "lifecycle"
+        ],
+        "hint": "Escolha a geometria e indique sua posição na cena."
+      },
+      {
+        "id": "transform",
+        "label": "Transformar",
+        "when": "selection",
+        "groups": [
+          "tool",
+          "frame",
+          "axes",
+          "reference",
+          "snap"
+        ],
+        "hint": "Escolha Mover, Girar ou Escalar. Confira o referencial e o pivô antes de arrastar."
+      },
+      {
+        "id": "draw",
+        "label": "Desenhar",
+        "groups": [
+          "planar",
+          "draw",
+          "drawing-target",
+          "lifecycle",
+          "measure"
+        ],
+        "hint": "Defina o plano ativo, escolha uma ferramenta e desenhe na cena."
+      },
+      {
+        "id": "mesh",
+        "label": "Malha",
+        "when": "mesh",
+        "groups": [
+          "subject",
+          "tool",
+          "actions",
+          "session",
+          "snap"
+        ],
+        "hint": "Escolha vértices, arestas ou faces. Ao terminar, aplique ou cancele a edição."
+      },
+      {
+        "id": "appearance",
+        "label": "Aparência",
+        "groups": [
+          "appearance"
+        ],
+        "hint": "Defina se a cor será aplicada à seleção, à próxima criação ou a ambas."
+      }
+    ]
   }
 }

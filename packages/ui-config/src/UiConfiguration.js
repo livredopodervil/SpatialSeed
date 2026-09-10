@@ -1,6 +1,7 @@
 import {
   normalizeShortcutBindings
 } from "./ShortcutConfiguration.js";
+import { normalizeWorkspaceConfiguration } from "./WorkspaceConfiguration.js";
 
 const DEFAULT_STORAGE_KEY = "spatialseed.ui.layout.v2";
 
@@ -74,6 +75,7 @@ export function normalizeUiConfiguration(source = {}) {
   return Object.freeze({
     schemaVersion,
     profile: requiredText(source.profile ?? "default", "profile"),
+    workspace: normalizeWorkspaceConfiguration(source.workspace),
     toolbar: Object.freeze({
       layout: toolbarLayout,
       storageKey: requiredText(

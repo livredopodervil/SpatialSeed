@@ -637,6 +637,23 @@ export class DevConsole {
   }
 
   #help(topic = null) {
+    if (["interface", "workspace"].includes(String(topic).toLowerCase())) {
+      return {
+        title: "Interface e ferramentas",
+        menus: {
+          Projeto: "Novo, Abrir, Salvar, STL e revisão",
+          Criar: "Objetos, geometrias, experimentos e personagem",
+          Editar: "Propriedades do objeto, edição detalhada e operações de seleção",
+          Programar: "Animação, console e procedimentos",
+          Exibir: "Estrutura, câmera, aparência da cena, painéis e preferências"
+        },
+        tools: "Use os grupos Selecionar, Criar, Transformar, Desenhar, Malha e Aparência. Ferramentas recolhe o conjunto.",
+        properties: "Selecionar mostra o resumo; Editar > Propriedades do objeto carrega os detalhes.",
+        layout: "Exibir > Organização da interface alterna entre interface guiada e HUD livre, conservando preferências.",
+        testing: "No perfil diagnóstico: runtime test workspace; runtime test ui-configuration; runtime test ui-actions; runtime test all.",
+        manual: "docs/INTERFACE_MODULAR.md"
+      };
+    }
     if (topic !== null) {
       if (String(topic).toLowerCase() === "create") {
         return this.#createHelp();
@@ -698,7 +715,7 @@ export class DevConsole {
           "benchmark selection 1000 5",
           "benchmark compare|history|clear",
           "test help|all|sandbox|reducer|commands|project",
-          "runtime test viewer-animation|animation-runtime|animation-commands|" +
+          "runtime test workspace|viewer-animation|animation-runtime|animation-commands|" +
           "affine-repeat|tool-parameters|tool-capabilities|performance-baseline|" +
           "experiment-contract|experiment-plugin|" +
           "experiment-panel|placement-frame|path-references|mesh-edit-math|" +
@@ -739,6 +756,7 @@ export class DevConsole {
         "session status|reset|cancel|help",
         "plan status|commit|discard|help",
         "help create",
+        "help interface",
         "help path",
         "help tool",
         "tool list|show|status|activate|run|get|set|finish|cancel|help",

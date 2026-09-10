@@ -449,8 +449,11 @@ import {
   createGamePresentationTests
 } from "./GamePresentationTests.js?revision=20260820-0054nd2";
 
+import { createWorkspaceTests } from "./WorkspaceTests.js";
+
 export function createRuntimeLayerTests() {
   return {
+    "workspace": createWorkspaceTests(),
     "game-presentation": createGamePresentationTests(),
     "portable-assets": createPortableAssetTests(),
     "interaction-composer": createInteractionComposerTests(),

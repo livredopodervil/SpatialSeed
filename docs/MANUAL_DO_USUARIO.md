@@ -7,7 +7,8 @@ Ele foi reescrito a partir do snapshot de 18 de agosto de 2026, derivado do
 build `20260818-0054my`. A árvore recebida passou pelos gates locais depois da
 correção do início automático do demo, da inclusão das paletas e da primeira
 superfície persistente de comportamento por objeto. Esta revisão também inclui
-plataformas animadas sólidas no modo jogo.
+plataformas animadas sólidas no modo jogo. A organização da interface foi
+atualizada em setembro de 2026; veja também [Interface modular](INTERFACE_MODULAR.md).
 
 O número exibido dentro do aplicativo continua sendo a autoridade para a versão
 realmente carregada. Uma fonte modificada no disco não prova que o navegador ou
@@ -88,8 +89,8 @@ descartado.
 
 ## 3 - Confirmar o build carregado
 
-O painel **Status e comandos** mostra um rótulo como
-`v0.1.0 - build 20260818-0054my`. Esse é o build publicado lido com `no-store`.
+Abra **Exibir → Seleção e estado do projeto** para consultar o build.
+Esse é o build publicado lido com `no-store`.
 O título do campo contém detalhes adicionais:
 
 - build publicado;
@@ -124,39 +125,33 @@ projeto; ele materializa o estado lógico e overlays transitórios.
 
 ### Barra principal
 
-A barra reúne:
-
-- navegar, selecionar, mover, girar e escalar;
-- operações de seleção;
-- alternância mundo/local;
-- criação rápida, undo, redo e revisão;
-- Estrutura, Diagnóstico, Desenvolvedor e Console;
-- Câmera, Render, viewers, Inspector e edição;
-- Criar, Explorar, Animação e Jogar;
-- modo somente cena;
-- Salvar, Abrir, Novo, STL, personagem GLB e procedimentos.
+A barra reúne cinco menus. **Projeto** contém arquivos, STL e revisão;
+**Criar**, geometrias, experimentos e personagem; **Editar**, propriedades,
+edição detalhada e operações de seleção; **Programar**, animação, console e
+procedimentos; **Exibir**, estrutura, câmera, aparência da cena e preferências.
+Comandos, Recursos, Desfazer, Refazer, Jogar e Ajuda permanecem acessíveis
+diretamente. Clique fora de um menu ou pressione Esc para fechá-lo.
 
 ### HUD Editar
 
-O botão com lápis abre o HUD contextual. Ele concentra:
+No modo guiado, **Ferramentas** reúne Selecionar, Criar, Transformar, Desenhar,
+Malha e Aparência. Transformar e Malha aparecem conforme a seleção e a sessão.
+Os controles têm nomes, grupos e uma indicação de uso; o cabeçalho mostra
+seleção, ferramenta, referencial e pivô. Escolher um grupo muda a apresentação,
+sem executar uma operação na cena. O botão Ferramentas recolhe o conjunto.
 
-- assunto: objeto, vértice, aresta ou face;
-- ferramenta: navegar, selecionar, mover, girar ou escalar;
-- operação de seleção: substituir, adicionar, remover ou alternar;
-- frame: mundo, local, viewer ou plano personalizado;
-- eixos, snap, proporcionalidade e travas;
-- plano ativo de autoria;
-- ferramentas 2D, medição, caminhos e operações topológicas;
-- aplicar ou cancelar a sessão de malha.
-
-O botão `?` ativa ajuda dos ícones. O layout pode ser redimensionado e
-personalizado; preferências de apresentação pertencem ao navegador, não ao
-arquivo do projeto.
+O botão **Detalhes** abre a edição completa; **Dicas** ativa ajuda contextual.
+Em **Exibir → Organização da interface**, escolha **HUD livre configurável**
+para usar a grade, posição e componentes personalizados. As preferências
+anteriores continuam preservadas no navegador, fora do arquivo do projeto.
 
 ### Painéis
 
-Painéis como Inspector, Câmera, Render, Console e Editar podem coexistir. Em
-telas pequenas, feche os que não estiver usando. No Inspector, grupos de
+No computador, os painéis podem coexistir, ser movidos ou maximizados. No modo
+guiado em telas pequenas, abrir um painel fecha o anterior. As posições do
+computador não são sobrescritas pelo formato móvel. **Editar → Propriedades
+do objeto** abre o Inspector sob demanda; a seleção não abre esse painel.
+No Inspector, grupos de
 propriedades e a seção **Comportamento** começam recolhidos; editar um campo
 abre o grupo correspondente. A posição e o colapso de um painel são estado de
 interface e não aparecem no undo.

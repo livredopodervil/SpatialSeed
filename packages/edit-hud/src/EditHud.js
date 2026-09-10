@@ -1226,6 +1226,7 @@ export class EditHud {
   };
 
   #onPointerDown = event => {
+    if (this.root.ownerDocument.documentElement.dataset.workspace === "guided") return;
     if (this.#preferences.dock !== "floating") return;
     if (event.target.closest("button, input, select, summary, details")) return;
     const rect = this.root.getBoundingClientRect();
@@ -1360,6 +1361,7 @@ export class EditHud {
   }
 
   #fitToViewport() {
+    if (this.root.ownerDocument.documentElement.dataset.workspace === "guided") return;
     if (this.#preferences.dock !== "floating") return;
     const rect = this.root.getBoundingClientRect();
     const maxLeft = Math.max(0, globalThis.innerWidth - Math.min(rect.width, globalThis.innerWidth));

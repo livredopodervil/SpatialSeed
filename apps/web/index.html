@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#08111d">
 <meta name="application-name" content="Spatial Seed">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -10,6 +10,7 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="icon" href="./icons/spatial-seed.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="stylesheet" href="./workspace.css?build=20260909-0054nf">
 <title>Spatial Seed</title>
 <script type="importmap">
 {
@@ -72,6 +73,28 @@
     <div class="actions">
       <button type="submit" value="ok">Entendi</button>
     </div>
+  </form>
+</dialog>
+<dialog id="workspace-help-dialog" aria-labelledby="workspace-help-title">
+  <form method="dialog">
+    <header><h2 id="workspace-help-title">Comece pela cena</h2><button value="close" aria-label="Fechar ajuda">×</button></header>
+    <ol>
+      <li><strong>Crie.</strong> Em Criar, escolha Objetos e geometrias ou use o grupo Criar das ferramentas. Defina os parâmetros e indique a posição na cena.</li>
+      <li><strong>Selecione e transforme.</strong> Toque no objeto. No grupo Transformar, escolha Mover, Girar ou Escalar. Referencial, eixos e pivô ficam juntos.</li>
+      <li><strong>Edite os dados.</strong> Editar → Propriedades do objeto abre os valores detalhados e os comportamentos. A seleção sozinha não abre esse painel.</li>
+      <li><strong>Experimente.</strong> Desenhar reúne formas, caminhos e medição. Malha reúne vértices, arestas e faces; aplique ou cancele ao terminar.</li>
+      <li><strong>Anime e jogue.</strong> Animar e programar dá acesso à animação, ao console e aos procedimentos. Selecione o personagem ou seu objeto e use Jogar; Esc ou Sair do jogo retorna ao editor.</li>
+      <li><strong>Guarde seu trabalho.</strong> Projeto → Salvar gera o arquivo .spatialseed. Desfazer e Refazer atuam no histórico local.</li>
+    </ol>
+    <details><summary>Teclado e toque</summary>
+      <p>Q navega; S seleciona; W move; E gira; R escala. Ctrl/Cmd+Z desfaz, Ctrl/Cmd+Shift+Z refaz. Ctrl/Cmd+P busca comandos e Ctrl/Cmd+F busca objetos e recursos. Os atalhos respeitam os campos de texto e podem ser personalizados.</p>
+      <p>No toque: um dedo usa a ferramenta; dois deslocam e aproximam a vista; três orbitam. Pressione uma ferramenta para ler sua explicação. Recolha Ferramentas para liberar a cena.</p>
+    </details>
+    <details><summary>Organize seu espaço</summary>
+      <p>Exibir reúne estrutura, câmera, aparência da cena e configuração da interface. No computador, mova os painéis pelo cabeçalho ou maximize-os. No celular, um painel é exibido por vez. O HUD livre conserva as preferências de posição e de componentes.</p>
+    </details>
+    <p><a href="../../docs/MANUAL_DO_USUARIO.md" target="_blank" rel="noopener">Manual completo</a></p>
+    <button value="close">Voltar à cena</button>
   </form>
 </dialog>
 <dialog id="recovery-dialog" aria-labelledby="recovery-title">
@@ -170,7 +193,8 @@
   </form>
 </dialog>
 
-<header id="toolbar">
+<header id="toolbar" aria-label="Ações do projeto">
+  <strong id="workspace-brand">SpatialSeed</strong>
   <button id="command-palette" title="Buscar comandos (Ctrl/Cmd+P)">
     ⌘ Comandos
   </button>
@@ -205,8 +229,8 @@
   </select>
   <button id="edit-pivot">Editar pivô</button>
   <button id="add-box">Caixa</button>
-  <button id="undo" disabled>Desfazer local</button>
-  <button id="redo" disabled>Refazer local</button>
+  <button id="undo" disabled title="Desfazer a última alteração">↶ Desfazer</button>
+  <button id="redo" disabled title="Refazer a última alteração">↷ Refazer</button>
   <button id="review" disabled>Revisar proposta</button>
   <button id="structure">Estrutura</button>
   <button id="diagnostics">Diagnóstico</button>
@@ -221,13 +245,13 @@
     id="viewport-fullscreen"
     title="Alternar tela cheia do viewport (F)"
     aria-pressed="false"
-  >⛶</button>
+  >Tela cheia</button>
   <button id="camera-settings" title="Configurar planos de recorte">
     Câmera
   </button>
   <button id="viewer-render-settings"
     title="Iluminação, sombras, reflexos e materiais locais">
-    Render
+    Aparência da cena
   </button>
   <button
     id="viewer-new"
@@ -235,9 +259,9 @@
   >
     Projetos / viewers
   </button>
-  <button id="inspector">Inspector</button>
-  <button id="mesh-editor">Editar</button>
-  <button id="geometry-create">Criar</button>
+  <button id="inspector" title="Editar dados e comportamentos dos objetos selecionados">Propriedades do objeto</button>
+  <button id="mesh-editor">Edição detalhada</button>
+  <button id="geometry-create">Objetos e geometrias</button>
   <button id="experiment-lab" title="Explorar construções paramétricas">
     ∿ Experimentos
   </button>
@@ -253,6 +277,12 @@
     <option value="floating">Barra flutuante</option>
   </select>
   <button id="scene-help">Ajuda do modo cena</button>
+  <button id="workspace-status" type="button">Seleção e estado do projeto</button>
+  <button id="workspace-help" type="button">Como usar</button>
+  <select id="workspace-layout" aria-label="Organização da interface">
+    <option value="guided">Interface guiada</option>
+    <option value="free">HUD livre configurável</option>
+  </select>
   <button id="project-save">Salvar</button>
   <button id="project-open">Abrir</button>
   <button id="project-new">Novo</button>
@@ -282,6 +312,10 @@
 </header>
 
 <aside id="edit-hud" aria-label="HUD de edição">
+  <header class="ss-workspace-tool-header">
+    <button id="workspace-tools-toggle" type="button" aria-expanded="true" aria-controls="workspace-tool-content">Ferramentas ▾</button>
+    <output id="workspace-context" aria-live="polite">Selecione ou crie um objeto</output>
+  </header>
   <div id="edit-hud-handle" class="edit-hud-handle">
     <button id="edit-hud-open" type="button" title="Abrir painel unificado de edição">✎</button>
     <button id="edit-hud-help" type="button" title="Ativar modo ajuda dos ícones">?</button>
@@ -502,8 +536,9 @@
 </div>
 <aside id="selection-panel">
   <header>
-    <strong>Status e comandos</strong>
+    <strong>Seleção e projeto</strong>
     <button id="status-open-console" type="button" title="Abrir console completo">↗</button>
+    <button id="close-selection-panel" type="button" aria-label="Fechar resumo da seleção">×</button>
   </header>
   <div id="selection-panel-content">
     <div id="selection-summary">0 selecionados</div>
@@ -533,7 +568,7 @@
 </aside>
 
 <aside id="outline" hidden>
-  <header><strong>Estado regional</strong><button id="close-outline">×</button></header>
+  <header><strong>Estrutura da cena</strong><button id="close-outline" aria-label="Fechar estrutura">×</button></header>
   <div id="outline-content"></div>
 </aside>
 
@@ -1566,6 +1601,6 @@
 </section>
 
 <pre id="error-box" hidden></pre>
-<script type="module" src="./boot.js?build=20260818-0054my&revision=20260820-0054nd2"></script>
+<script type="module" src="./boot.js?build=20260909-0054nf&revision=20260820-0054nd2"></script>
 </body>
 </html>

@@ -16,6 +16,16 @@ Cada marco deve:
 
 ## Marcos concluídos
 
+### Interface modular guiada
+
+- Grupos funcionais declarados no manifesto existente e controles com nomes.
+- Resumo barato da seleção; Inspector aberto explicitamente.
+- Painéis exclusivos no celular e coexistentes no computador.
+- HUD livre e preferências anteriores preservados.
+- Ajuda inicial, atalhos e testes de configuração/contexto integrados.
+- Validação gráfica e gestual em Android/desktop permanece necessária antes
+  da promoção; ver o roteiro em `docs/INTERFACE_MODULAR.md`.
+
 ### 0022 — Sistema de propriedades
 
 - `PropertyRegistry` tipado;

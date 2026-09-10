@@ -20,3 +20,5 @@ export {
 } from "./UiActionRegistry.js";
 
 export { attachFormFieldHints } from "./FormFieldHints.js?build=20260812-0054l";
+export { WorkspaceShell } from "./WorkspaceShell.js";
+export { describeWorkspaceContext, resolveWorkspaceSection, workspaceSectionAvailable } from "./WorkspaceContext.js";

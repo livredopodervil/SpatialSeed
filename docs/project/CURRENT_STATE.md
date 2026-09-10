@@ -6,6 +6,12 @@
 
 ## Baseline desta revisão
 
+A árvore agora contém a interface modular guiada. O build efetivo está em
+`apps/web/build-info.json`. A validação automática cobre contratos e integração
+DOM; esta entrega ainda exige a revisão visual descrita em
+`docs/INTERFACE_MODULAR.md`. As anotações abaixo registram a consolidação
+funcional anterior, sobre a qual esta interface foi implementada.
+
 A documentação viva de 18 de agosto de 2026 corresponde ao build
 `20260818-0054my`, sucessor do marco publicado `0054mm`.
 
