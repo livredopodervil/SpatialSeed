@@ -1,0 +1,530 @@
+{
+  "schemaVersion": 1,
+  "id": "spatialseed-plan-0054ng",
+  "title": "Jogos e aplicativos web autocontidos",
+  "baseline": {
+    "commit": "7687302fe2a5f67480362098189bac8e3d6f5eff",
+    "runtimeManifest": "apps/web/build-info.json",
+    "humanValidation": "pending"
+  },
+  "milestones": [
+    {
+      "id": "M0",
+      "title": "Validar a base e eliminar regressões observadas",
+      "dependsOn": [],
+      "status": "implemented-awaiting-review",
+      "outcome": "Transformar a 0054nf1 em uma base de uso confirmada; testes verdes não encerram a regressão móvel.",
+      "sources": [
+        "docs/INTERFACE_MODULAR.md",
+        "apps/web/build-info.json",
+        "packages/ui-widgets/src/FloatingPanelManager.js"
+      ],
+      "slices": [
+        "Confirmar checkout, build carregado e cache; reproduzir painéis, fechamento e HUD compacto no telefone.",
+        "Corrigir somente regressões reproduzidas e repetir o fluxo no desktop, sem redesenho adicional.",
+        "Verificar entrar/sair do jogo, áudio após gesto, texto seguindo objeto e parada de pulse; registrar resultado atual."
+      ],
+      "acceptance": [
+        "Painéis fecham e seus cabeçalhos permanecem acessíveis em retrato e paisagem; conteúdo rola sem compressão.",
+        "No telefone, só um painel principal ocupa a área e fechar devolve o toque ao workspace; no desktop, mover/redimensionar não perde os controles de fechamento.",
+        "HUD compacto é recuperável; seleção, undo, salvar/reabrir e editor retornam após jogar.",
+        "Toda regressão relatada permanece aberta até evidência humana na versão correspondente."
+      ],
+      "checks": [
+        {
+          "id": "automatic",
+          "kind": "automatic",
+          "label": "Verificações automáticas proporcionais ao escopo"
+        },
+        {
+          "id": "mobile",
+          "kind": "human",
+          "label": "Fluxos completos no Android: retrato, paisagem, toque e PWA"
+        },
+        {
+          "id": "desktop",
+          "kind": "human",
+          "label": "Fluxos completos no navegador desktop"
+        },
+        {
+          "id": "lifecycle",
+          "kind": "human",
+          "label": "Jogo → edição → jogo, áudio, texto no mundo e pulse"
+        }
+      ],
+      "scope": [
+        "apps/web/**",
+        "packages/ui-widgets/**",
+        "packages/edit-hud/**",
+        "packages/runtime-test-plugin/**"
+      ]
+    },
+    {
+      "id": "M1",
+      "title": "Consolidar recursos, propriedades, eventos e catálogos",
+      "dependsOn": [
+        "M0"
+      ],
+      "status": "planned",
+      "outcome": "Reutilizar sensores, DataObjects e apresentação existentes; unificar seus contratos de autoria, migração e documentação.",
+      "sources": [
+        "packages/core/src/DataObjects.js",
+        "packages/core/src/InteractionBindings.js",
+        "packages/game-runtime/src/GameSessionState.js",
+        "packages/game-runtime/src/GameRuntime.js",
+        "packages/game-runtime/src/GamePresentationRuntime.js",
+        "packages/property-registry/src/PropertyRegistry.js"
+      ],
+      "slices": [
+        "Inventariar por registros as capacidades atuais, distinguindo trigger.enter/exit de collision.* ainda proposto e solid/sensor/none de novos papéis.",
+        "Consolidar identidade/endereço/tipo para dados, texto e referências de assets; migrar formatos existentes sem segunda base de estado.",
+        "Completar metadados de comandos/eventos/propriedades/capabilities e gerar JSON, referência técnica e ajuda a partir deles; exemplos executáveis e verificação de divergência."
+      ],
+      "acceptance": [
+        "Um coletável e um contador usam eventos/comandos existentes, com inicialização e reset definidos.",
+        "Dados persistentes sobrevivem ao roundtrip; alterações da sessão não poluem documento/undo.",
+        "Entradas públicas documentam argumentos, resultado, versão, efeitos, permissões e orçamento; falha de geração bloqueia a entrega."
+      ],
+      "checks": [
+        {
+          "id": "automatic",
+          "kind": "automatic",
+          "label": "Verificações automáticas proporcionais ao escopo"
+        },
+        {
+          "id": "authoring",
+          "kind": "human",
+          "label": "Criar contador e coletável pelo Inspector e pelo console"
+        },
+        {
+          "id": "roundtrip",
+          "kind": "human",
+          "label": "Salvar/reabrir e iniciar/parar sem estado residual"
+        }
+      ],
+      "scope": [
+        "packages/core/**",
+        "packages/property-registry/**",
+        "packages/interaction-runtime/**",
+        "packages/game-runtime/**",
+        "packages/devtools/**",
+        "tools/**"
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "Amadurecer animação de personagem",
+      "dependsOn": [
+        "M1"
+      ],
+      "status": "planned",
+      "outcome": "Oferecer autoria portátil de clips e transições sobre CharacterAnimationSystem e seu backend Three já existente.",
+      "sources": [
+        "packages/character-animation/src/CharacterAnimationSystem.js",
+        "packages/character-animation-three/src/ThreeCharacterAnimationBackend.js",
+        "packages/runtime-test-plugin/src/CharacterAnimationTests.js"
+      ],
+      "slices": [
+        "Consolidar catálogo de clips, remapeamento explícito idle/walk/run/jump/fall/land e fallback para clips ausentes.",
+        "Publicar transições, velocidade, loop, blend e sinais de término por descritores; UI/console/programa usam o mesmo contrato.",
+        "Validar vários personagens com estado independente, recursos compartilhados e descarte; root motion permanece opt-in e só solicita movimento ao controlador físico."
+      ],
+      "acceptance": [
+        "Importar dois rigs distintos, configurar e exportar/reabrir sem serializar objetos Three.",
+        "Blend e escala visual não alteram collider; pausa, respawn, stop e troca de personagem restauram estado.",
+        "Medir custo com 1 e 10 personagens no mesmo aparelho; registrar bytes, memória estimada quando disponível e p95 de frame, sem meta inventada."
+      ],
+      "checks": [
+        {
+          "id": "automatic",
+          "kind": "automatic",
+          "label": "Verificações automáticas proporcionais ao escopo"
+        },
+        {
+          "id": "character",
+          "kind": "human",
+          "label": "Dois rigs, clips faltantes, blend e ciclo completo de jogo"
+        },
+        {
+          "id": "performance",
+          "kind": "human",
+          "label": "Comparação reproduzível no telefone e desktop"
+        }
+      ],
+      "scope": [
+        "packages/character-animation/**",
+        "packages/character-animation-three/**",
+        "packages/game-runtime/**",
+        "packages/runtime-test-plugin/**"
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "Comportamentos programáveis com capacidades limitadas",
+      "dependsOn": [
+        "M1"
+      ],
+      "status": "planned",
+      "outcome": "Permitir código de usuário associado a eventos, sem dar ao programa o renderer, o DOM ou autoridade irrestrita.",
+      "sources": [
+        "packages/script-runtime/src/ProgramRunController.js",
+        "packages/script-runtime/src/ProgramSessionController.js",
+        "packages/script-runtime/src/SpatialPlanCommitService.js",
+        "packages/interaction-runtime/src/InteractionRuntime.js",
+        "vendor/ses/README.md"
+      ],
+      "slices": [
+        "Definir recurso de programa: fonte, versão, eventos, parâmetros tipados e capabilities declaradas; importar não executa.",
+        "Ligar eventos à infraestrutura Worker/SES existente com fila e orçamento; resultados são intenções/planos tipados revalidados no host.",
+        "Separar plano editorial revisável de ações efêmeras da sessão; timeout, cancelamento, quotas de saída, isolamento entre instâncias e diagnóstico por objeto."
+      ],
+      "acceptance": [
+        "Usuário programa contador/porta e resposta a evento sem editar GameRuntime.",
+        "Loop infinito é terminado, fila excessiva é limitada e falha de um script não paralisa câmera ou outros applets.",
+        "Sem acesso direto a DOM/rede/arquivos/sandbox; mensagens obsoletas e comandos fora do catálogo são rejeitados.",
+        "Autorização da sessão delimita ações automáticas; aprovação humana não é solicitada a cada frame."
+      ],
+      "checks": [
+        {
+          "id": "automatic",
+          "kind": "automatic",
+          "label": "Verificações automáticas proporcionais ao escopo"
+        },
+        {
+          "id": "behavior",
+          "kind": "human",
+          "label": "Criar, corrigir e interromper um comportamento pelo editor"
+        },
+        {
+          "id": "isolation",
+          "kind": "human",
+          "label": "Demonstrar timeout, ações recusadas, cancelamento e reset"
+        }
+      ],
+      "scope": [
+        "packages/script-runtime/**",
+        "packages/interaction-runtime/**",
+        "packages/core/**",
+        "packages/procedure-editor/**",
+        "packages/runtime-test-plugin/**"
+      ]
+    },
+    {
+      "id": "M4",
+      "title": "Bindings reativos e interfaces interativas",
+      "dependsOn": [
+        "M1"
+      ],
+      "status": "planned",
+      "outcome": "Compor aplicativos de dados e apresentações sem exigir malha, personagem ou física.",
+      "sources": [
+        "packages/property-registry/src/PropertyRegistry.js",
+        "packages/game-runtime/src/GamePresentationRuntime.js",
+        "packages/ui-config/src/index.js",
+        "packages/script-runtime/src/index.js"
+      ],
+      "slices": [
+        "Definir fontes constant/keyframes/expression/binding por endereço canônico; detectar ciclos e limitar propagação e atualização incremental.",
+        "Criar schema de texto, botão, slider e campo de entrada sobre Resource/Property/Command/Event, com projeção DOM substituível.",
+        "Montar contador/formulário ou simulação simples em perfil sem Three; expressões reutilizam avaliação restrita existente."
+      ],
+      "acceptance": [
+        "Mudar um dado atualiza apenas dependentes; ciclos e referências inexistentes geram diagnóstico.",
+        "Teclado, foco, toque, redimensionamento e acessibilidade funcionam no applet.",
+        "O modo somente dados não carrega renderer/physics; HTML de usuário não é injetado sem contrato de sanitização."
+      ],
+      "checks": [
+        {
+          "id": "automatic",
+          "kind": "automatic",
+          "label": "Verificações automáticas proporcionais ao escopo"
+        },
+        {
+          "id": "applet-ui",
+          "kind": "human",
+          "label": "Operar formulário e gráfico/contador por toque e teclado"
+        },
+        {
+          "id": "reactivity",
+          "kind": "human",
+          "label": "Demonstrar ciclos, edição e restauração de valores"
+        }
+      ],
+      "scope": [
+        "packages/property-registry/**",
+        "packages/game-runtime/**",
+        "packages/ui-config/**",
+        "packages/ui-widgets/**",
+        "packages/resource-tree/**"
+      ]
+    },
+    {
+      "id": "M5",
+      "title": "Prefabs e composição reutilizável",
+      "dependsOn": [
+        "M3",
+        "M4"
+      ],
+      "status": "planned",
+      "outcome": "Transformar grafo, dados, apresentação e comportamento em recursos reutilizáveis com overrides explícitos.",
+      "sources": [
+        "packages/core/src/DataObjects.js",
+        "packages/script-runtime/src/ProcedureCatalog.js",
+        "packages/resource-tree/src/ResourceTree.js"
+      ],
+      "slices": [
+        "Definir referência/versionamento e dependências do prefab, com parâmetros e IDs locais remapeáveis.",
+        "Implementar Make Instance/Make Unique e atualização de origem com conflitos/overrides preservados.",
+        "Publicar prefab de coletável e de widget configurável, com transação única e roundtrip."
+      ],
+      "acceptance": [
+        "Duas instâncias compartilham recursos sem compartilhar estado efêmero involuntariamente.",
+        "Atualizar origem preserva overrides e informa conflitos; ciclo de dependência é recusado.",
+        "Desfazer/restaurar e exportar/reabrir mantêm identidade e parâmetros."
+      ],
+      "checks": [
+        {
+          "id": "automatic",
+          "kind": "automatic",
+          "label": "Verificações automáticas proporcionais ao escopo"
+        },
+        {
+          "id": "prefab",
+          "kind": "human",
+          "label": "Editar instância, origem e conflito de override pelo fluxo público"
+        }
+      ],
+      "scope": [
+        "packages/core/**",
+        "packages/editor-commands/**",
+        "packages/resource-tree/**",
+        "packages/runtime-test-plugin/**"
+      ]
+    },
+    {
+      "id": "M6",
+      "title": "Player mínimo e prova de execução fora do editor",
+      "dependsOn": [
+        "M4"
+      ],
+      "status": "planned",
+      "outcome": "Provar cedo um player isolado; estabilizar a distribuição após a composição, evitando copiar o bootstrap inteiro.",
+      "sources": [
+        "packages/platform-web/src/ApplicationDefinition.js",
+        "packages/plugin-api/src/ModuleRegistry.js",
+        "apps/web/bootstrap/createWebRuntime.js"
+      ],
+      "slices": [
+        "Extrair montagem de sessão com lifecycle create/start/pause/stop/dispose e providers explícitos, sem duplicar regras de domínio.",
+        "Criar perfis de capacidades para applet 2D, visualização 3D e jogo; não usar ocultação CSS como remoção do editor.",
+        "Executar duas instâncias isoladas na mesma página de teste; esta fatia é prova de portabilidade, não exportador estável."
+      ],
+      "acceptance": [
+        "Player não importa painéis, ferramentas de autoria ou pacote de testes.",
+        "Duas instâncias possuem input, câmera, relógio, áudio, armazenamento e recursos descartáveis próprios.",
+        "Perfil sem 3D roda sem Three; nenhum servidor específico ou conta é dependência de execução."
+      ],
+      "checks": [
+        {
+          "id": "automatic",
+          "kind": "automatic",
+          "label": "Verificações automáticas proporcionais ao escopo"
+        },
+        {
+          "id": "player",
+          "kind": "human",
+          "label": "Abrir duas instâncias, pausar uma e descartar ambas"
+        },
+        {
+          "id": "dependency-closure",
+          "kind": "human",
+          "label": "Inspecionar imports/requisições e provar ausência do editor"
+        }
+      ],
+      "scope": [
+        "packages/platform-web/**",
+        "packages/plugin-api/**",
+        "apps/player/**",
+        "apps/web/bootstrap/**"
+      ]
+    },
+    {
+      "id": "M7",
+      "title": "Exportação autocontida e incorporação web",
+      "dependsOn": [
+        "M3",
+        "M5",
+        "M6"
+      ],
+      "status": "planned",
+      "outcome": "Gerar pacote estático portátil com projeto, runtime mínimo, código, assets e licenças; incorporá-lo por iframe.",
+      "sources": [
+        "packages/platform-web/src/ApplicationDefinition.js",
+        "packages/platform-web/src/BrowserProjectFileGateway.js",
+        "tools/analyze_reachable_surface.py",
+        "apps/web/pwa/precache-manifest.json"
+      ],
+      "slices": [
+        "Resolver fechamento transitivo de módulos/assets/workers/WASM/fonts/audio, detectar falta/ciclo e emitir manifesto com versões, hashes, licenças e capabilities.",
+        "Exportar diretório/ZIP com caminhos relativos, inicialização determinística e relatório de dependências; CDN e chamadas externas são desativadas por padrão.",
+        "Entregar snippet iframe e protocolo versionado de mensagens para ready/error/resize/pause/dispose com validação de origem/instância e permissões mínimas.",
+        "Perfil HTML único é opcional e distinto: só fica disponível após prova de workers, módulos, CSP e assets; não prometer file:// para o pacote ESM."
+      ],
+      "acceptance": [
+        "Após baixar o pacote inteiro, executar em hospedagem estática comum, com todas as dependências locais e sem serviço do autor/editor.",
+        "Executar em raiz e subdiretório, hospedeiro de origem diferente, dois iframes e modo rede bloqueada após cache/preparação explícita.",
+        "Sem URLs de desenvolvimento, dependências ausentes ou licença omitida; abertura offline não depende de aquecimento oculto de cache.",
+        "Autocontido significa fechamento de dependências; HTML único e abertura file:// são capacidades separadas e testadas separadamente."
+      ],
+      "checks": [
+        {
+          "id": "automatic",
+          "kind": "automatic",
+          "label": "Verificações automáticas proporcionais ao escopo"
+        },
+        {
+          "id": "export",
+          "kind": "human",
+          "label": "Publicar pacote de teste em hospedagem estática e subdiretório"
+        },
+        {
+          "id": "embed",
+          "kind": "human",
+          "label": "Incorporar duas instâncias e verificar origem, foco, redimensionamento e descarte"
+        },
+        {
+          "id": "offline",
+          "kind": "human",
+          "label": "Repetir sem dependência de rede externa e conferir assets/licenças"
+        }
+      ],
+      "scope": [
+        "packages/platform-web/**",
+        "packages/plugin-api/**",
+        "apps/player/**",
+        "tools/**"
+      ]
+    },
+    {
+      "id": "M8",
+      "title": "0055: jogos e aplicativos completos aceitos",
+      "dependsOn": [
+        "M2",
+        "M7"
+      ],
+      "status": "planned",
+      "outcome": "Declarar maturidade por produtos completos reproduzíveis, não pelo número da versão ou de testes.",
+      "sources": [
+        "docs/project/ROADMAP.md",
+        "docs/INTERFACE_MODULAR.md"
+      ],
+      "slices": [
+        "Jogo: início, personagem animado, plataformas móveis, coleta/pontuação, derrota/vitória e reinício.",
+        "Applet 3D: configurador ou experimento com parâmetros, eventos, animação e exportação incorporável.",
+        "Aplicativo 2D: formulário/quiz/contador com dados, bindings e código do usuário, sem carregar Three.",
+        "Fechar manual do usuário por tarefas, referência autogerada, exemplos e relatório comparável de desempenho e limitações."
+      ],
+      "acceptance": [
+        "Os três produtos são construídos pelas APIs/GUI públicas sem editar fonte do engine.",
+        "Android e desktop passam nos roteiros de uso, publicação, incorporação e recuperação.",
+        "Revisor humano aceita os artefatos e limitações da versão concreta; promoção continua exigindo autorização explícita."
+      ],
+      "checks": [
+        {
+          "id": "automatic",
+          "kind": "automatic",
+          "label": "Verificações automáticas proporcionais ao escopo"
+        },
+        {
+          "id": "game",
+          "kind": "human",
+          "label": "Jogar do início ao fim e reiniciar no telefone e desktop"
+        },
+        {
+          "id": "apps",
+          "kind": "human",
+          "label": "Construir e usar os dois aplicativos fora do editor"
+        },
+        {
+          "id": "release",
+          "kind": "human",
+          "label": "Revisar documentação, acessibilidade, orçamento e limitações para 0055"
+        }
+      ],
+      "scope": [
+        "examples/**",
+        "docs/**",
+        "apps/player/**"
+      ]
+    }
+  ],
+  "deferred": [
+    "Corpos dinâmicos empurráveis por backend substituível: comparar custo/benefício após contratos de contato; não bloquear jogos cinemáticos simples.",
+    "Geometrias implícitas, superfícies deformáveis, painéis espaciais, topologia, formato glTF de cena, gramáticas de forma e modificadores vinculados permanecem em trilhas próprias.",
+    "Colaboração remota, CRDT/P2P e marketplace dependem de autoridade, protocolo e contratos; não antecipar no player autônomo.",
+    "Retargeting geral, IK e editor de animação esquelética completo entram apenas após clips/transições e orçamento medido."
+  ],
+  "continuity": [
+    {
+      "previous": "0029g–0029i: rigs, direção de cena e controles configuráveis",
+      "treatment": "Reavaliar o que já está no código; controles e propriedades convergem com bindings/player. Shots, cues e direção multicâmera permanecem extensão própria.",
+      "milestones": [
+        "M4",
+        "M6"
+      ]
+    },
+    {
+      "previous": "0054mo/mx/my: propriedades, eventos e plataformas cinemáticas",
+      "treatment": "Usar os serviços entregues como base, preservando autoria pública e estado efêmero.",
+      "milestones": [
+        "M1",
+        "M2",
+        "M3"
+      ]
+    },
+    {
+      "previous": "Após 0054my: triggers → dados → bindings → prefabs → applets",
+      "treatment": "Sensores/dados já existem; consolidar e manter a sequência de composição, com prova antecipada de player.",
+      "milestones": [
+        "M1",
+        "M4",
+        "M5",
+        "M6",
+        "M7"
+      ]
+    },
+    {
+      "previous": "Persistência compacta e recuperação local",
+      "treatment": "Manter recuperação existente; schema, referências e migrações fazem parte do roundtrip. OPFS e compressão evoluem quando o volume exigir.",
+      "milestones": [
+        "M1",
+        "M5",
+        "M7"
+      ]
+    },
+    {
+      "previous": "Interoperabilidade, plugins e gates tecnológicos",
+      "treatment": "Usar manifests/capabilities/adapters. QuickJS/WASM só após comparação com Worker/SES; colaboração remota mantém seus pré-requisitos.",
+      "milestones": [
+        "M1",
+        "M3",
+        "M6",
+        "M7"
+      ]
+    },
+    {
+      "previous": "Curvas/2D, topologia, booleanos, modificadores e gramáticas",
+      "treatment": "Preservar escopo e critérios no snapshot anterior; planejar fatias próprias sem bloquear jogos/apps quando as primitivas atuais bastarem.",
+      "milestones": []
+    },
+    {
+      "previous": "Documentação, desempenho, experiência de uso e consolidação 0055",
+      "treatment": "Documentação gerada, medições comparáveis, acessibilidade e testes de produtos completos atravessam as fatias; sem novo redesenho como requisito.",
+      "milestones": [
+        "M0",
+        "M1",
+        "M8"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,18 @@
 # Colaboração assistida no SpatialSeed
 
+O ciclo de planejamento e revisão está em
+[`docs/project/AGENT_WORKFLOW.md`](docs/project/AGENT_WORKFLOW.md).
+Comece com `bash tools/seedctl context` e `bash tools/seedctl roadmap check`.
+`docs/project/milestones.json` gera o roadmap; o template durável gera a seed.
+Não edite as projeções para esconder divergências. Nenhum resultado automático
+substitui a observação humana exigida pelo marco.
+
+Prepare e corrija localmente o trabalho já autorizado. Peça revisão sobre um
+candidato concreto; registre autorização existente sem solicitá-la novamente.
+Não preencha aceitação ou observação humana por inferência. Uma regressão
+relatada reabre a fatia, mesmo com testes verdes. Mantenha comunicação curta e
+evidências detalhadas nos arquivos. Esta governança não autoriza push/merge.
+
 Este arquivo é a entrada operacional para assistentes de código e LLMs. Ele
 complementa, sem substituir:
 
@@ -45,7 +58,9 @@ complementa, sem substituir:
 
 ## Forma de entrega
 
-- Trabalhe em branch criado a partir do `main` confirmado.
+- Para trabalho novo, use o `main` confirmado. Quando o pedido continuar um
+  patch anterior, use seu commit confirmado e informe essa base explicitamente;
+  não troque silenciosamente de árvore nem declare o patch já integrado ao main.
 - Prefira incremento pequeno, testável, reversível e documentado.
 - No ambiente principal Android/Termux, forneça comandos completos e evite
   edição manual extensa.

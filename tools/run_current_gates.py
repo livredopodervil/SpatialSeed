@@ -13,6 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
 GATES = [
+    ("project-plan", [PYTHON, "tools/project_workflow.py", "check"]),
+    ("project-workflow", [PYTHON, "tools/test_project_workflow.py"]),
     ("architecture", [PYTHON, "tools/audit_architecture.py"]),
     ("web-entrypoints", [PYTHON, "tools/audit_web_entrypoints.py"]),
     ("pwa-update", [PYTHON, "tools/audit_pwa_update_path.py"]),

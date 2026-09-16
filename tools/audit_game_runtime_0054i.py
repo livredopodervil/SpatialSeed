@@ -51,7 +51,9 @@ require("packages/runtime-test-plugin/src/GameRuntimeTests.js", (
     '"consulta de câmera retorna a primeira superfície no segmento"',
     '"câmera de jogo retrai antes de atravessar parede"',
 ))
-require("docs/project/ROADMAP.md", (
+# Historical wording moved with the frozen roadmap. The live generated plan
+# and its dependency/review contracts have dedicated project-workflow gates.
+require("docs/project/history/ROADMAP_0054NF1.md", (
     "0054b–0054i",
     "0055 é o critério de maturidade",
     "MODULE_TYPELESS_PACKAGE_JSON",

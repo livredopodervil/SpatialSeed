@@ -21,8 +21,9 @@ Nunca presuma o checkout ativo. Confirme `pwd`, branch, HEAD, status, remoto e
 ## Estado funcional
 
 O build desta árvore está em `apps/web/build-info.json`; a interface atual é
-descrita em `docs/INTERFACE_MODULAR.md`. Toda promoção deve atualizar manifesto, tokens de
-cache, auditorias sucessoras e estado PWA como uma única alteração.
+descrita em `docs/INTERFACE_MODULAR.md`. Mudanças executáveis devem atualizar manifesto, tokens de
+cache, auditorias sucessoras e estado PWA como uma única alteração. Patches
+de planejamento não incrementam o build nem comprovam aceitação da interface.
 
 Capacidades presentes:
 
@@ -37,6 +38,7 @@ Capacidades presentes:
 - modo jogo, personagem GLB, colisão, câmera, áudio e eventos;
 - plataformas animadas sólidas com transporte cinemático do personagem apoiado;
 - comportamentos por objeto no contrato portátil evento → comando autorizado;
+- sensores `trigger.enter/exit`, dados de sessão e apresentação declarativa;
 - gates, diagnóstico, testes e benchmarks.
 
 ## Invariantes
@@ -105,18 +107,36 @@ comparável.
 Documentos numerados de build são históricos. Não copiar contagens, hashes ou
 listas geráveis para esta semente.
 
-## Próxima prioridade
+## Plano e continuidade
 
-Usar o contrato `Resource + Property + Command + Event` como núcleo
-multiplicador. Depois das plataformas cinemáticas, o passo imediato é publicar
-papéis de colisão e gatilhos `enter/stay/exit` para coletáveis e áreas de ação.
-Em seguida, recursos lógicos tipados (`record`, `text` e `asset-reference`)
-devem oferecer estado e conteúdo sem geometria nem dependência do renderer.
-Bindings reativos, prefabs com overrides e o perfil de exportação web autônomo
-compõem os passos seguintes. O artefato exportado deve abrir em navegador
-comum, ser incorporável ou compartilhável e não depender de Termux, Linux ou
-instalação do editor. Geometrias implícitas e painéis interativos entram como
-providers/plugins sobre essas fronteiras, sem criar autoridades paralelas.
+`docs/project/milestones.json` é a fonte do roadmap e de seus critérios de
+saída. `docs/project/ROADMAP.md` é sua projeção gerada. A aceitação visual da
+base permanece pendente até observação humana no telefone e no computador.
+Sensores, dados de sessão, apresentação e animação GLB já têm implementação;
+consulte o código antes de propor sua recriação.
+
+O plano consolida contratos e documentação gerável, amadurece animação de
+personagens e código de usuário, acrescenta bindings e prefabs, extrai um
+player mínimo e prepara exportação web autocontida. Os marcos 0055 exigem
+produtos completos. Dependências, fatias e critérios estão no roadmap.
+
+`docs/project/DELIVERY_ARCHITECTURE.md` define as fronteiras propostas,
+adapters substituíveis, portabilidade e avaliação de bibliotecas. Nenhuma
+biblioteca proposta se torna dependência obrigatória por constar no plano.
+
+```bash
+bash tools/seedctl context
+bash tools/seedctl roadmap check
+```
+
+Editar o plano canônico e executar `bash tools/seedctl roadmap render`.
+Editar esta semente em `docs/PROJECT_SEED_TEMPLATE.md` e executar
+`bash tools/make-project-seed.sh`. Não duplicar estado efêmero na semente.
+
+O ciclo em `docs/project/AGENT_WORKFLOW.md` liga revisão, evidência, commit e
+build. Gates automáticos não substituem aceitação humana. Uma regressão abre
+correção de rota; não se inventa aprovação, aparelho testado ou instalação.
+O trabalho local autorizado continua sem repetir pedidos de permissão.
 
 ## Protocolo para nova LLM
 

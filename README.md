@@ -11,6 +11,13 @@ programar, simular e transportar mundos digitais no navegador.**
 [Livro e PDF](docs/book/README.md) -
 [Mapa da documentação](docs/README.md)
 
+Planejamento de jogos e aplicativos autocontidos:
+[roadmap](docs/project/ROADMAP.md),
+[contratos de entrega](docs/project/DELIVERY_ARCHITECTURE.md) e
+[desenvolvimento com revisão humana](docs/project/AGENT_WORKFLOW.md).
+O planejamento não altera o build executável; a revisão visual da base
+0054nf1 continua pendente.
+
 > Estado: protótipo experimental em desenvolvimento ativo. O manifesto
 > `apps/web/build-info.json` identifica o build desta árvore. A interface guiada
 > reúne ferramentas por tarefa, conserva o HUD livre e adapta os painéis ao

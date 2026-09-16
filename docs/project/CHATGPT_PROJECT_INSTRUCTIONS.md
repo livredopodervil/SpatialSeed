@@ -1,5 +1,12 @@
 # Instruções para assistentes no projeto SpatialSeed
 
+Continuidade atual: [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md), roadmap gerado de
+`milestones.json` e `bash tools/seedctl context`. Esta revisão deriva caminhos
+do checkout real; o caminho canônico histórico abaixo não comprova o diretório
+ativo. Autorizações já explícitas são preservadas. Revisão humana é feita sobre
+evidência concreta; não interrompe inspeção, implementação e correções locais
+já autorizadas. Nunca registrar aprovação humana por conta própria.
+
 > Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`. Estas instruções resumem o
 > contrato de colaboração; o processo operacional completo está em
 > [`WORKFLOW.md`](WORKFLOW.md).

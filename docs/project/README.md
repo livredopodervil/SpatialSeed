@@ -1,7 +1,7 @@
 # Documentação de controle do projeto
 
-> Índice vivo. Auditoria atualizada em 24 de julho de 2026 até o marco
-> `0029d`.
+> Índice vivo. O plano atual parte da 0054nf1; referências numeradas abaixo
+> preservam o contexto histórico de cada documento.
 
 Esta pasta reúne documentos duráveis de direção, decisão, operação e
 continuidade. Ela não participa do runtime. Especificações técnicas de features
@@ -35,12 +35,14 @@ repetidos em documentos vivos quando podem ser consultados diretamente.
 | [`DECISIONS.md`](DECISIONS.md) | vivo | registro arquitetural durável | separa portal, aplicativo, laboratório e protótipos |
 | [`REGRESSION_SYSTEMATIZATION_0053G.md`](REGRESSION_SYSTEMATIZATION_0053G.md) | marco 0053g | causalidade, correções, gates e fronteira de extração | mantém 25 arquivos não referenciados como fila de revisão, sem remoção automática |
 | [`DISTRIBUTION.md`](DISTRIBUTION.md) | vivo | Pages, PWA, HTTP e arquivos | registra raiz pública, catálogo e escopos offline |
-| [`ROADMAP.md`](ROADMAP.md) | vivo | sequência de marcos | detalha a sequência segura 0029a–0029h |
+| [`ROADMAP.md`](ROADMAP.md) | gerado | sequência M0–M8 | projeção de `milestones.json`, com critérios de saída |
+| [`AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) | vivo | continuidade e revisão humana | registros ligados a candidato e evidências |
+| [`DELIVERY_ARCHITECTURE.md`](DELIVERY_ARCHITECTURE.md) | proposta | jogos, player, applets e código de usuário | fronteiras e adapters substituíveis |
 | [`WORKFLOW.md`](WORKFLOW.md) | vivo | branches, patches, autoria, testes e integração | inclui auditoria de entradas web |
 | [`CHATGPT_PROJECT_INSTRUCTIONS.md`](CHATGPT_PROJECT_INSTRUCTIONS.md) | vivo | contrato para assistentes | inclui auditoria do portal e catálogo |
 | [`STRATEGIC_ARCHITECTURE_REVIEW.md`](STRATEGIC_ARCHITECTURE_REVIEW.md) | vivo | auditoria crítica e gates tecnológicos | integra propostas de CRDT, QuickJS/WASM e gramáticas de forma com custos |
 | [`DOCUMENTS_TO_WRITE.md`](DOCUMENTS_TO_WRITE.md) | vivo | backlog documental | criado nesta auditoria |
-| [`CURRENT_STATE.md`](CURRENT_STATE.md) | obsoleto | snapshot do marco 0019g-c2 | cabeçalho de obsolescência; corpo preservado |
+| [`CURRENT_STATE.md`](CURRENT_STATE.md) | vivo | capacidades e limitações atuais | diferencia código existente, plano e aceitação pendente |
 | [`MEMORY_SEED.md`](MEMORY_SEED.md) | obsoleto | semente curta do marco 0019g-c2 | cabeçalho de obsolescência; corpo preservado |
 | [`SESSION_HANDOFF.md`](SESSION_HANDOFF.md) | obsoleto | handoff encerrado do marco 0019g-c2 | cabeçalho de obsolescência; corpo preservado |
 

@@ -1,0 +1,611 @@
+> SNAPSHOT HISTÓRICO anterior ao plano 0054ng. Não usar como estado atual.
+
+# Roadmap do SpatialSeed
+
+> Documento vivo. Auditado em 2 de agosto de 2026 durante o marco `0047g`.
+> A ordem expressa dependências técnicas, não promessa de prazo.
+
+## Regra de planejamento
+
+Cada marco deve:
+
+1. introduzir uma capacidade coerente e limitada;
+2. preservar a arquitetura orientada a comandos;
+3. separar lógica, visualização e transporte;
+4. acrescentar testes automáticos e um roteiro visual;
+5. registrar impacto de desempenho quando aplicável;
+6. terminar num branch testado antes da integração ao `main`.
+
+## Marcos concluídos
+
+### Interface modular guiada
+
+- Grupos funcionais declarados no manifesto existente e controles com nomes.
+- Resumo barato da seleção; Inspector aberto explicitamente.
+- Painéis exclusivos no celular e coexistentes no computador.
+- HUD livre e preferências anteriores preservados.
+- Ajuda inicial, atalhos e testes de configuração/contexto integrados.
+- Validação gráfica e gestual em Android/desktop permanece necessária antes
+  da promoção; ver o roteiro em `docs/INTERFACE_MODULAR.md`.
+
+### 0022 — Sistema de propriedades
+
+- `PropertyRegistry` tipado;
+- Inspector e console sobre os mesmos comandos;
+- cor arbitrária, transparência, textura e transformação UV;
+- valores mistos e edição atômica em seleção múltipla;
+- cor por instância.
+
+### 0023 — Hierarquia de grupos
+
+- grupos com âncora e transform local;
+- aninhamento;
+- projeção mundial no renderer;
+- transformação transacional da subárvore;
+- duplicação, exclusão e desagrupamento sem deriva.
+
+### 0024 — Famílias geométricas e interface configurável
+
+- caixa, esfera, cilindro/cone, plano e polígono regular;
+- `GeometryRegistry` integrado ao renderer, console e painel;
+- referenciais por planos, normal/tangente e três pontos;
+- séries afins de até 100.000 objetos;
+- toolbar e painéis compostos por manifesto;
+- layouts horizontal, vertical e flutuante;
+- superfícies abertas renderizadas pelos dois lados.
+
+### 0025 — PWA e interoperabilidade de arquivos
+
+- instalação e cache offline do aplicativo;
+- build e cache controlador diagnosticáveis;
+- GitHub Pages sem Jekyll;
+- documento de projeto separado do transporte web;
+- picker nativo quando disponível e fallback móvel;
+- testes de projeto, PWA e file interop;
+- recuperação automática local registrada como prioridade futura.
+
+### 0026 — Runtime de scripts e procedimentos
+
+- execução JavaScript isolada em Worker/SES;
+- cálculos, programas, aleatoriedade determinística e `session`;
+- capacidade espacial restrita;
+- planos serializáveis e commit atômico;
+- procedimentos nomeados e persistentes;
+- importação/exportação de catálogos textuais;
+- editor de procedimentos.
+
+### 0027 — Laboratório declarativo e desempenho de autoria
+
+- contrato serializável de experimentos e parâmetros;
+- catálogo inicial ativado por capability de plugin;
+- painel gerado por descritores e comandos equivalentes no console;
+- execução pelo runtime de programas, produzindo plano antes do commit;
+- seleção individual em lotes com outlines instanciados;
+- reconstrução correta de outlines após crescimento;
+- leituras de UI coalescidas por frame e perfis de custo do runtime.
+
+### 0028 — Tempo, ações, lotes e espaço de animação
+
+- runtime efêmero com passo fixo, pausa, retomada, parada e restauração;
+- comandos temporais sem mutação de sandbox, histórico ou documento;
+- matrizes, presets e expressões com `t`, `i`, `u` e `count`;
+- captura rígida por raiz ou expansão em objetos renderizáveis;
+- ações semânticas comuns a botão e teclado;
+- atalhos configuráveis com contextos e proteção de campos textuais;
+- interface padrão reorganizada sobre o manifesto existente;
+- Inspector coletivo e expressões procedurais atômicas;
+- faixas de animação distintas por objeto;
+- cor animada por instância e restauração canônica;
+- alça central `XYZ` adequada a toque para escala uniforme.
+
+### Limites deliberados após 0028e
+
+- clips e keyframes ainda não pertencem ao documento;
+- eventos, colisões e scripts anexados não participam do loop;
+- o editor visual completo de workspaces/atalhos ainda não existe;
+- política de origens individuais para manipulação manual precisa de contrato
+  próprio além do modo por objeto da animação;
+- a interface permanece configurável por manifesto e preferências locais, mas
+  ainda não exporta um workspace editado.
+
+## Marco atual — 0029, entrada, continuidade e câmeras
+
+O ciclo 0029 reúne capacidades que dependem de fronteiras comuns de distribuição,
+viewer e sandbox. Elas devem ser entregues em incrementos independentes:
+
+### 0029a — Portal e catálogo — implementado
+
+- portal HTML na raiz, sem segundo editor;
+- aplicativo mantido e experimentos acessíveis por caminhos relativos;
+- catálogo JSON canônico para laboratório integrado e protótipos históricos;
+- protótipo da antiga raiz preservado fora da entrada pública;
+- maturidade, execução offline, dependências e limites declarados;
+- auditoria estática de links, destinos e dependências.
+
+### 0029b — Paridade básica dos protótipos — implementado
+
+- Math.js vendorizado com licença;
+- camada comum de controles sem copiar lógica entre sete HTMLs;
+- seleção móvel e ação “Selecionar tudo”;
+- planos `near` e `far` configuráveis e validados;
+- escolha explícita do nome ao salvar;
+- recursos locais e auditoria offline estrita verde.
+
+### 0029c — Controlador público da câmera de navegação — implementado
+
+- posição, quaternion, foco, órbita, enquadramento e interpolação;
+- painel, console e procedimentos sobre a mesma API.
+
+### 0029d — Recuperação automática — implementado
+
+- identidade persistente de sandbox;
+- checkpoint e comandos confirmados em IndexedDB;
+- diálogo explícito para continuar, exportar ou descartar recuperação.
+
+### 0029e — Múltiplas instâncias locais — implementado
+
+- viewers com seleção e câmera próprias sobre um sandbox lógico comum;
+- coordenação por revisão e `BroadcastChannel`;
+- rejeição ou reavaliação explícita de intenções obsoletas.
+
+### 0029e1 — Animação efêmera entre viewers — implementado
+
+- definição declarativa e alvos concretos distribuídos pela autoridade local;
+- época absoluta comum para abas suspensas ou abertas durante a reprodução;
+- início, pausa, retomada e parada sincronizados por sequência;
+- conflitos temporais obsoletos rejeitados explicitamente;
+- nenhum quadro, matriz ou estado temporal inserido no documento.
+
+### 0029e2 — Seleção e sucessão de sessões locais — implementado
+
+- diretório transitório de projetos ativos na mesma origem;
+- escolha explícita do `sandboxId` quando mais de um projeto está rodando;
+- remoção de viewers fechados e expiração de anúncios abandonados;
+- promoção de réplica após fechamento da autoridade;
+- adoção do snapshot vivo pelo diário de recuperação promovido.
+
+### 0029f — Objetos câmera e projetos locais explícitos — implementado
+
+- nós de câmera persistentes e hierárquicos;
+- múltiplas câmeras, câmera ativa local e câmera padrão opcional do documento;
+- migração retrocompatível do schema para a versão 3;
+- handshake de entrada antes da recuperação de um viewer;
+- criação de projeto independente e abertura de arquivo em nova aba;
+- transferência de arquivo transitória, sem persistir conteúdo no diretório de
+  sessões.
+
+### 0029f1 — Estabilização operacional de câmeras — implementado
+
+- criação em réplica ativada somente após confirmação autoritativa;
+- preview efêmero de gizmo entre viewers, limitado a 30 Hz;
+- atualização contínua do viewer que usa a câmera transformada;
+- seleção por painel, alvo móvel ampliado e estados visuais distintos;
+- política local de frustums e ocultação do auxiliar da câmera ativa;
+- diagnóstico separado de serviço, remoção visual e transporte temporário.
+
+### 0029g — Rigs, alvos e órbitas persistentes
+
+- `aimTarget` mundial, por objeto ou locator;
+- modos livre, olhar para, seguir e orbitar;
+- rig hierárquico com pivô, dolly e câmera;
+- offset e vetor vertical explícitos;
+- schema 4 retrocompatível.
+
+### 0029h — Animação de câmera e direção de cena
+
+- adaptadores de alvo para câmera de navegação e objeto câmera;
+- posição, orientação, alvo, órbita, campo visual e recorte animáveis;
+- shots, cortes, cues e transições espaciais;
+- papéis locais de operador, preview e program;
+- restauração exata ao parar o overlay.
+
+### 0029i — Modo cena e controles configuráveis
+
+- teclas e ações arbitrárias sobre `UiActionRegistry`;
+- zonas invisíveis configuráveis para toque;
+- próximo/anterior shot, câmera direta e cues;
+- teste de captura de botões físicos quando o navegador os expuser.
+
+### 0029j — Consolidação e livro 0.7
+
+- migração progressiva das construções úteis para o laboratório declarativo;
+- HTMLs históricos reduzidos a wrappers ou evidência comparativa;
+- reescrita majoritária do livro a partir do estado estabilizado do 0029.
+
+### 0031–0035 — Geometrias, renderização física e edição topológica — implementado
+
+- catálogo das geometrias de malha disponíveis no Three.js vendorizado;
+- sombras, ambiente, materiais físicos e configuração local por viewer;
+- sessão isolada de edição com frames mundo, objeto e viewer;
+- snap adaptativo, restrições de eixo/plano e falloff procedural em tempo real;
+- seleção exclusiva de vértices, arestas e faces da malha ativa;
+- representação transitória por meia-arestas, adjacências e ciclos de contorno;
+- criação, exclusão, duplicação, extrusão, inset, divisão, subdivisão, colapso,
+  inversão de diagonal, ponte de contornos, soldagem e orientação de faces;
+- histórico interno completo e commit editorial atômico;
+- painel flutuante único, redimensionável e configurável por checkboxes.
+
+### 0036 — Workspace e navegação de edição — implementado
+
+- painel único para seleção, transformação e edição de malha;
+- HUD destacável com estados de alta frequência;
+- eixos independentes e frames mundo, objeto, viewer e plano personalizado;
+- plane lock e point lock locais ao viewer.
+
+### 0037a — Referências espaciais e ferramentas por caminho — implementado
+
+- objetos resolvidos como caminhos, perfis planares e pontos;
+- linha central declarada, maior contorno, arestas soltas e pivôs da seleção;
+- tubo por caminho, varredura de perfil e distribuição hierárquica;
+- frames de transporte paralelo com correção de costura e torção explícita;
+- comandos comuns ao painel e console;
+- referências snapshot, sem dependência procedural implícita.
+
+### 0037b — Workspace adaptativo e curvas editáveis — implementado
+
+- remoção do painel separado de transformação e do menu residual Mais;
+- seções visíveis conforme objeto/malha, ferramenta e componente ativo;
+- HUD destacável configurável em colunas × linhas;
+- contenção de painéis e menus dentro da viewport;
+- desenho livre de caminhos em plano travado, viewer ou plano mundial;
+- polilinha, Catmull–Rom e Bézier cúbica ajustada;
+- edição de âncoras e controles Bézier sem perder o descritor de caminho;
+- criação de caminho a partir de seleção de vértices, arestas ou faces.
+
+### 0037c — HUD contextual, luzes e materiais — implementado
+
+- configuração do HUD rolável, redimensionável e sempre contida na viewport;
+- HUD estritamente icônico, iluminado por estado e filtrado por contexto;
+- seleção, topologia, caminhos, criação e operações frequentes disponíveis no HUD;
+- seções essenciais do workspace visíveis por padrão, sem depender de painéis paralelos;
+- criação comum e avançada usando outro objeto como argumento de transformação;
+- memória local de geometria, cor e parâmetros de material;
+- materiais físicos editáveis por objeto no workspace e Inspector;
+- luzes pontuais, direcionais, spot e ambiente como objetos persistentes editáveis.
+
+### 0038–0039g2 — Ciclo, repetição, autoria por caminho e gestos — implementado
+
+- ferramentas persistentes com posicionamento e desenho contínuos;
+- plano de edição independente da trava de visualização;
+- repetição normalizada pela mesma rota do HUD, workspace e console;
+- duplicação seguida de transformação composta e `repeat count`;
+- preferências de continuidade isoladas por identidade semântica;
+- armazenamento versionado e migração sem apagar preferências anteriores;
+- testes do lifecycle isolados do estado real do navegador;
+- schemas e últimos valores de ferramentas parametrizadas compartilhados por
+  HUD, workspace e console;
+- painel contextual gerado por schema;
+- desenho livre com preview de tubo ou de qualquer geometria/grupo distribuído
+  diretamente pelo traço;
+- distribuição desenhada progressiva por espaçamento, sem quantidade
+  predeterminada;
+- seleção ou qualquer provider do catálogo como fonte do pincel;
+- cache efêmero que conserva geometria, material e `InstancedMesh` durante o
+  gesto e atualiza somente matrizes;
+- migração não destrutiva do armazenamento de parâmetros para schema 2;
+- lote distribuído confirmado em uma única operação de undo.
+- parâmetros completos de qualquer provider do catálogo no pincel;
+- orientação explícita preservada, relativa ao plano ou à tangente;
+- modificadores afins locais com `i`, `u`, distância, curvatura e frames;
+- progresso `u` causal por distância, sem redefinir o prefixo ao crescer;
+- reparo limitado da cauda conforme a interpolação e a curvatura;
+- plano lógico de commit preparado incrementalmente durante o gesto;
+- cor paramétrica instanciada e escala negativa por inversão cromática;
+- handoff visual sem ocultar e recriar o traço no encerramento.
+- rearmamento da ferramenta persistente sem recapturar recursos invariantes;
+- confirmação coordenada somente após os IDs criados serem observáveis;
+- índices por ID e cache incremental para seleção, referências e painéis;
+- listas visuais atualizadas pelo diferencial criado, sem reconstrução por
+  troca de ferramenta.
+- rearmamento do pincel persistente quando undo/redo altera a revisão entre
+  gestos, sem reconstruir recursos invariantes;
+- composição de cor absoluta por instância mesmo quando o material-base possui
+  canais RGB nulos;
+- seleção retangular, por pincel e por laço, com captura sem consulta à cena;
+- borracha de objetos e componentes com uma única operação reversível;
+- índice espacial de projeções reutilizado por câmera, viewport e revisão.
+
+### 0040a — Núcleo planar, pivô no HUD e ferramentas 2D — implementado
+
+- setores funcionais do HUD identificados por cores próprias;
+- edição direta de pivô no HUD;
+- planos independentes para visualização, edição e desenho;
+- definição por vista, mundo, objeto, objeto+inclinação/azimute, face ativa,
+  três pontos selecionados ou explícitos e cópia entre planos;
+- ponto, segmento, polilinha, retângulo, círculo, arco e polígono regular;
+- contorno ou preenchimento, cor, espessura e resolução configuráveis;
+- preview local constante em relação à quantidade de objetos passivos;
+- publicação atômica e um único undo por geometria;
+- entrada “Editar 2D” pela edição de vértices no frame planar.
+
+### 0040b — Multitoque, HUD extensível, snap e medição — implementado
+
+- um toque permanece com a ferramenta; dois fazem `pan/pinch` e três orbitam o
+  foco corrente;
+- transição multitoque cancela somente o rascunho local, sem publicação ou
+  seleção acidental;
+- HUD aceita qualquer número positivo de colunas/linhas e aproveita o viewport
+  fixado antes de criar rolagem;
+- passos configuráveis de grade e ângulo são comuns a ferramentas 2D e 3D;
+- restrições X/Y do frame planar também valem para desenho e medição;
+- régua e transferidor são overlays efêmeros locais ao viewer;
+- `viewer.camera.reset` restaura o estado inicial controlado da câmera.
+
+### 0047e–0047g — Catálogo, desenho e entradas semânticas — implementado
+
+- fachada única de capacidades para HUD, painel, console, procedures e agentes;
+- mover, girar, escalar e operações de mesh encaminhados às autoridades atuais;
+- intenções distintas de tubo, distribuição, sweep, extrusão e revolução sobre
+  o mesmo contrato de captura;
+- esboços 2D preservam papéis de caminho, perfil e boundary sem depender do
+  provider ou do estilo renderizado;
+- `feature.sweep`, `feature.extrude` e `feature.revolve` recebem fontes por slots
+  explícitos e expõem seus parâmetros no painel da ferramenta em foco;
+- círculo e polígono contornado são equivalentes como perfil, com adaptação
+  conservadora para tubos fechados antigos;
+- troca de projeto cancela sessões transitórias antes de substituir o documento;
+- erros operacionais são recuperáveis e não ocupam a superfície de falha fatal.
+
+### 0054a — Primeiro loop jogável local — implementado
+
+- objeto selecionado como personagem sem mutação do documento por quadro;
+- gravidade, apoio em plataformas, bloqueio lateral, corrida, pulo e respawn;
+- estados básicos `idle`, `walk`, `jump` e `fall` projetados como overlay;
+- câmera local de acompanhamento com órbita por arraste;
+- controles por teclado e toque com interface editorial oculta durante a sessão;
+- comandos públicos `game.*`, console equivalente e testes de regressão;
+- fronteira explícita para substituir AABB e animação simples por física e rigs
+  futuros sem alterar o documento canônico.
+
+### 0054b–0054i — amadurecimento experimental rumo à 0055
+
+- a série 0054x permanece como faixa experimental enquanto física, câmera, áudio,
+  eventos, autoria e comportamento por objeto são consolidados; a partir de 0054m,
+  microversões usam o sufixo alfabético (`0054ma`, `0054mb`, ...) para permitir
+  amadurecimento incremental antes de 0055;
+- 0055 é o critério de maturidade: pequenos jogos completos devem poder ser
+  construídos e executados sem alterações ad hoc nos módulos de editor/renderer;
+- a colisão evoluiu de AABB global para broad phase + primitivas/malha final, com
+  compartilhamento de geometria e suporte a superfícies planas; em 0054mr o
+  personagem passou a usar OBB na narrow phase, aderência a rampas transitáveis
+  e preservação do movimento tangencial em paredes; em 0054my, colisores de
+  proprietários animados passaram a acompanhar a pose temporal e transportar o
+  personagem apoiado sem persistir o frame;
+- a câmera de jogo usa consulta espacial própria e recua diante de obstáculos, sem
+  introduzir dependência física no controlador de câmera editorial;
+- música e efeitos possuem configuração inicial em `apps/web/assets/audio`, mas
+  continuam substituíveis pelo runtime de eventos;
+- eventos e procedimentos são a fronteira preferida para lógica de jogo, mantendo
+  `GameRuntime` como organizador/scheduler em vez de repositório monolítico de regras;
+- a álgebra de operadores de malha e os gestos por caminho da 0054g/0054h seguem
+  independentes do runtime de jogo e convergem pela camada pública de comandos.
+
+#### Sequência incremental até jogos simples
+
+1. medir inicialização, construção do mundo de colisão e custo por frame; só
+   então introduzir cache e índice/BVH onde os dados mostrarem gargalo;
+2. consolidar janelas: colapso individual, conjunto reduzido no modo cena e um
+   único painel contextual para os parâmetros da ferramenta ativa;
+3. completar a superfície universal `Resource + Property + Command`, estendendo
+   o trabalho de 0054mo para transformações, aparência, luzes, câmeras e jogo;
+4. adicionar fontes de propriedade (`constant`, `keyframes`, `expression` e
+   `binding`) sobre o runtime temporal já existente;
+5. **entregue em 0054mx:** expor no Inspector e Console uma lista persistente
+   `event -> comando autorizado` por objeto, generalizando `GameEventRuntime`
+   sem criar segunda autoridade nem armazenar scripts livres;
+6. **entregue em 0054my:** manter sólidos os proprietários animados, substituir
+   somente seus colisores revisionados e transportar o personagem apoiado pelo
+   delta afim da plataforma;
+7. amadurecer a fronteira física: controlador cinemático continua apropriado ao
+   personagem; corpos dinâmicos entram por backend separado, passo fixo,
+   colisores explícitos e estado efêmero.
+
+Cada item deve permanecer um incremento testável. Física geral não bloqueia
+propriedades, eventos ou autoria de jogos simples.
+
+#### Sequência de composição e distribuição após 0054my
+
+1. publicar papéis de colisão (`solid`, `trigger`, `none`) e eventos portáteis
+   `collision.enter`, `collision.stay` e `collision.exit`; coletáveis devem ser
+   composição de trigger + comando, não uma exceção no `GameRuntime`;
+2. introduzir recursos lógicos sem geometria, inicialmente `record`, `text` e
+   `asset-reference`, com identidade, propriedades, comandos, undo, arquivo e
+   busca comuns, mas sem exigir projeção Three.js;
+3. estabilizar endereços universais de propriedade e avaliação reativa
+   `constant | keyframes | expression | binding`, incluindo detecção de ciclos;
+4. representar prefab como recurso de grafo instanciável, com identidade
+   compartilhada, overrides explícitos e comandos **Make Instance/Make Unique**;
+5. criar um perfil de applet que selecione projeto, assets, runtime e catálogo
+   mínimo de capabilities e gere um pacote estático versionado;
+6. validar o pacote aberto diretamente num navegador comum, servido por
+   hospedagem estática e incorporado por `iframe`, sem Termux, Linux, Node ou o
+   editor completo como dependências de execução;
+7. acrescentar painéis interativos e geometrias implícitas como providers ou
+   plugins declarativos que reutilizam Resource, Property, Command, Event e
+   Binding;
+8. introduzir corpos dinâmicos empurráveis por backend substituível somente
+   depois de medir o controlador atual e estabilizar formas, papéis e eventos de
+   contato.
+
+Essa ordem não privilegia uma UI predeterminada. Ela torna primeiro o contato
+observável e componível, oferece em seguida um lugar canônico para dados que não
+são malhas, endereça relações reativas, preserva a composição num recurso
+reutilizável e só então congela uma fronteira de exportação. Um exportador
+antecipado copiaria acoplamentos atuais; prefabs antes de propriedades
+endereçáveis teriam overrides ad hoc; bindings antes de um catálogo de comandos
+e eventos seriam um grafo reativo sem maneira segura de causar ações. Física
+dinâmica antes de papéis e eventos produziria corpos móveis sem linguagem
+portátil para dizer o que significam.
+
+#### Nota de desenvolvimento — módulos ESM sob Node
+
+O runner direto `node tools/run_runtime_regressions.mjs` pode emitir o aviso
+`MODULE_TYPELESS_PACKAGE_JSON`: vários `.js` em `packages/` já são módulos ESM,
+mas o escopo não declara `type: module`. O Node reparsa os arquivos e os testes
+continuam passando; a normalização do metadata foi adiada até uma auditoria de
+CommonJS, para não alterar implicitamente scripts legados. O runtime web não
+depende dessa correção.
+
+### Próximas extensões geométricas
+
+- receitas procedurais vinculadas para sweep, extrude e lathe, com avaliação
+  incremental, cache e conversão explícita para malha;
+- redefinição paramétrica de objetos pelo Inspector com preview e commit único;
+- cotas persistentes e referências de medição por plano;
+- trim, extend, offset, fillet e constraints geométricas 2D;
+- compasso e medições como referências para transformações;
+- sanitização configurável com relatório de degenerações, contornos,
+  não-manifold e auto-interseções;
+- booleanos robustos em Worker e limpeza posterior;
+- referências vinculadas por grafo de modificadores;
+- objetos 2D e curvas com atributos por ponto de primeira classe;
+- loft, perfis com furos e variação procedural ao longo do caminho.
+
+### Próxima extensão do editor topológico
+
+- UVs e normais por canto, materiais por face e grupos de suavização;
+- bevel, knife, loop/ring cut e bridge entre contornos desiguais;
+- assets de malha compartilhados com copy-on-write e persistência compacta;
+- aceleração BVH para picking e operações sobre malhas extensas;
+- reparo orientado de auto-interseções e remalhamento.
+
+## Marco geométrico seguinte — 2D, polylines e curvas
+
+### Escopo
+
+- ponto, segmento e polyline como descritores de primeira classe;
+- curvas Bézier quadráticas e cúbicas;
+- amostragem com tolerância ou número de segmentos explícito;
+- frames locais, planos arbitrários e transformações afins;
+- espessura visual separada da geometria matemática;
+- criação por painel, console e `spatial.create`;
+- propriedades e serialização pelo mesmo registro;
+- testes de continuidade, orientação e limites.
+
+### Critério de saída
+
+O usuário deve conseguir construir e editar trajetórias 2D/3D reproduzíveis,
+usar curvas em procedimentos e preparar a base para perfis, extrusões e meshes.
+
+## Editor topológico de mesh — núcleo entregue em 0035a
+
+O núcleo previsto neste marco foi entregue com seleção de subelementos, preview
+local, comandos atômicos, undo interno, validação manifold e operações
+primitivas. As extensões de DCC e persistência de assets compartilhados estão
+listadas na próxima extensão do editor topológico.
+
+## Persistência compacta e recuperação local
+
+- evolução versionada do schema `.spatialseed`;
+- preservação retrocompatível dos arquivos atuais;
+- receitas, protótipos e instâncias sem expansão desnecessária;
+- compressão opcional do contêiner;
+- recuperação atômica de comandos confirmados em IndexedDB;
+- OPFS para texturas e outros blobs grandes;
+- diálogo de recuperação ao iniciar;
+- limpeza e migração explícitas.
+
+## Interoperabilidade, plugins e colaboração
+
+- importação/exportação por adapters, começando por glTF e STL;
+- avaliação de Collada/DAE apenas quando houver caso de uso e testes;
+- guia público para providers geométricos e propriedades;
+- manifesto de plugins e capabilities;
+- navegador de projeto sem acesso irrestrito ao sistema;
+- envelope de operações e matriz de conflitos antes da escolha de CRDT/OT;
+- prova comparativa de Yjs e Automerge sem vazar a biblioteca no domínio;
+- protocolo de snapshots, deltas e conflitos entre regiões;
+- identidade de autor, revisão e proposta distribuída.
+
+### Gates tecnológicos
+
+- QuickJS/WASM só entra como backend adicional após threat model, corpus de
+  compatibilidade e benchmark mobile contra Worker + SES;
+- P2P não substitui autoridade regional e não precede autenticação, autorização
+  e reconexão observável;
+- convergência estrutural precisa ser acompanhada por validação geométrica e
+  testes de conflitos semânticos.
+
+## Operadores procedurais e gramáticas de forma
+
+- escopo orientado ligado a shape, frame local e pivô;
+- perfil, extrusão, `split`, repetição e seleção de componentes;
+- regras nomeadas, parâmetros e aleatoriedade com semente;
+- consultas espaciais limitadas por orçamento;
+- geração de planos inspecionáveis e commit atômico;
+- cache, regeneração incremental e receita compacta;
+- demonstração de fachada ou quarteirão paramétrico.
+
+Este marco depende de geometria 2D e identidade topológica. A API dos operadores
+precede qualquer gramática textual própria. Compatibilidade integral com CGA não
+faz parte do escopo inicial.
+
+## Prioridades transversais
+
+Estas atividades não precisam esperar um marco próprio.
+
+### Documentação
+
+- escrever as especificações listadas em
+  [`DOCUMENTS_TO_WRITE.md`](DOCUMENTS_TO_WRITE.md);
+- manter README, decisões e roadmap sincronizados;
+- não repetir build, listas de capabilities ou contagens de teste em arquivos
+  estáticos quando podem ser consultados no runtime.
+
+### Desempenho
+
+- registrar device/browser/build junto a cada benchmark;
+- manter séries comparáveis, não apenas medições isoladas;
+- observar custo de hierarquia, propriedades, texturas e scripts;
+- impedir reconstrução integral em operações incrementais comuns;
+- tratar tamanho excessivo de arquivos agrupados/procedurais como prioridade de
+  persistência, não como regressão ignorada.
+
+### Experiência de uso
+
+- projetar HUD, menus, editor de layout, console, procedures e agentes a partir
+  das mesmas capacidades `authoring.tool.*`;
+- migrar ferramentas por fluxos completos e remover na mesma fatia os bindings
+  visuais substituídos, sem inferência pelo DOM;
+- tornar intenções, contexto, parâmetros e estado ativo legíveis, reduzindo
+  navegação entre painéis e recuperação por troca artificial de ferramenta;
+- aplicar perfis visuais por aplicação sobre os IDs canônicos, permitindo
+  ordenar, ocultar, fixar e promover parâmetros sem copiar estado da ferramenta;
+- implementar recorte/inset por contorno desenhado como operador topológico
+  único antes de expor `boundary` nessa capacidade; não adaptar o inset escalar
+  com semântica fictícia;
+- corrigir o ajuste de fonte do editor de procedimentos;
+- melhorar alças de redimensionamento para toque;
+- revisar densidade da toolbar em telas pequenas;
+- produzir catálogos, exemplos e cenas demonstrativas;
+- testar fluxos completos por pessoas que não acompanharam o desenvolvimento.
+
+### Qualidade e segurança
+
+- manter `runtime test all` verde no perfil diagnóstico isolado;
+- acrescentar teste para cada regressão encontrada visualmente;
+- formalizar o threat model do runtime SES;
+- definir CSP e política de dependências antes de aceitar código não confiável;
+- não confundir isolamento experimental com garantia de segurança.
+- manter a avaliação crítica e os gates tecnológicos de
+  [`STRATEGIC_ARCHITECTURE_REVIEW.md`](STRATEGIC_ARCHITECTURE_REVIEW.md).
+
+## Itens deliberadamente adiados
+
+- bevel, knife e remalhamento antes de consolidar o modelo topológico e seus testes;
+- otimização prematura do formato sem especificação de migração;
+- servidor colaborativo antes de definir deltas e autoridade;
+- novos botões que não tenham comando equivalente;
+- formatos de importação sem roundtrip e casos de teste;
+- monetização que exija fechar os contratos centrais antes de validar produto e
+  licenciamento.
+
+## Como atualizar este roadmap
+
+Ao concluir um marco:
+
+1. mova-o para “Marcos concluídos” com apenas resultados confirmados;
+2. não registre números de teste ou hashes transitórios;
+3. transforme decisões novas em entradas de `DECISIONS.md`;
+4. atualize documentação e exemplos afetados;
+5. escolha o próximo marco por dependência, risco e capacidade demonstrável.

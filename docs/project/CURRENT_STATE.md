@@ -6,11 +6,18 @@
 
 ## Baseline desta revisão
 
-A árvore agora contém a interface modular guiada. O build efetivo está em
-`apps/web/build-info.json`. A validação automática cobre contratos e integração
-DOM; esta entrega ainda exige a revisão visual descrita em
-`docs/INTERFACE_MODULAR.md`. As anotações abaixo registram a consolidação
-funcional anterior, sobre a qual esta interface foi implementada.
+A árvore parte da correção móvel 0054nf1 da interface modular guiada. O build
+efetivo está em `apps/web/build-info.json`. A validação automática anterior
+cobre contratos e integração DOM; a aceitação visual no telefone e no
+computador continua pendente. O marco M0 do [roadmap](ROADMAP.md) explicita
+essa revisão e a correção de qualquer regressão encontrada.
+
+O incremento de planejamento 0054ng acrescenta roadmap gerado, continuidade e
+registros de revisão humana. Não implementa o player/exportador, não altera
+o build do aplicativo e não declara nenhuma instalação no telefone. Consulte
+[a arquitetura de entrega](DELIVERY_ARCHITECTURE.md) e
+[o fluxo agêntico](AGENT_WORKFLOW.md). As anotações cronológicas abaixo
+registram a consolidação anterior; não são a lista completa do código atual.
 
 A documentação viva de 18 de agosto de 2026 corresponde ao build
 `20260818-0054my`, sucessor do marco publicado `0054mm`.
@@ -86,6 +93,11 @@ continua efêmero e não produz comandos, checkpoints ou undo.
 - múltiplos viewers locais e objetos câmera;
 - modo jogo local, personagem GLB, colisão, câmera, áudio e eventos;
 - plataformas animadas sólidas e transporte cinemático do personagem apoiado;
+- papéis `solid/sensor/none`, eventos `trigger.enter/trigger.exit` e dados
+  lógicos separados dos valores de sessão;
+- texto de mundo, HUD e diálogo declarativos no runtime de apresentação;
+- catálogo de clips GLB, bindings e transições no sistema de animação,
+  com backend Three separado;
 - perfil diagnóstico, gates, testes do runtime e benchmarks.
 - busca de recursos por nome, ID, tipo, visibilidade e categoria.
 - comportamento persistente por objeto no formato evento → comando autorizado,
@@ -97,7 +109,7 @@ continua efêmero e não produz comandos, checkpoints ou undo.
 - extrusão por caminho e álgebra geral de operadores de malha;
 - estabilidade de seleção/preview em hierarquias e ocorrências complexas;
 - colisão triangular e aceleração espacial;
-- papéis explícitos de colisor, gatilhos e corpos dinâmicos;
+- ampliação dos papéis e gatilhos já existentes; corpos dinâmicos são futuros;
 - proxy físico, visual GLB e mapeamento de clips;
 - ampliação do catálogo de eventos e ações para ponteiro, colisão e propriedades;
 - atualização PWA durante desenvolvimento em múltiplos checkouts.
@@ -107,7 +119,8 @@ continua efêmero e não produz comandos, checkpoints ou undo.
 - modificadores vinculados e regeneração procedural incremental;
 - bindings reativos entre propriedades e grafo de dependências;
 - prefabs parametrizáveis e exportação de applets web autônomos;
-- recursos lógicos tipados para registros, texto e referências de assets;
+- generalização dos recursos lógicos existentes para propriedades, texto e
+  referências de assets por contrato comum;
 - painéis interativos e geometrias implícitas como recursos extensíveis;
 - booleanas robustas e reparo topológico geral;
 - física de corpos dinâmicos e contatos completos;

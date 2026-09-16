@@ -13,6 +13,21 @@ SERVER_PID="$PROJECT/.seed-server.pid"
 command="${1:-help}"
 
 case "$command" in
+  context)
+    exec python3 "$PROJECT/tools/project_workflow.py" context
+    ;;
+
+  roadmap)
+    shift
+    if [[ $# -eq 0 ]]; then set -- check; fi
+    exec python3 "$PROJECT/tools/project_workflow.py" "$@"
+    ;;
+
+  review)
+    shift
+    exec python3 "$PROJECT/tools/project_workflow.py" review "$@"
+    ;;
+
   status)
     cd "$PROJECT"
     echo "=== Git ==="
@@ -117,6 +132,12 @@ Uso: bash tools/seedctl COMANDO
   serve   inicia servidor HTTPS sem cache em primeiro plano
   test    sincroniza, verifica, reinicia e abre a aplicação
   seed    atualiza PROJECT_SEED.md para continuidade por outra LLM
+  context mostra checkout real, build e marcos sem modificar arquivos
+  roadmap check|render valida ou gera o roadmap canônico
+  review  init|auto|record|decide|check acompanha candidato e revisão humana
+
+sync/verify/test pertencem ao fluxo legado de cópia pública.
+O ciclo agêntico atual está em docs/project/AGENT_WORKFLOW.md.
 HELP
     ;;
 esac

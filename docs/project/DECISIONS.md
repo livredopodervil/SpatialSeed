@@ -1,5 +1,43 @@
 # Registro de decisões do SpatialSeed
 
+## D-062 — Plano gerado e revisão humana vinculada ao candidato
+
+**Estado:** mecanismo implementado; aceitação dos marcos pendente.
+
+`milestones.json` contém dependências, fatias, critérios e verificações;
+`ROADMAP.md` é gerado desse plano. `PROJECT_SEED.md` é gerado do template
+durável. Gates detectam divergência. Descritores do runtime continuam sendo
+a autoridade dos contratos executáveis; geração de sua documentação será
+consolidada no M1, sem outro registro paralelo de recursos ou comandos.
+
+Revisões ficam fora do checkout, ligadas a commit, árvore, build, contrato do
+marco e hashes das evidências. Dependências exigem revisões aceitas em commits
+ancestrais. Critérios alterados exigem nova revisão; mudar apenas o rótulo de
+status não altera o contrato. Um resultado automático não produz aceitação
+humana. Regressões determinam correção de rota e nova evidência.
+
+Isso torna decisões auditáveis, mas não autentica a identidade do revisor nem
+substitui permissões do Git. Trabalho local autorizado não exige autorização
+repetida; revisão de produto e autorização de publicação são decisões distintas.
+
+## D-061 — Player portátil e adapters substituíveis
+
+**Estado:** proposta de direção para os marcos M1–M8, implementação futura.
+
+Jogos, applets 3D e aplicações sem 3D compartilham contratos de recurso,
+propriedade, comando e evento. O player compõe apenas capabilities necessárias;
+documento e estado de sessão permanecem separados. O exportador inclui a
+clausura de assets, módulos, workers e avisos de licença, sem dependência de
+CDN, Termux ou editor em execução.
+
+Bibliotecas externas ficam atrás de adapters e testes de conformidade. Seus
+tipos não escapam para documentos persistentes ou contratos públicos. A escolha
+exige licença, versão fixada, orçamento medido e alternativa de substituição;
+uma biblioteca candidata no plano não é uma dependência já aprovada.
+
+Motivação, limites de código de usuário e incorporação em páginas estão em
+[DELIVERY_ARCHITECTURE.md](DELIVERY_ARCHITECTURE.md).
+
 ## D-060 — Workspace guiado compõe controles existentes por tarefa
 
 **Estado:** implementada nesta árvore; validação visual em aparelho pendente.

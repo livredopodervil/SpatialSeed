@@ -1,5 +1,14 @@
 # Workflow verificável do SpatialSeed
 
+Para o ciclo atual, use [AGENT_WORKFLOW.md](AGENT_WORKFLOW.md): candidato
+commitado, evidência por árvore, revisão humana e correção de rota. O roadmap é
+gerado de `milestones.json`. Caminhos operacionais abaixo são registros do fluxo
+original; derive o checkout real com `bash tools/seedctl context`.
+
+Uma continuação explicitamente pedida sobre patch entregue usa esse commit
+confirmado como base, mesmo que ainda não esteja na main. Não trocar pela main
+automaticamente nem declarar a base experimental como promovida.
+
 > Documento vivo. Auditado em 25 de julho de 2026 até o marco `0029f1`. Este é o processo canônico
 > para colaboração local, patches, testes, autoria e integração.
 
