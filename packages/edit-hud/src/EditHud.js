@@ -92,6 +92,7 @@ export class EditHud {
   #hintHideTimer = null;
   #suppressedClick = null;
   #fitFrame = null;
+  #hudWorkspaceCleanup = null;
 
   constructor({
     root,
@@ -124,9 +125,11 @@ export class EditHud {
       this.#refreshCanonicalTools()
     ) ?? null;
     this.refresh();
+    this.#hudWorkspaceCleanup = installHudWorkspaceExperiment(this.root);
   }
 
   dispose() {
+    this.#hudWorkspaceCleanup?.();
     this.#unsubscribe?.();
     this.#unsubscribeHistory?.();
     this.#unsubscribeTools?.();
@@ -2425,4 +2428,230 @@ function finiteOr(value, fallback) {
 function normalizeRememberedColor(value) {
   const source = String(value ?? "#ffffff").trim();
   return /^#[0-9a-f]{6}$/i.test(source) ? source.toLowerCase() : "#ffffff";
+}
+
+/* RDevo/SpatialSeed Modo de uso experimental (somente apresentação).
+ * Os eventos e os controles de autoria existentes continuam sendo a fonte
+ * da verdade. Não modifica comandos, geometria, ferramentas nem física.
+ */
+function installHudWorkspaceExperiment(root) {
+  const doc = root?.ownerDocument;
+  if (!doc || doc.getElementById('ss-context-workspace-035')) return () => {};
+  const win = doc.defaultView ?? globalThis;
+  const handle = root.querySelector('.edit-hud-handle');
+  if (!handle) return () => {};
+  const storeKey = 'spatialseed.ui.context-workspace.experiment.035';
+  const dockKey = 'spatialseed.ui.minimized-panels.experiment.035';
+  const read = (key, fallback) => {
+    try { return JSON.parse(win.sessionStorage.getItem(key)) ?? fallback; }
+    catch { return fallback; }
+  };
+  const save = (key, value) => {
+    try { win.sessionStorage.setItem(key, JSON.stringify(value)); } catch {}
+  };
+  const nativeStyle = win.getComputedStyle(root);
+  const nativeCell = nativeStyle.getPropertyValue('--edit-hud-cell').trim() || '32px';
+  const css = doc.createElement('style');
+  css.id = 'ss-context-workspace-style-035';
+  css.textContent = `
+    #edit-hud [data-rdevo-hud-hidden="true"] { display:none!important; }
+    #edit-hud .ss-context-workspace-select {font:inherit;font-size:.72rem;min-width:0;
+      max-width:min(31vw,132px);padding:3px 5px;border-radius:6px;
+      color:inherit;background:inherit;border:1px solid currentColor;}
+    #edit-hud[data-rdevo-layout="draw"] .edit-hud-strip {max-width:calc(100vw - 12px)!important;
+      max-height:min(42dvh,260px)!important;overflow:auto!important;}
+    #ss-panel-mini-shelf-035 {position:fixed;inset:0;pointer-events:none;z-index:350;
+      --ss-mini-cell:${nativeCell};--ss-mini-bg:${nativeStyle.backgroundColor};
+      --ss-mini-color:${nativeStyle.color};--ss-mini-border:${nativeStyle.borderColor};}
+    #ss-panel-mini-shelf-035 .ss-panel-mini-icon {position:fixed;pointer-events:auto;
+      width:max(30px,var(--ss-mini-cell));height:max(30px,var(--ss-mini-cell));
+      padding:2px;border-radius:9px;border:1px solid var(--ss-mini-border);
+      background:var(--ss-mini-bg);color:var(--ss-mini-color);
+      box-shadow:0 2px 8px #0006;touch-action:none;user-select:none;cursor:grab;
+      font-size:17px;line-height:1;display:grid;place-items:center;}
+    #ss-panel-mini-shelf-035 .ss-panel-mini-icon[hidden]{display:none!important;}
+    .ss-floating-panel>header .ss-panel-mini-toggle {padding:2px 7px;min-width:29px;
+      flex:0 0 auto;}
+  `;
+  doc.head.append(css);
+  const modeSelect = doc.createElement('select');
+  modeSelect.id = 'ss-context-workspace-035';
+  modeSelect.className = 'ss-context-workspace-select';
+  modeSelect.title = 'Organização contextual do HUD; não altera o estado do motor';
+  modeSelect.setAttribute('aria-label', 'Organização das ferramentas');
+  for (const [value, label] of [
+    ['general','Geral'],['draw','Desenho'],['transform','Transformar'],['measure','Medir']
+  ]) modeSelect.add(new Option(label,value));
+  const drawSelect = doc.createElement('select');
+  drawSelect.id = 'ss-context-draw-tab-035';
+  drawSelect.className = 'ss-context-workspace-select';
+  drawSelect.setAttribute('aria-label', 'Submodo de desenho');
+  drawSelect.title = 'Ferramentas e parâmetros de desenho';
+  for (const [value,label] of [
+    ['trace','Traço'],['plane','Plano'],['appearance','Aparência'],['parameters','Parâmetros']
+  ]) drawSelect.add(new Option(label,value));
+  handle.insertBefore(drawSelect, handle.querySelector('#edit-hud-status') ?? null);
+  handle.insertBefore(modeSelect, drawSelect);
+
+  const groupsByMode = {
+    draw: {
+      trace:['tool','quick','snap','planar','draw','creation','lifecycle'],
+      plane:['drawing-target','navigation','reference','axes','snap','lifecycle'],
+      appearance:['appearance','creation','lifecycle'],
+      parameters:['draw','lifecycle']
+    },
+    transform:['subject','tool','selection','quick','frame','axes','snap','reference','actions'],
+    measure:['measure','drawing-target','snap','axes','lifecycle']
+  };
+  const last = read(storeKey, {mode:'general',tab:'trace'});
+  modeSelect.value = ['general','draw','transform','measure'].includes(last.mode) ? last.mode : 'general';
+  drawSelect.value = ['trace','plane','appearance','parameters'].includes(last.tab) ? last.tab : 'trace';
+  let openedConfig = false;
+  const apply = () => {
+    const mode = modeSelect.value, tab = drawSelect.value;
+    drawSelect.hidden = mode !== 'draw';
+    root.dataset.rdevoLayout = mode;
+    const visible = mode === 'general' ? null :
+      new Set(mode === 'draw' ? groupsByMode.draw[tab] : groupsByMode[mode]);
+    for (const group of root.querySelectorAll('[data-edit-hud-group]')) {
+      if (!visible) delete group.dataset.rdevoHudHidden;
+      else group.dataset.rdevoHudHidden = visible.has(group.dataset.editHudGroup)
+        ? 'false' : 'true';
+    }
+    const config = root.querySelector('.edit-hud-config');
+    if (mode === 'draw' && tab === 'parameters' && config && !config.open) {
+      config.open = true; openedConfig = true;
+    } else if ((mode !== 'draw' || tab !== 'parameters') && config && openedConfig) {
+      config.open = false; openedConfig = false;
+    }
+    save(storeKey, {mode,tab});
+  };
+  modeSelect.addEventListener('change', apply);
+  drawSelect.addEventListener('change', apply);
+  apply();
+
+  const shelf = doc.createElement('div');
+  shelf.id = 'ss-panel-mini-shelf-035';
+  shelf.setAttribute('aria-label', 'Painéis minimizados');
+  doc.body.append(shelf);
+  const known = [
+    '#selection-panel','#outline','#review-panel','#diagnostic-panel',
+    '#camera-panel','#viewer-render-panel','#developer-panel','#console-panel',
+    '#procedure-editor-panel','#inspector-panel','#mesh-edit-panel',
+    '#geometry-create-panel','#experiment-panel','#animation-panel'
+  ];
+  const icons = new Map();
+  let z = 360;
+  const initialPositions = read(dockKey, {});
+  const positions = initialPositions && typeof initialPositions === 'object' ? initialPositions : {};
+  const windowDimension = (name, fallback) => Number.isFinite(win[name]) ? win[name] : fallback;
+  const viewport = () => ({w:windowDimension('innerWidth',360),h:windowDimension('innerHeight',700)});
+  const clamp = (n,a,b) => Math.max(a,Math.min(b,n));
+  const position = (button, id, index) => {
+    const {w,h}=viewport();
+    const size=Math.max(30,Math.round(button.getBoundingClientRect().width || 32));
+    const xy=positions[id];
+    const left=clamp(Number.isFinite(xy?.x)?xy.x:w-size-10,4,Math.max(4,w-size-4));
+    const top=clamp(Number.isFinite(xy?.y)?xy.y:90+(index*43)%(Math.max(90,h-125)),4,Math.max(4,h-size-4));
+    button.style.left=`${left}px`;button.style.top=`${top}px`;
+  };
+  const persist = (id, button) => {
+    positions[id]={x:Math.round(parseFloat(button.style.left)),y:Math.round(parseFloat(button.style.top))};
+    save(dockKey,positions);
+  };
+  function register(panel,index) {
+    const id=panel.id, header=panel.querySelector(':scope > header');
+    if (!id || !header || icons.has(id)) return;
+    const title=header.querySelector('strong')?.textContent?.trim() || id.replace(/-panel$/,'');
+    const mini=doc.createElement('button');mini.type='button';mini.className='ss-panel-mini-toggle';
+    mini.textContent='▁';mini.title=`Minimizar ${title}`;
+    mini.setAttribute('aria-label',mini.title);
+    mini.addEventListener('pointerdown',e=>e.stopPropagation());
+    header.insertBefore(mini,header.querySelector(':scope > button:last-of-type') ?? null);
+    const icon=doc.createElement('button');icon.type='button';icon.className='ss-panel-mini-icon';
+    icon.textContent='▣';icon.title=`Restaurar ${title}`;
+    icon.setAttribute('aria-label',icon.title);icon.hidden=true;
+    icon.dataset.panelId=id;
+    shelf.append(icon);
+    position(icon,id,index);
+    let suppressClick=false;
+    icon.addEventListener('pointerdown', event => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      event.stopPropagation();
+      const start={x:event.clientX,y:event.clientY,
+        left:parseFloat(icon.style.left)||0,top:parseFloat(icon.style.top)||0};
+      let moved=false;
+      icon.setPointerCapture?.(event.pointerId);
+      const move=e=>{
+        if (e.pointerId!==event.pointerId)return;
+        const deltaX=e.clientX-start.x,deltaY=e.clientY-start.y;
+        if (Math.hypot(deltaX,deltaY)>7)moved=true;
+        if (!moved)return;
+        const {w,h}=viewport(),size=icon.offsetWidth||32;
+        icon.style.left=`${clamp(start.left+deltaX,4,w-size-4)}px`;
+        icon.style.top=`${clamp(start.top+deltaY,4,h-size-4)}px`;
+      };
+      const finish=e=>{
+        if(e.pointerId!==event.pointerId)return;
+        icon.removeEventListener('pointermove',move);
+        icon.removeEventListener('pointerup',finish);
+        icon.removeEventListener('pointercancel',finish);
+        try{icon.releasePointerCapture?.(e.pointerId);}catch{}
+        if(moved){suppressClick=true;persist(id,icon);}
+      };
+      icon.addEventListener('pointermove',move);
+      icon.addEventListener('pointerup',finish);
+      icon.addEventListener('pointercancel',finish);
+    });
+    mini.addEventListener('click',event=>{
+      event.preventDefault();event.stopPropagation();
+      panel.dataset.rdevoMinimized='true';
+      panel.hidden=true;
+      icon.hidden=false;
+      position(icon,id,index);
+    });
+    icon.addEventListener('click',event=>{
+      event.preventDefault();event.stopPropagation();
+      if(suppressClick){suppressClick=false;return;}
+      delete panel.dataset.rdevoMinimized;
+      icon.hidden=true;
+      panel.hidden=false;
+      panel.style.zIndex=String(++z);
+    });
+    const observer=new MutationObserver(()=>{
+      if (!panel.hidden && panel.dataset.rdevoMinimized==='true') {
+        delete panel.dataset.rdevoMinimized;
+        icon.hidden=true;
+      }
+    });
+    observer.observe(panel,{attributes:true,attributeFilter:['hidden']});
+    icons.set(id,{panel,mini,icon,observer});
+  }
+  const scan = () => {
+    for (const [index,selector] of known.entries()) {
+      const panel=doc.querySelector(selector);
+      if(panel?.classList.contains('ss-floating-panel'))register(panel,index);
+    }
+  };
+  scan();
+  let ticks=0;
+  const timer=win.setInterval(()=>{scan();if(++ticks>=35 || icons.size===known.length)win.clearInterval(timer);},400);
+  const reposition=()=>{
+    for(const [id,{icon}] of icons)position(icon,id,known.indexOf('#'+id));
+  };
+  win.addEventListener('resize',reposition);
+  return ()=>{
+    win.clearInterval(timer);
+    win.removeEventListener('resize',reposition);
+    for (const {panel,mini,icon,observer} of icons.values()) {
+      observer.disconnect();
+      if(panel.dataset.rdevoMinimized==='true'){
+        delete panel.dataset.rdevoMinimized;panel.hidden=false;
+      }
+      mini.remove();icon.remove();
+    }
+    shelf.remove();modeSelect.remove();drawSelect.remove();css.remove();
+    delete root.dataset.rdevoLayout;
+    for(const group of root.querySelectorAll('[data-edit-hud-group]'))delete group.dataset.rdevoHudHidden;
+  };
 }
