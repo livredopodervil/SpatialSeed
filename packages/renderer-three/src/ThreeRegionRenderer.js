@@ -2172,6 +2172,15 @@ export class ThreeRegionRenderer {
     return () => this.#objectVisualListeners.delete(listener);
   }
 
+  // Copy in the same task as render, before WebGL discards its drawing buffer.
+  captureFrame() {
+    if (this.renderer.getContext().isContextLost()) {
+      throw new Error("Contexto WebGL perdido.");
+    }
+    this.renderer.render(this.scene, this.camera);
+    return createImageBitmap(this.canvas);
+  }
+
   subscribeFrame(listener) {
     if (typeof listener !== "function") {
       throw new TypeError("Listener de quadro deve ser função.");

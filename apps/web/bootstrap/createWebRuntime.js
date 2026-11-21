@@ -2836,6 +2836,7 @@ export async function createWebRuntime({
     })
     .register("occurrence.runtime.status", () => occurrenceResolver.status())
     .register("transform.hierarchy.status", () => transformHierarchy.status())
+    .register("viewer.frame.capture", () => renderer.captureFrame())
     .register("render.replica.status", () => renderer.getReplicaDiagnostics())
     .register("complexity.status", () => complexityReporter.status())
     .register("time.domains", () => timeDomains.list())
